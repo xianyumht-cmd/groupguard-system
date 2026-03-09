@@ -32,6 +32,25 @@ function isUnavailableMessage(text: string): boolean {
   return BAN_UNAVAILABLE_PATTERNS.some((r) => r.test(normalized));
 }
 
+function normalizeDetailKey(text: string): string {
+  return text.replace(/[\s，,。；;：:、"'`]/g, '').toLowerCase();
+}
+
+function mergeUniqueDetail(parts: Array<any>): string {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    if (typeof part !== 'string') continue;
+    const text = part.trim();
+    if (!text) continue;
+    const key = normalizeDetailKey(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(text);
+  }
+  return result.join('；');
+}
+
 function collectBanQueryEndpoints(): string[] {
   const primary = (pluginState.config.lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
   const backups = Array.isArray(pluginState.config.lolBanBackupUrls) ? pluginState.config.lolBanBackupUrls : [];
@@ -56,9 +75,7 @@ function buildBanQueryUrl(endpoint: string, qq: string): string {
 }
 
 function toBanQueryResult(data: any): BanQueryResult {
-  const detailText = [data?.msg, data?.data?.banmsg, data?.data?.rammsg, data?.data?.return, data?.data?.time, data?.data?.ban_time, data?.data?.unban_time, data?.data?.left_time]
-    .filter((v: any) => typeof v === 'string' && v.trim())
-    .join('；');
+  const detailText = mergeUniqueDetail([data?.msg, data?.data?.banmsg, data?.data?.rammsg, data?.data?.return, data?.data?.time, data?.data?.ban_time, data?.data?.unban_time, data?.data?.left_time]);
   if (detailText && isUnavailableMessage(detailText)) {
     return { status: 'unknown', detail: detailText };
   }
@@ -109,7 +126,14 @@ async function queryBanByEndpoint(endpoint: string, qq: string): Promise<BanQuer
       }
     });
     if (!res.ok) return { result: { status: 'unknown', detail: `HTTP ${res.status}` }, source: endpoint };
-    const data = await res.json() as any;
+    const raw = await res.text();
+    const cleaned = raw.replace(/\u0000+$/g, '').trim();
+    let data: any;
+    try {
+      data = JSON.parse(cleaned);
+    } catch {
+      return { result: { status: 'unknown', detail: '接口返回非JSON或格式异常' }, source: endpoint };
+    }
     return { result: toBanQueryResult(data), source: endpoint };
   } catch (e: any) {
     return { result: { status: 'unknown', detail: e?.name === 'AbortError' ? '请求超时' : String(e?.message || e) }, source: endpoint };
@@ -185,6 +209,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       return true;
     }
     const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+    const pureTextMode = pluginState.config.global?.disableReplyTemplate === true;
     const banTexts = ['真是活该，直接进小黑屋了~', '这波操作属实离谱，封得明明白白。', '翻车现场，系统都看不下去了。', '号子已经躺平，连申诉都得排队。', '风控一锤定音，这把寄得很彻底。', '这号现在主打一个“只能看不能玩”。'];
     const safeTexts = ['安全着呢，稳得一批~', '状态健康，今天也没翻车。', '干净得很，风控都点了个赞。', '目前稳如老狗，继续保持。', '状态在线，暂时没有危险信号。', '看起来很平安，继续低调上分吧。'];
     const unknownTexts = ['接口今天有点小情绪，稍后再查一次。', '这波网络不太给面子，过会儿再试试。', '数据源在摸鱼，建议晚点重试。', '查询通道有点拥挤，等等会更稳。'];
@@ -203,19 +228,24 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         if (current.result.status !== 'unknown') break;
       }
       if (!attempt) {
-        await sendResult(`暂时无法确认是否封号，详情：没有可用查询接口，${pick(unknownTexts)}`);
+        const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
+        await sendResult(`暂时无法确认是否封号，详情：没有可用查询接口${tail}`);
         return true;
       }
       if (attempt.result.status === 'banned') {
-        await sendResult(`这号被封了，详情：${attempt.result.detail || '接口未返回更多时间信息'}，${pick(banTexts)}`);
+        const tail = pureTextMode ? '' : `，${pick(banTexts)}`;
+        await sendResult(`这号被封了，详情：${attempt.result.detail || '接口未返回更多时间信息'}${tail}`);
       } else if (attempt.result.status === 'safe') {
-        await sendResult(`这号未封，详情：${attempt.result.detail || '接口未返回更多时间信息'}，${pick(safeTexts)}`);
+        const tail = pureTextMode ? '' : `，${pick(safeTexts)}`;
+        await sendResult(`这号未封，详情：${attempt.result.detail || '接口未返回更多时间信息'}${tail}`);
       } else {
-        await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}，${pick(unknownTexts)}`);
+        const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
+        await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}${tail}`);
       }
     } catch (e) {
       pluginState.log('error', `查询封号失败: ${e}`);
-      await sendResult(`暂时无法确认是否封号，${pick(unknownTexts)}`);
+      const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
+      await sendResult(`暂时无法确认是否封号${tail}`);
     }
     return true;
   }
@@ -237,24 +267,37 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     await sendGroupScene(groupId, 'action_success', '封号主接口已更新');
     return true;
   }
-  if (text.startsWith('添加封号备用接口')) {
+  if (text.startsWith('设置封号接口配置')) {
     if (!pluginState.isOwner(userId)) return true;
-    const url = text.replace('添加封号备用接口', '').trim();
-    if (!url) {
-      await sendGroupScene(groupId, 'command_format_error', '请提供接口地址，例如：添加封号备用接口 http://117.72.159.85:3580/ban/{qq}', { example: '添加封号备用接口 http://117.72.159.85:3580/ban/{qq}' });
+    const payload = text.replace('设置封号接口配置', '').trim();
+    if (!payload) {
+      await sendGroupScene(groupId, 'command_format_error', '请提供JSON配置，例如：设置封号接口配置 {"primary":"https://example.com/ban/{qq}","backups":["https://a.com/ban/{qq}"]}', { example: '设置封号接口配置 {"primary":"https://example.com/ban/{qq}","backups":["https://a.com/ban/{qq}"]}' });
       return true;
     }
     try {
-      void new URL(url.includes('{qq}') ? url.replace('{qq}', '123456') : url);
+      const cfg = JSON.parse(payload) as any;
+      const nextPrimaryRaw = String(cfg?.primary ?? cfg?.lolBanPrimaryUrl ?? '').trim();
+      const nextBackupsRaw = Array.isArray(cfg?.backups)
+        ? cfg.backups
+        : Array.isArray(cfg?.lolBanBackupUrls) ? cfg.lolBanBackupUrls : [];
+      if (!nextPrimaryRaw) {
+        await sendGroupScene(groupId, 'invalid_range', 'JSON中缺少 primary 字段');
+        return true;
+      }
+      void new URL(nextPrimaryRaw.includes('{qq}') ? nextPrimaryRaw.replace('{qq}', '123456') : nextPrimaryRaw);
+      const nextBackups = nextBackupsRaw
+        .map((v: any) => String(v || '').trim())
+        .filter(Boolean);
+      for (const u of nextBackups) {
+        void new URL(u.includes('{qq}') ? u.replace('{qq}', '123456') : u);
+      }
+      pluginState.config.lolBanPrimaryUrl = nextPrimaryRaw;
+      pluginState.config.lolBanBackupUrls = Array.from(new Set(nextBackups));
+      saveConfig(ctx);
+      await sendGroupScene(groupId, 'action_success', `封号接口配置已更新（主接口1条，备用${pluginState.config.lolBanBackupUrls.length}条）`);
     } catch {
-      await sendGroupScene(groupId, 'invalid_range', '接口地址格式无效，请提供完整的 http/https 地址');
-      return true;
+      await sendGroupScene(groupId, 'invalid_range', 'JSON格式或接口地址无效，请检查后重试');
     }
-    const list = Array.isArray(pluginState.config.lolBanBackupUrls) ? pluginState.config.lolBanBackupUrls : [];
-    const merged = Array.from(new Set([...list.map(v => String(v || '').trim()).filter(Boolean), url]));
-    pluginState.config.lolBanBackupUrls = merged;
-    saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', `封号备用接口已添加，当前共 ${merged.length} 条`);
     return true;
   }
   if (text.startsWith('删除封号备用接口')) {

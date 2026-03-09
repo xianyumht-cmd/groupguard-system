@@ -12,7 +12,7 @@ export const INTERACTION_PREFIXES = [
   '设置lolkey',
   '设置loltoken',
   '设置封号主接口',
-  '添加封号备用接口',
+  '设置封号接口配置',
   '删除封号备用接口'
 ];
 
