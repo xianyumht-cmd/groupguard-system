@@ -19,6 +19,19 @@ interface BanQueryAttempt {
   source: string;
 }
 
+const BAN_UNAVAILABLE_PATTERNS = [
+  /额度|上限|次数|限制|限流|频繁|拥挤|繁忙|维护|异常|失败|超时|重试|稍后|暂停|通道|风控|waf|拦截|拒绝/i,
+  /会员|付费|到期|过期|充值/i
+];
+
+const BAN_CONFIRMED_PATTERNS = /封|ban|冻结|停封|处罚|禁赛|封停/i;
+const SAFE_CONFIRMED_PATTERNS = /未封|正常|安全|无封|未被封|无处罚/i;
+
+function isUnavailableMessage(text: string): boolean {
+  const normalized = text.replace(/\s+/g, '');
+  return BAN_UNAVAILABLE_PATTERNS.some((r) => r.test(normalized));
+}
+
 function collectBanQueryEndpoints(): string[] {
   const primary = (pluginState.config.lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
   const backups = Array.isArray(pluginState.config.lolBanBackupUrls) ? pluginState.config.lolBanBackupUrls : [];
@@ -43,17 +56,22 @@ function buildBanQueryUrl(endpoint: string, qq: string): string {
 }
 
 function toBanQueryResult(data: any): BanQueryResult {
-  const detailText = [data?.msg, data?.data?.banmsg, data?.data?.time, data?.data?.ban_time, data?.data?.unban_time, data?.data?.left_time]
+  const detailText = [data?.msg, data?.data?.banmsg, data?.data?.rammsg, data?.data?.return, data?.data?.time, data?.data?.ban_time, data?.data?.unban_time, data?.data?.left_time]
     .filter((v: any) => typeof v === 'string' && v.trim())
     .join('；');
+  if (detailText && isUnavailableMessage(detailText)) {
+    return { status: 'unknown', detail: detailText };
+  }
   if (typeof data?.code === 'number') {
+    if ([201, 202, 203, 204, 401, 402, 403, 405, 408, 409, 410, 412, 423, 425, 429].includes(data.code)) {
+      return { status: 'unknown', detail: detailText || `接口返回状态码 ${data.code}` };
+    }
+    if (data.code >= 500) return { status: 'unknown', detail: detailText || `接口返回状态码 ${data.code}` };
     if (data.code === 404) return { status: 'safe', detail: detailText || '暂未查到封禁记录' };
-    if (data.code === 403) return { status: 'unknown', detail: detailText || '请求被拒绝' };
-    if (data.code === 429) return { status: 'unknown', detail: detailText || '请求过于频繁或额度受限' };
     if (data.code === 200) {
-      const statusText = `${data?.msg || ''} ${data?.data?.banmsg || ''}`.replace(/\s+/g, '');
-      const unbanned = /未封|正常|安全|无封|未被封|无处罚/.test(statusText);
-      const banned = /封|ban|冻结|停封|处罚|禁赛|封停/.test(statusText) && !unbanned;
+      const statusText = `${data?.msg || ''} ${data?.data?.banmsg || ''} ${data?.data?.rammsg || ''} ${data?.data?.return || ''}`.replace(/\s+/g, '');
+      const unbanned = SAFE_CONFIRMED_PATTERNS.test(statusText);
+      const banned = BAN_CONFIRMED_PATTERNS.test(statusText) && !unbanned;
       if (banned) return { status: 'banned', detail: detailText || '接口未返回更多时间信息' };
       if (unbanned) return { status: 'safe', detail: detailText || '接口未返回更多时间信息' };
       return { status: 'unknown', detail: detailText || '接口返回状态不明确' };
@@ -61,13 +79,15 @@ function toBanQueryResult(data: any): BanQueryResult {
     return { status: 'unknown', detail: detailText || `接口返回状态码 ${data.code}` };
   }
   if (typeof data?.ban === 'boolean') {
+    if (detailText && isUnavailableMessage(detailText)) return { status: 'unknown', detail: detailText };
     return { status: data.ban ? 'banned' : 'safe', detail: detailText || (typeof data?.msg === 'string' ? data.msg : '接口未返回更多时间信息') };
   }
   const msg = typeof data?.msg === 'string' ? data.msg : '';
   if (msg) {
     const normalized = msg.replace(/\s+/g, '');
-    const unbanned = /未封|正常|安全|无封|未被封|无处罚/.test(normalized);
-    const banned = /封|ban|冻结|停封|处罚|禁赛|封停/.test(normalized) && !unbanned;
+    if (isUnavailableMessage(normalized)) return { status: 'unknown', detail: detailText || msg };
+    const unbanned = SAFE_CONFIRMED_PATTERNS.test(normalized);
+    const banned = BAN_CONFIRMED_PATTERNS.test(normalized) && !unbanned;
     if (banned) return { status: 'banned', detail: detailText || msg };
     if (unbanned) return { status: 'safe', detail: detailText || msg };
     return { status: 'unknown', detail: detailText || msg };
@@ -187,11 +207,11 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         return true;
       }
       if (attempt.result.status === 'banned') {
-        await sendResult(`这号被封了，详情：${attempt.result.detail || '接口未返回更多时间信息'}（来源：${attempt.source}），${pick(banTexts)}`);
+        await sendResult(`这号被封了，详情：${attempt.result.detail || '接口未返回更多时间信息'}，${pick(banTexts)}`);
       } else if (attempt.result.status === 'safe') {
-        await sendResult(`这号未封，详情：${attempt.result.detail || '接口未返回更多时间信息'}（来源：${attempt.source}），${pick(safeTexts)}`);
+        await sendResult(`这号未封，详情：${attempt.result.detail || '接口未返回更多时间信息'}，${pick(safeTexts)}`);
       } else {
-        await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}（来源：${attempt.source}），${pick(unknownTexts)}`);
+        await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}，${pick(unknownTexts)}`);
       }
     } catch (e) {
       pluginState.log('error', `查询封号失败: ${e}`);
