@@ -12,7 +12,8 @@ import { storageAdapter } from './storage_adapter';
 import { groupguardRepository } from './repositories/groupguard_repository';
 import { createVerifySession, handleVerifyAnswer, clearAllSessions } from './verify';
 import { getReplyTemplateCatalog } from './reply_generator';
-import { getGuardRuntimeSnapshot, safeRecall } from './services/action_guard_service';
+import { getGuardRuntimeSnapshot } from './services/action_guard_service';
+import { enqueueKickAction, enqueueSelfRecallAction } from './services/action_queue_service';
 import { auditReplyTemplates } from './reply_template_audit';
 import { BUILTIN_REPLY_SCENE_TEMPLATES } from './reply_templates';
 import {
@@ -388,21 +389,27 @@ const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx: NapCatPlu
     if (settings.autoRecallSelf) {
       const delay = (settings.autoRecallSelfDelay || 60) * 1000;
       setTimeout(() => {
-        void safeRecall({ groupId, messageId, targetUserId: selfId || pluginState.botId, reason: 'self_recall_event', automatic: true, allowSelfTarget: true });
+        void enqueueSelfRecallAction({ groupId, messageId, reason: 'self_recall_event', automatic: true, allowSelfTarget: true, maxRetries: 1 });
       }, delay);
     }
     return;
   }
 
-    // 2. 群管指令处理 (优先于黑名单，确保主人在黑名单中也能解除)
+    // 0.2 白名单用户检查
+    const isWhite = pluginState.isWhitelisted(userId);
+    const settings = pluginState.getGroupSettings(groupId);
+    const precheck = settings.blacklistCheckBeforeCommand !== false;
+
+    if (!isWhite && precheck && !pluginState.isOwner(userId)) {
+      const blacklisted = await handleBlacklist(groupId, userId, messageId);
+      if (blacklisted) return;
+    }
+
+    // 2. 群管指令处理
     const handled = await handleCommand(event, ctx);
     if (handled) return;
 
-    // 0.2 白名单用户检查
-    const isWhite = pluginState.isWhitelisted(userId);
-
-    // 1. 黑名单检查（白名单豁免）
-    if (!isWhite) {
+    if (!isWhite && !precheck && !pluginState.isOwner(userId)) {
       const blacklisted = await handleBlacklist(groupId, userId, messageId);
       if (blacklisted) return;
     }
@@ -448,7 +455,6 @@ const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx: NapCatPlu
     await handleEmojiReact(groupId, userId, messageId, selfId);
 
     // 9. 验证答题
-    const settings = pluginState.getGroupSettings(groupId);
     if (settings.enableVerify) {
       await handleVerifyAnswer(groupId, userId, raw, messageId);
     }
@@ -539,6 +545,20 @@ const plugin_onevent: PluginModule['plugin_onevent'] = async (ctx: NapCatPluginC
     }
 
     const settings = pluginState.getGroupSettings(groupId);
+
+    const blacklisted = pluginState.isBlacklisted(userId) || (settings.groupBlacklist || []).includes(userId);
+    if (blacklisted) {
+      await enqueueKickAction({
+        groupId,
+        userId,
+        reason: 'blacklist_join',
+        rejectAddRequest: settings.blacklistKickRejectAddRequest !== false,
+        automatic: true,
+        maxRetries: 1
+      });
+      pluginState.log('info', `入群黑名单拦截: 用户 ${userId} 加入群 ${groupId} 后触发踢出`);
+      return;
+    }
 
     if (!settings.enableVerify) {
       // 不验证，只发欢迎词

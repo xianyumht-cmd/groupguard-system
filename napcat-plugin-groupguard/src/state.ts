@@ -405,7 +405,16 @@ class PluginState {
       if (settings.autoRecallSelf) {
         const delay = (settings.autoRecallSelfDelay || 60) * 1000;
         setTimeout(() => {
-          this.callApi('delete_msg', { message_id: res.message_id }).catch(() => {});
+          import('./services/action_queue_service')
+            .then(mod => mod.enqueueSelfRecallAction({
+              groupId,
+              messageId: String(res.message_id),
+              reason: 'self_recall_send_queue',
+              automatic: true,
+              allowSelfTarget: true,
+              maxRetries: 1
+            }))
+            .catch(() => {});
         }, delay);
       }
     }

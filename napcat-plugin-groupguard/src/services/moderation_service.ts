@@ -3,7 +3,7 @@ import { authManager } from '../auth';
 import { groupguardRepository } from '../repositories/groupguard_repository';
 import { getTarget, isAdminOrOwner, saveConfig, sendGroupScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
-import { safeBan, safeKick } from './action_guard_service';
+import { enqueueBanAction, enqueueKickAction, enqueueMiscAction } from './action_queue_service';
 
 export async function executeModerationCommand(input: CommandExecutionContext): Promise<boolean> {
   const { raw, text, userId, groupId, ctx, event } = input;
@@ -21,12 +21,12 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (count >= limit) {
       await groupguardRepository.setWarning(groupId, target, 0);
       if (settings.warningAction === 'kick') {
-        const result = await safeKick({ groupId, userId: target, reason: 'warning_limit', rejectAddRequest: false, automatic: false });
+        const result = await enqueueKickAction({ groupId, userId: target, reason: 'warning_limit', rejectAddRequest: false, automatic: false, maxRetries: 1 });
         if (result.ok) await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，已被踢出。`, { target, count, limit });
         else await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，但执行踢出失败：${result.code}`, { target, count, limit });
       } else {
         const banTime = (settings.filterBanMinutes || 10) * 60;
-        const result = await safeBan({ groupId, userId: target, durationSeconds: banTime, reason: 'warning_limit', automatic: false });
+        const result = await enqueueBanAction({ groupId, userId: target, durationSeconds: banTime, reason: 'warning_limit', automatic: false, maxRetries: 1 });
         if (result.ok) await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，禁言 ${settings.filterBanMinutes} 分钟。`, { target, count, limit });
         else await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，但执行禁言失败：${result.code}`, { target, count, limit });
       }
@@ -55,7 +55,7 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const target = getTarget(raw, text.slice(2).trim());
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标：踢出@某人 或 踢出QQ号', { example: '踢出@某人' }); return true; }
-    const result = await safeKick({ groupId, userId: target, reason: 'manual_kick', rejectAddRequest: false, automatic: false });
+    const result = await enqueueKickAction({ groupId, userId: target, reason: 'manual_kick', rejectAddRequest: false, automatic: false, maxRetries: 1 });
     if (result.ok) await sendGroupScene(groupId, 'action_success', `已踢出 ${target}`, { target });
     else await sendGroupScene(groupId, 'raw_text', `踢出失败：${result.code}`, { target });
     return true;
@@ -67,7 +67,7 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标：禁言@某人 分钟 或 禁言QQ号 分钟', { example: '禁言@某人 10' }); return true; }
     const durationMatch = rest.replace(/\d{5,}/, '').match(/(\d+)/);
     const duration = durationMatch ? parseInt(durationMatch[1]) : 10;
-    const result = await safeBan({ groupId, userId: target, durationSeconds: duration * 60, reason: 'manual_ban', automatic: false });
+    const result = await enqueueBanAction({ groupId, userId: target, durationSeconds: duration * 60, reason: 'manual_ban', automatic: false, maxRetries: 1 });
     if (result.ok) await sendGroupScene(groupId, 'action_success', `已禁言 ${target}，时长 ${duration} 分钟`, { target, duration });
     else await sendGroupScene(groupId, 'raw_text', `禁言失败：${result.code}`, { target, duration });
     return true;
@@ -76,14 +76,21 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const target = getTarget(raw, text.slice(2).trim());
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标：解禁@某人 或 解禁QQ号', { example: '解禁@某人' }); return true; }
-    const result = await safeBan({ groupId, userId: target, durationSeconds: 0, reason: 'manual_unban', automatic: false, ignoreTargetProtection: true });
+    const result = await enqueueBanAction({ groupId, userId: target, durationSeconds: 0, reason: 'manual_unban', automatic: false, ignoreTargetProtection: true, maxRetries: 1 });
     if (result.ok) await sendGroupScene(groupId, 'action_success', `已解禁 ${target}`, { target });
     else await sendGroupScene(groupId, 'raw_text', `解禁失败：${result.code}`, { target });
     return true;
   }
   if (text === '全体禁言' || text === '全体解禁') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    await pluginState.callApi('set_group_whole_ban', { group_id: groupId, enable: text === '全体禁言' });
+    await enqueueMiscAction({
+      groupId,
+      action: 'set_group_whole_ban',
+      params: { group_id: groupId, enable: text === '全体禁言' },
+      reason: 'whole_ban_toggle',
+      dedupKey: `${groupId}:whole_ban:${text}`,
+      maxRetries: 1
+    });
     await sendGroupScene(groupId, 'action_success', text === '全体禁言' ? '已开启全体禁言' : '已关闭全体禁言');
     return true;
   }
@@ -93,7 +100,14 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     const target = getTarget(raw, rest);
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标', { example: '授予头衔@某人 高管' }); return true; }
     const title = text.startsWith('清除头衔') ? '' : rest.replace(/\[CQ:[^\]]+\]/g, '').replace(/\d{5,12}/, '').trim();
-    await pluginState.callApi('set_group_special_title', { group_id: groupId, user_id: target, special_title: title });
+    await enqueueMiscAction({
+      groupId,
+      action: 'set_group_special_title',
+      params: { group_id: groupId, user_id: target, special_title: title },
+      reason: 'special_title',
+      dedupKey: `${groupId}:title:${target}`,
+      maxRetries: 1
+    });
     await sendGroupScene(groupId, 'action_success', text.startsWith('清除头衔') ? `已清除 ${target} 的头衔` : `已为 ${target} 设置头衔：${title || '(空)'}`, { target });
     return true;
   }

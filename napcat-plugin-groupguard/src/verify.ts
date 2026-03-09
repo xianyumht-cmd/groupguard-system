@@ -1,6 +1,6 @@
 // 验证逻辑
 import { pluginState } from './state';
-import { safeKick, safeRecall } from './services/action_guard_service';
+import { enqueueKickAction, enqueueRecallAction } from './services/action_queue_service';
 
 function randInt (min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -41,7 +41,7 @@ export function createVerifySession (groupId: string, userId: string, comment?: 
       { type: 'at', data: { qq: userId } },
       { type: 'text', data: { text: ` 验证超时，你已被移出群聊。` } },
     ]);
-    setTimeout(() => { void safeKick({ groupId, userId, reason: 'verify_timeout', rejectAddRequest: false, automatic: true }); }, 1500);
+    void enqueueKickAction({ groupId, userId, reason: 'verify_timeout', rejectAddRequest: false, automatic: true, maxRetries: 1 });
   }, timeout * 1000);
 
   pluginState.sessions.set(key, { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer, createdAt: Date.now() });
@@ -62,7 +62,7 @@ export async function handleVerifyAnswer (groupId: string, userId: string, rawMe
   if (!session) return false;
   const trimmed = rawMessage.trim();
   if (!/^-?\d+$/.test(trimmed)) {
-    await safeRecall({ groupId, messageId, targetUserId: userId, reason: 'verify_non_number', automatic: true });
+    await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'verify_non_number', automatic: true, maxRetries: 1 });
     await pluginState.sendGroupMsg(groupId, [
       { type: 'at', data: { qq: userId } },
       { type: 'text', data: { text: ` 请发送数字答案，计算「${session.expression}」的结果。` } },
@@ -83,7 +83,7 @@ export async function handleVerifyAnswer (groupId: string, userId: string, rawMe
   }
 
   session.attempts++;
-  await safeRecall({ groupId, messageId, targetUserId: userId, reason: 'verify_wrong_answer', automatic: true });
+  await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'verify_wrong_answer', automatic: true, maxRetries: 1 });
   if (session.attempts >= session.maxAttempts) {
     clearTimeout(session.timer);
     pluginState.sessions.delete(key);
@@ -91,7 +91,7 @@ export async function handleVerifyAnswer (groupId: string, userId: string, rawMe
       { type: 'at', data: { qq: userId } },
       { type: 'text', data: { text: ` 验证失败，你已用完 ${session.maxAttempts} 次机会，已被移出群聊。` } },
     ]);
-    setTimeout(() => { void safeKick({ groupId, userId, reason: 'verify_exhausted', rejectAddRequest: false, automatic: true }); }, 1500);
+    void enqueueKickAction({ groupId, userId, reason: 'verify_exhausted', rejectAddRequest: false, automatic: true, maxRetries: 1 });
   } else {
     const remaining = session.maxAttempts - session.attempts;
     await pluginState.sendGroupMsg(groupId, [

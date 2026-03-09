@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { isAdminOrOwner, saveConfig, sendGroupScene, sendPrivateScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
+import { getActionQueueSnapshot, resetActionQueueRuntime } from './action_queue_service';
 
 export async function executeSystemCommand(input: CommandExecutionContext): Promise<boolean> {
   const { event, text, userId, groupId, ctx } = input;
@@ -40,6 +41,22 @@ export async function executeSystemCommand(input: CommandExecutionContext): Prom
         'raw_text',
         `SQLite 状态：\n迁移标记: ${status.migrated ? '已完成' : '未完成'}\n数据库: ${status.dbPath}\n表计数:\n${tableLines}`
       );
+      return true;
+    }
+    if (text === '队列状态' || text === '/队列状态') {
+      const q = getActionQueueSnapshot();
+      const dist = Object.entries(q.typeDistribution || {}).map(([k, v]) => `${k}: ${v}`).join('\n') || '无';
+      const activeDist = Object.entries(q.activeTypeDistribution || {}).map(([k, v]) => `${k}: ${v}`).join('\n') || '无';
+      await sendPrivateScene(
+        userId,
+        'raw_text',
+        `ActionQueue 状态\n\n当前队列长度: ${q.totalPending}\n执行中任务: ${q.activeWorkers}\n\n最近1分钟:\n执行动作: ${q.lastMinute.executed}\n丢弃动作: ${q.lastMinute.dropped}\n速率限制: ${q.lastMinute.rateLimited}\n重试次数: ${q.lastMinute.retried}\n超时次数: ${q.lastMinute.timeout}\n\n累计统计:\n执行动作: ${q.stats.queueExecuted}\n丢弃动作: ${q.stats.queueDropped}\n速率限制: ${q.stats.queueRateLimited}\n重试次数: ${q.stats.queueRetried}\n超时次数: ${q.stats.timeoutCount}\n\n队列类型分布:\n${dist}\n\n执行中类型分布:\n${activeDist}`
+      );
+      return true;
+    }
+    if (text === '队列重置' || text === '/队列重置') {
+      const result = resetActionQueueRuntime();
+      await sendPrivateScene(userId, 'action_success', `队列已重置，清理待执行任务 ${result.cleared} 条，当前执行中 ${result.activeWorkers} 条`);
       return true;
     }
     if (text.startsWith('多群广播 ')) {
@@ -86,11 +103,14 @@ export async function executeSystemCommand(input: CommandExecutionContext): Prom
     const rss = (mem.rss / 1024 / 1024).toFixed(2);
     const heap = (mem.heapUsed / 1024 / 1024).toFixed(2);
     const cacheStats = `Msg: ${pluginState.msgCache.size} | Spam: ${pluginState.spamCache.size} | Admin: ${pluginState.adminCache.size}`;
+    const actionQueue = getActionQueueSnapshot();
     const status = `🤖 运行状态
 ⏱️ 运行时长：${h}小时${m}分${s}秒
 📨 处理消息：${pluginState.msgCount} 条
 💾 内存占用：RSS ${rss}MB / Heap ${heap}MB
 📦 缓存对象：${cacheStats}
+⚙️ 动作队列：待执行 ${actionQueue.totalPending} / 工作中 ${actionQueue.activeWorkers}
+📉 队列一分钟：执行${actionQueue.lastMinute.executed} 丢弃${actionQueue.lastMinute.dropped} 限流${actionQueue.lastMinute.rateLimited} 重试${actionQueue.lastMinute.retried} 超时${actionQueue.lastMinute.timeout}
 🛡️ 当前版本：v${pluginState.version}
 👥 授权群数：${Object.keys(pluginState.config.licenses || {}).length}`;
     await sendGroupScene(groupId, 'raw_text', status);

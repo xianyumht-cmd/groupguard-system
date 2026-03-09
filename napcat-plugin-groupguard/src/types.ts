@@ -223,6 +223,27 @@ export interface GroupGuardSettings {
   replyPersonaByScene?: Record<string, ReplyPersona>;
   /** 场景模板库 */
   replySceneTemplates?: ReplySceneTemplateMap;
+  actionQueueConcurrency?: number;
+  actionTimeoutMs?: number;
+  maxActionQueueSizeGlobal?: number;
+  maxActionQueueSizePerGroup?: number;
+  actionDedupSeconds?: number;
+  maxKickPerMinute?: number;
+  maxBanPerMinute?: number;
+  maxRecallPerMinute?: number;
+  maxMiscPerMinute?: number;
+  recallDelayMinSeconds?: number;
+  recallDelayMaxSeconds?: number;
+  banDelayMinSeconds?: number;
+  banDelayMaxSeconds?: number;
+  kickDelayMinSeconds?: number;
+  kickDelayMaxSeconds?: number;
+  miscDelayMinSeconds?: number;
+  miscDelayMaxSeconds?: number;
+  blacklistAction?: 'recall' | 'ban' | 'kick';
+  blacklistBanMinutes?: number;
+  blacklistKickRejectAddRequest?: boolean;
+  blacklistCheckBeforeCommand?: boolean;
 }
 
 export type ReplyPersona = 'formal' | 'friendly' | 'strict' | 'humor' | 'professional' | 'gentle';
