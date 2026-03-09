@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "updateTime": "2026-03-09T14:43:19Z",
+  "plugins": [
+    {
+      "id": "napcat-plugin-groupguard",
+      "name": "群管插件",
+      "version": "1.2.0",
+      "description": "群管插件：自动通过入群申请，新成员数学验证，超时或答错踢出",
+      "author": "冷曦",
+      "homepage": "",
+      "downloadUrl": "https://github.com/xianyumht-cmd/my-napcat-sys/releases/download/plugins/napcat-plugin-groupguard.zip",
+      "tags": [
+        "群管",
+        "工具"
+      ],
+      "minVersion": "4.14.0"
+    }
+  ]
+}
