@@ -239,14 +239,19 @@ class PluginState {
   }
 
   private computeSelfRecallDelayMs(settings: GroupGuardSettings): number {
-    const policy = settings?.selfRecall;
-    const enabledByPolicy = policy ? policy.enabled === true : false;
-    const enabled = enabledByPolicy || settings?.autoRecallSelf === true;
+    const globalSettings = this.getGlobalSettings();
+    const localPolicy = settings?.selfRecall;
+    const globalPolicy = globalSettings?.selfRecall;
+    const localEnabled = (localPolicy ? localPolicy.enabled === true : false) || settings?.autoRecallSelf === true;
+    const globalEnabled = (globalPolicy ? globalPolicy.enabled === true : false) || globalSettings?.autoRecallSelf === true;
+    const enabled = localEnabled || globalEnabled;
     if (!enabled) return -1;
+    const policy = localEnabled ? localPolicy : globalPolicy;
+    const delaySeed = Number((localEnabled ? settings?.autoRecallSelfDelay : globalSettings?.autoRecallSelfDelay) ?? 60);
     const mode = policy?.mode === 'random' ? 'random' : 'fixed';
-    const fixedDelayMs = Math.max(0, Number(policy?.fixedDelay ?? settings?.autoRecallSelfDelay ?? 60)) * 1000;
-    const minDelayMs = Math.max(0, Number(policy?.minDelay ?? Math.max(0, (Number(settings?.autoRecallSelfDelay ?? 60) - 15)))) * 1000;
-    const maxDelayMs = Math.max(minDelayMs, Number(policy?.maxDelay ?? Math.max(Number(settings?.autoRecallSelfDelay ?? 60), Number(settings?.autoRecallSelfDelay ?? 60) + 30))) * 1000;
+    const fixedDelayMs = Math.max(0, Number(policy?.fixedDelay ?? delaySeed)) * 1000;
+    const minDelayMs = Math.max(0, Number(policy?.minDelay ?? Math.max(0, delaySeed - 15))) * 1000;
+    const maxDelayMs = Math.max(minDelayMs, Number(policy?.maxDelay ?? Math.max(delaySeed, delaySeed + 30))) * 1000;
     const jitterMs = Math.max(0, Number(policy?.jitter ?? 0)) * 1000;
     const base = mode === 'random' ? this.randomBetweenMs(minDelayMs, maxDelayMs) : fixedDelayMs;
     return base + this.randomBetweenMs(0, jitterMs);

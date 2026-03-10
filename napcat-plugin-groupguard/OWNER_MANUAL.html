@@ -1,356 +1,130 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GroupGuard 开发者/老板手册</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#3B82F6',
-                        secondary: '#64748B',
-                        bg: '#F8FAFC',
-                        surface: '#FFFFFF'
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        .code-block { background: #1E293B; color: #E2E8F0; padding: 1rem; border-radius: 0.5rem; font-family: 'Fira Code', monospace; overflow-x: auto; }
-        .cmd-tag { background: #DBEAFE; color: #1E40AF; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-family: monospace; font-size: 0.9em; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GroupGuard 主人手册</title>
+  <style>
+    :root { --bg:#0a1222; --card:#121f37; --line:#2a4572; --text:#e8f0ff; --sub:#a4b8dd; --head:#1a3760; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Segoe UI, Arial, sans-serif; }
+    .wrap { max-width:1260px; margin:0 auto; padding:24px; }
+    h1 { margin:0 0 8px; font-size:30px; }
+    h2 { margin:28px 0 12px; font-size:22px; }
+    p { color:var(--sub); line-height:1.75; margin:6px 0; }
+    .tip { background:#10233f; border:1px solid #2d4f85; border-radius:10px; padding:10px 12px; margin:12px 0; }
+    .tag { display:inline-block; margin-right:8px; padding:2px 10px; border-radius:999px; border:1px solid #426fb7; background:#18335c; color:#d6e8ff; font-size:12px; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:14px; }
+    th, td { border:1px solid var(--line); padding:10px; vertical-align:top; }
+    th { background:var(--head); text-align:left; }
+    td { background:var(--card); line-height:1.6; }
+    code { color:#a9d5ff; }
+  </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
-
-    <div class="max-w-5xl mx-auto px-4 py-8">
-        <!-- Header -->
-        <header class="mb-10 text-center">
-            <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl shadow-lg mb-4">
-                <span class="text-3xl">🛡️</span>
-            </div>
-            <h1 class="text-3xl font-bold text-slate-900">GroupGuard 开发者手册</h1>
-            <p class="text-slate-500 mt-2">v1.1.0 | 商业版群管系统</p>
-        </header>
-
-        <!-- Navigation -->
-        <nav class="flex justify-center gap-4 mb-8 sticky top-0 bg-slate-50/90 backdrop-blur py-4 z-10">
-            <a href="#deploy" class="px-4 py-2 rounded-lg hover:bg-white hover:shadow transition text-slate-600 font-medium">部署运维</a>
-            <a href="#auth" class="px-4 py-2 rounded-lg hover:bg-white hover:shadow transition text-slate-600 font-medium">授权管理</a>
-            <a href="#pricing" class="px-4 py-2 rounded-lg hover:bg-white hover:shadow transition text-slate-600 font-medium">定价策略</a>
-            <a href="#risk" class="px-4 py-2 rounded-lg hover:bg-white hover:shadow transition text-slate-600 font-medium">全局风控</a>
-            <a href="#global" class="px-4 py-2 rounded-lg hover:bg-white hover:shadow transition text-slate-600 font-medium">全局黑白名单</a>
-        </nav>
-
-        <!-- Content -->
-        <div class="grid gap-8">
-
-            <!-- Deployment -->
-            <section id="deploy" class="bg-white rounded-xl shadow-sm p-6 border border-slate-100">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span class="w-1 h-6 bg-blue-600 rounded-full"></span>
-                    部署与运维
-                </h2>
-                <div class="space-y-4">
-                    <div>
-                        <h3 class="font-semibold text-slate-700 mb-2">1. 基础环境</h3>
-                        <p class="text-sm text-slate-500 mb-2">本插件基于 NapCat (OneBot11) 运行。推荐使用 Docker 部署。</p>
-                        <div class="code-block">
-                            docker run -d -e ACCOUNT=123456789 -p 3000:3000 -p 3001:3001 --name napcat mlikiowa/napcat-docker:latest
-                        </div>
-                    </div>
-                    <div>
-                        <h3 class="font-semibold text-slate-700 mb-2">2. 安装插件</h3>
-                        <p class="text-sm text-slate-500 mb-2">将编译好的 <code>napcat-plugin-groupguard.zip</code> 解压到 NapCat 的 <code>plugins</code> 目录。</p>
-                    </div>
-                    <div>
-                        <h3 class="font-semibold text-slate-700 mb-2">3. 初始配置</h3>
-                        <p class="text-sm text-slate-500 mb-2">首次运行后，请修改 <code>config/napcat-plugin-groupguard/config.json</code> 或使用 WebUI。</p>
-                        <ul class="list-disc list-inside text-sm text-slate-600 ml-2">
-                            <li>设置 <code>ownerQQs</code>：您的QQ号（最高权限）。</li>
-                            <li>设置 <code>licenseKey</code>：商业授权密钥（可选）。</li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Auth Management -->
-            <section id="auth" class="bg-white rounded-xl shadow-sm p-6 border border-slate-100">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span class="w-1 h-6 bg-green-600 rounded-full"></span>
-                    商业授权管理
-                </h2>
-                <p class="text-sm text-slate-500 mb-4">所有授权指令仅限 <span class="font-bold text-slate-700">主人QQ</span> 通过 <span class="font-bold text-slate-700">私聊</span> 机器人执行。</p>
-                
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-left">
-                        <thead class="bg-slate-50 text-slate-500">
-                            <tr>
-                                <th class="px-4 py-2">指令</th>
-                                <th class="px-4 py-2">说明</th>
-                                <th class="px-4 py-2">示例</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-blue-600">授权 &lt;群号&gt; &lt;天数&gt;</td>
-                                <td class="px-4 py-3">为指定群开启授权（专业版）</td>
-                                <td class="px-4 py-3 text-slate-500">授权 123456 30</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-blue-600">授权 &lt;群号&gt; 永久</td>
-                                <td class="px-4 py-3">为指定群开启永久授权（企业版）</td>
-                                <td class="px-4 py-3 text-slate-500">授权 123456 永久</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-blue-600">回收授权 &lt;群号&gt;</td>
-                                <td class="px-4 py-3">立即停止指定群的服务</td>
-                                <td class="px-4 py-3 text-slate-500">回收授权 123456</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-blue-600">查询授权 &lt;群号&gt;</td>
-                                <td class="px-4 py-3">查看群授权状态及剩余时间</td>
-                                <td class="px-4 py-3 text-slate-500">查询授权 123456</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Pricing Strategy -->
-            <section id="pricing" class="bg-white rounded-xl shadow-sm p-6 border border-slate-100">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span class="w-1 h-6 bg-yellow-500 rounded-full"></span>
-                    商业化运营指南 (生产环境)
-                </h2>
-                
-                <div class="mb-8 p-4 bg-yellow-50 rounded-lg border border-yellow-100">
-                    <h3 class="font-bold text-yellow-800 mb-2">💰 成本与利润分析 (基于机顶盒架构)</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                            <span class="block text-slate-500 text-xs">硬件成本 (一次性)</span>
-                            <span class="font-bold text-slate-700">¥50 - ¥100</span>
-                            <span class="block text-xs text-slate-400">魔改 TV Box (S905/RK3399)</span>
-                        </div>
-                        <div>
-                            <span class="block text-slate-500 text-xs">电力成本 (每年)</span>
-                            <span class="font-bold text-slate-700">≈ ¥25</span>
-                            <span class="block text-xs text-slate-400">5W 功耗 / 44度电</span>
-                        </div>
-                        <div>
-                            <span class="block text-slate-500 text-xs">网络成本</span>
-                            <span class="font-bold text-slate-700">¥0</span>
-                            <span class="block text-xs text-slate-400">复用家用宽带</span>
-                        </div>
-                        <div>
-                            <span class="block text-slate-500 text-xs">单机承载力</span>
-                            <span class="font-bold text-blue-600">50-100 群</span>
-                            <span class="block text-xs text-slate-400">高并发 Node.js</span>
-                        </div>
-                    </div>
-                    <p class="mt-3 text-xs text-yellow-700 font-medium">
-                        📈 盈利模型：仅需售出 1 个标准群年费 (¥99)，即可覆盖硬件投入与首年电费。后续收入均为纯利润。
-                    </p>
-                </div>
-
-                <h3 class="font-bold text-slate-700 mb-4">定价策略表 (全功能无限制)</h3>
-                <div class="overflow-x-auto rounded-lg border border-slate-200">
-                    <table class="w-full text-sm text-left">
-                        <thead class="bg-slate-50 text-slate-600 font-semibold">
-                            <tr>
-                                <th class="px-4 py-3">群规模</th>
-                                <th class="px-4 py-3">人数限制</th>
-                                <th class="px-4 py-3">月付 (基础)</th>
-                                <th class="px-4 py-3">季付 (9折)</th>
-                                <th class="px-4 py-3 text-blue-600">年付 (8折/推荐)</th>
-                                <th class="px-4 py-3">适用场景</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <tr class="hover:bg-slate-50 transition">
-                                <td class="px-4 py-3 font-medium">微型群</td>
-                                <td class="px-4 py-3 text-slate-500">&lt; 100 人</td>
-                                <td class="px-4 py-3 font-mono">¥1 / 免费</td>
-                                <td class="px-4 py-3 font-mono">¥15</td>
-                                <td class="px-4 py-3 font-mono font-bold text-blue-600">¥50</td>
-                                <td class="px-4 py-3 text-xs text-slate-500">趋近于免费，前期引流</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50 transition">
-                                <td class="px-4 py-3 font-medium">标准群</td>
-                                <td class="px-4 py-3 text-slate-500">100 - 500 人</td>
-                                <td class="px-4 py-3 font-mono">¥10</td>
-                                <td class="px-4 py-3 font-mono">¥27</td>
-                                <td class="px-4 py-3 font-mono font-bold text-blue-600">¥99</td>
-                                <td class="px-4 py-3 text-xs text-slate-500">高性价比，主力营收</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50 transition">
-                                <td class="px-4 py-3 font-medium">大型群</td>
-                                <td class="px-4 py-3 text-slate-500">500 - 1000 人</td>
-                                <td class="px-4 py-3 font-mono">¥20</td>
-                                <td class="px-4 py-3 font-mono">¥54</td>
-                                <td class="px-4 py-3 font-mono font-bold text-blue-600">¥199</td>
-                                <td class="px-4 py-3 text-xs text-slate-500">高活跃社区，资源消耗适中</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50 transition">
-                                <td class="px-4 py-3 font-medium">超大群</td>
-                                <td class="px-4 py-3 text-slate-500">2k / 3k / 4k</td>
-                                <td class="px-4 py-3 font-mono">标准 x2/x3/x4</td>
-                                <td class="px-4 py-3 font-mono">面议</td>
-                                <td class="px-4 py-3 font-mono font-bold text-blue-600">面议</td>
-                                <td class="px-4 py-3 text-xs text-slate-500">核心大客户，提供 VIP 专属服务</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
-                    <h4 class="font-bold text-blue-800 mb-2">🎁 新增高价值功能：LOL 查封号 & 隐藏战绩</h4>
-                    <p class="text-sm text-blue-700 mb-2">
-                        集成《英雄联盟》官方封号查询及隐藏战绩查询接口，为游戏类社群提供刚需工具。
-                    </p>
-                    <ul class="list-disc list-inside text-xs text-blue-600">
-                        <li><strong>查封号</strong>：免费，包含在所有版本中。</li>
-                        <li><strong>查隐藏</strong>：需配置 Token，建议作为付费增值服务。</li>
-                    </ul>
-                </div>
-                
-                <div class="mt-6 text-sm text-slate-500">
-                    <p class="mb-2"><span class="font-bold text-slate-700">营销建议：</span></p>
-                    <ul class="list-disc list-inside space-y-1 ml-2">
-                        <li><span class="font-medium text-slate-700">首月免费/低价体验</span>：对于微型群（&lt;100人），建议完全免费或仅收象征性费用（如1元/月），以快速扩大市场占有率。</li>
-                        <li><span class="font-medium text-slate-700">年费打包</span>：强烈推荐用户订阅年费，虽然折扣较大（8折），但能锁定用户长期使用，减少流失率。</li>
-                        <li><span class="font-medium text-slate-700">多群优惠</span>：同一群主购买3个以上群授权，可额外给予 9折优惠。</li>
-                    </ul>
-                </div>
-            </section>
-            <section id="risk" class="bg-white rounded-xl shadow-sm p-6 border border-slate-100">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span class="w-1 h-6 bg-red-600 rounded-full"></span>
-                    全局风控系统 (Anti-Ban)
-                </h2>
-                <p class="text-sm text-slate-500 mb-4">
-                    风控设置是 <span class="font-bold">全局生效</span> 的，所有群都会应用此策略。
-                    <br>仅限主人私聊设置。
-                </p>
-
-                <div class="grid md:grid-cols-2 gap-6">
-                    <div class="border rounded-lg p-4 bg-slate-50">
-                        <h3 class="font-bold text-slate-700 mb-2">随机后缀 (Random Suffix)</h3>
-                        <p class="text-xs text-slate-500 mb-2">在所有发出的消息末尾追加不可见字符，防止内容重复被检测。</p>
-                        <div class="space-y-1">
-                            <div class="cmd-tag">开启随机后缀</div>
-                            <div class="cmd-tag">关闭随机后缀</div>
-                        </div>
-                    </div>
-                    <div class="border rounded-lg p-4 bg-slate-50">
-                        <h3 class="font-bold text-slate-700 mb-2">随机延迟 (Random Delay)</h3>
-                        <p class="text-xs text-slate-500 mb-2">发送消息前随机等待一段时间，模拟真人操作。</p>
-                        <div class="space-y-1">
-                            <div class="cmd-tag">设置随机延迟 &lt;最小ms&gt; &lt;最大ms&gt;</div>
-                            <p class="text-xs text-slate-400">例: 设置随机延迟 500 1500</p>
-                        </div>
-                    </div>
-                    <div class="border rounded-lg p-4 bg-slate-50">
-                        <h3 class="font-bold text-slate-700 mb-2">自身撤回 (Auto Recall Self)</h3>
-                        <p class="text-xs text-slate-500 mb-2">机器人发出的消息在指定时间后自动撤回，减少历史记录留存。</p>
-                        <div class="space-y-1">
-                            <div class="cmd-tag">开启全局自身撤回</div>
-                            <div class="cmd-tag">关闭全局自身撤回</div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- API Integrations -->
-            <section id="api" class="bg-white rounded-xl shadow-sm p-6 border border-slate-100">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span class="w-1 h-6 bg-yellow-500 rounded-full"></span>
-                    第三方 API 配置
-                </h2>
-                <div class="space-y-4">
-                    <div>
-                        <h3 class="font-bold text-slate-700 mb-2">LOL 隐藏战绩查询 Token</h3>
-                        <p class="text-xs text-slate-500 mb-2">配置 lolso1.com 的 Token 以启用隐藏战绩查询功能。</p>
-                        <div class="cmd-tag">设置loltoken &lt;Token&gt;</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Global Management -->
-            <section id="global" class="bg-white rounded-xl shadow-sm p-6 border border-slate-100">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span class="w-1 h-6 bg-purple-600 rounded-full"></span>
-                    全局黑白名单
-                </h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-left">
-                        <tbody class="divide-y divide-slate-100">
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-purple-600">拉黑 &lt;QQ&gt;</td>
-                                <td class="px-4 py-3">全局拉黑，该用户在所有群无法触发指令</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-purple-600">取消拉黑 &lt;QQ&gt;</td>
-                                <td class="px-4 py-3">解除全局拉黑</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-purple-600">白名单 &lt;QQ&gt;</td>
-                                <td class="px-4 py-3">全局白名单，豁免所有检测（刷屏、违禁词等）</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-purple-600">取消白名单 &lt;QQ&gt;</td>
-                                <td class="px-4 py-3">解除全局白名单</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-purple-600">添加全局违禁词 &lt;词&gt;</td>
-                                <td class="px-4 py-3">设置所有群通用的违禁词</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-purple-600">添加全局拒绝词 &lt;词&gt;</td>
-                                <td class="px-4 py-3">设置所有群通用的入群拒绝关键词</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Advanced Features -->
-            <section id="advanced" class="bg-white rounded-xl shadow-sm p-6 border border-slate-100">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span class="w-1 h-6 bg-orange-600 rounded-full"></span>
-                    高级功能 (仅限主人)
-                </h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-left">
-                        <tbody class="divide-y divide-slate-100">
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-orange-600">多群广播 &lt;内容&gt;</td>
-                                <td class="px-4 py-3">向所有已授权的群发送通知消息（自动延时防风控）</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-orange-600">设置权限缓存 &lt;秒数&gt;</td>
-                                <td class="px-4 py-3">设置管理员权限缓存时间（0为关闭），默认600秒</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 py-3 font-mono text-orange-600">开启/关闭调试</td>
-                                <td class="px-4 py-3">开启或关闭详细日志输出（Debug Mode）</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-        </div>
-        
-        <footer class="mt-12 text-center text-slate-400 text-sm">
-            &copy; 2024 GroupGuard System. All Rights Reserved.
-        </footer>
+<body>
+  <div class="wrap">
+    <h1>GroupGuard 主人手册</h1>
+    <p>本手册覆盖全部“主人专属指令”，按私聊与群聊拆分，便于日常运维、授权经营与全局风控管理。</p>
+    <div class="tip">
+      <span class="tag">仅主人可执行</span>
+      <span class="tag">私聊高权限指令</span>
+      <span class="tag">群内主人专属指令</span>
     </div>
 
+    <h2>1. 私聊：授权管理</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>作用</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>授权 &lt;群号&gt; &lt;天数/永久&gt;</code></td><td>为指定群开通授权（天数=专业版，永久=企业版）</td><td><code>授权 123456 30</code> / <code>授权 123456 永久</code></td></tr>
+        <tr><td><code>回收授权 &lt;群号&gt;</code></td><td>回收指定群授权</td><td><code>回收授权 123456</code></td></tr>
+        <tr><td><code>查询授权 &lt;群号&gt;</code></td><td>查看指定群授权等级与剩余时长</td><td><code>查询授权 123456</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>2. 私聊：队列与存储运维</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>作用</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>查看SQLite状态</code> / <code>查看存储状态</code></td><td>查看数据库迁移状态、路径、表计数</td><td><code>查看SQLite状态</code></td></tr>
+        <tr><td><code>队列状态</code> / <code>/队列状态</code></td><td>查看 ActionQueue 当前队列、一分钟统计、累计统计</td><td><code>队列状态</code></td></tr>
+        <tr><td><code>队列重置</code> / <code>/队列重置</code></td><td>重置队列并清理待执行任务</td><td><code>队列重置</code></td></tr>
+        <tr><td><code>队列日志</code> / <code>队列日志 50</code> / <code>/队列日志 20</code></td><td>查看最近队列日志（1-100条）</td><td><code>队列日志 20</code></td></tr>
+        <tr><td><code>多群广播 &lt;内容&gt;</code></td><td>向所有已授权群广播消息</td><td><code>多群广播 今晚20点维护</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>3. 私聊：全局风控与发送策略</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>作用</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>开启调试</code> / <code>关闭调试</code></td><td>调试日志开关</td><td><code>开启调试</code></td></tr>
+        <tr><td><code>开启随机后缀</code> / <code>关闭随机后缀</code></td><td>回复文本随机后缀开关</td><td><code>开启随机后缀</code></td></tr>
+        <tr><td><code>开启纯文本回复</code> / <code>关闭纯文本回复</code></td><td>模板包装开关</td><td><code>开启纯文本回复</code></td></tr>
+        <tr><td><code>开启全局自身撤回</code> / <code>关闭全局自身撤回</code></td><td>全局机器人消息自动撤回开关</td><td><code>开启全局自身撤回</code></td></tr>
+        <tr><td><code>开启撤回管理员消息</code> / <code>关闭撤回管理员消息</code></td><td>是否允许撤回管理员消息</td><td><code>关闭撤回管理员消息</code></td></tr>
+        <tr><td><code>开启撤回群主消息</code> / <code>关闭撤回群主消息</code></td><td>是否允许撤回群主消息</td><td><code>关闭撤回群主消息</code></td></tr>
+        <tr><td><code>开启管理员保护</code> / <code>关闭管理员保护</code></td><td>管理员保护开关</td><td><code>开启管理员保护</code></td></tr>
+        <tr><td><code>开启群主保护</code> / <code>关闭群主保护</code></td><td>群主保护开关</td><td><code>开启群主保护</code></td></tr>
+        <tr><td><code>开启自动风控收敛</code> / <code>关闭自动风控收敛</code></td><td>自动风控收敛开关</td><td><code>开启自动风控收敛</code></td></tr>
+        <tr><td><code>设置随机延迟 &lt;最小ms&gt; &lt;最大ms&gt;</code></td><td>发送随机延迟</td><td><code>设置随机延迟 100 800</code></td></tr>
+        <tr><td><code>设置发送队列模式 全局/分群</code></td><td>设置队列模型</td><td><code>设置发送队列模式 全局</code></td></tr>
+        <tr><td><code>设置发送并发 &lt;1-20&gt;</code></td><td>设置发送并发</td><td><code>设置发送并发 4</code></td></tr>
+        <tr><td><code>设置全局限流 &lt;条/分钟&gt;</code></td><td>全局限流阈值</td><td><code>设置全局限流 180</code></td></tr>
+        <tr><td><code>设置问答冷却 &lt;秒&gt;</code></td><td>问答冷却</td><td><code>设置问答冷却 30</code></td></tr>
+        <tr><td><code>设置用户冷却 &lt;秒&gt;</code></td><td>同用户冷却</td><td><code>设置用户冷却 12</code></td></tr>
+        <tr><td><code>设置分级冷却 &lt;低&gt; &lt;中&gt; &lt;高&gt;</code></td><td>分层冷却策略</td><td><code>设置分级冷却 15 30 60</code></td></tr>
+        <tr><td><code>设置群熔断 &lt;窗口秒&gt; &lt;阈值&gt; &lt;熔断秒&gt;</code></td><td>群级熔断策略</td><td><code>设置群熔断 60 45 90</code></td></tr>
+        <tr><td><code>设置回复概率 &lt;0-100&gt;</code></td><td>自动回复命中率</td><td><code>设置回复概率 80</code></td></tr>
+        <tr><td><code>设置回复模板 模板1|模板2</code></td><td>模板池（模板需包含 <code>{msg}</code>）</td><td><code>设置回复模板 {msg}|收到：{msg}</code></td></tr>
+        <tr><td><code>设置动作限流 &lt;窗口秒&gt; &lt;阈值&gt;</code></td><td>动作执行限流</td><td><code>设置动作限流 60 30</code></td></tr>
+        <tr><td><code>设置撤回去重 &lt;秒&gt;</code></td><td>撤回去重窗口</td><td><code>设置撤回去重 20</code></td></tr>
+        <tr><td><code>设置风险阈值 &lt;预警分&gt; &lt;保护分&gt; &lt;衰减秒&gt;</code></td><td>风控分阈值</td><td><code>设置风险阈值 3 8 300</code></td></tr>
+        <tr><td><code>设置处罚速率 &lt;踢/分&gt; &lt;禁言/分&gt; &lt;撤回/分&gt;</code></td><td>处罚节奏控制</td><td><code>设置处罚速率 3 5 60</code></td></tr>
+        <tr><td><code>设置动作延迟 &lt;踢最小秒&gt; &lt;踢最大秒&gt; &lt;撤回最小秒&gt; &lt;撤回最大秒&gt;</code></td><td>动作延迟区间</td><td><code>设置动作延迟 5 20 1 3</code></td></tr>
+        <tr><td><code>设置黑名单动作 撤回/禁言/踢出/踢出并拉黑</code></td><td>黑名单命中动作</td><td><code>设置黑名单动作 踢出并拉黑</code></td></tr>
+        <tr><td><code>设置黑名单禁言 &lt;分钟&gt;</code></td><td>黑名单禁言时长</td><td><code>设置黑名单禁言 30</code></td></tr>
+        <tr><td><code>开启黑名单前置</code> / <code>关闭黑名单前置</code></td><td>黑名单检测执行时机</td><td><code>开启黑名单前置</code></td></tr>
+        <tr><td><code>查看发送策略</code></td><td>查看当前全局策略快照</td><td><code>查看发送策略</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>4. 群聊：主人专属名单与关键词</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>作用</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>拉黑@某人</code> / <code>取消拉黑@某人</code></td><td>管理全局黑名单</td><td><code>拉黑 @123456</code></td></tr>
+        <tr><td><code>白名单@某人</code> / <code>取消白名单@某人</code></td><td>管理全局白名单</td><td><code>白名单 @123456</code></td></tr>
+        <tr><td><code>添加全局违禁词 词</code> / <code>删除全局违禁词 词</code></td><td>管理全局违禁词</td><td><code>添加全局违禁词 赌博</code></td></tr>
+        <tr><td><code>添加全局拒绝词 词</code> / <code>删除全局拒绝词 词</code></td><td>管理全局入群拒绝词</td><td><code>添加全局拒绝词 引流</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>5. 群聊：主人专属配置与危险操作</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>作用</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>设置封号主接口 URL</code></td><td>设置查封号主接口</td><td><code>设置封号主接口 https://example.com/ban/{qq}</code></td></tr>
+        <tr><td><code>设置封号接口配置 JSON</code></td><td>一次性设置主/备接口</td><td><code>设置封号接口配置 {"primary":"https://a.com/{qq}","backups":["https://b.com/{qq}"]}</code></td></tr>
+        <tr><td><code>删除封号备用接口 地址或序号</code></td><td>删除备选接口</td><td><code>删除封号备用接口 1</code></td></tr>
+        <tr><td><code>封号接口列表</code></td><td>查看主/备接口列表</td><td><code>封号接口列表</code></td></tr>
+        <tr><td><code>设置lolurl URL</code> / <code>设置lolkey KEY</code> / <code>设置loltoken TOKEN</code></td><td>配置 LOL 查询接口参数</td><td><code>设置loltoken eyJ...</code></td></tr>
+        <tr><td><code>清空群配置</code> / <code>确认清空群配置</code></td><td>清空当前群配置与数据</td><td><code>确认清空群配置</code></td></tr>
+      </tbody>
+    </table>
+
+    <div class="tip" style="margin-top:18px">
+      主人私聊入口建议仅本人使用，避免他人接触高权限指令。执行危险操作前，建议先备份配置目录。
+    </div>
+  </div>
 </body>
 </html>

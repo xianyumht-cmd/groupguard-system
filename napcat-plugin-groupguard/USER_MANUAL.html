@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GroupGuard 用户手册</title>
+  <style>
+    :root { --bg:#0b1324; --card:#111c33; --line:#23385f; --text:#e8f0ff; --sub:#9fb3d9; --head:#17345f; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Segoe UI, Arial, sans-serif; }
+    .wrap { max-width:1180px; margin:0 auto; padding:24px; }
+    h1 { margin:0 0 8px; font-size:30px; }
+    h2 { margin:28px 0 12px; font-size:22px; }
+    p { color:var(--sub); line-height:1.75; margin:6px 0; }
+    .tip { background:#10233f; border:1px solid #2d4f85; border-radius:10px; padding:10px 12px; margin:12px 0; }
+    .tag { display:inline-block; margin-right:8px; padding:2px 10px; border-radius:999px; border:1px solid #3c67a9; background:#15315a; color:#d3e7ff; font-size:12px; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:14px; }
+    th, td { border:1px solid var(--line); padding:10px; vertical-align:top; }
+    th { background:var(--head); text-align:left; }
+    td { background:var(--card); line-height:1.6; }
+    code { color:#9fceff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>GroupGuard 用户手册</h1>
+    <p>本手册仅包含“用户可执行指令”，即成员可用与管理员可用指令；不包含任何主人专属操作指令。</p>
+    <div class="tip">
+      <span class="tag">成员可用</span>
+      <span class="tag">管理员可用</span>
+      <span class="tag">群聊指令为主</span>
+    </div>
+
+    <h2>1. 授权状态与帮助</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>查询授权</code> / <code>授权状态</code> / <code>授权查询</code></td><td>成员</td><td>查询当前群授权状态</td><td><code>查询授权</code></td></tr>
+        <tr><td><code>激活 &lt;激活码&gt;</code></td><td>管理员</td><td>在群里激活授权码</td><td><code>激活 PRO-30-xxxx</code></td></tr>
+        <tr><td><code>群管帮助</code> / <code>群管菜单</code></td><td>成员</td><td>查看简版菜单</td><td><code>群管帮助</code></td></tr>
+        <tr><td><code>帮助</code> / <code>菜单</code>（私聊）</td><td>成员</td><td>查看私聊面板</td><td><code>菜单</code></td></tr>
+        <tr><td><code>运行状态</code></td><td>成员</td><td>查看插件运行信息</td><td><code>运行状态</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>2. 常规群管</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>警告 @某人</code> / <code>查看警告 @某人</code> / <code>清除警告 @某人</code></td><td>管理员</td><td>警告与警告记录管理</td><td><code>警告 @123456</code></td></tr>
+        <tr><td><code>踢出@某人</code> / <code>禁言@某人 分钟</code> / <code>解禁@某人</code></td><td>管理员</td><td>成员处罚管理</td><td><code>禁言 @123456 10</code></td></tr>
+        <tr><td><code>全体禁言</code> / <code>全体解禁</code></td><td>管理员</td><td>全员禁言开关</td><td><code>全体禁言</code></td></tr>
+        <tr><td><code>授予头衔@某人 内容</code> / <code>清除头衔@某人</code></td><td>管理员</td><td>设置或清除群头衔</td><td><code>授予头衔 @123456 核心成员</code></td></tr>
+        <tr><td><code>锁定名片@某人</code> / <code>解锁名片@某人</code> / <code>名片锁定列表</code></td><td>管理员</td><td>名片锁定管理</td><td><code>锁定名片 @123456</code></td></tr>
+        <tr><td><code>群拉黑@某人</code> / <code>群取消拉黑@某人</code> / <code>群黑名单列表</code></td><td>管理员</td><td>本群黑名单管理</td><td><code>群拉黑 @123456</code></td></tr>
+        <tr><td><code>黑名单列表</code> / <code>白名单列表</code></td><td>成员</td><td>查看全局名单</td><td><code>黑名单列表</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>3. 防护与风控</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>风控设置</code> / <code>安全设置</code></td><td>成员</td><td>查看风控菜单</td><td><code>风控设置</code></td></tr>
+        <tr><td><code>开启防撤回</code> / <code>关闭防撤回</code> / <code>防撤回列表</code></td><td>管理员</td><td>防撤回开关与列表</td><td><code>开启防撤回</code></td></tr>
+        <tr><td><code>开启回应表情</code> / <code>关闭回应表情</code></td><td>管理员</td><td>机器人表情回应开关</td><td><code>开启回应表情</code></td></tr>
+        <tr><td><code>开启自身撤回 秒</code> / <code>关闭自身撤回</code></td><td>管理员</td><td>群内机器人消息自动撤回</td><td><code>开启自身撤回 60</code></td></tr>
+        <tr><td><code>开启刷屏检测</code> / <code>关闭刷屏检测</code></td><td>管理员</td><td>刷屏检测开关</td><td><code>开启刷屏检测</code></td></tr>
+        <tr><td><code>设置刷屏窗口 秒</code> / <code>设置刷屏阈值 次</code> / <code>设置刷屏禁言 分钟</code></td><td>管理员</td><td>刷屏处罚参数</td><td><code>设置刷屏阈值 10</code></td></tr>
+        <tr><td><code>设置复读阈值 次数</code></td><td>管理员</td><td>复读触发阈值</td><td><code>设置复读阈值 3</code></td></tr>
+        <tr><td><code>设置权限缓存 秒</code></td><td>管理员</td><td>管理员权限缓存时间</td><td><code>设置权限缓存 60</code></td></tr>
+        <tr><td><code>开启宵禁 开始 结束</code> / <code>关闭宵禁</code></td><td>管理员</td><td>夜间全员禁言时段</td><td><code>开启宵禁 00:00 06:00</code></td></tr>
+        <tr><td><code>针对@某人</code> / <code>取消针对@某人</code> / <code>针对列表</code> / <code>清除针对</code></td><td>管理员</td><td>针对用户自动撤回管理</td><td><code>针对 @123456</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>4. 入群与消息过滤</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>开启入群验证</code> / <code>关闭入群验证</code></td><td>管理员</td><td>入群答题验证开关</td><td><code>开启入群验证</code></td></tr>
+        <tr><td><code>开启自动审批</code> / <code>关闭自动审批</code></td><td>管理员</td><td>自动审批入群申请开关</td><td><code>开启自动审批</code></td></tr>
+        <tr><td><code>开启退群拉黑</code> / <code>关闭退群拉黑</code></td><td>管理员</td><td>成员退群后自动拉黑</td><td><code>开启退群拉黑</code></td></tr>
+        <tr><td><code>设置入群暗号 内容</code> / <code>设置暗号 内容</code></td><td>管理员</td><td>设置入群暗号</td><td><code>设置入群暗号 我已阅读群规</code></td></tr>
+        <tr><td><code>关闭入群暗号</code> / <code>开启暗号回落</code> / <code>关闭暗号回落</code></td><td>管理员</td><td>暗号与回落策略</td><td><code>开启暗号回落</code></td></tr>
+        <tr><td><code>屏蔽 类型</code> / <code>取消屏蔽 类型</code></td><td>管理员</td><td>支持类型：图片、视频、语音、链接、二维码、名片、小程序、转发</td><td><code>屏蔽 链接</code></td></tr>
+        <tr><td><code>开启二维码撤回</code> / <code>关闭二维码撤回</code></td><td>管理员</td><td>二维码专用开关</td><td><code>开启二维码撤回</code></td></tr>
+        <tr><td><code>设置欢迎词 内容</code></td><td>管理员</td><td>设置新人欢迎词（支持 <code>{user}</code> 与 <code>{group}</code>）</td><td><code>设置欢迎词 欢迎 {user} 加入本群</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>5. 问答与关键词</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>问答列表</code></td><td>成员</td><td>查看当前问答列表</td><td><code>问答列表</code></td></tr>
+        <tr><td><code>精确问XX答YY</code> / <code>模糊问XX答YY</code> / <code>添加正则问答 表达式|回复</code></td><td>管理员</td><td>新增问答规则</td><td><code>精确问帮助答请看公告</code></td></tr>
+        <tr><td><code>删除问答 关键词</code> / <code>删问关键词</code></td><td>管理员</td><td>删除问答规则</td><td><code>删除问答 帮助</code></td></tr>
+        <tr><td><code>添加问答</code> / <code>添加模糊问答</code></td><td>管理员</td><td>旧语法，触发后会提示改用新语法</td><td><code>添加问答 帮助|请看公告</code></td></tr>
+        <tr><td><code>违禁词列表</code> / <code>拒绝词列表</code></td><td>成员</td><td>查看本群与全局关键词列表</td><td><code>违禁词列表</code></td></tr>
+        <tr><td><code>添加违禁词 词</code> / <code>删除违禁词 词</code></td><td>管理员</td><td>管理本群违禁词</td><td><code>添加违禁词 赌博</code></td></tr>
+        <tr><td><code>设置违禁词惩罚 1-4</code> / <code>设置违禁词禁言 分钟</code></td><td>管理员</td><td>配置违禁词处罚策略</td><td><code>设置违禁词惩罚 2</code></td></tr>
+        <tr><td><code>添加拒绝词 词</code> / <code>删除拒绝词 词</code></td><td>管理员</td><td>管理入群拒绝关键词</td><td><code>添加拒绝词 广告</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>6. 积分与互动</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>签到</code> / <code>签到榜</code> / <code>我的积分</code></td><td>成员</td><td>每日签到与积分查询</td><td><code>签到</code></td></tr>
+        <tr><td><code>抽奖</code> / <code>积分商城</code> / <code>商城</code> / <code>兑换 商品 [参数]</code></td><td>成员</td><td>积分消耗与兑换</td><td><code>兑换 免死金牌</code></td></tr>
+        <tr><td><code>邀请查询</code> / <code>邀请榜</code></td><td>成员</td><td>邀请统计</td><td><code>邀请榜</code></td></tr>
+        <tr><td><code>活跃统计</code></td><td>成员</td><td>查看群活跃统计转发榜单</td><td><code>活跃统计</code></td></tr>
+        <tr><td><code>开启发言奖励 积分</code> / <code>关闭发言奖励</code></td><td>管理员</td><td>设置发言奖励</td><td><code>开启发言奖励 1</code></td></tr>
+        <tr><td><code>查封号 QQ或@成员</code> / <code>查隐藏 召唤师 [大区]</code></td><td>成员</td><td>游戏查询功能</td><td><code>查封号 123456789</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>7. 定时任务与功能总开关</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>定时任务 HH:mm 内容</code> / <code>删除定时任务 ID</code> / <code>定时列表</code></td><td>成员</td><td>管理本群定时消息</td><td><code>定时任务 08:00 大家早上好</code></td></tr>
+        <tr><td><code>开启功能 名称</code> / <code>关闭功能 名称</code></td><td>管理员</td><td>支持：问答、签到、抽奖、邀请统计、活跃统计、自动同意、入群验证、刷屏检测、退群拉黑、暗号回落、管理员保护、群主保护、自动风控收敛</td><td><code>关闭功能 抽奖</code></td></tr>
+      </tbody>
+    </table>
+
+    <div class="tip" style="margin-top:18px">
+      若指令无响应，请先确认：1）机器人在群内有管理权限；2）本群已授权；3）发送者权限符合指令要求。
+    </div>
+  </div>
+</body>
+</html>
