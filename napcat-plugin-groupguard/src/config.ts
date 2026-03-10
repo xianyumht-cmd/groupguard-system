@@ -32,6 +32,7 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   signinMin: 10,
   signinMax: 50,
   invitePoints: 20,
+  inviteQueryPermission: 'all',
   lotteryCost: 50,
   lotteryReward: 200,
   autoRecallSelf: true,
@@ -168,6 +169,7 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
   merged.maxRecallPerMinute = normalizeNumber(merged.maxRecallPerMinute, 60, 1);
   merged.maxKickPerMinute = normalizeNumber(merged.maxKickPerMinute, 3, 1);
   merged.maxBanPerMinute = normalizeNumber(merged.maxBanPerMinute, 5, 1);
+  merged.inviteQueryPermission = merged.inviteQueryPermission === 'admin' || merged.inviteQueryPermission === 'owner' ? merged.inviteQueryPermission : 'all';
   merged.blacklistAction = merged.blacklistAction === 'ban' || merged.blacklistAction === 'kick' || merged.blacklistAction === 'kick_and_block' ? merged.blacklistAction : 'recall';
   merged.blacklistKickDelayMinSeconds = normalizeNumber(merged.blacklistKickDelayMinSeconds, merged.kickDelayMinSeconds ?? 5, 0);
   merged.blacklistKickDelayMaxSeconds = normalizeNumber(merged.blacklistKickDelayMaxSeconds, merged.kickDelayMaxSeconds ?? 20, merged.blacklistKickDelayMinSeconds);

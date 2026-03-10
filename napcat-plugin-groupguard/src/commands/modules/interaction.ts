@@ -5,6 +5,8 @@ import { executeInteractionCommand } from '../../services/interaction_service';
 export const INTERACTION_PREFIXES = [
   '兑换 ',
   '开启发言奖励 ',
+  '查邀请',
+  '查来源',
   '查封号',
   '查隐藏',
   '活跃统计',

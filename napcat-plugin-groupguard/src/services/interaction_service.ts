@@ -4,6 +4,7 @@ import { groupguardRepository } from '../repositories/groupguard_repository';
 import { getTarget, isAdminOrOwner, saveConfig, sendGroupScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
 import { enqueueBanAction, enqueueMiscAction } from './action_queue_service';
+import { queryInvitedBy, queryInviterOf } from './invite_service';
 
 const DEFAULT_LOL_BAN_PRIMARY_URL = 'https://yun.4png.com/api/query.html?token=c7739372694acf36&qq={qq}';
 
@@ -142,10 +143,42 @@ async function queryBanByEndpoint(endpoint: string, qq: string): Promise<BanQuer
   }
 }
 
+async function canUseInviteQuery(groupId: string, userId: string): Promise<boolean> {
+  const permission = pluginState.getGroupSettings(groupId).inviteQueryPermission || 'all';
+  if (permission === 'all') return true;
+  if (permission === 'owner') return pluginState.isOwner(userId);
+  if (pluginState.isOwner(userId)) return true;
+  return isAdminOrOwner(groupId, userId);
+}
+
 export async function executeInteractionCommand(input: CommandExecutionContext): Promise<boolean> {
   const { event, text, userId, groupId, raw, ctx } = input;
   if (event.message_type !== 'group') return false;
   if (!authManager.getGroupLicense(groupId)) return false;
+  const inviteByMatch = text.match(/^查邀请(\d{5,13})$/);
+  if (inviteByMatch) {
+    if (!await canUseInviteQuery(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '当前仅限管理员或主人查询邀请关系'); return true; }
+    const targetQQ = inviteByMatch[1];
+    const invitedList = queryInvitedBy(groupId, targetQQ);
+    if (!invitedList.length) {
+      await sendGroupScene(groupId, 'list_empty', `${targetQQ} 在本群暂无邀请记录`);
+      return true;
+    }
+    await sendGroupScene(groupId, 'raw_text', `${targetQQ} 在本群邀请了：\n${invitedList.join('\n')}`);
+    return true;
+  }
+  const inviteFromMatch = text.match(/^查来源(\d{5,13})$/);
+  if (inviteFromMatch) {
+    if (!await canUseInviteQuery(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '当前仅限管理员或主人查询邀请关系'); return true; }
+    const targetQQ = inviteFromMatch[1];
+    const inviterQQ = queryInviterOf(groupId, targetQQ);
+    if (!inviterQQ) {
+      await sendGroupScene(groupId, 'not_found', `${targetQQ} 在本群暂无可用邀请来源记录`);
+      return true;
+    }
+    await sendGroupScene(groupId, 'raw_text', `${targetQQ} 是由 ${inviterQQ} 邀请进群`);
+    return true;
+  }
 
   if (text === '签到') {
     if (pluginState.getGroupSettings(groupId).disableSignin) { await sendGroupScene(groupId, 'feature_disabled', '本群签到功能已关闭'); return true; }

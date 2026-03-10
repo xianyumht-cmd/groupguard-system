@@ -16,6 +16,7 @@ import { getGuardRuntimeSnapshot } from './services/action_guard_service';
 import { enqueueKickAction } from './services/action_queue_service';
 import { auditReplyTemplates } from './reply_template_audit';
 import { BUILTIN_REPLY_SCENE_TEMPLATES } from './reply_templates';
+import { flushInviteService, initInviteService, recordInviteRelation } from './services/invite_service';
 import {
   handleCommand, handleAntiRecall, cacheMessage, handleEmojiReact,
   handleCardLockCheck, handleCardLockOnMessage, handleAutoRecall,
@@ -141,6 +142,7 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
 
   // 初始化数据库
   await initDB();
+  initInviteService(pluginState.configDir);
 
   // 初始化授权
   authManager.init();
@@ -356,6 +358,7 @@ export const plugin_set_config = async (ctx: NapCatPluginContext, config: Plugin
 // ========== 插件清理 ==========
 const plugin_cleanup: PluginModule['plugin_cleanup'] = async () => {
   pluginState.log('info', '群管插件正在卸载...');
+  await flushInviteService();
   clearAllSessions();
 };
 
@@ -501,6 +504,7 @@ const plugin_onevent: PluginModule['plugin_onevent'] = async (ctx: NapCatPluginC
     const groupId = String(e.group_id);
     const userId = String(e.user_id);
     const operatorId = String(e.operator_id || '');
+    await recordInviteRelation({ groupId, inviterQQ: operatorId, invitedQQ: userId, joinTime: Date.now() });
 
     // 邀请统计
     if (operatorId && operatorId !== userId && operatorId !== pluginState.botId) {

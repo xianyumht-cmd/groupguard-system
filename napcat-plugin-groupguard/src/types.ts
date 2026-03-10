@@ -139,6 +139,8 @@ export interface GroupGuardSettings {
   signinMax?: number;
   /** 邀请奖励积分 */
   invitePoints?: number;
+  /** 邀请查询权限：all=所有成员, admin=管理员, owner=主人 */
+  inviteQueryPermission?: 'all' | 'admin' | 'owner';
   /** 抽奖消耗积分 */
   lotteryCost?: number;
   /** 抽奖最大奖励积分 */
