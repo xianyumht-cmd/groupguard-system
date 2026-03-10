@@ -238,23 +238,20 @@ class PluginState {
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
-  private computeSelfRecallDelayMs(settings: GroupGuardSettings): number {
+  private computeSelfRecallDelayMs(): number {
     const globalSettings = this.getGlobalSettings();
-    const localPolicy = settings?.selfRecall;
     const globalPolicy = globalSettings?.selfRecall;
-    const localEnabled = (localPolicy ? localPolicy.enabled === true : false) || settings?.autoRecallSelf === true;
-    const globalEnabled = (globalPolicy ? globalPolicy.enabled === true : false) || globalSettings?.autoRecallSelf === true;
-    const enabled = localEnabled || globalEnabled;
+    const enabled = (globalPolicy ? globalPolicy.enabled === true : false) || globalSettings?.autoRecallSelf === true;
     if (!enabled) return -1;
-    const policy = localEnabled ? localPolicy : globalPolicy;
-    const delaySeed = Number((localEnabled ? settings?.autoRecallSelfDelay : globalSettings?.autoRecallSelfDelay) ?? 60);
+    const policy = globalPolicy;
+    const delaySeed = Math.min(300, Math.max(0, Number(globalSettings?.autoRecallSelfDelay ?? 60)));
     const mode = policy?.mode === 'random' ? 'random' : 'fixed';
-    const fixedDelayMs = Math.max(0, Number(policy?.fixedDelay ?? delaySeed)) * 1000;
-    const minDelayMs = Math.max(0, Number(policy?.minDelay ?? Math.max(0, delaySeed - 15))) * 1000;
-    const maxDelayMs = Math.max(minDelayMs, Number(policy?.maxDelay ?? Math.max(delaySeed, delaySeed + 30))) * 1000;
-    const jitterMs = Math.max(0, Number(policy?.jitter ?? 0)) * 1000;
+    const fixedDelayMs = Math.min(300000, Math.max(0, Number(policy?.fixedDelay ?? delaySeed)) * 1000);
+    const minDelayMs = Math.min(300000, Math.max(0, Number(policy?.minDelay ?? Math.max(0, delaySeed - 15)) * 1000));
+    const maxDelayMs = Math.min(300000, Math.max(minDelayMs, Number(policy?.maxDelay ?? Math.max(delaySeed, delaySeed + 30)) * 1000));
+    const jitterMs = Math.min(300000, Math.max(0, Number(policy?.jitter ?? 0)) * 1000);
     const base = mode === 'random' ? this.randomBetweenMs(minDelayMs, maxDelayMs) : fixedDelayMs;
-    return base + this.randomBetweenMs(0, jitterMs);
+    return Math.min(300000, base + this.randomBetweenMs(0, jitterMs));
   }
 
   private extractSendMessageId(res: any): string {
@@ -272,8 +269,7 @@ class PluginState {
       this.debug(`[SelfRecall] skipped reason=msgId_missing source=${source} groupId=${gid || 'unknown'}`);
       return;
     }
-    const settings = this.getGroupSettings(gid);
-    const delay = this.computeSelfRecallDelayMs(settings);
+    const delay = this.computeSelfRecallDelayMs();
     if (delay < 0) {
       this.debug(`[SelfRecall] skipped reason=disabled source=${source} groupId=${gid} msgId=${msgId}`);
       return;

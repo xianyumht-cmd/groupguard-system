@@ -194,16 +194,34 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     return true;
   }
   if (text.startsWith('开启自身撤回') || text === '关闭自身撤回') {
-    if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    if (text === '关闭自身撤回') pluginState.config.groups[groupId].autoRecallSelf = false;
+    if (!pluginState.isOwner(userId)) return true;
+    if (text === '关闭自身撤回') {
+      pluginState.config.global.autoRecallSelf = false;
+      pluginState.config.global.selfRecall = {
+        enabled: false,
+        mode: 'fixed',
+        fixedDelay: 60,
+        minDelay: 45,
+        maxDelay: 90,
+        jitter: 0
+      };
+    }
     else {
-      pluginState.config.groups[groupId].autoRecallSelf = true;
       const duration = parseInt(text.slice(6).trim());
-      pluginState.config.groups[groupId].autoRecallSelfDelay = isNaN(duration) ? 60 : duration;
+      const seconds = isNaN(duration) ? 60 : Math.min(300, Math.max(0, duration));
+      pluginState.config.global.autoRecallSelf = true;
+      pluginState.config.global.autoRecallSelfDelay = seconds;
+      pluginState.config.global.selfRecall = {
+        enabled: true,
+        mode: 'fixed',
+        fixedDelay: seconds,
+        minDelay: Math.max(0, seconds - 15),
+        maxDelay: Math.max(seconds, seconds + 30),
+        jitter: 0
+      };
     }
     saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', text === '关闭自身撤回' ? '已关闭自身消息撤回' : `已开启自身消息撤回，延迟 ${pluginState.config.groups[groupId].autoRecallSelfDelay || 60} 秒`);
+    await sendGroupScene(groupId, 'action_success', text === '关闭自身撤回' ? '已关闭全局自身消息撤回' : `已开启全局自身消息撤回，延迟 ${pluginState.config.global.autoRecallSelfDelay || 60} 秒`);
     return true;
   }
 

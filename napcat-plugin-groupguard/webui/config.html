@@ -595,13 +595,13 @@
                   </div>
                   <div>
                     <label class="text-xs text-slate-500">固定延迟（秒）</label>
-                    <input type="number" id="c-srfd" class="ipt" value="60" min="0">
+                    <input type="number" id="c-srfd" class="ipt" value="60" min="0" max="300">
                   </div>
                 </div>
                 <div class="mt-2 grid grid-cols-3 gap-3 mb-3">
-                  <div><label class="text-xs text-slate-500">随机最小（秒）</label><input type="number" id="c-srmin" class="ipt" value="45" min="0"></div>
-                  <div><label class="text-xs text-slate-500">随机最大（秒）</label><input type="number" id="c-srmax" class="ipt" value="90" min="0"></div>
-                  <div><label class="text-xs text-slate-500">抖动（秒）</label><input type="number" id="c-srj" class="ipt" value="0" min="0"></div>
+                  <div><label class="text-xs text-slate-500">随机最小（秒）</label><input type="number" id="c-srmin" class="ipt" value="45" min="0" max="300"></div>
+                  <div><label class="text-xs text-slate-500">随机最大（秒）</label><input type="number" id="c-srmax" class="ipt" value="90" min="0" max="300"></div>
+                  <div><label class="text-xs text-slate-500">抖动（秒）</label><input type="number" id="c-srj" class="ipt" value="0" min="0" max="300"></div>
                 </div>
 
                 <div class="cfg-row">
@@ -1373,6 +1373,13 @@
       // For simplicity in this WebUI, if not using global, we show group values, defaulting to global if missing.
       const mixed = { ...g, ...gs }; 
       fillFields(mixed);
+      const sr = g.selfRecall || {};
+      stg('c-ars', sr.enabled === true || g.autoRecallSelf === true);
+      $('c-srm').value = sr.mode === 'random' ? 'random' : 'fixed';
+      sv('c-srfd', sr.fixedDelay !== undefined ? sr.fixedDelay : (g.autoRecallSelfDelay || 60));
+      sv('c-srmin', sr.minDelay !== undefined ? sr.minDelay : 45);
+      sv('c-srmax', sr.maxDelay !== undefined ? sr.maxDelay : 90);
+      sv('c-srj', sr.jitter !== undefined ? sr.jitter : 0);
       sv('c-bl', (gs.groupBlacklist || []).join(',')); // Group blacklist
       sv('c-wl-list', ''); // No group whitelist
     }
@@ -1394,14 +1401,14 @@
         adminCacheSeconds: gn('c-acs', 60), repeatThreshold: gn('c-rt', 0),
         warningLimit: gn('c-wl-limit', 3), warningAction: $('c-wa')?.value || 'ban',
         enableCurfew: gtg('c-ec'), curfewStart: $('c-cs')?.value || '00:00', curfewEnd: $('c-ce')?.value || '06:00',
-        autoRecallSelf: gtg('c-ars'), autoRecallSelfDelay: gn('c-srfd', 60),
+        autoRecallSelf: gtg('c-ars'), autoRecallSelfDelay: Math.min(300, gn('c-srfd', 60)),
         selfRecall: {
           enabled: gtg('c-ars'),
           mode: $('c-srm')?.value === 'random' ? 'random' : 'fixed',
-          fixedDelay: gn('c-srfd', 60),
-          minDelay: gn('c-srmin', 45),
-          maxDelay: gn('c-srmax', 90),
-          jitter: gn('c-srj', 0)
+          fixedDelay: Math.min(300, gn('c-srfd', 60)),
+          minDelay: Math.min(300, gn('c-srmin', 45)),
+          maxDelay: Math.min(300, gn('c-srmax', 90)),
+          jitter: Math.min(300, gn('c-srj', 0))
         },
         randomSuffix: gtg('c-rs'), disableReplyTemplate: gtg('c-drt'), randomDelayMin: gn('c-rdn', 0), randomDelayMax: gn('c-rdx', 0),
         queueMode: $('c-qm')?.value === 'global' ? 'global' : 'group',
@@ -1470,6 +1477,9 @@
     function collectGroup (gid) {
       C.groups = C.groups || {};
       const payload = { ...collectFields(), useGlobal: false, groupBlacklist: ($('c-bl')?.value || '').split(',').map(s => s.trim()).filter(Boolean) };
+      delete payload.autoRecallSelf;
+      delete payload.autoRecallSelfDelay;
+      delete payload.selfRecall;
       delete payload.disableReplyTemplate;
       C.groups[gid] = payload;
     }

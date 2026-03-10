@@ -14,8 +14,35 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text === '关闭随机后缀') { pluginState.config.global.randomSuffix = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局随机后缀已关闭'); return true; }
     if (text === '开启纯文本回复') { pluginState.config.global.disableReplyTemplate = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已开启（关闭人格与模板包装）'); return true; }
     if (text === '关闭纯文本回复') { pluginState.config.global.disableReplyTemplate = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已关闭（恢复人格与模板包装）'); return true; }
-    if (text === '开启全局自身撤回') { pluginState.config.global.autoRecallSelf = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局自身撤回已开启'); return true; }
-    if (text === '关闭全局自身撤回') { pluginState.config.global.autoRecallSelf = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局自身撤回已关闭'); return true; }
+    if (text === '开启全局自身撤回') {
+      pluginState.config.global.autoRecallSelf = true;
+      pluginState.config.global.autoRecallSelfDelay = 60;
+      pluginState.config.global.selfRecall = {
+        enabled: true,
+        mode: 'fixed',
+        fixedDelay: 60,
+        minDelay: 45,
+        maxDelay: 90,
+        jitter: 0
+      };
+      saveConfig(ctx);
+      await sendPrivateScene(userId, 'action_success', '全局自身撤回已开启，默认延迟60秒');
+      return true;
+    }
+    if (text === '关闭全局自身撤回') {
+      pluginState.config.global.autoRecallSelf = false;
+      pluginState.config.global.selfRecall = {
+        enabled: false,
+        mode: 'fixed',
+        fixedDelay: 60,
+        minDelay: 45,
+        maxDelay: 90,
+        jitter: 0
+      };
+      saveConfig(ctx);
+      await sendPrivateScene(userId, 'action_success', '全局自身撤回已关闭');
+      return true;
+    }
     if (text === '开启撤回管理员消息') { pluginState.config.global.allowRecallAdminMessage = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已允许自动撤回管理员消息'); return true; }
     if (text === '关闭撤回管理员消息') { pluginState.config.global.allowRecallAdminMessage = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已禁止自动撤回管理员消息'); return true; }
     if (text === '开启撤回群主消息') { pluginState.config.global.allowRecallOwnerMessage = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已允许自动撤回群主消息'); return true; }
