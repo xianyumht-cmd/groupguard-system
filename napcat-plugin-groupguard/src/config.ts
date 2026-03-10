@@ -1,5 +1,5 @@
 // 群管插件配置
-import type { PluginConfig, GroupGuardSettings, MsgFilterSettings } from './types';
+import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings } from './types';
 
 export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockVideo: false,
@@ -36,6 +36,14 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   lotteryReward: 200,
   autoRecallSelf: false,
   autoRecallSelfDelay: 60,
+  selfRecall: {
+    enabled: false,
+    mode: 'fixed',
+    fixedDelay: 60,
+    minDelay: 45,
+    maxDelay: 90,
+    jitter: 0,
+  },
   randomSuffix: true,
   randomDelayMin: 500,
   randomDelayMax: 1500,
@@ -88,6 +96,12 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   maxBanPerMinute: 5,
   maxRecallPerMinute: 60,
   maxMiscPerMinute: 120,
+  actionPriority: {
+    ban: 4,
+    kick: 3,
+    recall: 2,
+    self_recall: 1,
+  },
   recallDelayMinSeconds: 1,
   recallDelayMaxSeconds: 3,
   banDelayMinSeconds: 3,
@@ -99,8 +113,66 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   blacklistAction: 'recall',
   blacklistBanMinutes: 30,
   blacklistKickRejectAddRequest: true,
+  blacklistKickDelayMinSeconds: 5,
+  blacklistKickDelayMaxSeconds: 20,
   blacklistCheckBeforeCommand: true,
 };
+
+function normalizeNumber(value: any, fallback: number, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  if (n < min) return min;
+  if (n > max) return max;
+  return n;
+}
+
+function normalizeSelfRecall(settings: GroupGuardSettings): SelfRecallPolicy {
+  const base = settings.selfRecall || ({} as SelfRecallPolicy);
+  const legacyEnabled = settings.autoRecallSelf === true;
+  const legacyDelay = normalizeNumber(settings.autoRecallSelfDelay, 60, 0);
+  const enabled = base.enabled !== undefined ? base.enabled === true : legacyEnabled;
+  const mode = base.mode === 'random' ? 'random' : 'fixed';
+  const fixedDelay = normalizeNumber(base.fixedDelay, legacyDelay, 0);
+  const minDelay = normalizeNumber(base.minDelay, Math.max(0, fixedDelay - 15), 0);
+  const maxDelay = normalizeNumber(base.maxDelay, Math.max(minDelay, fixedDelay + 30), minDelay);
+  const jitter = normalizeNumber(base.jitter, 0, 0);
+  return { enabled, mode, fixedDelay, minDelay, maxDelay, jitter };
+}
+
+function normalizeActionPriority(settings: GroupGuardSettings): ActionPrioritySettings {
+  const src = settings.actionPriority || ({} as ActionPrioritySettings);
+  const d = DEFAULT_GROUP_SETTINGS.actionPriority as ActionPrioritySettings;
+  return {
+    ban: normalizeNumber(src.ban, d.ban),
+    kick: normalizeNumber(src.kick, d.kick),
+    recall: normalizeNumber(src.recall, d.recall),
+    self_recall: normalizeNumber(src.self_recall, d.self_recall),
+  };
+}
+
+export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSettings {
+  const merged: GroupGuardSettings = {
+    ...JSON.parse(JSON.stringify(DEFAULT_GROUP_SETTINGS)),
+    ...(input || {}),
+  };
+  merged.selfRecall = normalizeSelfRecall(merged);
+  merged.autoRecallSelf = merged.selfRecall.enabled;
+  merged.autoRecallSelfDelay = merged.selfRecall.mode === 'fixed'
+    ? merged.selfRecall.fixedDelay
+    : normalizeNumber((merged.selfRecall.minDelay + merged.selfRecall.maxDelay) / 2, 60, 0);
+  merged.actionPriority = normalizeActionPriority(merged);
+  merged.actionQueueConcurrency = normalizeNumber(merged.actionQueueConcurrency, 2, 1, 20);
+  merged.maxActionQueueSizeGlobal = normalizeNumber(merged.maxActionQueueSizeGlobal, 5000, 200);
+  merged.maxActionQueueSizePerGroup = normalizeNumber(merged.maxActionQueueSizePerGroup, 200, 20);
+  merged.actionTimeoutMs = normalizeNumber(merged.actionTimeoutMs, 8000, 1000);
+  merged.maxRecallPerMinute = normalizeNumber(merged.maxRecallPerMinute, 60, 1);
+  merged.maxKickPerMinute = normalizeNumber(merged.maxKickPerMinute, 3, 1);
+  merged.maxBanPerMinute = normalizeNumber(merged.maxBanPerMinute, 5, 1);
+  merged.blacklistAction = merged.blacklistAction === 'ban' || merged.blacklistAction === 'kick' || merged.blacklistAction === 'kick_and_block' ? merged.blacklistAction : 'recall';
+  merged.blacklistKickDelayMinSeconds = normalizeNumber(merged.blacklistKickDelayMinSeconds, merged.kickDelayMinSeconds ?? 5, 0);
+  merged.blacklistKickDelayMaxSeconds = normalizeNumber(merged.blacklistKickDelayMaxSeconds, merged.kickDelayMaxSeconds ?? 20, merged.blacklistKickDelayMinSeconds);
+  return merged;
+}
 
 export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   licenseKey: '',
@@ -135,6 +207,20 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   rejectKeywords: [],
   presets: [],
 };
+
+export function normalizePluginConfig(input: PluginConfig): PluginConfig {
+  const merged: PluginConfig = {
+    ...JSON.parse(JSON.stringify(DEFAULT_PLUGIN_CONFIG)),
+    ...(input || {}),
+  };
+  merged.global = normalizeGroupSettings(merged.global || ({} as GroupGuardSettings));
+  const groups: Record<string, GroupGuardSettings> = {};
+  for (const [gid, gs] of Object.entries(merged.groups || {})) {
+    groups[gid] = normalizeGroupSettings(gs as GroupGuardSettings);
+  }
+  merged.groups = groups;
+  return merged;
+}
 
 // 帮助菜单
 export const GROUP_ADMIN_MENU = `群管功能（需管理员权限）

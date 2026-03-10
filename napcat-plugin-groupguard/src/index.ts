@@ -3,8 +3,8 @@ import type { PluginModule, NapCatPluginContext, PluginConfigSchema } from 'napc
 import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import fs from 'fs';
 import path from 'path';
-import type { PluginConfig } from './types';
-import { DEFAULT_PLUGIN_CONFIG } from './config';
+import type { PluginConfig, GroupGuardSettings } from './types';
+import { DEFAULT_PLUGIN_CONFIG, normalizeGroupSettings, normalizePluginConfig } from './config';
 import { pluginState } from './state';
 import { authManager } from './auth';
 import { initDB } from './db';
@@ -51,6 +51,27 @@ function collectPersonaAuditForConfig(config: PluginConfig) {
   };
 }
 
+function randomBetweenMs(minMs: number, maxMs: number): number {
+  const min = Math.max(0, Math.floor(minMs));
+  const max = Math.max(min, Math.floor(maxMs));
+  if (max <= min) return min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function computeSelfRecallDelayMs(config: PluginConfig['global']): number {
+  const policy = config?.selfRecall;
+  const enabledByPolicy = policy ? policy.enabled === true : false;
+  const enabled = enabledByPolicy || config?.autoRecallSelf === true;
+  if (!enabled) return -1;
+  const mode = policy?.mode === 'random' ? 'random' : 'fixed';
+  const fixedDelayMs = Math.max(0, Number(policy?.fixedDelay ?? config?.autoRecallSelfDelay ?? 60)) * 1000;
+  const minDelayMs = Math.max(0, Number(policy?.minDelay ?? Math.max(0, (Number(config?.autoRecallSelfDelay ?? 60) - 15)))) * 1000;
+  const maxDelayMs = Math.max(minDelayMs, Number(policy?.maxDelay ?? Math.max(Number(config?.autoRecallSelfDelay ?? 60), Number(config?.autoRecallSelfDelay ?? 60) + 30))) * 1000;
+  const jitterMs = Math.max(0, Number(policy?.jitter ?? 0)) * 1000;
+  const base = mode === 'random' ? randomBetweenMs(minDelayMs, maxDelayMs) : fixedDelayMs;
+  return base + randomBetweenMs(0, jitterMs);
+}
+
 // ========== 插件初始化 ==========
 const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext) => {
   Object.assign(pluginState, {
@@ -91,7 +112,7 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
   if (fs.existsSync(ctx.configPath)) {
     try {
       const raw = JSON.parse(fs.readFileSync(ctx.configPath, 'utf-8'));
-      pluginState.config = { ...JSON.parse(JSON.stringify(DEFAULT_PLUGIN_CONFIG)), ...raw };
+      pluginState.config = normalizePluginConfig(raw as PluginConfig);
       
       // 确保 data 目录存在
       const dataDir = path.join(pluginState.configDir, 'data');
@@ -126,7 +147,11 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
 
       storageAdapter.init(pluginState.configDir);
       storageAdapter.migrateFromJson(pluginState.configDir, pluginState.config.groups || {});
-      pluginState.config.groups = storageAdapter.loadAllGroupConfigs();
+      const loadedGroups = storageAdapter.loadAllGroupConfigs();
+      pluginState.config.groups = Object.entries(loadedGroups).reduce((acc, [gid, groupSettings]) => {
+        acc[gid] = normalizeGroupSettings(groupSettings);
+        return acc;
+      }, {} as Record<string, GroupGuardSettings>);
 
       saveConfig(ctx);
 
@@ -179,7 +204,7 @@ function registerRoutes (ctx: NapCatPluginContext): void {
   router.postNoAuth('/config', (req: any, res: any) => {
     try {
       const body = req.body || {};
-      const newConfig = { ...pluginState.config, ...body };
+      const newConfig = normalizePluginConfig({ ...pluginState.config, ...body });
       const audit = collectPersonaAuditForConfig(newConfig);
       const strictMode = newConfig?.global?.personaAuditStrictMode === true;
       if (strictMode && audit.summary.high > 0) {
@@ -335,13 +360,14 @@ function registerRoutes (ctx: NapCatPluginContext): void {
 // ========== 配置管理 ==========
 export const plugin_get_config = async (): Promise<PluginConfig> => pluginState.config;
 export const plugin_set_config = async (ctx: NapCatPluginContext, config: PluginConfig): Promise<void> => {
-  const audit = collectPersonaAuditForConfig(config);
-  const strictMode = config?.global?.personaAuditStrictMode === true;
+  const normalizedConfig = normalizePluginConfig(config);
+  const audit = collectPersonaAuditForConfig(normalizedConfig);
+  const strictMode = normalizedConfig?.global?.personaAuditStrictMode === true;
   if (strictMode && audit.summary.high > 0) {
     pluginState.log('warn', `已阻断配置写入: 人格模板高风险问题 ${audit.summary.high} 条`);
     return;
   }
-  pluginState.config = config;
+  pluginState.config = normalizedConfig;
   if (audit.summary.total > 0) {
     pluginState.log('warn', `人格模板审计提示: high=${audit.summary.high} medium=${audit.summary.medium} low=${audit.summary.low}`);
   }
@@ -384,10 +410,9 @@ const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx: NapCatPlu
 
   // 0.1 自身消息处理：如果是机器人自己发的消息，跳过大部分检查，仅处理撤回
   if (userId === selfId) {
-    // 自身消息撤回逻辑 - 优先使用群独立配置，无配置则回落到全局
     const settings = pluginState.getGroupSettings(groupId);
-    if (settings.autoRecallSelf) {
-      const delay = (settings.autoRecallSelfDelay || 60) * 1000;
+    const delay = computeSelfRecallDelayMs(settings);
+    if (delay >= 0) {
       setTimeout(() => {
         void enqueueSelfRecallAction({ groupId, messageId, reason: 'self_recall_event', automatic: true, allowSelfTarget: true, maxRetries: 1 });
       }, delay);

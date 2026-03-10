@@ -12,6 +12,13 @@ const activityMem = new Map<string, any>();
 const activityDirty = new Set<string>();
 let activityFlushTimerReady = false;
 
+function randomDelayMs(minMs: number, maxMs: number): number {
+  const min = Math.max(0, Math.floor(minMs));
+  const max = Math.max(min, Math.floor(maxMs));
+  if (max <= min) return min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 function ensureAntiRecallDigestTimer(): void {
   if (antiRecallDigestTimerReady) return;
   antiRecallDigestTimerReady = true;
@@ -227,17 +234,27 @@ export async function executeHandleBlacklist(groupId: string, userId: string, me
       pluginState.debug(`黑名单禁言: 群 ${groupId} 用户 ${userId} 结果=${result.code}`);
       return result.ok;
     }
-    if (mode === 'kick') {
-      const result = await enqueueKickAction({
-        groupId,
-        userId,
-        reason: 'blacklist',
-        rejectAddRequest: settings.blacklistKickRejectAddRequest !== false,
-        automatic: true,
-        maxRetries: 1
-      });
-      pluginState.debug(`黑名单踢出: 群 ${groupId} 用户 ${userId} 结果=${result.code}`);
-      return result.ok;
+    if (mode === 'kick' || mode === 'kick_and_block') {
+      if (mode === 'kick_and_block') {
+        if (!pluginState.config.blacklist) pluginState.config.blacklist = [];
+        if (!pluginState.config.blacklist.includes(userId)) pluginState.config.blacklist.push(userId);
+      }
+      const minDelay = Math.max(0, Number(settings.blacklistKickDelayMinSeconds ?? settings.kickDelayMinSeconds ?? 5)) * 1000;
+      const maxDelay = Math.max(minDelay, Number(settings.blacklistKickDelayMaxSeconds ?? settings.kickDelayMaxSeconds ?? 20)) * 1000;
+      const wait = randomDelayMs(minDelay, maxDelay);
+      setTimeout(() => {
+        void enqueueKickAction({
+          groupId,
+          userId,
+          reason: mode === 'kick_and_block' ? 'blacklist_kick_and_block' : 'blacklist',
+          rejectAddRequest: settings.blacklistKickRejectAddRequest !== false,
+          automatic: true,
+          maxRetries: 1
+        }).then((result) => {
+          pluginState.debug(`黑名单踢出: 群 ${groupId} 用户 ${userId} 模式=${mode} 结果=${result.code}`);
+        });
+      }, wait);
+      return true;
     }
     const result = await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'blacklist', automatic: true, maxRetries: 1 });
     pluginState.debug(`黑名单撤回: 群 ${groupId} 用户 ${userId} 消息 ${messageId} 结果=${result.code}`);

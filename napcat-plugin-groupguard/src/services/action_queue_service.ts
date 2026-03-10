@@ -95,7 +95,7 @@ const stats: QueueCounters = {
 let activeWorkers = 0;
 let actionSeq = 0;
 
-const PENALTY_PRIORITY: Record<ActionType, number> = {
+const DEFAULT_ACTION_PRIORITY: Record<ActionType, number> = {
   ban: 4,
   kick: 3,
   recall: 2,
@@ -113,6 +113,17 @@ function getConcurrency(groupId: string): number {
   const n = Number(settings.actionQueueConcurrency ?? settings.queueConcurrency ?? 2);
   if (!Number.isFinite(n)) return 2;
   return Math.max(1, Math.min(20, n));
+}
+
+function getActionPriority(groupId: string, type: ActionType): number {
+  const settings = pluginState.getGroupSettings(groupId);
+  const configured = settings.actionPriority;
+  if (!configured) return DEFAULT_ACTION_PRIORITY[type] ?? 0;
+  if (type === 'ban') return Number.isFinite(Number(configured.ban)) ? Number(configured.ban) : DEFAULT_ACTION_PRIORITY.ban;
+  if (type === 'kick') return Number.isFinite(Number(configured.kick)) ? Number(configured.kick) : DEFAULT_ACTION_PRIORITY.kick;
+  if (type === 'recall') return Number.isFinite(Number(configured.recall)) ? Number(configured.recall) : DEFAULT_ACTION_PRIORITY.recall;
+  if (type === 'self_recall') return Number.isFinite(Number(configured.self_recall)) ? Number(configured.self_recall) : DEFAULT_ACTION_PRIORITY.self_recall;
+  return DEFAULT_ACTION_PRIORITY.misc;
 }
 
 function getGroupQueueLimit(groupId: string): number {
@@ -242,12 +253,12 @@ function decGroupPending(groupId: string): void {
 function replaceWeakerPenaltyTask(task: QueueTask): void {
   if (!task.targetUserId) return;
   if (!(task.type === 'ban' || task.type === 'kick' || task.type === 'recall')) return;
-  const incomingPriority = PENALTY_PRIORITY[task.type];
+  const incomingPriority = getActionPriority(task.groupId, task.type);
   for (let i = queue.length - 1; i >= 0; i -= 1) {
     const current = queue[i];
     if (!current.targetUserId) continue;
     if (current.groupId !== task.groupId || current.targetUserId !== task.targetUserId) continue;
-    const currentPriority = PENALTY_PRIORITY[current.type] || 0;
+    const currentPriority = getActionPriority(current.groupId, current.type);
     if (currentPriority >= incomingPriority) {
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
@@ -281,7 +292,19 @@ function enqueueTask(task: QueueTask): boolean {
 }
 
 function pickTask(): QueueTask | null {
-  return queue.shift() || null;
+  if (!queue.length) return null;
+  let bestIndex = 0;
+  let bestScore = getActionPriority(queue[0].groupId, queue[0].type);
+  for (let i = 1; i < queue.length; i += 1) {
+    const task = queue[i];
+    const score = getActionPriority(task.groupId, task.type);
+    if (score > bestScore || (score === bestScore && task.createdAt < queue[bestIndex].createdAt)) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  const [picked] = queue.splice(bestIndex, 1);
+  return picked || null;
 }
 
 async function executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<{ timeout: boolean; value?: T; }> {

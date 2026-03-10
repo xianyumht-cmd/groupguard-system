@@ -20,6 +20,22 @@ export interface MsgFilterSettings {
   blockQr: boolean;
 }
 
+export interface SelfRecallPolicy {
+  enabled: boolean;
+  mode: 'fixed' | 'random';
+  fixedDelay: number;
+  minDelay: number;
+  maxDelay: number;
+  jitter: number;
+}
+
+export interface ActionPrioritySettings {
+  ban: number;
+  kick: number;
+  recall: number;
+  self_recall: number;
+}
+
 export interface PluginConfig {
   licenseKey?: string;
   debug: boolean;
@@ -131,6 +147,7 @@ export interface GroupGuardSettings {
   autoRecallSelf?: boolean;
   /** 自动撤回延迟（秒） */
   autoRecallSelfDelay?: number;
+  selfRecall?: SelfRecallPolicy;
   /** 随机后缀（防复读风控） */
   randomSuffix?: boolean;
   /** 随机延迟发送（毫秒） */
@@ -232,6 +249,7 @@ export interface GroupGuardSettings {
   maxBanPerMinute?: number;
   maxRecallPerMinute?: number;
   maxMiscPerMinute?: number;
+  actionPriority?: ActionPrioritySettings;
   recallDelayMinSeconds?: number;
   recallDelayMaxSeconds?: number;
   banDelayMinSeconds?: number;
@@ -240,9 +258,11 @@ export interface GroupGuardSettings {
   kickDelayMaxSeconds?: number;
   miscDelayMinSeconds?: number;
   miscDelayMaxSeconds?: number;
-  blacklistAction?: 'recall' | 'ban' | 'kick';
+  blacklistAction?: 'recall' | 'ban' | 'kick' | 'kick_and_block';
   blacklistBanMinutes?: number;
   blacklistKickRejectAddRequest?: boolean;
+  blacklistKickDelayMinSeconds?: number;
+  blacklistKickDelayMaxSeconds?: number;
   blacklistCheckBeforeCommand?: boolean;
 }
 

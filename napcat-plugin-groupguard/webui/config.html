@@ -585,9 +585,23 @@
                   </div>
                   <div class="tgl" id="c-ars" onclick="tg(this)"></div>
                 </div>
-                <div class="mt-2 mb-3">
-                  <label class="text-xs text-slate-500">撤回延迟（秒）</label>
-                  <input type="number" id="c-arsd" class="ipt" value="60">
+                <div class="mt-2 grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="text-xs text-slate-500">自身撤回模式</label>
+                    <select id="c-srm" class="ipt">
+                      <option value="fixed">固定</option>
+                      <option value="random">随机</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="text-xs text-slate-500">固定延迟（秒）</label>
+                    <input type="number" id="c-srfd" class="ipt" value="60" min="0">
+                  </div>
+                </div>
+                <div class="mt-2 grid grid-cols-3 gap-3 mb-3">
+                  <div><label class="text-xs text-slate-500">随机最小（秒）</label><input type="number" id="c-srmin" class="ipt" value="45" min="0"></div>
+                  <div><label class="text-xs text-slate-500">随机最大（秒）</label><input type="number" id="c-srmax" class="ipt" value="90" min="0"></div>
+                  <div><label class="text-xs text-slate-500">抖动（秒）</label><input type="number" id="c-srj" class="ipt" value="0" min="0"></div>
                 </div>
 
                 <div class="cfg-row">
@@ -685,6 +699,36 @@
                   <div><label class="text-xs text-slate-500">动作限流窗口（秒）</label><input type="number" id="c-arw" class="ipt" value="60" min="1"></div>
                   <div><label class="text-xs text-slate-500">动作限流阈值</label><input type="number" id="c-arl" class="ipt" value="30" min="1"></div>
                   <div><label class="text-xs text-slate-500">撤回去重（秒）</label><input type="number" id="c-rds" class="ipt" value="20" min="1"></div>
+                </div>
+                <div class="mt-2 grid grid-cols-4 gap-3">
+                  <div><label class="text-xs text-slate-500">队列并发</label><input type="number" id="c-aqc" class="ipt" value="2" min="1" max="20"></div>
+                  <div><label class="text-xs text-slate-500">全局队列上限</label><input type="number" id="c-aqg" class="ipt" value="5000" min="200"></div>
+                  <div><label class="text-xs text-slate-500">单群队列上限</label><input type="number" id="c-aqp" class="ipt" value="200" min="20"></div>
+                  <div><label class="text-xs text-slate-500">动作超时(ms)</label><input type="number" id="c-atm" class="ipt" value="8000" min="1000"></div>
+                </div>
+                <div class="mt-2 grid grid-cols-3 gap-3">
+                  <div><label class="text-xs text-slate-500">撤回/分钟</label><input type="number" id="c-mrpm" class="ipt" value="60" min="1"></div>
+                  <div><label class="text-xs text-slate-500">踢出/分钟</label><input type="number" id="c-mkpm" class="ipt" value="3" min="1"></div>
+                  <div><label class="text-xs text-slate-500">禁言/分钟</label><input type="number" id="c-mbpm" class="ipt" value="5" min="1"></div>
+                </div>
+                <div class="mt-2 grid grid-cols-4 gap-3">
+                  <div><label class="text-xs text-slate-500">优先级 Ban</label><input type="number" id="c-apb" class="ipt" value="4"></div>
+                  <div><label class="text-xs text-slate-500">优先级 Kick</label><input type="number" id="c-apk" class="ipt" value="3"></div>
+                  <div><label class="text-xs text-slate-500">优先级 Recall</label><input type="number" id="c-apr" class="ipt" value="2"></div>
+                  <div><label class="text-xs text-slate-500">优先级 SelfRecall</label><input type="number" id="c-apsr" class="ipt" value="1"></div>
+                </div>
+                <div class="mt-2 grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="text-xs text-slate-500">黑名单动作</label>
+                    <select id="c-bla" class="ipt">
+                      <option value="recall">撤回</option>
+                      <option value="ban">禁言</option>
+                      <option value="kick">踢出</option>
+                      <option value="kick_and_block">踢出并拉黑</option>
+                    </select>
+                  </div>
+                  <div><label class="text-xs text-slate-500">黑名单踢出最小延迟（秒）</label><input type="number" id="c-bkmin" class="ipt" value="5" min="0"></div>
+                  <div><label class="text-xs text-slate-500">黑名单踢出最大延迟（秒）</label><input type="number" id="c-bkmax" class="ipt" value="20" min="0"></div>
                 </div>
                 <div class="mt-2 grid grid-cols-3 gap-3">
                   <div><label class="text-xs text-slate-500">风险预警分</label><input type="number" id="c-rw" class="ipt" value="3" min="1"></div>
@@ -1240,8 +1284,13 @@
       $('c-wa').value = g.warningAction || 'ban';
       stg('c-ec', g.enableCurfew);
       sv('c-cs', g.curfewStart || '00:00'); sv('c-ce', g.curfewEnd || '06:00');
-      stg('c-ars', g.autoRecallSelf);
-      sv('c-arsd', g.autoRecallSelfDelay || 60);
+      const sr = g.selfRecall || {};
+      stg('c-ars', sr.enabled === true || g.autoRecallSelf === true);
+      $('c-srm').value = sr.mode === 'random' ? 'random' : 'fixed';
+      sv('c-srfd', sr.fixedDelay !== undefined ? sr.fixedDelay : (g.autoRecallSelfDelay || 60));
+      sv('c-srmin', sr.minDelay !== undefined ? sr.minDelay : 45);
+      sv('c-srmax', sr.maxDelay !== undefined ? sr.maxDelay : 90);
+      sv('c-srj', sr.jitter !== undefined ? sr.jitter : 0);
       stg('c-rs', g.randomSuffix);
       stg('c-drt', !!g.disableReplyTemplate);
       sv('c-rdn', g.randomDelayMin || 0);
@@ -1274,6 +1323,21 @@
       sv('c-arw', g.actionRateWindowSeconds || 60);
       sv('c-arl', g.actionRateLimit || 30);
       sv('c-rds', g.recallDedupSeconds || 20);
+      sv('c-aqc', g.actionQueueConcurrency !== undefined ? g.actionQueueConcurrency : 2);
+      sv('c-aqg', g.maxActionQueueSizeGlobal !== undefined ? g.maxActionQueueSizeGlobal : 5000);
+      sv('c-aqp', g.maxActionQueueSizePerGroup !== undefined ? g.maxActionQueueSizePerGroup : 200);
+      sv('c-atm', g.actionTimeoutMs !== undefined ? g.actionTimeoutMs : 8000);
+      sv('c-mrpm', g.maxRecallPerMinute !== undefined ? g.maxRecallPerMinute : 60);
+      sv('c-mkpm', g.maxKickPerMinute !== undefined ? g.maxKickPerMinute : 3);
+      sv('c-mbpm', g.maxBanPerMinute !== undefined ? g.maxBanPerMinute : 5);
+      const ap = g.actionPriority || {};
+      sv('c-apb', ap.ban !== undefined ? ap.ban : 4);
+      sv('c-apk', ap.kick !== undefined ? ap.kick : 3);
+      sv('c-apr', ap.recall !== undefined ? ap.recall : 2);
+      sv('c-apsr', ap.self_recall !== undefined ? ap.self_recall : 1);
+      $('c-bla').value = g.blacklistAction || 'recall';
+      sv('c-bkmin', g.blacklistKickDelayMinSeconds !== undefined ? g.blacklistKickDelayMinSeconds : (g.kickDelayMinSeconds || 5));
+      sv('c-bkmax', g.blacklistKickDelayMaxSeconds !== undefined ? g.blacklistKickDelayMaxSeconds : (g.kickDelayMaxSeconds || 20));
       sv('c-rw', g.riskWarnScore || 3);
       sv('c-rp2', g.riskProtectScore || 8);
       sv('c-rdc', g.riskDecaySeconds || 300);
@@ -1330,7 +1394,15 @@
         adminCacheSeconds: gn('c-acs', 60), repeatThreshold: gn('c-rt', 0),
         warningLimit: gn('c-wl-limit', 3), warningAction: $('c-wa')?.value || 'ban',
         enableCurfew: gtg('c-ec'), curfewStart: $('c-cs')?.value || '00:00', curfewEnd: $('c-ce')?.value || '06:00',
-        autoRecallSelf: gtg('c-ars'), autoRecallSelfDelay: gn('c-arsd', 60),
+        autoRecallSelf: gtg('c-ars'), autoRecallSelfDelay: gn('c-srfd', 60),
+        selfRecall: {
+          enabled: gtg('c-ars'),
+          mode: $('c-srm')?.value === 'random' ? 'random' : 'fixed',
+          fixedDelay: gn('c-srfd', 60),
+          minDelay: gn('c-srmin', 45),
+          maxDelay: gn('c-srmax', 90),
+          jitter: gn('c-srj', 0)
+        },
         randomSuffix: gtg('c-rs'), disableReplyTemplate: gtg('c-drt'), randomDelayMin: gn('c-rdn', 0), randomDelayMax: gn('c-rdx', 0),
         queueMode: $('c-qm')?.value === 'global' ? 'global' : 'group',
         queueConcurrency: gn('c-qc', 2),
@@ -1360,6 +1432,22 @@
         actionRateWindowSeconds: gn('c-arw', 60),
         actionRateLimit: gn('c-arl', 30),
         recallDedupSeconds: gn('c-rds', 20),
+        actionQueueConcurrency: gn('c-aqc', 2),
+        maxActionQueueSizeGlobal: gn('c-aqg', 5000),
+        maxActionQueueSizePerGroup: gn('c-aqp', 200),
+        actionTimeoutMs: gn('c-atm', 8000),
+        maxRecallPerMinute: gn('c-mrpm', 60),
+        maxKickPerMinute: gn('c-mkpm', 3),
+        maxBanPerMinute: gn('c-mbpm', 5),
+        actionPriority: {
+          ban: gn('c-apb', 4),
+          kick: gn('c-apk', 3),
+          recall: gn('c-apr', 2),
+          self_recall: gn('c-apsr', 1)
+        },
+        blacklistAction: $('c-bla')?.value || 'recall',
+        blacklistKickDelayMinSeconds: gn('c-bkmin', 5),
+        blacklistKickDelayMaxSeconds: gn('c-bkmax', 20),
         riskWarnScore: gn('c-rw', 3),
         riskProtectScore: gn('c-rp2', 8),
         riskDecaySeconds: gn('c-rdc', 300),

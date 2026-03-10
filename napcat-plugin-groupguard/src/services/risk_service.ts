@@ -191,11 +191,12 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     }
     if (text.startsWith('设置黑名单动作 ')) {
       const modeRaw = text.slice('设置黑名单动作 '.length).trim();
-      let mode: 'recall' | 'ban' | 'kick' | null = null;
+      let mode: 'recall' | 'ban' | 'kick' | 'kick_and_block' | null = null;
       if (modeRaw === '撤回') mode = 'recall';
       if (modeRaw === '禁言') mode = 'ban';
       if (modeRaw === '踢出') mode = 'kick';
-      if (!mode) { await sendPrivateScene(userId, 'invalid_range', '可选：撤回/禁言/踢出', { example: '设置黑名单动作 踢出' }); return true; }
+      if (modeRaw === '踢出并拉黑') mode = 'kick_and_block';
+      if (!mode) { await sendPrivateScene(userId, 'invalid_range', '可选：撤回/禁言/踢出/踢出并拉黑', { example: '设置黑名单动作 踢出并拉黑' }); return true; }
       pluginState.config.global.blacklistAction = mode;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `黑名单动作已设置为：${modeRaw}`);
@@ -220,7 +221,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       await sendPrivateScene(
         userId,
         'raw_text',
-        `发送策略：\n队列模式: ${g.queueMode === 'global' ? '全局' : '分群'}\n发送并发: ${g.queueConcurrency || 1}\n全局限流: ${(g.globalMaxPerMinute || 180)}条/分钟\n问答冷却: ${(g.qaCooldownSeconds ?? 30)}秒\n同用户冷却: ${(g.qaUserCooldownSeconds ?? 12)}秒\n分级冷却: 低${g.qaTierCooldownLow ?? 15}/中${g.qaTierCooldownMedium ?? 30}/高${g.qaTierCooldownHigh ?? 60}\n群熔断: 窗口${g.groupFuseWindowSeconds ?? 60}s 阈值${g.groupFuseThreshold ?? 45} 熔断${g.groupFuseCooldownSeconds ?? 90}s\n回复概率: ${(g.replyProbability ?? 100)}%\n纯文本回复: ${g.disableReplyTemplate ? '开启' : '关闭'}\n模板池: ${(g.replyTemplatePool || ['{msg}']).join(' | ')}\n撤回管理员消息: ${g.allowRecallAdminMessage ? '允许' : '禁止'}\n撤回群主消息: ${g.allowRecallOwnerMessage ? '允许' : '禁止'}\n管理员保护: ${g.protectAdminActions === false ? '关闭' : '开启'}\n群主保护: ${g.protectOwnerActions === false ? '关闭' : '开启'}\n动作限流: 窗口${g.actionRateWindowSeconds ?? 60}s 阈值${g.actionRateLimit ?? 30}\n撤回去重: ${g.recallDedupSeconds ?? 20}s\n自动风控收敛: ${g.autoRiskControl === false ? '关闭' : '开启'}\n风险阈值: 预警${g.riskWarnScore ?? 3} 保护${g.riskProtectScore ?? 8} 衰减${g.riskDecaySeconds ?? 300}s\n处罚速率: 踢${g.maxKickPerMinute ?? 3}/分 禁言${g.maxBanPerMinute ?? 5}/分 撤回${g.maxRecallPerMinute ?? 60}/分\n黑名单动作: ${g.blacklistAction === 'ban' ? '禁言' : g.blacklistAction === 'kick' ? '踢出' : '撤回'}\n黑名单前置: ${g.blacklistCheckBeforeCommand === false ? '关闭' : '开启'}\n动作延迟: 踢${g.kickDelayMinSeconds ?? 5}-${g.kickDelayMaxSeconds ?? 20}s 撤回${g.recallDelayMinSeconds ?? 1}-${g.recallDelayMaxSeconds ?? 3}s`
+        `发送策略：\n队列模式: ${g.queueMode === 'global' ? '全局' : '分群'}\n发送并发: ${g.queueConcurrency || 1}\n全局限流: ${(g.globalMaxPerMinute || 180)}条/分钟\n问答冷却: ${(g.qaCooldownSeconds ?? 30)}秒\n同用户冷却: ${(g.qaUserCooldownSeconds ?? 12)}秒\n分级冷却: 低${g.qaTierCooldownLow ?? 15}/中${g.qaTierCooldownMedium ?? 30}/高${g.qaTierCooldownHigh ?? 60}\n群熔断: 窗口${g.groupFuseWindowSeconds ?? 60}s 阈值${g.groupFuseThreshold ?? 45} 熔断${g.groupFuseCooldownSeconds ?? 90}s\n回复概率: ${(g.replyProbability ?? 100)}%\n纯文本回复: ${g.disableReplyTemplate ? '开启' : '关闭'}\n模板池: ${(g.replyTemplatePool || ['{msg}']).join(' | ')}\n撤回管理员消息: ${g.allowRecallAdminMessage ? '允许' : '禁止'}\n撤回群主消息: ${g.allowRecallOwnerMessage ? '允许' : '禁止'}\n管理员保护: ${g.protectAdminActions === false ? '关闭' : '开启'}\n群主保护: ${g.protectOwnerActions === false ? '关闭' : '开启'}\n动作限流: 窗口${g.actionRateWindowSeconds ?? 60}s 阈值${g.actionRateLimit ?? 30}\n撤回去重: ${g.recallDedupSeconds ?? 20}s\n自动风控收敛: ${g.autoRiskControl === false ? '关闭' : '开启'}\n风险阈值: 预警${g.riskWarnScore ?? 3} 保护${g.riskProtectScore ?? 8} 衰减${g.riskDecaySeconds ?? 300}s\n处罚速率: 踢${g.maxKickPerMinute ?? 3}/分 禁言${g.maxBanPerMinute ?? 5}/分 撤回${g.maxRecallPerMinute ?? 60}/分\n黑名单动作: ${g.blacklistAction === 'ban' ? '禁言' : g.blacklistAction === 'kick' ? '踢出' : g.blacklistAction === 'kick_and_block' ? '踢出并拉黑' : '撤回'}\n黑名单前置: ${g.blacklistCheckBeforeCommand === false ? '关闭' : '开启'}\n黑名单踢出延迟: ${(g.blacklistKickDelayMinSeconds ?? g.kickDelayMinSeconds ?? 5)}-${(g.blacklistKickDelayMaxSeconds ?? g.kickDelayMaxSeconds ?? 20)}s\n动作延迟: 踢${g.kickDelayMinSeconds ?? 5}-${g.kickDelayMaxSeconds ?? 20}s 撤回${g.recallDelayMinSeconds ?? 1}-${g.recallDelayMaxSeconds ?? 3}s`
       );
       return true;
     }
