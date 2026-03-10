@@ -83,6 +83,7 @@ class PluginState {
   private groupSendHistory: Map<string, number[]> = new Map();
   /** 分群熔断截止时间 */
   private groupFuseUntil: Map<string, number> = new Map();
+  private selfRecallScheduleMap: Map<string, number> = new Map();
 
   // ===== 内存优化 =====
   /** 清理内存缓存 */
@@ -224,6 +225,78 @@ class PluginState {
   private getMaxQueueSizePerGroup(): number {
     const n = Number(this.getGlobalSettings().maxQueueSizePerGroup ?? 120);
     return Math.max(20, Number.isFinite(n) ? n : 120);
+  }
+
+  private randomBetweenMs(minMs: number, maxMs: number): number {
+    const min = Math.max(0, Math.floor(minMs));
+    const max = Math.max(min, Math.floor(maxMs));
+    if (max <= min) return min;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  private computeSelfRecallDelayMs(settings: GroupGuardSettings): number {
+    const policy = settings?.selfRecall;
+    const enabledByPolicy = policy ? policy.enabled === true : false;
+    const enabled = enabledByPolicy || settings?.autoRecallSelf === true;
+    if (!enabled) return -1;
+    const mode = policy?.mode === 'random' ? 'random' : 'fixed';
+    const fixedDelayMs = Math.max(0, Number(policy?.fixedDelay ?? settings?.autoRecallSelfDelay ?? 60)) * 1000;
+    const minDelayMs = Math.max(0, Number(policy?.minDelay ?? Math.max(0, (Number(settings?.autoRecallSelfDelay ?? 60) - 15)))) * 1000;
+    const maxDelayMs = Math.max(minDelayMs, Number(policy?.maxDelay ?? Math.max(Number(settings?.autoRecallSelfDelay ?? 60), Number(settings?.autoRecallSelfDelay ?? 60) + 30))) * 1000;
+    const jitterMs = Math.max(0, Number(policy?.jitter ?? 0)) * 1000;
+    const base = mode === 'random' ? this.randomBetweenMs(minDelayMs, maxDelayMs) : fixedDelayMs;
+    return base + this.randomBetweenMs(0, jitterMs);
+  }
+
+  private extractSendMessageId(res: any): string {
+    const direct = res?.message_id ?? res?.messageId;
+    if (direct !== undefined && direct !== null && `${direct}` !== '') return String(direct);
+    const nested = res?.data?.message_id ?? res?.data?.messageId ?? res?.retdata?.message_id ?? res?.retdata?.messageId;
+    if (nested !== undefined && nested !== null && `${nested}` !== '') return String(nested);
+    return '';
+  }
+
+  scheduleSelfRecall(groupId: string, messageId: string, source: 'send_group_msg' | 'message_event' = 'send_group_msg'): void {
+    const gid = String(groupId || '');
+    const msgId = String(messageId || '');
+    if (!gid || !msgId) {
+      this.debug(`[SelfRecall] skipped reason=msgId_missing source=${source} groupId=${gid || 'unknown'}`);
+      return;
+    }
+    const settings = this.getGroupSettings(gid);
+    const delay = this.computeSelfRecallDelayMs(settings);
+    if (delay < 0) {
+      this.debug(`[SelfRecall] skipped reason=disabled source=${source} groupId=${gid} msgId=${msgId}`);
+      return;
+    }
+    const now = Date.now();
+    for (const [k, ts] of this.selfRecallScheduleMap.entries()) {
+      if (now - ts > 5 * 60 * 1000) this.selfRecallScheduleMap.delete(k);
+    }
+    const dedupKey = `${gid}:${msgId}`;
+    if (this.selfRecallScheduleMap.has(dedupKey)) {
+      this.debug(`[SelfRecall] skipped reason=duplicate_schedule source=${source} groupId=${gid} msgId=${msgId}`);
+      return;
+    }
+    this.selfRecallScheduleMap.set(dedupKey, now);
+    this.debug(`[SelfRecall] enqueue source=${source} groupId=${gid} msgId=${msgId} delay=${delay}`);
+    setTimeout(() => {
+      import('./services/action_queue_service')
+        .then(mod => mod.enqueueSelfRecallAction({
+          groupId: gid,
+          messageId: msgId,
+          reason: source === 'send_group_msg' ? 'self_recall_send_queue' : 'self_recall_event',
+          automatic: true,
+          allowSelfTarget: true,
+          maxRetries: 1
+        }))
+        .then((result) => {
+          this.debug(`[SelfRecall] enqueue_result source=${source} groupId=${gid} msgId=${msgId} code=${result.code}`);
+        })
+        .catch((err) => {
+          this.debug(`[SelfRecall] enqueue_failed source=${source} groupId=${gid} msgId=${msgId} err=${String(err)}`);
+        });
+    }, delay);
   }
 
   private applyReplyTemplate(text: string): string {
@@ -400,24 +473,9 @@ class PluginState {
       group_id: groupId,
       message
     } as never, this.adapterName, this.networkConfig) as { message_id?: number | string };
-    if (res && res.message_id) {
-      const settings = this.getGroupSettings(groupId);
-      if (settings.autoRecallSelf) {
-        const delay = (settings.autoRecallSelfDelay || 60) * 1000;
-        setTimeout(() => {
-          import('./services/action_queue_service')
-            .then(mod => mod.enqueueSelfRecallAction({
-              groupId,
-              messageId: String(res.message_id),
-              reason: 'self_recall_send_queue',
-              automatic: true,
-              allowSelfTarget: true,
-              maxRetries: 1
-            }))
-            .catch(() => {});
-        }, delay);
-      }
-    }
+    const messageId = this.extractSendMessageId(res);
+    this.debug(`[SelfRecall] message_sent groupId=${groupId} msgId=${messageId || 'missing'}`);
+    this.scheduleSelfRecall(groupId, messageId, 'send_group_msg');
   }
 
   /** 发送群消息 (Text) */

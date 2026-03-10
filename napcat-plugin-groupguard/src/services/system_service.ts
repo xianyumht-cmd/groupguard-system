@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { isAdminOrOwner, saveConfig, sendGroupScene, sendPrivateScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
-import { getActionQueueSnapshot, resetActionQueueRuntime } from './action_queue_service';
+import { getActionQueueRecentLogs, getActionQueueSnapshot, resetActionQueueRuntime } from './action_queue_service';
 
 export async function executeSystemCommand(input: CommandExecutionContext): Promise<boolean> {
   const { event, text, userId, groupId, ctx } = input;
@@ -57,6 +57,17 @@ export async function executeSystemCommand(input: CommandExecutionContext): Prom
     if (text === '队列重置' || text === '/队列重置') {
       const result = resetActionQueueRuntime();
       await sendPrivateScene(userId, 'action_success', `队列已重置，清理待执行任务 ${result.cleared} 条，当前执行中 ${result.activeWorkers} 条`);
+      return true;
+    }
+    if (text === '队列日志' || text.startsWith('队列日志 ') || text.startsWith('/队列日志')) {
+      const match = text.match(/\/?队列日志\s*(\d+)?/);
+      const limit = match?.[1] ? Math.max(1, Math.min(100, Number(match[1]))) : 10;
+      const logs = getActionQueueRecentLogs(limit);
+      await sendPrivateScene(
+        userId,
+        'raw_text',
+        `[ActionQueue]\n${logs.length ? logs.join('\n') : '暂无记录'}`
+      );
       return true;
     }
     if (text.startsWith('多群广播 ')) {

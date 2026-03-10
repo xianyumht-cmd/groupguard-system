@@ -13,7 +13,7 @@ import { groupguardRepository } from './repositories/groupguard_repository';
 import { createVerifySession, handleVerifyAnswer, clearAllSessions } from './verify';
 import { getReplyTemplateCatalog } from './reply_generator';
 import { getGuardRuntimeSnapshot } from './services/action_guard_service';
-import { enqueueKickAction, enqueueSelfRecallAction } from './services/action_queue_service';
+import { enqueueKickAction } from './services/action_queue_service';
 import { auditReplyTemplates } from './reply_template_audit';
 import { BUILTIN_REPLY_SCENE_TEMPLATES } from './reply_templates';
 import {
@@ -49,27 +49,6 @@ function collectPersonaAuditForConfig(config: PluginConfig) {
       total: globalAudit.issueCount.total + groupIssueCount.total
     }
   };
-}
-
-function randomBetweenMs(minMs: number, maxMs: number): number {
-  const min = Math.max(0, Math.floor(minMs));
-  const max = Math.max(min, Math.floor(maxMs));
-  if (max <= min) return min;
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function computeSelfRecallDelayMs(config: PluginConfig['global']): number {
-  const policy = config?.selfRecall;
-  const enabledByPolicy = policy ? policy.enabled === true : false;
-  const enabled = enabledByPolicy || config?.autoRecallSelf === true;
-  if (!enabled) return -1;
-  const mode = policy?.mode === 'random' ? 'random' : 'fixed';
-  const fixedDelayMs = Math.max(0, Number(policy?.fixedDelay ?? config?.autoRecallSelfDelay ?? 60)) * 1000;
-  const minDelayMs = Math.max(0, Number(policy?.minDelay ?? Math.max(0, (Number(config?.autoRecallSelfDelay ?? 60) - 15)))) * 1000;
-  const maxDelayMs = Math.max(minDelayMs, Number(policy?.maxDelay ?? Math.max(Number(config?.autoRecallSelfDelay ?? 60), Number(config?.autoRecallSelfDelay ?? 60) + 30))) * 1000;
-  const jitterMs = Math.max(0, Number(policy?.jitter ?? 0)) * 1000;
-  const base = mode === 'random' ? randomBetweenMs(minDelayMs, maxDelayMs) : fixedDelayMs;
-  return base + randomBetweenMs(0, jitterMs);
 }
 
 // ========== 插件初始化 ==========
@@ -410,13 +389,7 @@ const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx: NapCatPlu
 
   // 0.1 自身消息处理：如果是机器人自己发的消息，跳过大部分检查，仅处理撤回
   if (userId === selfId) {
-    const settings = pluginState.getGroupSettings(groupId);
-    const delay = computeSelfRecallDelayMs(settings);
-    if (delay >= 0) {
-      setTimeout(() => {
-        void enqueueSelfRecallAction({ groupId, messageId, reason: 'self_recall_event', automatic: true, allowSelfTarget: true, maxRetries: 1 });
-      }, delay);
-    }
+    pluginState.scheduleSelfRecall(groupId, messageId, 'message_event');
     return;
   }
 

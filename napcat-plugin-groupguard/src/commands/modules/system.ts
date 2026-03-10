@@ -6,7 +6,9 @@ export const SYSTEM_PREFIXES = [
   '多群广播 ',
   '定时任务 ',
   '删除定时任务 ',
-  '设置欢迎词 '
+  '设置欢迎词 ',
+  '队列日志 ',
+  '/队列日志 '
 ];
 
 export const SYSTEM_EXACT = [
@@ -19,6 +21,8 @@ export const SYSTEM_EXACT = [
   '/队列状态',
   '队列重置',
   '/队列重置',
+  '队列日志',
+  '/队列日志',
   '查看SQLite状态',
   '查看存储状态',
   '清空群配置',

@@ -11,6 +11,11 @@ interface QueueCounters {
   timeoutCount: number;
 }
 
+interface QueueLogItem {
+  ts: number;
+  line: string;
+}
+
 interface BaseTask<T> {
   actionId: string;
   type: ActionType;
@@ -94,6 +99,7 @@ const stats: QueueCounters = {
 };
 let activeWorkers = 0;
 let actionSeq = 0;
+const recentLogs: QueueLogItem[] = [];
 
 const DEFAULT_ACTION_PRIORITY: Record<ActionType, number> = {
   ban: 4,
@@ -106,6 +112,18 @@ const DEFAULT_ACTION_PRIORITY: Record<ActionType, number> = {
 function nextActionId(): string {
   actionSeq += 1;
   return `${Date.now().toString(36)}-${actionSeq.toString(36)}`;
+}
+
+function appendQueueLog(line: string): void {
+  recentLogs.push({ ts: Date.now(), line });
+  if (recentLogs.length > 100) recentLogs.splice(0, recentLogs.length - 100);
+  pluginState.debug(`[ActionQueue] ${line}`);
+}
+
+function taskSubject(task: QueueTask): string {
+  if (task.type === 'kick' || task.type === 'ban') return `group=${task.groupId} user=${task.payload.userId}`;
+  if (task.type === 'recall' || task.type === 'self_recall') return `group=${task.groupId} msg=${task.payload.messageId}`;
+  return `group=${task.groupId} action=${task.payload.action}`;
 }
 
 function getConcurrency(groupId: string): number {
@@ -262,9 +280,11 @@ function replaceWeakerPenaltyTask(task: QueueTask): void {
     if (currentPriority >= incomingPriority) {
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
+      appendQueueLog(`${task.type} ${taskSubject(task)} dropped_duplicate_or_weaker`);
       task.resolve((task.type === 'misc' ? { ok: false, code: 'skip_duplicate' } : { ok: false, code: 'skip_duplicate' }) as any);
       throw new Error('__queue_skip_enqueue__');
     }
+    appendQueueLog(`${current.type} ${taskSubject(current)} replaced`);
     queue.splice(i, 1);
     decGroupPending(current.groupId);
     if (current.type === 'misc') current.resolve({ ok: false, code: 'skip_replaced' });
@@ -277,12 +297,14 @@ function enqueueTask(task: QueueTask): boolean {
   if (groupCount >= getGroupQueueLimit(task.groupId) || queue.length >= getGlobalQueueLimit(task.groupId)) {
     stats.queueDropped += 1;
     recordMinuteMetric('dropped');
+    appendQueueLog(`${task.type} ${taskSubject(task)} dropped_queue_overflow`);
     return false;
   }
   try {
     replaceWeakerPenaltyTask(task);
     queue.push(task);
     incGroupPending(task.groupId);
+    appendQueueLog(`${task.type} ${taskSubject(task)} queued`);
     kickWorkers();
     return true;
   } catch (e) {
@@ -333,6 +355,7 @@ function decActiveType(type: ActionType): void {
 async function executeTask(task: QueueTask): Promise<void> {
   const timeoutMs = getTimeoutMs(task.groupId);
   pluginState.debug(`[ActionQueue] exec actionId=${task.actionId} type=${task.type} group=${task.groupId}${task.targetUserId ? ` user=${task.targetUserId}` : ''}`);
+  appendQueueLog(`${task.type} ${taskSubject(task)} executing`);
   incActiveType(task.type);
   try {
     if (isDedupHit(task.groupId, task.dedupKey)) {
@@ -340,6 +363,7 @@ async function executeTask(task: QueueTask): Promise<void> {
       else task.resolve({ ok: false, code: 'skip_duplicate' });
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
+      appendQueueLog(`${task.type} ${taskSubject(task)} dropped_duplicate`);
       return;
     }
     if (hitRateLimit(task.groupId, task.type)) {
@@ -347,6 +371,7 @@ async function executeTask(task: QueueTask): Promise<void> {
       else task.resolve({ ok: false, code: 'skip_rate_limited' });
       stats.queueRateLimited += 1;
       recordMinuteMetric('rate_limited');
+      appendQueueLog(`${task.type} ${taskSubject(task)} dropped_rate_limited`);
       return;
     }
     const delay = getDelayRange(task.groupId, task.type);
@@ -364,10 +389,12 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (wrapped.timeout) {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
+        appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         if (task.retries < task.maxRetries) {
           task.retries += 1;
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
+          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
           queue.push(task);
           incGroupPending(task.groupId);
           return;
@@ -380,6 +407,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         task.retries += 1;
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
+        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
         queue.push(task);
         incGroupPending(task.groupId);
         return;
@@ -388,6 +416,9 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (result.ok) {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
+        appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+      } else {
+        appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
       }
       return;
     }
@@ -403,10 +434,12 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (wrapped.timeout) {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
+        appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         if (task.retries < task.maxRetries) {
           task.retries += 1;
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
+          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
           queue.push(task);
           incGroupPending(task.groupId);
           return;
@@ -419,6 +452,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         task.retries += 1;
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
+        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
         queue.push(task);
         incGroupPending(task.groupId);
         return;
@@ -427,6 +461,9 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (result.ok) {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
+        appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+      } else {
+        appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
       }
       return;
     }
@@ -443,10 +480,12 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (wrapped.timeout) {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
+        appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         if (task.retries < task.maxRetries) {
           task.retries += 1;
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
+          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
           queue.push(task);
           incGroupPending(task.groupId);
           return;
@@ -459,6 +498,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         task.retries += 1;
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
+        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
         queue.push(task);
         incGroupPending(task.groupId);
         return;
@@ -467,6 +507,9 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (result.ok) {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
+        appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+      } else {
+        appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
       }
       return;
     }
@@ -482,10 +525,12 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (wrapped.timeout) {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
+        appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         if (task.retries < task.maxRetries) {
           task.retries += 1;
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
+          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
           queue.push(task);
           incGroupPending(task.groupId);
           return;
@@ -498,6 +543,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         task.retries += 1;
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
+        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
         queue.push(task);
         incGroupPending(task.groupId);
         return;
@@ -506,6 +552,9 @@ async function executeTask(task: QueueTask): Promise<void> {
       if (result.ok) {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
+        appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+      } else {
+        appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
       }
       return;
     }
@@ -513,10 +562,12 @@ async function executeTask(task: QueueTask): Promise<void> {
     if (wrapped.timeout) {
       stats.timeoutCount += 1;
       recordMinuteMetric('timeout');
+      appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
       if (task.retries < task.maxRetries) {
         task.retries += 1;
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
+        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
         queue.push(task);
         incGroupPending(task.groupId);
         return;
@@ -530,6 +581,7 @@ async function executeTask(task: QueueTask): Promise<void> {
       task.retries += 1;
       stats.queueRetried += 1;
       recordMinuteMetric('retried');
+      appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
       queue.push(task);
       incGroupPending(task.groupId);
       return;
@@ -538,8 +590,12 @@ async function executeTask(task: QueueTask): Promise<void> {
     if (ok) {
       stats.queueExecuted += 1;
       recordMinuteMetric('executed');
+      appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+    } else {
+      appendQueueLog(`${task.type} ${taskSubject(task)} fail code=fail_api`);
     }
   } catch (e) {
+    appendQueueLog(`${task.type} ${taskSubject(task)} exception`);
     task.reject(e);
   } finally {
     decActiveType(task.type);
@@ -760,10 +816,19 @@ export function resetActionQueueRuntime(): { cleared: number; activeWorkers: num
   actionHistoryGroup.clear();
   activeByType.clear();
   minuteWindows.clear();
+  recentLogs.length = 0;
   stats.queueDropped = 0;
   stats.queueRateLimited = 0;
   stats.queueExecuted = 0;
   stats.queueRetried = 0;
   stats.timeoutCount = 0;
   return { cleared, activeWorkers };
+}
+
+export function getActionQueueRecentLogs(limit = 10): string[] {
+  const safe = Math.max(1, Math.min(100, Number(limit) || 10));
+  return recentLogs.slice(-safe).reverse().map(item => {
+    const t = new Date(item.ts).toLocaleTimeString('zh-CN', { hour12: false });
+    return `[${t}] ${item.line}`;
+  });
 }
