@@ -1,5 +1,4 @@
 // 插件全局状态管理
-import type { ActionMap } from 'napcat-types/napcat-onebot/action/index';
 import type { PluginLogger } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import type { NetworkAdapterConfig } from 'napcat-types/napcat-onebot/config/config';
 import type { PluginConfig, VerifySession, GroupGuardSettings, ActivityRecord, SigninData, InviteData } from './types';
@@ -38,13 +37,18 @@ interface GroupSendTask {
   reject: (err?: any) => void;
 }
 
+interface ActionCaller {
+  call(actionName: string, params: unknown, adapter: string, config: NetworkAdapterConfig): Promise<any>;
+}
+
 class PluginState {
   /** 插件版本（运行时从 package.json 读取） */
   version: string = getPluginVersion();
   logger: PluginLogger | null = null;
-  actions: ActionMap | undefined;
+  actions: ActionCaller | undefined;
   adapterName = '';
   networkConfig: NetworkAdapterConfig | null = null;
+  configDir = '';
   config: PluginConfig = JSON.parse(JSON.stringify(DEFAULT_PLUGIN_CONFIG));
   sessions: Map<string, VerifySession> = new Map();
   pendingComments: Map<string, string> = new Map();

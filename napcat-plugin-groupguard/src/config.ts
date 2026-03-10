@@ -25,7 +25,7 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   leaveBlacklist: false,
   warningLimit: 3,
   warningAction: 'ban',
-  enableCurfew: false,
+  curfewEnabled: false,
   curfewStart: '00:00',
   curfewEnd: '06:00',
   messageReward: 0,

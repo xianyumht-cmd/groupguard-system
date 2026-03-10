@@ -23,7 +23,7 @@ function loadData<T>(type: keyof typeof cache, groupId: string): Record<string, 
     else if (type === 'signin') data = storageAdapter.getAllSignin(groupId) as Record<string, T>;
     else if (type === 'invites') data = storageAdapter.getAllInvites(groupId) as Record<string, T>;
     else if (type === 'warnings') data = {} as Record<string, T>;
-    cache[type].set(groupId, data);
+    (cache[type] as Map<string, Record<string, T>>).set(groupId, data);
     return data;
 }
 

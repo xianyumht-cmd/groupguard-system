@@ -281,7 +281,7 @@ function replaceWeakerPenaltyTask(task: QueueTask): void {
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
       appendQueueLog(`${task.type} ${taskSubject(task)} dropped_duplicate_or_weaker`);
-      task.resolve((task.type === 'misc' ? { ok: false, code: 'skip_duplicate' } : { ok: false, code: 'skip_duplicate' }) as any);
+      task.resolve({ ok: false, code: 'skip_duplicate' } as any);
       throw new Error('__queue_skip_enqueue__');
     }
     appendQueueLog(`${current.type} ${taskSubject(current)} replaced`);

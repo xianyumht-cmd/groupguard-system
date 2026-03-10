@@ -128,7 +128,7 @@ export interface GroupGuardSettings {
   /** 宵禁结束时间 (HH:mm) */
   curfewEnd?: string;
   /** 是否开启宵禁 */
-  enableCurfew?: boolean;
+  curfewEnabled?: boolean;
   /** 定时任务列表 */
   scheduledTasks?: ScheduledTask[];
   /** 发言奖励积分 */
@@ -298,8 +298,8 @@ export interface ScheduledTask {
 }
 
 export interface SigninData {
-  lastSigninTime: number; // timestamp
-  streak: number; // 连续签到天数
+  lastSignin: number; // timestamp
+  days: number; // 连续签到天数
   points: number; // 积分
 }
 
@@ -322,7 +322,7 @@ export interface VerifySession {
   attempts: number;
   maxAttempts: number;
   timer: ReturnType<typeof setTimeout>;
-  createdAt: number;
+  startTime: number;
 }
 
 export interface ActivityRecord {
@@ -330,6 +330,8 @@ export interface ActivityRecord {
   lastActive: number;
   todayCount: number;
   todayDate: string;
+  lastActiveDay?: string;
+  msgCountToday?: number;
 }
 
 /** 问答条目 */

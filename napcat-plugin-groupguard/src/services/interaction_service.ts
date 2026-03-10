@@ -603,13 +603,13 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     const entries = Object.entries(stats).sort((a, b) => b[1].msgCount - a[1].msgCount);
     const today = new Date().toISOString().slice(0, 10);
     const totalMsg = entries.reduce((s, [, r]) => s + r.msgCount, 0);
-    const todayMsg = entries.reduce((s, [, r]) => s + (r.lastActiveDay === today ? r.msgCountToday : 0), 0);
+    const todayMsg = entries.reduce((s, [, r]) => s + (r.lastActiveDay === today ? (r.msgCountToday ?? 0) : 0), 0);
     const summary = `📊 本群活跃统计\n总消息数：${totalMsg}\n今日消息：${todayMsg}\n统计人数：${entries.length}`;
     const pages: string[] = [];
     const pageSize = 15;
     for (let i = 0; i < entries.length; i += pageSize) {
       const chunk = entries.slice(i, i + pageSize);
-      pages.push(`排行榜（${i + 1}-${i + chunk.length}）\n\n${chunk.map(([uid, r], idx) => `${i + idx + 1}. ${uid}\n   总消息：${r.msgCount} | 今日：${r.lastActiveDay === today ? r.msgCountToday : 0}\n   最后活跃：${new Date(r.lastActive).toLocaleString('zh-CN', { hour12: false })}`).join('\n\n')}`);
+      pages.push(`排行榜（${i + 1}-${i + chunk.length}）\n\n${chunk.map(([uid, r], idx) => `${i + idx + 1}. ${uid}\n   总消息：${r.msgCount} | 今日：${r.lastActiveDay === today ? (r.msgCountToday ?? 0) : 0}\n   最后活跃：${new Date(r.lastActive).toLocaleString('zh-CN', { hour12: false })}`).join('\n\n')}`);
     }
     const nodes = [summary, ...pages].map(content => ({ type: 'node', data: { nickname: '📊 活跃统计', user_id: selfId, content: [{ type: 'text', data: { text: content } }] } }));
     await pluginState.callApi('send_group_forward_msg', { group_id: groupId, messages: nodes });

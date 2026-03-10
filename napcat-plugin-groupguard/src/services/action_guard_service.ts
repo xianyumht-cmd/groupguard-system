@@ -6,7 +6,7 @@ type RiskLevel = 'normal' | 'warn' | 'protect';
 
 export interface GuardResult {
   ok: boolean;
-  code: 'ok' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'fail_api';
+  code: 'ok' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'action_failed_timeout' | 'fail_api';
   role?: 'member' | 'admin' | 'owner' | 'unknown';
 }
 

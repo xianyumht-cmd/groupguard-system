@@ -44,7 +44,7 @@ export function createVerifySession (groupId: string, userId: string, comment?: 
     void enqueueKickAction({ groupId, userId, reason: 'verify_timeout', rejectAddRequest: false, automatic: true, maxRetries: 1 });
   }, timeout * 1000);
 
-  pluginState.sessions.set(key, { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer, createdAt: Date.now() });
+  pluginState.sessions.set(key, { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer, startTime: Date.now() });
   pluginState.debug(`创建验证会话: ${key}, 题目: ${expression} = ${answer}`);
 
   const cleanComment = comment ? comment.replace(/^问题：/, '').replace(/\s*答案：/, ' 答案:') : '';

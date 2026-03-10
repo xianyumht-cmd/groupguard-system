@@ -1,6 +1,6 @@
 import { pluginState } from '../state';
 import { authManager } from '../auth';
-import { RISK_CONTROL_MENU } from '../config';
+import { DEFAULT_MSG_FILTER, RISK_CONTROL_MENU } from '../config';
 import { isAdminOrOwner, saveConfig, sendGroupScene, sendPrivateScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
 
@@ -253,7 +253,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (parts.length < 3) { await sendGroupScene(groupId, 'command_format_error', '格式：开启宵禁 00:00 06:00', { example: '开启宵禁 00:00 06:00' }); return true; }
     if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
     const gs = pluginState.config.groups[groupId];
-    gs.enableCurfew = true;
+    gs.curfewEnabled = true;
     gs.curfewStart = parts[1];
     gs.curfewEnd = parts[2];
     saveConfig(ctx);
@@ -367,16 +367,17 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     const type = text.slice(isBlock ? 3 : 5).trim();
     if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
     const gs = pluginState.config.groups[groupId];
-    if (!gs.msgFilter) gs.msgFilter = { ...pluginState.config.global.msgFilter };
+    if (!gs.msgFilter) gs.msgFilter = { ...DEFAULT_MSG_FILTER, ...(pluginState.config.global.msgFilter || {}) };
+    const msgFilter = gs.msgFilter || { ...DEFAULT_MSG_FILTER };
     switch (type) {
-      case '图片': gs.msgFilter.blockImage = isBlock; break;
-      case '视频': gs.msgFilter.blockVideo = isBlock; break;
-      case '语音': gs.msgFilter.blockRecord = isBlock; break;
-      case '链接': gs.msgFilter.blockUrl = isBlock; break;
-      case '二维码': gs.msgFilter.blockQr = isBlock; break;
-      case '名片': gs.msgFilter.blockContact = isBlock; break;
-      case '小程序': gs.msgFilter.blockLightApp = isBlock; break;
-      case '转发': gs.msgFilter.blockForward = isBlock; break;
+      case '图片': msgFilter.blockImage = isBlock; break;
+      case '视频': msgFilter.blockVideo = isBlock; break;
+      case '语音': msgFilter.blockRecord = isBlock; break;
+      case '链接': msgFilter.blockUrl = isBlock; break;
+      case '二维码': msgFilter.blockQr = isBlock; break;
+      case '名片': msgFilter.blockContact = isBlock; break;
+      case '小程序': msgFilter.blockLightApp = isBlock; break;
+      case '转发': msgFilter.blockForward = isBlock; break;
       default: await sendGroupScene(groupId, 'not_found', '未知类型。支持：图片、视频、语音、链接、二维码、名片、小程序、转发'); return true;
     }
     saveConfig(ctx);
@@ -386,8 +387,11 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
   if (text === '开启二维码撤回' || text === '关闭二维码撤回') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    if (!pluginState.config.groups[groupId].msgFilter) pluginState.config.groups[groupId].msgFilter = { ...pluginState.config.global.msgFilter };
-    pluginState.config.groups[groupId].msgFilter!.blockQr = text === '开启二维码撤回';
+    const groupSettings = pluginState.config.groups[groupId];
+    if (!groupSettings.msgFilter) groupSettings.msgFilter = { ...DEFAULT_MSG_FILTER, ...(pluginState.config.global.msgFilter || {}) };
+    const msgFilter = groupSettings.msgFilter || { ...DEFAULT_MSG_FILTER };
+    msgFilter.blockQr = text === '开启二维码撤回';
+    groupSettings.msgFilter = msgFilter;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', text === '开启二维码撤回' ? '已开启二维码撤回' : '已关闭二维码撤回');
     return true;

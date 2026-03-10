@@ -217,8 +217,8 @@ function registerRoutes (ctx: NapCatPluginContext): void {
   router.getNoAuth('/sessions', (_req: any, res: any) => {
     const list = Array.from(pluginState.sessions.values()).map(s => ({
       userId: s.userId, groupId: s.groupId, expression: s.expression,
-      attempts: s.attempts, maxAttempts: s.maxAttempts, createdAt: s.createdAt,
-      remainingMs: Math.max(0, s.createdAt + pluginState.getGroupSettings(s.groupId).verifyTimeout * 1000 - Date.now()),
+      attempts: s.attempts, maxAttempts: s.maxAttempts, createdAt: s.startTime,
+      remainingMs: Math.max(0, s.startTime + pluginState.getGroupSettings(s.groupId).verifyTimeout * 1000 - Date.now()),
     }));
     res.json({ code: 0, data: list });
   });
