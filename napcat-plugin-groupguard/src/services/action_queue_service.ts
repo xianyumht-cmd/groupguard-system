@@ -1,5 +1,6 @@
 import { pluginState } from '../state';
 import { safeBan, safeKick, safeRecall, type GuardResult } from './action_guard_service';
+import { groupguardRepository } from '../repositories/groupguard_repository';
 
 type ActionType = 'recall' | 'self_recall' | 'ban' | 'kick' | 'misc';
 
@@ -32,6 +33,7 @@ interface BaseTask<T> {
 interface RecallTask extends BaseTask<GuardResult> {
   type: 'recall';
   payload: {
+    taskId: string;
     messageId: string;
     targetUserId?: string;
     reason: string;
@@ -43,8 +45,10 @@ interface RecallTask extends BaseTask<GuardResult> {
 interface SelfRecallTask extends BaseTask<GuardResult> {
   type: 'self_recall';
   payload: {
+    taskId: string;
     messageId: string;
     reason: string;
+    source: 'send_group_msg' | 'message_event' | 'recovery';
     automatic?: boolean;
     allowSelfTarget?: boolean;
   };
@@ -100,6 +104,11 @@ const stats: QueueCounters = {
 let activeWorkers = 0;
 let actionSeq = 0;
 const recentLogs: QueueLogItem[] = [];
+let selfRecallRecoveryStarted = false;
+let selfRecallRecoveryTicking = false;
+let selfRecallRecoveryTimer: NodeJS.Timeout | null = null;
+let selfRecallCleanupTimer: NodeJS.Timeout | null = null;
+let recallRecoveryTicking = false;
 
 const DEFAULT_ACTION_PRIORITY: Record<ActionType, number> = {
   ban: 4,
@@ -118,6 +127,36 @@ function appendQueueLog(line: string): void {
   recentLogs.push({ ts: Date.now(), line });
   if (recentLogs.length > 100) recentLogs.splice(0, recentLogs.length - 100);
   pluginState.debug(`[ActionQueue] ${line}`);
+}
+
+function shouldRetrySelfRecallCode(code: string): boolean {
+  return code === 'fail_api'
+    || code === 'action_failed_timeout'
+    || code === 'skip_risk_protect'
+    || code === 'skip_bot_not_admin'
+    || code === 'skip_rate_limited'
+    || code === 'skip_queue_overflow';
+}
+
+function shouldRetryRecallCode(code: string): boolean {
+  return code === 'fail_api'
+    || code === 'action_failed_timeout'
+    || code === 'skip_risk_protect'
+    || code === 'skip_bot_not_admin'
+    || code === 'skip_rate_limited'
+    || code === 'skip_queue_overflow';
+}
+
+function computeSelfRecallRetryDelayMs(attempt: number): number {
+  const level = Math.max(1, Math.floor(attempt));
+  const base = 15000;
+  return Math.min(5 * 60 * 1000, base * Math.pow(2, Math.min(6, level - 1)));
+}
+
+function computeRecallRetryDelayMs(attempt: number): number {
+  const level = Math.max(1, Math.floor(attempt));
+  const base = 5000;
+  return Math.min(60 * 1000, base * Math.pow(2, Math.min(4, level - 1)));
 }
 
 function taskSubject(task: QueueTask): string {
@@ -361,12 +400,20 @@ async function executeTask(task: QueueTask): Promise<void> {
     if (isDedupHit(task.groupId, task.dedupKey)) {
       if (task.type === 'misc') task.resolve({ ok: false, code: 'skip_duplicate' });
       else task.resolve({ ok: false, code: 'skip_duplicate' });
+      if (task.type === 'recall') {
+        await groupguardRepository.resolveRecallTask(task.payload.taskId, 'skip_duplicate', true, 0);
+      }
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
       appendQueueLog(`${task.type} ${taskSubject(task)} dropped_duplicate`);
       return;
     }
     if (hitRateLimit(task.groupId, task.type)) {
+      if (task.type === 'recall') {
+        task.retries += 1;
+        const retryAfter = task.retries <= task.maxRetries ? computeRecallRetryDelayMs(task.retries) : 0;
+        await groupguardRepository.resolveRecallTask(task.payload.taskId, 'skip_rate_limited', false, retryAfter);
+      }
       if (task.type === 'misc') task.resolve({ ok: false, code: 'skip_rate_limited' });
       else task.resolve({ ok: false, code: 'skip_rate_limited' });
       stats.queueRateLimited += 1;
@@ -377,6 +424,7 @@ async function executeTask(task: QueueTask): Promise<void> {
     const delay = getDelayRange(task.groupId, task.type);
     await randomDelay(delay.min, delay.max);
     if (task.type === 'recall') {
+      await groupguardRepository.markRecallTaskQueued(task.payload.taskId);
       const call = safeRecall({
         groupId: task.groupId,
         messageId: task.payload.messageId,
@@ -390,6 +438,9 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
+        const nextRetries = task.retries + 1;
+        const retryAfter = nextRetries <= task.maxRetries ? computeRecallRetryDelayMs(nextRetries) : 0;
+        await groupguardRepository.resolveRecallTask(task.payload.taskId, 'action_failed_timeout', false, retryAfter);
         if (task.retries < task.maxRetries) {
           task.retries += 1;
           stats.queueRetried += 1;
@@ -403,6 +454,13 @@ async function executeTask(task: QueueTask): Promise<void> {
         return;
       }
       const result = wrapped.value as GuardResult;
+      const code = String(result.code || '');
+      const success = result.ok || code === 'ok' || code === 'skip_duplicate';
+      const nextRetries = task.retries + 1;
+      const retryAfter = !success && shouldRetryRecallCode(code) && nextRetries <= task.maxRetries
+        ? computeRecallRetryDelayMs(nextRetries)
+        : 0;
+      await groupguardRepository.resolveRecallTask(task.payload.taskId, code, success, retryAfter);
       if (!result.ok && task.retries < task.maxRetries) {
         task.retries += 1;
         stats.queueRetried += 1;
@@ -423,6 +481,7 @@ async function executeTask(task: QueueTask): Promise<void> {
       return;
     }
     if (task.type === 'self_recall') {
+      await groupguardRepository.markSelfRecallTaskQueued(task.payload.taskId);
       const call = safeRecall({
         groupId: task.groupId,
         messageId: task.payload.messageId,
@@ -435,26 +494,32 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
-        if (task.retries < task.maxRetries) {
-          task.retries += 1;
+        task.retries += 1;
+        const retryAfter = task.retries < task.maxRetries ? computeSelfRecallRetryDelayMs(task.retries) : 0;
+        await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, 'action_failed_timeout', false, retryAfter);
+        if (retryAfter > 0) {
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
-          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-          queue.push(task);
-          incGroupPending(task.groupId);
+          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} after=${retryAfter}`);
+          task.resolve({ ok: false, code: 'action_failed_timeout' });
           return;
         }
         task.resolve({ ok: false, code: 'action_failed_timeout' });
         return;
       }
       const result = wrapped.value as GuardResult;
-      if (!result.ok && task.retries < task.maxRetries) {
-        task.retries += 1;
+      const code = String(result.code || '');
+      const success = result.ok || code === 'ok' || code === 'skip_duplicate';
+      task.retries += 1;
+      const retryAfter = !success && shouldRetrySelfRecallCode(code) && task.retries < task.maxRetries
+        ? computeSelfRecallRetryDelayMs(task.retries)
+        : 0;
+      await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, code, success, retryAfter);
+      if (retryAfter > 0) {
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
-        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
-        queue.push(task);
-        incGroupPending(task.groupId);
+        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code} after=${retryAfter}`);
+        task.resolve(result);
         return;
       }
       task.resolve(result);
@@ -595,6 +660,9 @@ async function executeTask(task: QueueTask): Promise<void> {
       appendQueueLog(`${task.type} ${taskSubject(task)} fail code=fail_api`);
     }
   } catch (e) {
+    if (task.type === 'recall') {
+      await groupguardRepository.resolveRecallTask(task.payload.taskId, 'exception', false, 0);
+    }
     appendQueueLog(`${task.type} ${taskSubject(task)} exception`);
     task.reject(e);
   } finally {
@@ -619,6 +687,7 @@ function kickWorkers(): void {
 }
 
 export async function enqueueRecallAction(opts: {
+  taskId?: string;
   groupId: string;
   messageId: string;
   targetUserId?: string;
@@ -628,6 +697,21 @@ export async function enqueueRecallAction(opts: {
   dedupKey?: string;
   maxRetries?: number;
 }): Promise<GuardResult> {
+  const taskId = String(opts.taskId || `${opts.groupId}:${opts.messageId}:recall`);
+  const now = Date.now();
+  try {
+    await groupguardRepository.scheduleRecallTask({
+      taskId,
+      groupId: String(opts.groupId),
+      messageId: String(opts.messageId),
+      targetUserId: opts.targetUserId ? String(opts.targetUserId) : '',
+      reason: String(opts.reason || 'recall_action'),
+      dueAt: now,
+      maxAttempts: Math.max(1, Number(opts.maxRetries ?? 1) + 1)
+    });
+  } catch (e) {
+    pluginState.log('warn', `撤回持久化写入失败: ${String(e)}`);
+  }
   return new Promise<GuardResult>((resolve, reject) => {
     const task: RecallTask = {
       actionId: nextActionId(),
@@ -639,6 +723,7 @@ export async function enqueueRecallAction(opts: {
       targetUserId: opts.targetUserId ? String(opts.targetUserId) : undefined,
       dedupKey: opts.dedupKey || `${opts.groupId}:recall:${opts.messageId}`,
       payload: {
+        taskId,
         messageId: String(opts.messageId),
         targetUserId: opts.targetUserId ? String(opts.targetUserId) : undefined,
         reason: opts.reason,
@@ -653,24 +738,31 @@ export async function enqueueRecallAction(opts: {
 }
 
 export async function enqueueSelfRecallAction(opts: {
+  taskId?: string;
   groupId: string;
   messageId: string;
   reason?: string;
+  source?: 'send_group_msg' | 'message_event' | 'recovery';
   automatic?: boolean;
   allowSelfTarget?: boolean;
   maxRetries?: number;
+  dedupKey?: string;
 }): Promise<GuardResult> {
   return new Promise<GuardResult>((resolve, reject) => {
+    const taskId = String(opts.taskId || `${opts.groupId}:${opts.messageId}`);
     const task: SelfRecallTask = {
       actionId: nextActionId(),
       type: 'self_recall',
       groupId: opts.groupId,
       createdAt: Date.now(),
       retries: 0,
-      maxRetries: Math.max(0, Number(opts.maxRetries ?? 1)),
+      maxRetries: Math.max(1, Number(opts.maxRetries ?? 6)),
+      dedupKey: opts.dedupKey || `self_recall_task:${taskId}`,
       payload: {
+        taskId,
         messageId: String(opts.messageId),
         reason: opts.reason || 'self_recall_event',
+        source: opts.source || 'message_event',
         automatic: opts.automatic !== false,
         allowSelfTarget: opts.allowSelfTarget !== false
       },
@@ -831,4 +923,79 @@ export function getActionQueueRecentLogs(limit = 10): string[] {
     const t = new Date(item.ts).toLocaleTimeString('zh-CN', { hour12: false });
     return `[${t}] ${item.line}`;
   });
+}
+
+async function runSelfRecallRecoveryBatch(limit = 200): Promise<void> {
+  if (selfRecallRecoveryTicking) return;
+  selfRecallRecoveryTicking = true;
+  try {
+    const rows = await groupguardRepository.getDueSelfRecallTasks(Date.now(), limit);
+    for (const row of rows) {
+      await enqueueSelfRecallAction({
+        taskId: row.taskId,
+        groupId: row.groupId,
+        messageId: row.messageId,
+        reason: row.reason || 'self_recall_recovery',
+        source: 'recovery',
+        automatic: true,
+        allowSelfTarget: true,
+        maxRetries: Math.max(1, Number(row.maxAttempts || 6))
+      });
+    }
+  } catch (e) {
+    pluginState.log('warn', `自撤回补偿调度失败: ${String(e)}`);
+  } finally {
+    selfRecallRecoveryTicking = false;
+  }
+}
+
+async function runRecallRecoveryBatch(limit = 200): Promise<void> {
+  if (recallRecoveryTicking) return;
+  recallRecoveryTicking = true;
+  try {
+    const rows = await groupguardRepository.getDueRecallTasks(Date.now(), limit);
+    for (const row of rows) {
+      await enqueueRecallAction({
+        taskId: row.taskId,
+        groupId: row.groupId,
+        messageId: row.messageId,
+        targetUserId: row.targetUserId || undefined,
+        reason: row.reason || 'recall_recovery',
+        automatic: true,
+        allowSelfTarget: true,
+        maxRetries: Math.max(0, Number(row.maxAttempts || 2) - 1)
+      });
+    }
+  } catch (e) {
+    pluginState.log('warn', `撤回补偿调度失败: ${String(e)}`);
+  } finally {
+    recallRecoveryTicking = false;
+  }
+}
+
+export function startSelfRecallRecovery(): void {
+  if (selfRecallRecoveryStarted) return;
+  selfRecallRecoveryStarted = true;
+  void runSelfRecallRecoveryBatch();
+  void runRecallRecoveryBatch();
+  selfRecallRecoveryTimer = setInterval(() => {
+    void runSelfRecallRecoveryBatch();
+    void runRecallRecoveryBatch();
+  }, 2000);
+  selfRecallCleanupTimer = setInterval(() => {
+    void groupguardRepository.cleanupSelfRecallTasks(7 * 24 * 60 * 60 * 1000);
+    void groupguardRepository.cleanupRecallTasks(7 * 24 * 60 * 60 * 1000);
+  }, 60 * 60 * 1000);
+}
+
+export function stopSelfRecallRecovery(): void {
+  if (selfRecallRecoveryTimer) {
+    clearInterval(selfRecallRecoveryTimer);
+    selfRecallRecoveryTimer = null;
+  }
+  if (selfRecallCleanupTimer) {
+    clearInterval(selfRecallCleanupTimer);
+    selfRecallCleanupTimer = null;
+  }
+  selfRecallRecoveryStarted = false;
 }

@@ -67,7 +67,43 @@ CREATE TABLE IF NOT EXISTS join_logs (
   timestamp INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS self_recall_tasks (
+  task_id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL,
+  next_retry_at INTEGER NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 2,
+  last_code TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS recall_tasks (
+  task_id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  target_user_id TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL,
+  next_retry_at INTEGER NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 2,
+  last_code TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_group_last_active ON activity(group_id, last_active DESC);
 CREATE INDEX IF NOT EXISTS idx_signin_group_points ON signin(group_id, points DESC);
 CREATE INDEX IF NOT EXISTS idx_join_logs_group_timestamp ON join_logs(group_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_warnings_group_count ON warnings(group_id, count DESC);
+CREATE INDEX IF NOT EXISTS idx_self_recall_due_status ON self_recall_tasks(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_recall_due_status ON recall_tasks(status, next_retry_at);

@@ -1,4 +1,12 @@
-import type { ActivityRecord, SigninData, InviteData } from './types';
+import type {
+    ActivityRecord,
+    SigninData,
+    InviteData,
+    SelfRecallScheduleInput,
+    SelfRecallTaskRecord,
+    RecallTaskScheduleInput,
+    RecallTaskRecord
+} from './types';
 import { pluginState } from './state';
 import { storageAdapter } from './storage_adapter';
 
@@ -100,6 +108,36 @@ export const dbQuery = {
         const allData = loadData<number>('warnings', groupId);
         allData[userId] = count;
         storageAdapter.setWarning(groupId, userId, count);
+    },
+    scheduleSelfRecallTask: async (input: SelfRecallScheduleInput): Promise<void> => {
+        storageAdapter.scheduleSelfRecallTask(input);
+    },
+    markSelfRecallTaskQueued: async (taskId: string): Promise<void> => {
+        storageAdapter.markSelfRecallTaskQueued(taskId);
+    },
+    resolveSelfRecallTask: async (taskId: string, code: string, ok: boolean, retryAfterMs: number): Promise<void> => {
+        storageAdapter.resolveSelfRecallTask(taskId, code, ok, retryAfterMs);
+    },
+    getDueSelfRecallTasks: async (nowTs: number, limit: number): Promise<SelfRecallTaskRecord[]> => {
+        return storageAdapter.getDueSelfRecallTasks(nowTs, limit);
+    },
+    cleanupSelfRecallTasks: async (retentionMs: number): Promise<void> => {
+        storageAdapter.cleanupSelfRecallTasks(retentionMs);
+    },
+    scheduleRecallTask: async (input: RecallTaskScheduleInput): Promise<void> => {
+        storageAdapter.scheduleRecallTask(input);
+    },
+    markRecallTaskQueued: async (taskId: string): Promise<void> => {
+        storageAdapter.markRecallTaskQueued(taskId);
+    },
+    resolveRecallTask: async (taskId: string, code: string, ok: boolean, retryAfterMs: number): Promise<void> => {
+        storageAdapter.resolveRecallTask(taskId, code, ok, retryAfterMs);
+    },
+    getDueRecallTasks: async (nowTs: number, limit: number): Promise<RecallTaskRecord[]> => {
+        return storageAdapter.getDueRecallTasks(nowTs, limit);
+    },
+    cleanupRecallTasks: async (retentionMs: number): Promise<void> => {
+        storageAdapter.cleanupRecallTasks(retentionMs);
     },
     runInTransaction: <T>(fn: () => T): T => storageAdapter.runInTransaction(fn)
 };

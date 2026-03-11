@@ -1,7 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
-import type { GroupGuardSettings, JoinLogEntry } from './types';
+import type {
+  GroupGuardSettings,
+  JoinLogEntry,
+  SelfRecallScheduleInput,
+  SelfRecallTaskRecord,
+  RecallTaskScheduleInput,
+  RecallTaskRecord
+} from './types';
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode=WAL;
@@ -14,10 +21,44 @@ CREATE TABLE IF NOT EXISTS signin (group_id TEXT NOT NULL, user_id TEXT NOT NULL
 CREATE TABLE IF NOT EXISTS invites (group_id TEXT NOT NULL, user_id TEXT NOT NULL, inviter_id TEXT NOT NULL DEFAULT '', invite_count INTEGER NOT NULL DEFAULT 0, invited_users_json TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (group_id, user_id));
 CREATE TABLE IF NOT EXISTS warnings (group_id TEXT NOT NULL, user_id TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (group_id, user_id));
 CREATE TABLE IF NOT EXISTS join_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, group_id TEXT NOT NULL, user_id TEXT NOT NULL, answer TEXT NOT NULL, passphrase_matched INTEGER NOT NULL, action TEXT NOT NULL, reason TEXT NOT NULL, timestamp INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS self_recall_tasks (
+  task_id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL,
+  next_retry_at INTEGER NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 2,
+  last_code TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recall_tasks (
+  task_id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  target_user_id TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL,
+  next_retry_at INTEGER NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 2,
+  last_code TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_activity_group_last_active ON activity(group_id, last_active DESC);
 CREATE INDEX IF NOT EXISTS idx_signin_group_points ON signin(group_id, points DESC);
 CREATE INDEX IF NOT EXISTS idx_join_logs_group_timestamp ON join_logs(group_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_warnings_group_count ON warnings(group_id, count DESC);
+CREATE INDEX IF NOT EXISTS idx_self_recall_due_status ON self_recall_tasks(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_recall_due_status ON recall_tasks(status, next_retry_at);
 `;
 
 type SqliteDb = any;
@@ -340,9 +381,203 @@ export class StorageAdapter {
     );
   }
 
+  scheduleSelfRecallTask(input: SelfRecallScheduleInput): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    const row = db.prepare('SELECT task_id, status, created_at, attempt_count FROM self_recall_tasks WHERE task_id = ?').get(String(input.taskId));
+    if (row && String(row.status || '') === 'success') return;
+    const createdAt = row ? toNumber(row.created_at, now) : now;
+    const attemptCount = row ? toNumber(row.attempt_count, 0) : 0;
+    db.prepare(`INSERT OR REPLACE INTO self_recall_tasks(
+      task_id, group_id, message_id, reason, source, status, created_at, due_at, next_retry_at, attempt_count, max_attempts, last_code, last_error, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      String(input.taskId),
+      String(input.groupId),
+      String(input.messageId),
+      String(input.reason || 'self_recall_event'),
+      String(input.source || 'send_group_msg'),
+      'scheduled',
+      createdAt,
+      toNumber(input.dueAt, now),
+      toNumber(input.dueAt, now),
+      attemptCount,
+      Math.max(1, toNumber(input.maxAttempts, 2)),
+      '',
+      '',
+      now
+    );
+  }
+
+  markSelfRecallTaskQueued(taskId: string): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    db.prepare(`UPDATE self_recall_tasks
+      SET status = 'queued', updated_at = ?
+      WHERE task_id = ? AND status IN ('scheduled', 'queued')`).run(now, String(taskId));
+  }
+
+  resolveSelfRecallTask(taskId: string, code: string, ok: boolean, retryAfterMs: number): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    const row = db.prepare('SELECT attempt_count, max_attempts FROM self_recall_tasks WHERE task_id = ?').get(String(taskId));
+    if (!row) return;
+    const attemptCount = toNumber(row.attempt_count, 0) + 1;
+    const maxAttempts = Math.max(1, toNumber(row.max_attempts, 2));
+    const normalizedCode = String(code || '');
+    const success = ok || normalizedCode === 'ok' || normalizedCode === 'skip_duplicate';
+    if (success) {
+      db.prepare(`UPDATE self_recall_tasks
+        SET status = 'success', attempt_count = ?, next_retry_at = 0, last_code = ?, last_error = '', updated_at = ?
+        WHERE task_id = ?`).run(attemptCount, normalizedCode, now, String(taskId));
+      return;
+    }
+    const hasRetry = retryAfterMs > 0 && attemptCount < maxAttempts;
+    if (hasRetry) {
+      const nextRetryAt = now + Math.max(1000, Math.floor(retryAfterMs));
+      db.prepare(`UPDATE self_recall_tasks
+        SET status = 'scheduled', attempt_count = ?, next_retry_at = ?, last_code = ?, last_error = ?, updated_at = ?
+        WHERE task_id = ?`).run(attemptCount, nextRetryAt, normalizedCode, normalizedCode, now, String(taskId));
+      return;
+    }
+    db.prepare(`UPDATE self_recall_tasks
+      SET status = 'failed', attempt_count = ?, next_retry_at = 0, last_code = ?, last_error = ?, updated_at = ?
+      WHERE task_id = ?`).run(attemptCount, normalizedCode, normalizedCode, now, String(taskId));
+  }
+
+  getDueSelfRecallTasks(nowTs: number, limit: number): SelfRecallTaskRecord[] {
+    const db = this.assertReady();
+    const rows = db.prepare(`SELECT task_id, group_id, message_id, reason, source, status, created_at, due_at, next_retry_at, attempt_count, max_attempts, last_code, last_error, updated_at
+      FROM self_recall_tasks
+      WHERE status = 'scheduled' AND next_retry_at <= ?
+      ORDER BY next_retry_at ASC
+      LIMIT ?`).all(toNumber(nowTs, Date.now()), Math.max(1, toNumber(limit, 200)));
+    return (rows || []).map((row: any) => ({
+      taskId: String(row.task_id || ''),
+      groupId: String(row.group_id || ''),
+      messageId: String(row.message_id || ''),
+      reason: String(row.reason || ''),
+      source: (String(row.source || 'send_group_msg') as SelfRecallTaskRecord['source']),
+      status: (String(row.status || 'scheduled') as SelfRecallTaskRecord['status']),
+      createdAt: toNumber(row.created_at, 0),
+      dueAt: toNumber(row.due_at, 0),
+      nextRetryAt: toNumber(row.next_retry_at, 0),
+      attemptCount: toNumber(row.attempt_count, 0),
+      maxAttempts: Math.max(1, toNumber(row.max_attempts, 2)),
+      lastCode: String(row.last_code || ''),
+      lastError: String(row.last_error || ''),
+      updatedAt: toNumber(row.updated_at, 0)
+    }));
+  }
+
+  cleanupSelfRecallTasks(retentionMs: number): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    const keep = Math.max(60 * 1000, toNumber(retentionMs, 3 * 24 * 60 * 60 * 1000));
+    const cutoff = now - keep;
+    db.prepare(`DELETE FROM self_recall_tasks
+      WHERE status IN ('success', 'failed') AND updated_at < ?`).run(cutoff);
+  }
+
+  scheduleRecallTask(input: RecallTaskScheduleInput): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    const row = db.prepare('SELECT task_id, status, created_at, attempt_count FROM recall_tasks WHERE task_id = ?').get(String(input.taskId));
+    if (row && String(row.status || '') === 'success') return;
+    const createdAt = row ? toNumber(row.created_at, now) : now;
+    const attemptCount = row ? toNumber(row.attempt_count, 0) : 0;
+    db.prepare(`INSERT OR REPLACE INTO recall_tasks(
+      task_id, group_id, message_id, target_user_id, reason, status, created_at, due_at, next_retry_at, attempt_count, max_attempts, last_code, last_error, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      String(input.taskId),
+      String(input.groupId),
+      String(input.messageId),
+      String(input.targetUserId || ''),
+      String(input.reason || 'recall_action'),
+      'scheduled',
+      createdAt,
+      toNumber(input.dueAt, now),
+      toNumber(input.dueAt, now),
+      attemptCount,
+      Math.max(1, toNumber(input.maxAttempts, 2)),
+      '',
+      '',
+      now
+    );
+  }
+
+  markRecallTaskQueued(taskId: string): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    db.prepare(`UPDATE recall_tasks
+      SET status = 'queued', updated_at = ?
+      WHERE task_id = ? AND status IN ('scheduled', 'queued')`).run(now, String(taskId));
+  }
+
+  resolveRecallTask(taskId: string, code: string, ok: boolean, retryAfterMs: number): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    const row = db.prepare('SELECT attempt_count, max_attempts FROM recall_tasks WHERE task_id = ?').get(String(taskId));
+    if (!row) return;
+    const attemptCount = toNumber(row.attempt_count, 0) + 1;
+    const maxAttempts = Math.max(1, toNumber(row.max_attempts, 2));
+    const normalizedCode = String(code || '');
+    const success = ok || normalizedCode === 'ok' || normalizedCode === 'skip_duplicate';
+    if (success) {
+      db.prepare(`UPDATE recall_tasks
+        SET status = 'success', attempt_count = ?, next_retry_at = 0, last_code = ?, last_error = '', updated_at = ?
+        WHERE task_id = ?`).run(attemptCount, normalizedCode, now, String(taskId));
+      return;
+    }
+    const hasRetry = retryAfterMs > 0 && attemptCount < maxAttempts;
+    if (hasRetry) {
+      const nextRetryAt = now + Math.max(1000, Math.floor(retryAfterMs));
+      db.prepare(`UPDATE recall_tasks
+        SET status = 'scheduled', attempt_count = ?, next_retry_at = ?, last_code = ?, last_error = ?, updated_at = ?
+        WHERE task_id = ?`).run(attemptCount, nextRetryAt, normalizedCode, normalizedCode, now, String(taskId));
+      return;
+    }
+    db.prepare(`UPDATE recall_tasks
+      SET status = 'failed', attempt_count = ?, next_retry_at = 0, last_code = ?, last_error = ?, updated_at = ?
+      WHERE task_id = ?`).run(attemptCount, normalizedCode, normalizedCode, now, String(taskId));
+  }
+
+  getDueRecallTasks(nowTs: number, limit: number): RecallTaskRecord[] {
+    const db = this.assertReady();
+    const rows = db.prepare(`SELECT task_id, group_id, message_id, target_user_id, reason, status, created_at, due_at, next_retry_at, attempt_count, max_attempts, last_code, last_error, updated_at
+      FROM recall_tasks
+      WHERE status = 'scheduled' AND next_retry_at <= ?
+      ORDER BY next_retry_at ASC
+      LIMIT ?`).all(toNumber(nowTs, Date.now()), Math.max(1, toNumber(limit, 200)));
+    return (rows || []).map((row: any) => ({
+      taskId: String(row.task_id || ''),
+      groupId: String(row.group_id || ''),
+      messageId: String(row.message_id || ''),
+      targetUserId: String(row.target_user_id || ''),
+      reason: String(row.reason || ''),
+      status: (String(row.status || 'scheduled') as RecallTaskRecord['status']),
+      createdAt: toNumber(row.created_at, 0),
+      dueAt: toNumber(row.due_at, 0),
+      nextRetryAt: toNumber(row.next_retry_at, 0),
+      attemptCount: toNumber(row.attempt_count, 0),
+      maxAttempts: Math.max(1, toNumber(row.max_attempts, 2)),
+      lastCode: String(row.last_code || ''),
+      lastError: String(row.last_error || ''),
+      updatedAt: toNumber(row.updated_at, 0)
+    }));
+  }
+
+  cleanupRecallTasks(retentionMs: number): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    const keep = Math.max(60 * 1000, toNumber(retentionMs, 3 * 24 * 60 * 60 * 1000));
+    const cutoff = now - keep;
+    db.prepare(`DELETE FROM recall_tasks
+      WHERE status IN ('success', 'failed') AND updated_at < ?`).run(cutoff);
+  }
+
   getStorageStatus(): { migrated: boolean; dbPath: string; tableCounts: Record<string, number>; } {
     const db = this.assertReady();
-    const tables = ['group_config', 'group_qa', 'activity', 'signin', 'invites', 'warnings', 'join_logs'];
+    const tables = ['group_config', 'group_qa', 'activity', 'signin', 'invites', 'warnings', 'join_logs', 'self_recall_tasks', 'recall_tasks'];
     const tableCounts: Record<string, number> = {};
     for (const t of tables) {
       const row = db.prepare(`SELECT COUNT(1) AS c FROM ${t}`).get();

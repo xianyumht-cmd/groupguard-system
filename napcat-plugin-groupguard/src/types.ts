@@ -369,3 +369,61 @@ export interface PresetConfig {
     qaList?: QAEntry[];
   };
 }
+
+export type SelfRecallTaskStatus = 'scheduled' | 'queued' | 'success' | 'failed';
+
+export interface SelfRecallTaskRecord {
+  taskId: string;
+  groupId: string;
+  messageId: string;
+  reason: string;
+  source: 'send_group_msg' | 'message_event' | 'recovery';
+  status: SelfRecallTaskStatus;
+  createdAt: number;
+  dueAt: number;
+  nextRetryAt: number;
+  attemptCount: number;
+  maxAttempts: number;
+  lastCode: string;
+  lastError: string;
+  updatedAt: number;
+}
+
+export interface SelfRecallScheduleInput {
+  taskId: string;
+  groupId: string;
+  messageId: string;
+  reason: string;
+  source: 'send_group_msg' | 'message_event' | 'recovery';
+  dueAt: number;
+  maxAttempts: number;
+}
+
+export type RecallTaskStatus = 'scheduled' | 'queued' | 'success' | 'failed';
+
+export interface RecallTaskRecord {
+  taskId: string;
+  groupId: string;
+  messageId: string;
+  targetUserId: string;
+  reason: string;
+  status: RecallTaskStatus;
+  createdAt: number;
+  dueAt: number;
+  nextRetryAt: number;
+  attemptCount: number;
+  maxAttempts: number;
+  lastCode: string;
+  lastError: string;
+  updatedAt: number;
+}
+
+export interface RecallTaskScheduleInput {
+  taskId: string;
+  groupId: string;
+  messageId: string;
+  targetUserId?: string;
+  reason: string;
+  dueAt: number;
+  maxAttempts: number;
+}

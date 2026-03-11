@@ -1,4 +1,12 @@
-import type { ActivityRecord, SigninData, InviteData } from '../types';
+import type {
+  ActivityRecord,
+  SigninData,
+  InviteData,
+  SelfRecallScheduleInput,
+  SelfRecallTaskRecord,
+  RecallTaskScheduleInput,
+  RecallTaskRecord
+} from '../types';
 import { dbQuery } from '../db';
 
 const get = {
@@ -37,6 +45,12 @@ const update = {
   },
   activity(groupId: string, userId: string, data: ActivityRecord): Promise<void> {
     return dbQuery.updateActivity(groupId, userId, data);
+  },
+  selfRecallQueued(taskId: string): Promise<void> {
+    return dbQuery.markSelfRecallTaskQueued(taskId);
+  },
+  selfRecallResolved(taskId: string, code: string, ok: boolean, retryAfterMs: number): Promise<void> {
+    return dbQuery.resolveSelfRecallTask(taskId, code, ok, retryAfterMs);
   }
 };
 
@@ -95,6 +109,36 @@ export const groupguardRepository = {
   },
   getAllActivity(groupId: string): Promise<Record<string, ActivityRecord>> {
     return get.allActivity(groupId);
+  },
+  scheduleSelfRecallTask(input: SelfRecallScheduleInput): Promise<void> {
+    return dbQuery.scheduleSelfRecallTask(input);
+  },
+  markSelfRecallTaskQueued(taskId: string): Promise<void> {
+    return update.selfRecallQueued(taskId);
+  },
+  resolveSelfRecallTask(taskId: string, code: string, ok: boolean, retryAfterMs: number): Promise<void> {
+    return update.selfRecallResolved(taskId, code, ok, retryAfterMs);
+  },
+  getDueSelfRecallTasks(nowTs: number, limit: number): Promise<SelfRecallTaskRecord[]> {
+    return dbQuery.getDueSelfRecallTasks(nowTs, limit);
+  },
+  cleanupSelfRecallTasks(retentionMs: number): Promise<void> {
+    return dbQuery.cleanupSelfRecallTasks(retentionMs);
+  },
+  scheduleRecallTask(input: RecallTaskScheduleInput): Promise<void> {
+    return dbQuery.scheduleRecallTask(input);
+  },
+  markRecallTaskQueued(taskId: string): Promise<void> {
+    return dbQuery.markRecallTaskQueued(taskId);
+  },
+  resolveRecallTask(taskId: string, code: string, ok: boolean, retryAfterMs: number): Promise<void> {
+    return dbQuery.resolveRecallTask(taskId, code, ok, retryAfterMs);
+  },
+  getDueRecallTasks(nowTs: number, limit: number): Promise<RecallTaskRecord[]> {
+    return dbQuery.getDueRecallTasks(nowTs, limit);
+  },
+  cleanupRecallTasks(retentionMs: number): Promise<void> {
+    return dbQuery.cleanupRecallTasks(retentionMs);
   },
   runInTransaction<T>(fn: () => T): T {
     return dbQuery.runInTransaction(fn);

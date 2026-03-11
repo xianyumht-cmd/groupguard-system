@@ -1,6 +1,6 @@
 # 🛡️ NapCat GroupGuard Plugin
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 全功能企业级群管理插件，专为 NapCat/OneBot11 设计。集成风控防护、商业授权、互动娱乐、入群验证、自动问答等核心模块。
@@ -14,6 +14,7 @@
 - **媒体屏蔽**：支持屏蔽图片、视频、语音、链接、二维码、名片、小程序等。
 - **防撤回**：按 30 秒窗口聚合统计撤回事件并私聊通知主人。
 - **动作队列**：kick/ban/recall/self_recall 统一进入 ActionQueue，支持限速、去重、重试、超时保护。
+- **撤回补偿**：撤回 message_id 持久化落库，插件重启后自动补偿执行待处理撤回任务。
 
 ### 💼 商业授权
 - **分级授权**：支持免费版、专业版、企业版差异化功能控制。
