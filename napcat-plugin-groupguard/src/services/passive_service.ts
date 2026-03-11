@@ -269,7 +269,11 @@ export async function executeHandleFilterKeywords(groupId: string, userId: strin
   const globalKw = pluginState.config.filterKeywords || [];
   const allKw = [...new Set([...groupKw, ...globalKw])];
   if (!allKw.length) return false;
-  const matched = allKw.find(k => raw.includes(k));
+
+  // 修改：转小写匹配
+  const lowerRaw = raw.toLowerCase();
+  const matched = allKw.find(k => lowerRaw.includes(k.toLowerCase()));
+
   if (!matched) return false;
   const masked = matched.length > 1 ? matched[0] + '*'.repeat(matched.length - 1) : '*';
   const recallResult = await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'keyword_filter', automatic: true, maxRetries: 1 });
@@ -346,43 +350,64 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
   const isGroupCustom = pluginState.config.groups[groupId] && !pluginState.config.groups[groupId].useGlobal;
   const qaList = isGroupCustom ? (settings.qaList || []) : (pluginState.config.qaList || []);
   if (!qaList.length) return false;
+
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
   if (text.startsWith('删问') || text.startsWith('模糊问') || text.startsWith('精确问') || text.startsWith('删除问答')) return false;
+
+  // 修改：统一文本小写
+  const lowerText = text.toLowerCase();
+
   for (const qa of qaList) {
     let matched = false;
-    if (qa.mode === 'exact') matched = text === qa.keyword;
-    else if (qa.mode === 'contains') matched = text.includes(qa.keyword);
-    else if (qa.mode === 'regex') { try { matched = new RegExp(qa.keyword).test(text); } catch {} }
+    const lowerKeyword = qa.keyword.toLowerCase();
+
+    // 修改：匹配逻辑改为忽略大小写
+    if (qa.mode === 'exact') matched = lowerText === lowerKeyword;
+    else if (qa.mode === 'contains') matched = lowerText.includes(lowerKeyword);
+    else if (qa.mode === 'regex') { 
+      try { 
+        // 修改：正则增加 'i' 标识
+        matched = new RegExp(qa.keyword, 'i').test(text); 
+      } catch {} 
+    }
+
     if (!matched) continue;
+
     const now = Date.now();
     const baseCooldown = settings.qaCooldownSeconds ?? pluginState.config.global.qaCooldownSeconds ?? 30;
     const userCooldown = settings.qaUserCooldownSeconds ?? pluginState.config.global.qaUserCooldownSeconds ?? 12;
     const highPatterns = settings.qaHighRiskPatterns ?? pluginState.config.global.qaHighRiskPatterns ?? [];
     const mediumPatterns = settings.qaMediumRiskPatterns ?? pluginState.config.global.qaMediumRiskPatterns ?? [];
-    const lowerText = text.toLowerCase();
-    const lowerKeyword = qa.keyword.toLowerCase();
+
+    // 修改：使用已定义的 lowerText 和 lowerKeyword 进行风险检测
     const hitHigh = highPatterns.some(p => p && (lowerText.includes(String(p).toLowerCase()) || lowerKeyword.includes(String(p).toLowerCase())));
     const hitMedium = !hitHigh && mediumPatterns.some(p => p && (lowerText.includes(String(p).toLowerCase()) || lowerKeyword.includes(String(p).toLowerCase())));
+    
     const tierCooldown = hitHigh
       ? (settings.qaTierCooldownHigh ?? pluginState.config.global.qaTierCooldownHigh ?? 60)
       : hitMedium
         ? (settings.qaTierCooldownMedium ?? pluginState.config.global.qaTierCooldownMedium ?? 30)
         : (settings.qaTierCooldownLow ?? pluginState.config.global.qaTierCooldownLow ?? 15);
+
     const groupKeywordKey = `${groupId}:${qa.mode}:${qa.keyword}`;
     const groupUserKey = `${groupId}:user:${userId}`;
     const groupUserKeywordKey = `${groupId}:user:${userId}:${qa.mode}:${qa.keyword}`;
     const lastGroupKeywordTs = pluginState.qaCooldownMap.get(groupKeywordKey) || 0;
     const lastGroupUserTs = pluginState.qaCooldownMap.get(groupUserKey) || 0;
     const lastGroupUserKeywordTs = pluginState.qaCooldownMap.get(groupUserKeywordKey) || 0;
+
     if (baseCooldown > 0 && now - lastGroupKeywordTs < baseCooldown * 1000) return false;
     if (userCooldown > 0 && now - lastGroupUserTs < userCooldown * 1000) return false;
     if (tierCooldown > 0 && now - lastGroupUserKeywordTs < tierCooldown * 1000) return false;
+
     pluginState.qaCooldownMap.set(groupKeywordKey, now);
     pluginState.qaCooldownMap.set(groupUserKey, now);
     pluginState.qaCooldownMap.set(groupUserKeywordKey, now);
+
     const reply = qa.reply.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
     if (reply.includes('[CQ:')) await pluginState.sendGroupMsg(groupId, [{ type: 'text', data: { text: reply } }], { force: false, applyTemplate: true });
     else await pluginState.sendGroupText(groupId, reply, { force: false, applyTemplate: true });
+    
     pluginState.debug(`问答触发: 群 ${groupId} 用户 ${userId} 匹配 [${qa.mode}]${qa.keyword}`);
     return true;
   }
