@@ -397,7 +397,7 @@ async function executeTask(task: QueueTask): Promise<void> {
   appendQueueLog(`${task.type} ${taskSubject(task)} executing`);
   incActiveType(task.type);
   try {
-    if (isDedupHit(task.groupId, task.dedupKey)) {
+    if (task.retries <= 0 && isDedupHit(task.groupId, task.dedupKey)) {
       if (task.type === 'misc') task.resolve({ ok: false, code: 'skip_duplicate' });
       else task.resolve({ ok: false, code: 'skip_duplicate' });
       if (task.type === 'recall') {
@@ -486,7 +486,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         groupId: task.groupId,
         messageId: task.payload.messageId,
         reason: task.payload.reason,
-        automatic: task.payload.automatic,
+        automatic: false,
         allowSelfTarget: task.payload.allowSelfTarget
       });
       const wrapped = await executeWithTimeout(call, timeoutMs);
@@ -763,7 +763,7 @@ export async function enqueueSelfRecallAction(opts: {
         messageId: String(opts.messageId),
         reason: opts.reason || 'self_recall_event',
         source: opts.source || 'message_event',
-        automatic: opts.automatic !== false,
+        automatic: opts.automatic === true,
         allowSelfTarget: opts.allowSelfTarget !== false
       },
       resolve,
@@ -937,7 +937,7 @@ async function runSelfRecallRecoveryBatch(limit = 200): Promise<void> {
         messageId: row.messageId,
         reason: row.reason || 'self_recall_recovery',
         source: 'recovery',
-        automatic: true,
+        automatic: false,
         allowSelfTarget: true,
         maxRetries: Math.max(1, Number(row.maxAttempts || 6))
       });

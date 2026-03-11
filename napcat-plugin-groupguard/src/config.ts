@@ -1,5 +1,5 @@
 // 群管插件配置
-import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings } from './types';
+import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry } from './types';
 
 export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockVideo: false,
@@ -210,11 +210,30 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   presets: [],
 };
 
+const FIXED_QA_ENTRY: QAEntry = {
+  keyword: 'dy',
+  reply: 'https://wwbls.lanzouq.com/b0raxb2ed',
+  mode: 'exact'
+};
+
 export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   const merged: PluginConfig = {
     ...JSON.parse(JSON.stringify(DEFAULT_PLUGIN_CONFIG)),
     ...(input || {}),
   };
+  const normalizedQaList: QAEntry[] = Array.isArray(merged.qaList)
+    ? merged.qaList
+      .filter((qa: any) => qa && typeof qa.keyword === 'string' && typeof qa.reply === 'string')
+      .map((qa: any): QAEntry => ({
+        keyword: String(qa.keyword),
+        reply: String(qa.reply),
+        mode: qa.mode === 'contains' || qa.mode === 'regex' ? qa.mode : 'exact'
+      }))
+    : [];
+  if (!normalizedQaList.some((qa) => qa.mode === 'exact' && qa.keyword.trim().toLowerCase() === FIXED_QA_ENTRY.keyword)) {
+    normalizedQaList.push({ ...FIXED_QA_ENTRY });
+  }
+  merged.qaList = normalizedQaList;
   merged.global = normalizeGroupSettings(merged.global || ({} as GroupGuardSettings));
   const groups: Record<string, GroupGuardSettings> = {};
   for (const [gid, gs] of Object.entries(merged.groups || {})) {

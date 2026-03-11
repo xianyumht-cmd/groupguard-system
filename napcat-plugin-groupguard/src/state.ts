@@ -284,16 +284,34 @@ class PluginState {
       return;
     }
     this.selfRecallScheduleMap.set(dedupKey, now);
+    const taskId = `${gid}:${msgId}`;
+    const reason = source === 'send_group_msg' ? 'self_recall_send_queue' : 'self_recall_event';
+    const dueAt = now + delay;
     this.debug(`[SelfRecall] enqueue source=${source} groupId=${gid} msgId=${msgId} delay=${delay}`);
+    import('./repositories/groupguard_repository')
+      .then(mod => mod.groupguardRepository.scheduleSelfRecallTask({
+        taskId,
+        groupId: gid,
+        messageId: msgId,
+        reason,
+        source,
+        dueAt,
+        maxAttempts: 6
+      }))
+      .catch((err) => {
+        this.debug(`[SelfRecall] persist_failed source=${source} groupId=${gid} msgId=${msgId} err=${String(err)}`);
+      });
     setTimeout(() => {
       import('./services/action_queue_service')
         .then(mod => mod.enqueueSelfRecallAction({
+          taskId,
           groupId: gid,
           messageId: msgId,
-          reason: source === 'send_group_msg' ? 'self_recall_send_queue' : 'self_recall_event',
-          automatic: true,
+          reason,
+          source,
+          automatic: false,
           allowSelfTarget: true,
-          maxRetries: 1
+          maxRetries: 6
         }))
         .then((result) => {
           this.debug(`[SelfRecall] enqueue_result source=${source} groupId=${gid} msgId=${msgId} code=${result.code}`);

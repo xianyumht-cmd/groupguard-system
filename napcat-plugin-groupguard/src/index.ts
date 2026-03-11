@@ -13,7 +13,7 @@ import { groupguardRepository } from './repositories/groupguard_repository';
 import { createVerifySession, handleVerifyAnswer, clearAllSessions } from './verify';
 import { getReplyTemplateCatalog } from './reply_generator';
 import { getGuardRuntimeSnapshot } from './services/action_guard_service';
-import { enqueueKickAction } from './services/action_queue_service';
+import { enqueueKickAction, startSelfRecallRecovery, stopSelfRecallRecovery } from './services/action_queue_service';
 import { auditReplyTemplates } from './reply_template_audit';
 import { BUILTIN_REPLY_SCENE_TEMPLATES } from './reply_templates';
 import { flushInviteService, initInviteService, recordInviteRelation } from './services/invite_service';
@@ -143,6 +143,7 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
   // 初始化数据库
   await initDB();
   initInviteService(pluginState.configDir);
+  startSelfRecallRecovery();
 
   // 初始化授权
   authManager.init();
@@ -358,14 +359,15 @@ export const plugin_set_config = async (ctx: NapCatPluginContext, config: Plugin
 // ========== 插件清理 ==========
 const plugin_cleanup: PluginModule['plugin_cleanup'] = async () => {
   pluginState.log('info', '群管插件正在卸载...');
+  stopSelfRecallRecovery();
   await flushInviteService();
   clearAllSessions();
 };
 
 // ========== 消息处理 ==========
 const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx: NapCatPluginContext, event: OB11Message) => {
-  // 仅处理 message 类型事件
-  if (event.post_type !== 'message') return;
+  // 处理 message / message_sent 事件
+  if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
 
   const userId = String(event.user_id);
   const raw = event.raw_message || '';

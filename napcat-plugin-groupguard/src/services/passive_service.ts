@@ -352,6 +352,7 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
   if (!qaList.length) return false;
 
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
+  const normalizedText = text.toLowerCase();
   if (text.startsWith('删问') || text.startsWith('模糊问') || text.startsWith('精确问') || text.startsWith('删除问答')) return false;
 
   // 修改：统一文本小写
@@ -359,18 +360,12 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
 
   for (const qa of qaList) {
     let matched = false;
-    const lowerKeyword = qa.keyword.toLowerCase();
-
-    // 修改：匹配逻辑改为忽略大小写
-    if (qa.mode === 'exact') matched = lowerText === lowerKeyword;
-    else if (qa.mode === 'contains') matched = lowerText.includes(lowerKeyword);
-    else if (qa.mode === 'regex') { 
-      try { 
-        // 修改：正则增加 'i' 标识
-        matched = new RegExp(qa.keyword, 'i').test(text); 
-      } catch {} 
-    }
-
+    const keyword = String(qa.keyword || '');
+    const normalizedKeyword = keyword.toLowerCase();
+    const lowerKeyword = normalizedKeyword;
+    if (qa.mode === 'exact') matched = normalizedText === normalizedKeyword;
+    else if (qa.mode === 'contains') matched = normalizedText.includes(normalizedKeyword);
+    else if (qa.mode === 'regex') { try { matched = new RegExp(keyword, 'i').test(text); } catch {} }
     if (!matched) continue;
 
     const now = Date.now();
