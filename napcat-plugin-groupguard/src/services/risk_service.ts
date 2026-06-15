@@ -1,23 +1,36 @@
-import { pluginState } from '../state';
 import { authManager } from '../auth';
 import { DEFAULT_MSG_FILTER, RISK_CONTROL_MENU } from '../config';
 import { isAdminOrOwner, saveConfig, sendGroupScene, sendPrivateScene } from '../commands/common';
+import { authStateService } from '../core/state-services/auth_state_service';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { send } from '../dynamic-commands/response_capture_runtime';
 import type { CommandExecutionContext } from './command_service_types';
+
+function getConfig() {
+  return configStateService.getConfig();
+}
+
+function ensureGroupSettings(groupId: string) {
+  const config = getConfig();
+  if (!config.groups[groupId]) config.groups[groupId] = { ...configStateService.resolveGroupSettings(groupId) };
+  return config.groups[groupId];
+}
 
 export async function executeRiskCommand(input: CommandExecutionContext): Promise<boolean> {
   const { event, text, userId, groupId, ctx } = input;
   if (event.message_type === 'private') {
-    if (!pluginState.isOwner(userId)) return true;
-    if (text === '开启调试') { pluginState.config.debug = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '调试模式已开启'); return true; }
-    if (text === '关闭调试') { pluginState.config.debug = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '调试模式已关闭'); return true; }
-    if (text === '开启随机后缀') { pluginState.config.global.randomSuffix = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局随机后缀已开启'); return true; }
-    if (text === '关闭随机后缀') { pluginState.config.global.randomSuffix = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局随机后缀已关闭'); return true; }
-    if (text === '开启纯文本回复') { pluginState.config.global.disableReplyTemplate = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已开启（关闭人格与模板包装）'); return true; }
-    if (text === '关闭纯文本回复') { pluginState.config.global.disableReplyTemplate = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已关闭（恢复人格与模板包装）'); return true; }
+    if (!authStateService.isOwner(userId)) return true;
+    if (text === '开启调试') { getConfig().debug = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '调试模式已开启'); return true; }
+    if (text === '关闭调试') { getConfig().debug = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '调试模式已关闭'); return true; }
+    if (text === '开启随机后缀') { getConfig().global.randomSuffix = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局随机后缀已开启'); return true; }
+    if (text === '关闭随机后缀') { getConfig().global.randomSuffix = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局随机后缀已关闭'); return true; }
+    if (text === '开启纯文本回复') { getConfig().global.disableReplyTemplate = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已开启（关闭人格与模板包装）'); return true; }
+    if (text === '关闭纯文本回复') { getConfig().global.disableReplyTemplate = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已关闭（恢复人格与模板包装）'); return true; }
     if (text === '开启全局自身撤回') {
-      pluginState.config.global.autoRecallSelf = true;
-      pluginState.config.global.autoRecallSelfDelay = 60;
-      pluginState.config.global.selfRecall = {
+      getConfig().global.autoRecallSelf = true;
+      getConfig().global.autoRecallSelfDelay = 60;
+      getConfig().global.selfRecall = {
         enabled: true,
         mode: 'fixed',
         fixedDelay: 60,
@@ -30,8 +43,8 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       return true;
     }
     if (text === '关闭全局自身撤回') {
-      pluginState.config.global.autoRecallSelf = false;
-      pluginState.config.global.selfRecall = {
+      getConfig().global.autoRecallSelf = false;
+      getConfig().global.selfRecall = {
         enabled: false,
         mode: 'fixed',
         fixedDelay: 60,
@@ -43,24 +56,24 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       await sendPrivateScene(userId, 'action_success', '全局自身撤回已关闭');
       return true;
     }
-    if (text === '开启撤回管理员消息') { pluginState.config.global.allowRecallAdminMessage = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已允许自动撤回管理员消息'); return true; }
-    if (text === '关闭撤回管理员消息') { pluginState.config.global.allowRecallAdminMessage = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已禁止自动撤回管理员消息'); return true; }
-    if (text === '开启撤回群主消息') { pluginState.config.global.allowRecallOwnerMessage = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已允许自动撤回群主消息'); return true; }
-    if (text === '关闭撤回群主消息') { pluginState.config.global.allowRecallOwnerMessage = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已禁止自动撤回群主消息'); return true; }
-    if (text === '开启管理员保护') { pluginState.config.global.protectAdminActions = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已开启管理员保护'); return true; }
-    if (text === '关闭管理员保护') { pluginState.config.global.protectAdminActions = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已关闭管理员保护'); return true; }
-    if (text === '开启群主保护') { pluginState.config.global.protectOwnerActions = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已开启群主保护'); return true; }
-    if (text === '关闭群主保护') { pluginState.config.global.protectOwnerActions = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已关闭群主保护'); return true; }
-    if (text === '开启自动风控收敛') { pluginState.config.global.autoRiskControl = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '自动风控收敛已开启'); return true; }
-    if (text === '关闭自动风控收敛') { pluginState.config.global.autoRiskControl = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '自动风控收敛已关闭'); return true; }
+    if (text === '开启撤回管理员消息') { getConfig().global.allowRecallAdminMessage = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已允许自动撤回管理员消息'); return true; }
+    if (text === '关闭撤回管理员消息') { getConfig().global.allowRecallAdminMessage = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已禁止自动撤回管理员消息'); return true; }
+    if (text === '开启撤回群主消息') { getConfig().global.allowRecallOwnerMessage = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已允许自动撤回群主消息'); return true; }
+    if (text === '关闭撤回群主消息') { getConfig().global.allowRecallOwnerMessage = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已禁止自动撤回群主消息'); return true; }
+    if (text === '开启管理员保护') { getConfig().global.protectAdminActions = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已开启管理员保护'); return true; }
+    if (text === '关闭管理员保护') { getConfig().global.protectAdminActions = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已关闭管理员保护'); return true; }
+    if (text === '开启群主保护') { getConfig().global.protectOwnerActions = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已开启群主保护'); return true; }
+    if (text === '关闭群主保护') { getConfig().global.protectOwnerActions = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '已关闭群主保护'); return true; }
+    if (text === '开启自动风控收敛') { getConfig().global.autoRiskControl = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '自动风控收敛已开启'); return true; }
+    if (text === '关闭自动风控收敛') { getConfig().global.autoRiskControl = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '自动风控收敛已关闭'); return true; }
     if (text.startsWith('设置随机延迟 ')) {
       const parts = text.split(/\s+/);
       if (parts.length < 3) { await sendPrivateScene(userId, 'command_format_error', '格式：设置随机延迟 <最小ms> <最大ms>', { example: '设置随机延迟 100 800' }); return true; }
       const min = parseInt(parts[1]);
       const max = parseInt(parts[2]);
       if (isNaN(min) || isNaN(max)) { await sendPrivateScene(userId, 'command_format_error', '请输入有效的数字'); return true; }
-      pluginState.config.global.randomDelayMin = min;
-      pluginState.config.global.randomDelayMax = max;
+      getConfig().global.randomDelayMin = min;
+      getConfig().global.randomDelayMax = max;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `全局随机延迟已设置为 ${min}-${max}ms`);
       return true;
@@ -68,7 +81,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置发送队列模式 ')) {
       const mode = text.slice('设置发送队列模式 '.length).trim();
       if (mode !== '全局' && mode !== '分群') { await sendPrivateScene(userId, 'command_format_error', '格式：设置发送队列模式 全局/分群', { example: '设置发送队列模式 全局' }); return true; }
-      pluginState.config.global.queueMode = mode === '全局' ? 'global' : 'group';
+      getConfig().global.queueMode = mode === '全局' ? 'global' : 'group';
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `发送队列模式已设置为：${mode}`);
       return true;
@@ -76,7 +89,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置发送并发 ')) {
       const n = parseInt(text.slice('设置发送并发 '.length).trim());
       if (isNaN(n) || n < 1 || n > 20) { await sendPrivateScene(userId, 'invalid_range', '并发范围：1-20', { example: '设置发送并发 4' }); return true; }
-      pluginState.config.global.queueConcurrency = n;
+      getConfig().global.queueConcurrency = n;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `发送并发已设置为：${n}`);
       return true;
@@ -84,7 +97,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置全局限流 ')) {
       const n = parseInt(text.slice('设置全局限流 '.length).trim());
       if (isNaN(n) || n < 1) { await sendPrivateScene(userId, 'invalid_range', '请输入大于0的数字（单位：条/分钟）', { example: '设置全局限流 180' }); return true; }
-      pluginState.config.global.globalMaxPerMinute = n;
+      getConfig().global.globalMaxPerMinute = n;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `全局发送限流已设置为：${n}条/分钟`);
       return true;
@@ -92,7 +105,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置问答冷却 ')) {
       const n = parseInt(text.slice('设置问答冷却 '.length).trim());
       if (isNaN(n) || n < 0 || n > 3600) { await sendPrivateScene(userId, 'invalid_range', '冷却范围：0-3600 秒', { example: '设置问答冷却 30' }); return true; }
-      pluginState.config.global.qaCooldownSeconds = n;
+      getConfig().global.qaCooldownSeconds = n;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `问答冷却已设置为：${n}秒`);
       return true;
@@ -100,7 +113,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置用户冷却 ')) {
       const n = parseInt(text.slice('设置用户冷却 '.length).trim());
       if (isNaN(n) || n < 0 || n > 3600) { await sendPrivateScene(userId, 'invalid_range', '冷却范围：0-3600 秒', { example: '设置用户冷却 12' }); return true; }
-      pluginState.config.global.qaUserCooldownSeconds = n;
+      getConfig().global.qaUserCooldownSeconds = n;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `同用户冷却已设置为：${n}秒`);
       return true;
@@ -112,9 +125,9 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       const medium = parseInt(parts[2]);
       const high = parseInt(parts[3]);
       if ([low, medium, high].some(n => isNaN(n) || n < 0 || n > 3600)) { await sendPrivateScene(userId, 'invalid_range', '范围：0-3600 秒'); return true; }
-      pluginState.config.global.qaTierCooldownLow = low;
-      pluginState.config.global.qaTierCooldownMedium = medium;
-      pluginState.config.global.qaTierCooldownHigh = high;
+      getConfig().global.qaTierCooldownLow = low;
+      getConfig().global.qaTierCooldownMedium = medium;
+      getConfig().global.qaTierCooldownHigh = high;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `分级冷却已设置：低${low}s / 中${medium}s / 高${high}s`);
       return true;
@@ -126,9 +139,9 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       const threshold = parseInt(parts[2]);
       const cooldownSec = parseInt(parts[3]);
       if ([windowSec, threshold, cooldownSec].some(n => isNaN(n) || n <= 0)) { await sendPrivateScene(userId, 'invalid_range', '请输入大于0的整数'); return true; }
-      pluginState.config.global.groupFuseWindowSeconds = windowSec;
-      pluginState.config.global.groupFuseThreshold = threshold;
-      pluginState.config.global.groupFuseCooldownSeconds = cooldownSec;
+      getConfig().global.groupFuseWindowSeconds = windowSec;
+      getConfig().global.groupFuseThreshold = threshold;
+      getConfig().global.groupFuseCooldownSeconds = cooldownSec;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `群熔断已设置：窗口${windowSec}s 阈值${threshold} 熔断${cooldownSec}s`);
       return true;
@@ -136,7 +149,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置回复概率 ')) {
       const n = parseInt(text.slice('设置回复概率 '.length).trim());
       if (isNaN(n) || n < 0 || n > 100) { await sendPrivateScene(userId, 'invalid_range', '概率范围：0-100', { example: '设置回复概率 80' }); return true; }
-      pluginState.config.global.replyProbability = n;
+      getConfig().global.replyProbability = n;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `回复概率已设置为：${n}%`);
       return true;
@@ -147,7 +160,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       if (!arr.length) { await sendPrivateScene(userId, 'command_format_error', '格式：设置回复模板 模板1|模板2（模板需包含 {msg}）'); return true; }
       const valid = arr.filter(s => s.includes('{msg}'));
       if (!valid.length) { await sendPrivateScene(userId, 'command_format_error', '模板必须包含 {msg} 占位符'); return true; }
-      pluginState.config.global.replyTemplatePool = valid;
+      getConfig().global.replyTemplatePool = valid;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `回复模板已更新，共${valid.length}条`, { total: valid.length });
       return true;
@@ -158,8 +171,8 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       const windowSec = parseInt(parts[1]);
       const limit = parseInt(parts[2]);
       if (isNaN(windowSec) || isNaN(limit) || windowSec < 1 || limit < 1) { await sendPrivateScene(userId, 'invalid_range', '请输入大于0的整数'); return true; }
-      pluginState.config.global.actionRateWindowSeconds = windowSec;
-      pluginState.config.global.actionRateLimit = limit;
+      getConfig().global.actionRateWindowSeconds = windowSec;
+      getConfig().global.actionRateLimit = limit;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `动作限流已设置：窗口${windowSec}s 阈值${limit}`);
       return true;
@@ -167,7 +180,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置撤回去重 ')) {
       const n = parseInt(text.slice('设置撤回去重 '.length).trim());
       if (isNaN(n) || n < 1 || n > 600) { await sendPrivateScene(userId, 'invalid_range', '范围：1-600 秒', { example: '设置撤回去重 20' }); return true; }
-      pluginState.config.global.recallDedupSeconds = n;
+      getConfig().global.recallDedupSeconds = n;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `撤回去重窗口已设置为 ${n} 秒`);
       return true;
@@ -179,9 +192,9 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       const protect = parseInt(parts[2]);
       const decay = parseInt(parts[3]);
       if ([warn, protect, decay].some(n => isNaN(n) || n < 1) || protect <= warn) { await sendPrivateScene(userId, 'invalid_range', '参数无效，需保护分大于预警分且都大于0'); return true; }
-      pluginState.config.global.riskWarnScore = warn;
-      pluginState.config.global.riskProtectScore = protect;
-      pluginState.config.global.riskDecaySeconds = decay;
+      getConfig().global.riskWarnScore = warn;
+      getConfig().global.riskProtectScore = protect;
+      getConfig().global.riskDecaySeconds = decay;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `风险阈值已设置：预警${warn} 保护${protect} 衰减${decay}s`);
       return true;
@@ -193,9 +206,9 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       const ban = parseInt(parts[2]);
       const recall = parseInt(parts[3]);
       if ([kick, ban, recall].some(n => isNaN(n) || n < 1)) { await sendPrivateScene(userId, 'invalid_range', '请输入大于0的整数'); return true; }
-      pluginState.config.global.maxKickPerMinute = kick;
-      pluginState.config.global.maxBanPerMinute = ban;
-      pluginState.config.global.maxRecallPerMinute = recall;
+      getConfig().global.maxKickPerMinute = kick;
+      getConfig().global.maxBanPerMinute = ban;
+      getConfig().global.maxRecallPerMinute = recall;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `处罚速率已设置：踢${kick}/分 禁言${ban}/分 撤回${recall}/分`);
       return true;
@@ -208,12 +221,12 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       const recallMin = parseFloat(parts[3]);
       const recallMax = parseFloat(parts[4]);
       if ([kickMin, kickMax, recallMin, recallMax].some(n => Number.isNaN(n) || n < 0)) { await sendPrivateScene(userId, 'invalid_range', '请输入大于等于0的数字'); return true; }
-      pluginState.config.global.kickDelayMinSeconds = kickMin;
-      pluginState.config.global.kickDelayMaxSeconds = Math.max(kickMin, kickMax);
-      pluginState.config.global.recallDelayMinSeconds = recallMin;
-      pluginState.config.global.recallDelayMaxSeconds = Math.max(recallMin, recallMax);
+      getConfig().global.kickDelayMinSeconds = kickMin;
+      getConfig().global.kickDelayMaxSeconds = Math.max(kickMin, kickMax);
+      getConfig().global.recallDelayMinSeconds = recallMin;
+      getConfig().global.recallDelayMaxSeconds = Math.max(recallMin, recallMax);
       saveConfig(ctx);
-      await sendPrivateScene(userId, 'action_success', `动作延迟已设置：踢${pluginState.config.global.kickDelayMinSeconds}-${pluginState.config.global.kickDelayMaxSeconds}s 撤回${pluginState.config.global.recallDelayMinSeconds}-${pluginState.config.global.recallDelayMaxSeconds}s`);
+      await sendPrivateScene(userId, 'action_success', `动作延迟已设置：踢${getConfig().global.kickDelayMinSeconds}-${getConfig().global.kickDelayMaxSeconds}s 撤回${getConfig().global.recallDelayMinSeconds}-${getConfig().global.recallDelayMaxSeconds}s`);
       return true;
     }
     if (text.startsWith('设置黑名单动作 ')) {
@@ -224,7 +237,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       if (modeRaw === '踢出') mode = 'kick';
       if (modeRaw === '踢出并拉黑') mode = 'kick_and_block';
       if (!mode) { await sendPrivateScene(userId, 'invalid_range', '可选：撤回/禁言/踢出/踢出并拉黑', { example: '设置黑名单动作 踢出并拉黑' }); return true; }
-      pluginState.config.global.blacklistAction = mode;
+      getConfig().global.blacklistAction = mode;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `黑名单动作已设置为：${modeRaw}`);
       return true;
@@ -232,19 +245,19 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (text.startsWith('设置黑名单禁言 ')) {
       const n = parseInt(text.slice('设置黑名单禁言 '.length).trim());
       if (isNaN(n) || n < 1 || n > 1440) { await sendPrivateScene(userId, 'invalid_range', '范围：1-1440 分钟', { example: '设置黑名单禁言 30' }); return true; }
-      pluginState.config.global.blacklistBanMinutes = n;
+      getConfig().global.blacklistBanMinutes = n;
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', `黑名单禁言时长已设置为 ${n} 分钟`);
       return true;
     }
     if (text === '开启黑名单前置' || text === '关闭黑名单前置') {
-      pluginState.config.global.blacklistCheckBeforeCommand = text === '开启黑名单前置';
+      getConfig().global.blacklistCheckBeforeCommand = text === '开启黑名单前置';
       saveConfig(ctx);
       await sendPrivateScene(userId, 'action_success', text === '开启黑名单前置' ? '已开启黑名单前置检测' : '已关闭黑名单前置检测');
       return true;
     }
     if (text === '查看发送策略') {
-      const g = pluginState.config.global;
+      const g = getConfig().global;
       await sendPrivateScene(
         userId,
         'raw_text',
@@ -261,15 +274,14 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     const nodes = [
       { type: 'node', data: { nickname: '🛡️ 风控配置', user_id: selfId, content: [{ type: 'text', data: { text: RISK_CONTROL_MENU } }] } }
     ];
-    await pluginState.callApi('send_group_forward_msg', { group_id: groupId, messages: nodes });
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', forwardNodes: nodes, force: true, applyTemplate: true });
     return true;
   }
   if (text.startsWith('设置权限缓存 ')) {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const seconds = parseInt(text.slice(7));
     if (isNaN(seconds) || seconds < 0) { await sendGroupScene(groupId, 'invalid_range', '请输入有效的秒数 (0=关闭)', { example: '设置权限缓存 60' }); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    pluginState.config.groups[groupId].adminCacheSeconds = seconds;
+    ensureGroupSettings(groupId).adminCacheSeconds = seconds;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', `已设置管理员权限缓存时间为 ${seconds} 秒`, { seconds });
     return true;
@@ -278,8 +290,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const parts = text.split(/\s+/);
     if (parts.length < 3) { await sendGroupScene(groupId, 'command_format_error', '格式：开启宵禁 00:00 06:00', { example: '开启宵禁 00:00 06:00' }); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    const gs = pluginState.config.groups[groupId];
+    const gs = ensureGroupSettings(groupId);
     gs.curfewEnabled = true;
     gs.curfewStart = parts[1];
     gs.curfewEnd = parts[2];
@@ -289,8 +300,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
   }
   if (text === '关闭宵禁') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    const gs = pluginState.config.groups[groupId];
+    const gs = ensureGroupSettings(groupId);
     gs.curfewEnabled = false;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', '已关闭宵禁');
@@ -298,8 +308,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
   }
   if (text === '开启刷屏检测' || text === '关闭刷屏检测') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    pluginState.config.groups[groupId].spamDetect = text === '开启刷屏检测';
+    ensureGroupSettings(groupId).spamDetect = text === '开启刷屏检测';
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', text === '开启刷屏检测' ? '已开启刷屏检测' : '已关闭刷屏检测');
     return true;
@@ -308,8 +317,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const val = parseInt(text.slice(7).trim());
     if (isNaN(val) || val < 0) { await sendGroupScene(groupId, 'invalid_range', '请输入有效的数字 (0表示关闭)', { example: '设置复读阈值 3' }); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    pluginState.config.groups[groupId].repeatThreshold = val;
+    ensureGroupSettings(groupId).repeatThreshold = val;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', `已设置复读阈值: ${val} (连续${val}条相同内容触发检测)`, { val });
     return true;
@@ -318,18 +326,17 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const v = parseInt(text.slice(7).trim());
     if (isNaN(v) || v < 1) { await sendGroupScene(groupId, 'invalid_range', '请输入有效数字（至少1）'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    if (text.startsWith('设置刷屏窗口 ')) pluginState.config.groups[groupId].spamWindow = v;
-    else if (text.startsWith('设置刷屏阈值 ')) pluginState.config.groups[groupId].spamThreshold = v;
-    else pluginState.config.groups[groupId].spamBanMinutes = v;
+    const gs = ensureGroupSettings(groupId);
+    if (text.startsWith('设置刷屏窗口 ')) gs.spamWindow = v;
+    else if (text.startsWith('设置刷屏阈值 ')) gs.spamThreshold = v;
+    else gs.spamBanMinutes = v;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', '刷屏参数已更新');
     return true;
   }
   if (text === '开启入群验证' || text === '关闭入群验证' || text === '开启自动审批' || text === '关闭自动审批' || text === '开启退群拉黑' || text === '关闭退群拉黑') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    const gs = pluginState.config.groups[groupId];
+    const gs = ensureGroupSettings(groupId);
     if (text === '开启入群验证') gs.enableVerify = true;
     if (text === '关闭入群验证') gs.enableVerify = false;
     if (text === '开启自动审批') gs.autoApprove = true;
@@ -344,18 +351,17 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const passphrase = text.startsWith('设置入群暗号 ') ? text.slice(7).trim() : text.slice(5).trim();
     if (!passphrase) { await sendGroupScene(groupId, 'command_format_error', '暗号不能为空'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    pluginState.config.groups[groupId].entryPassphrase = passphrase;
+    ensureGroupSettings(groupId).entryPassphrase = passphrase;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', `已设置入群暗号为：「${passphrase}」`);
     return true;
   }
   if (text === '关闭入群暗号' || text === '开启暗号回落' || text === '关闭暗号回落') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    if (text === '关闭入群暗号') pluginState.config.groups[groupId].entryPassphrase = '';
-    if (text === '开启暗号回落') pluginState.config.groups[groupId].enableAutoApproveAfterPassphraseOff = true;
-    if (text === '关闭暗号回落') pluginState.config.groups[groupId].enableAutoApproveAfterPassphraseOff = false;
+    const gs = ensureGroupSettings(groupId);
+    if (text === '关闭入群暗号') gs.entryPassphrase = '';
+    if (text === '开启暗号回落') gs.enableAutoApproveAfterPassphraseOff = true;
+    if (text === '关闭暗号回落') gs.enableAutoApproveAfterPassphraseOff = false;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', '设置已更新');
     return true;
@@ -364,14 +370,15 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const isEnable = text.startsWith('开启功能 ');
     const feature = text.slice(5).trim();
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    const gs = pluginState.config.groups[groupId];
+    const gs = ensureGroupSettings(groupId);
     switch (feature) {
       case '问答': gs.disableQA = !isEnable; break;
       case '签到': gs.disableSignin = !isEnable; break;
       case '抽奖': gs.disableLottery = !isEnable; break;
       case '邀请统计': gs.disableInvite = !isEnable; break;
+      case '入群欢迎': gs.disableWelcome = !isEnable; break;
       case '活跃统计': gs.disableActivity = !isEnable; break;
+      case '战绩查询': gs.disableLolQuery = !isEnable; break;
       case '自动同意': gs.autoApprove = isEnable; break;
       case '入群验证': gs.enableVerify = isEnable; break;
       case '刷屏检测': gs.spamDetect = isEnable; break;
@@ -381,7 +388,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       case '群主保护': gs.protectOwnerActions = isEnable; break;
       case '自动风控收敛': gs.autoRiskControl = isEnable; break;
       default:
-        await sendGroupScene(groupId, 'not_found', '未知功能。支持：问答、签到、抽奖、邀请统计、活跃统计、自动同意、入群验证、刷屏检测、退群拉黑、暗号回落、管理员保护、群主保护、自动风控收敛');
+        await sendGroupScene(groupId, 'not_found', '未知功能。支持：问答、签到、抽奖、邀请统计、入群欢迎、活跃统计、战绩查询、自动同意、入群验证、刷屏检测、退群拉黑、暗号回落、管理员保护、群主保护、自动风控收敛');
         return true;
     }
     saveConfig(ctx);
@@ -392,9 +399,8 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const isBlock = text.startsWith('屏蔽 ');
     const type = text.slice(isBlock ? 3 : 5).trim();
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    const gs = pluginState.config.groups[groupId];
-    if (!gs.msgFilter) gs.msgFilter = { ...DEFAULT_MSG_FILTER, ...(pluginState.config.global.msgFilter || {}) };
+    const gs = ensureGroupSettings(groupId);
+    if (!gs.msgFilter) gs.msgFilter = { ...DEFAULT_MSG_FILTER, ...(getConfig().global.msgFilter || {}) };
     const msgFilter = gs.msgFilter || { ...DEFAULT_MSG_FILTER };
     switch (type) {
       case '图片': msgFilter.blockImage = isBlock; break;
@@ -413,9 +419,8 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
   }
   if (text === '开启二维码撤回' || text === '关闭二维码撤回') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    const groupSettings = pluginState.config.groups[groupId];
-    if (!groupSettings.msgFilter) groupSettings.msgFilter = { ...DEFAULT_MSG_FILTER, ...(pluginState.config.global.msgFilter || {}) };
+    const groupSettings = ensureGroupSettings(groupId);
+    if (!groupSettings.msgFilter) groupSettings.msgFilter = { ...DEFAULT_MSG_FILTER, ...(getConfig().global.msgFilter || {}) };
     const msgFilter = groupSettings.msgFilter || { ...DEFAULT_MSG_FILTER };
     msgFilter.blockQr = text === '开启二维码撤回';
     groupSettings.msgFilter = msgFilter;

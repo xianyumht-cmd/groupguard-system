@@ -2,6 +2,23 @@ import type {
   ActivityRecord,
   SigninData,
   InviteData,
+  AuditEventQuery,
+  AuditEventPage,
+  AuditEventRecord,
+  AuditRetentionPolicy,
+  ActionQueueEventRetentionPolicy,
+  AuditStatsQuery,
+  AuditStatsView,
+  ActionQueueEventStatsQuery,
+  ActionQueueEventStatsView,
+  ActionQueueEventSearchQuery,
+  ActionQueueEventSearchView,
+  BotSendEventRecord,
+  BotSendStatsQuery,
+  BotSendStatsView,
+  AuditUserProfileQuery,
+  AuditUserProfileView,
+  ActionQueueEventRecord,
   SelfRecallScheduleInput,
   SelfRecallTaskRecord,
   RecallTaskScheduleInput,
@@ -98,6 +115,9 @@ export const groupguardRepository = {
   updateInvite(groupId: string, userId: string, data: InviteData): Promise<void> {
     return update.invite(groupId, userId, data);
   },
+  clearInvites(groupId: string): Promise<void> {
+    return dbQuery.clearInvites(groupId);
+  },
   getAllInvites(groupId: string): Promise<Record<string, InviteData>> {
     return get.allInvites(groupId);
   },
@@ -110,6 +130,48 @@ export const groupguardRepository = {
   getAllActivity(groupId: string): Promise<Record<string, ActivityRecord>> {
     return get.allActivity(groupId);
   },
+  insertAuditEvent(entry: AuditEventRecord): Promise<void> {
+    return dbQuery.insertAuditEvent(entry);
+  },
+  getRecentAuditEvents(query?: AuditEventQuery | number): Promise<AuditEventRecord[]> {
+    return dbQuery.getRecentAuditEvents(query);
+  },
+  queryAuditEvents(query?: AuditEventQuery | number): Promise<AuditEventPage> {
+    return dbQuery.queryAuditEvents(query);
+  },
+  getAuditEventsByQueueTaskId(queueTaskId: string, limit = 20): Promise<AuditEventRecord[]> {
+    return dbQuery.getAuditEventsByQueueTaskId(queueTaskId, limit);
+  },
+  insertActionQueueEvent(entry: ActionQueueEventRecord): Promise<void> {
+    return dbQuery.insertActionQueueEvent(entry);
+  },
+  getActionQueueEventsByTaskId(taskId: string, limit = 100): Promise<ActionQueueEventRecord[]> {
+    return dbQuery.getActionQueueEventsByTaskId(taskId, limit);
+  },
+  getAuditStats(query?: AuditStatsQuery): Promise<AuditStatsView> {
+    return dbQuery.getAuditStats(query);
+  },
+  getActionQueueEventStats(query?: ActionQueueEventStatsQuery): Promise<ActionQueueEventStatsView> {
+    return dbQuery.getActionQueueEventStats(query);
+  },
+  searchActionQueueEvents(query?: ActionQueueEventSearchQuery): Promise<ActionQueueEventSearchView> {
+    return dbQuery.searchActionQueueEvents(query);
+  },
+  insertBotSendEvent(entry: BotSendEventRecord): Promise<void> {
+    return dbQuery.insertBotSendEvent(entry);
+  },
+  getBotSendStats(query?: BotSendStatsQuery): Promise<BotSendStatsView> {
+    return dbQuery.getBotSendStats(query);
+  },
+  getAuditUserProfile(query: AuditUserProfileQuery): Promise<AuditUserProfileView> {
+    return dbQuery.getAuditUserProfile(query);
+  },
+  pruneAuditEvents(policy?: AuditRetentionPolicy): Promise<number> {
+    return dbQuery.pruneAuditEvents(policy);
+  },
+  pruneActionQueueEvents(policy?: ActionQueueEventRetentionPolicy): Promise<number> {
+    return dbQuery.pruneActionQueueEvents(policy);
+  },
   scheduleSelfRecallTask(input: SelfRecallScheduleInput): Promise<void> {
     return dbQuery.scheduleSelfRecallTask(input);
   },
@@ -121,6 +183,9 @@ export const groupguardRepository = {
   },
   getDueSelfRecallTasks(nowTs: number, limit: number): Promise<SelfRecallTaskRecord[]> {
     return dbQuery.getDueSelfRecallTasks(nowTs, limit);
+  },
+  getSelfRecallTask(taskId: string): Promise<SelfRecallTaskRecord | undefined> {
+    return dbQuery.getSelfRecallTask(taskId);
   },
   cleanupSelfRecallTasks(retentionMs: number): Promise<void> {
     return dbQuery.cleanupSelfRecallTasks(retentionMs);
@@ -136,6 +201,9 @@ export const groupguardRepository = {
   },
   getDueRecallTasks(nowTs: number, limit: number): Promise<RecallTaskRecord[]> {
     return dbQuery.getDueRecallTasks(nowTs, limit);
+  },
+  getRecallTask(taskId: string): Promise<RecallTaskRecord | undefined> {
+    return dbQuery.getRecallTask(taskId);
   },
   cleanupRecallTasks(retentionMs: number): Promise<void> {
     return dbQuery.cleanupRecallTasks(retentionMs);

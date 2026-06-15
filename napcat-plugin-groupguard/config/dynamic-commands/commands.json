@@ -1,0 +1,96 @@
+{
+  "version": "1.0.0",
+  "commands": [
+    {
+      "id": "quote.daily",
+      "enabled": true,
+      "priority": 100,
+      "trigger": {
+        "type": "exact",
+        "value": "quote"
+      },
+      "parameterSchema": {
+        "required": [],
+        "optional": []
+      },
+      "provider": {
+        "type": "http",
+        "method": "GET",
+        "url": "https://v1.hitokoto.cn/",
+        "query": {
+          "encode": "json"
+        },
+        "timeoutMs": 5000
+      },
+      "response": {
+        "type": "text",
+        "textPath": "hitokoto"
+      },
+      "fallbackText": "service unavailable"
+    },
+    {
+      "id": "music.search",
+      "enabled": true,
+      "priority": 90,
+      "trigger": {
+        "type": "prefix",
+        "value": "点歌 "
+      },
+      "parameters": {
+        "keyword": "$1"
+      },
+      "parameterSchema": {
+        "required": ["keyword"],
+        "optional": []
+      },
+      "provider": {
+        "type": "http",
+        "method": "GET",
+        "url": "https://itunes.apple.com/search",
+        "query": {
+          "term": "$keyword",
+          "limit": "1",
+          "media": "music"
+        },
+        "timeoutMs": 5000
+      },
+      "response": {
+        "type": "text",
+        "textPath": "results[0].trackViewUrl"
+      },
+      "fallbackText": "music service unavailable"
+    },
+    {
+      "id": "video.info",
+      "enabled": true,
+      "priority": 80,
+      "trigger": {
+        "type": "prefix",
+        "value": "视频 "
+      },
+      "parameters": {
+        "keyword": "$1"
+      },
+      "parameterSchema": {
+        "required": ["keyword"],
+        "optional": []
+      },
+      "provider": {
+        "type": "http",
+        "method": "GET",
+        "url": "https://api.dailymotion.com/videos",
+        "query": {
+          "search": "$keyword",
+          "limit": "1",
+          "fields": "title,url"
+        },
+        "timeoutMs": 5000
+      },
+      "response": {
+        "type": "text",
+        "textPath": "list[0].url"
+      },
+      "fallbackText": "video service unavailable"
+    }
+  ]
+}

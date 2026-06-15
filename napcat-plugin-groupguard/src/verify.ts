@@ -1,6 +1,10 @@
 // 验证逻辑
-import { pluginState } from './state';
-import { enqueueKickAction, enqueueRecallAction } from './services/action_queue_service';
+import { configStateService } from './core/state-services/config_state_service';
+import { loggingStateService } from './core/state-services/logging_state_service';
+import { sessionStateService } from './core/state-services/session_state_service';
+import { send } from './dynamic-commands/response_capture_runtime';
+import { createRiskSignal } from './risk/signals';
+import { processRiskSignal } from './risk/policy_engine';
 
 function randInt (min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -24,85 +28,123 @@ function sessionKey (groupId: string, userId: string): string { return `${groupI
 
 export function createVerifySession (groupId: string, userId: string, comment?: string, welcomeText?: string): void {
   const key = sessionKey(groupId, userId);
-  const existing = pluginState.sessions.get(key);
+  const existing = sessionStateService.getSession(key);
   if (existing) clearTimeout(existing.timer);
 
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const { expression, answer } = generateMathQuestion(settings.mathMin, settings.mathMax);
   const timeout = settings.verifyTimeout;
   const maxAttempts = settings.maxAttempts;
 
   const timer = setTimeout(async () => {
-    const session = pluginState.sessions.get(key);
+    const session = sessionStateService.getSession(key);
     if (!session) return;
-    pluginState.sessions.delete(key);
-    pluginState.log('info', `用户 ${userId} 在群 ${groupId} 验证超时，踢出`);
-    await pluginState.sendGroupMsg(groupId, [
+    sessionStateService.deleteSession(key);
+    loggingStateService.info(`用户 ${userId} 在群 ${groupId} 验证超时，踢出`);
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
       { type: 'at', data: { qq: userId } },
-      { type: 'text', data: { text: ` 验证超时，你已被移出群聊。` } },
-    ]);
-    void enqueueKickAction({ groupId, userId, reason: 'verify_timeout', rejectAddRequest: false, automatic: true, maxRetries: 1 });
+      { type: 'text', data: { text: ' 验证超时，你已被移出群聊。' } }
+    ], force: true, applyTemplate: true });
+    void processRiskSignal(createRiskSignal({
+      kind: 'verify_timeout',
+      groupId,
+      userId,
+      reason: 'verify_timeout',
+      severity: 'high',
+      evidence: { expression, timeoutSeconds: timeout }
+    }));
   }, timeout * 1000);
 
-  pluginState.sessions.set(key, { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer, startTime: Date.now() });
-  pluginState.debug(`创建验证会话: ${key}, 题目: ${expression} = ${answer}`);
+  sessionStateService.setSession(key, { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer, startTime: Date.now() });
+  loggingStateService.debug(`创建验证会话: ${key}, 题目: ${expression} = ${answer}`);
 
   const cleanComment = comment ? comment.replace(/^问题：/, '').replace(/\s*答案：/, ' 答案:') : '';
   const commentLine = cleanComment ? ` 入群信息:${cleanComment}` : '';
   const welcomeLine = welcomeText ? `${welcomeText}` : '';
-  pluginState.sendGroupMsg(groupId, [
+  void send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
     { type: 'at', data: { qq: userId } },
-    { type: 'text', data: { text: ` ${welcomeLine}请在「${timeout}」秒内发送「${expression}」答案,否则移出群聊。${commentLine}` } },
-  ]);
+    { type: 'text', data: { text: ` ${welcomeLine}请在「${timeout}」秒内发送「${expression}」答案,否则移出群聊。${commentLine}` } }
+  ], force: true, applyTemplate: true });
 }
 
 export async function handleVerifyAnswer (groupId: string, userId: string, rawMessage: string, messageId: string): Promise<boolean> {
   const key = sessionKey(groupId, userId);
-  const session = pluginState.sessions.get(key);
+  const session = sessionStateService.getSession(key);
   if (!session) return false;
   const trimmed = rawMessage.trim();
   if (!/^-?\d+$/.test(trimmed)) {
-    await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'verify_non_number', automatic: true, maxRetries: 1 });
-    await pluginState.sendGroupMsg(groupId, [
+    await processRiskSignal(createRiskSignal({
+      kind: 'verify_non_number',
+      groupId,
+      userId,
+      messageId,
+      reason: 'verify_non_number',
+      severity: 'low',
+      evidence: { expression: session.expression }
+    }));
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
       { type: 'at', data: { qq: userId } },
-      { type: 'text', data: { text: ` 请发送数字答案，计算「${session.expression}」的结果。` } },
-    ]);
+      { type: 'text', data: { text: ` 请发送数字答案，计算「${session.expression}」的结果。` } }
+    ], force: true, applyTemplate: true });
     return true;
   }
   const userAnswer = parseInt(trimmed, 10);
 
   if (userAnswer === session.answer) {
     clearTimeout(session.timer);
-    pluginState.sessions.delete(key);
-    pluginState.log('info', `用户 ${userId} 在群 ${groupId} 验证通过`);
-    await pluginState.sendGroupMsg(groupId, [
+    sessionStateService.deleteSession(key);
+    loggingStateService.info(`用户 ${userId} 在群 ${groupId} 验证通过`);
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
       { type: 'at', data: { qq: userId } },
-      { type: 'text', data: { text: ' 验证通过，欢迎加入！' } },
-    ]);
+      { type: 'text', data: { text: ' 验证通过，欢迎加入！' } }
+    ], force: true, applyTemplate: true });
     return true;
   }
 
   session.attempts++;
-  await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'verify_wrong_answer', automatic: true, maxRetries: 1 });
+  await processRiskSignal(createRiskSignal({
+    kind: 'verify_wrong_answer',
+    groupId,
+    userId,
+    messageId,
+    reason: 'verify_wrong_answer',
+    severity: 'medium',
+    evidence: {
+      expression: session.expression,
+      attempts: session.attempts,
+      maxAttempts: session.maxAttempts
+    }
+  }));
   if (session.attempts >= session.maxAttempts) {
     clearTimeout(session.timer);
-    pluginState.sessions.delete(key);
-    await pluginState.sendGroupMsg(groupId, [
+    sessionStateService.deleteSession(key);
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
       { type: 'at', data: { qq: userId } },
-      { type: 'text', data: { text: ` 验证失败，你已用完 ${session.maxAttempts} 次机会，已被移出群聊。` } },
-    ]);
-    void enqueueKickAction({ groupId, userId, reason: 'verify_exhausted', rejectAddRequest: false, automatic: true, maxRetries: 1 });
+      { type: 'text', data: { text: ` 验证失败，你已用完 ${session.maxAttempts} 次机会，已被移出群聊。` } }
+    ], force: true, applyTemplate: true });
+    void processRiskSignal(createRiskSignal({
+      kind: 'verify_exhausted',
+      groupId,
+      userId,
+      reason: 'verify_exhausted',
+      severity: 'high',
+      evidence: {
+        expression: session.expression,
+        attempts: session.attempts,
+        maxAttempts: session.maxAttempts
+      }
+    }));
   } else {
     const remaining = session.maxAttempts - session.attempts;
-    await pluginState.sendGroupMsg(groupId, [
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
       { type: 'at', data: { qq: userId } },
-      { type: 'text', data: { text: ` 回答错误，还剩 ${remaining} 次机会。请重新计算「${session.expression}」的结果。` } },
-    ]);
+      { type: 'text', data: { text: ` 回答错误，还剩 ${remaining} 次机会。请重新计算「${session.expression}」的结果。` } }
+    ], force: true, applyTemplate: true });
   }
   return true;
 }
 
 export function clearAllSessions (): void {
-  for (const session of pluginState.sessions.values()) clearTimeout(session.timer);
-  pluginState.sessions.clear();
+  for (const session of sessionStateService.values()) clearTimeout(session.timer);
+  sessionStateService.clearSessions();
 }

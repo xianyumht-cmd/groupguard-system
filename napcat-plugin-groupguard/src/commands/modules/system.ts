@@ -7,6 +7,7 @@ export const SYSTEM_PREFIXES = [
   '定时任务 ',
   '删除定时任务 ',
   '设置欢迎词 ',
+  '设置入群私聊 ',
   '队列日志 ',
   '/队列日志 '
 ];
@@ -27,16 +28,10 @@ export const SYSTEM_EXACT = [
   '查看存储状态',
   '清空群配置',
   '确认清空群配置',
-  '定时列表'
+  '定时列表',
+  '开启入群私聊',
+  '关闭入群私聊'
 ];
-
-export function matchSystemCommand(text: string): string | null {
-  if (SYSTEM_EXACT.includes(text)) return text;
-  for (const p of SYSTEM_PREFIXES) {
-    if (text.startsWith(p)) return p;
-  }
-  return null;
-}
 
 export async function handleSystemCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
   const raw = event.raw_message || '';

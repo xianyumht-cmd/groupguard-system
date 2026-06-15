@@ -1,4 +1,9 @@
-import { pluginState } from '../state';
+import { authStateService } from '../core/state-services/auth_state_service';
+import { cacheStateService } from '../core/state-services/cache_state_service';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { identityStateService } from '../core/state-services/identity_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 import type { GroupGuardSettings } from '../types';
 
 type GuardAction = 'recall' | 'ban' | 'kick';
@@ -6,7 +11,7 @@ type RiskLevel = 'normal' | 'warn' | 'protect';
 
 export interface GuardResult {
   ok: boolean;
-  code: 'ok' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'action_failed_timeout' | 'fail_api';
+  code: 'ok' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'action_failed_timeout' | 'fail_api' | 'backpressure_reject';
   role?: 'member' | 'admin' | 'owner' | 'unknown';
 }
 
@@ -33,7 +38,7 @@ const riskStates = new Map<string, RiskState>();
 const guardStats = new Map<string, GroupGuardStats>();
 
 function getSettings(groupId: string): GroupGuardSettings {
-  return pluginState.getGroupSettings(groupId);
+  return configStateService.resolveGroupSettings(groupId);
 }
 
 function now(): number {
@@ -55,17 +60,17 @@ async function getTargetRole(groupId: string, userId?: string): Promise<'member'
   const key = `${groupId}:${userId}`;
   const cacheSeconds = getRoleCacheSeconds(groupId);
   if (cacheSeconds > 0) {
-    const cached = pluginState.adminCache.get(key);
+    const cached = cacheStateService.getAdminCacheEntry(key);
     if (cached && Date.now() < cached.expire) {
       const role = String(cached.role || 'member');
       if (role === 'owner' || role === 'admin' || role === 'member') return role;
       return 'unknown';
     }
   }
-  const info = await pluginState.callApi('get_group_member_info', { group_id: groupId, user_id: userId }) as any;
+  const info = await communicationStateService.callApi('get_group_member_info', { group_id: groupId, user_id: userId }) as any;
   const role = String(info?.role || 'member');
   if (cacheSeconds > 0) {
-    pluginState.adminCache.set(key, { role, expire: Date.now() + cacheSeconds * 1000 });
+    cacheStateService.setAdminCacheEntry(key, { role, expire: Date.now() + cacheSeconds * 1000 });
   }
   if (role === 'owner' || role === 'admin' || role === 'member') return role;
   return 'unknown';
@@ -199,8 +204,8 @@ function logAction(groupId: string, action: GuardAction, result: GuardResult, de
     ...detail
   };
   const text = JSON.stringify(payload);
-  if (result.ok) pluginState.log('info', text);
-  else pluginState.log('warn', text);
+  if (result.ok) loggingStateService.info(text);
+  else loggingStateService.warn(text);
 }
 
 export async function safeRecall(opts: { groupId: string; messageId: string; targetUserId?: string; reason: string; automatic?: boolean; allowSelfTarget?: boolean; }): Promise<GuardResult> {
@@ -222,7 +227,7 @@ export async function safeRecall(opts: { groupId: string; messageId: string; tar
     logAction(groupId, 'recall', r, { reason: opts.reason });
     return r;
   }
-  if (!await pluginState.isBotAdmin(groupId)) {
+  if (!await authStateService.isBotAdmin(groupId)) {
     const r: GuardResult = { ok: false, code: 'skip_bot_not_admin' };
     logAction(groupId, 'recall', r, { reason: opts.reason });
     recordRisk(groupId, false, automatic);
@@ -231,7 +236,7 @@ export async function safeRecall(opts: { groupId: string; messageId: string; tar
   const targetUserId = opts.targetUserId ? String(opts.targetUserId) : '';
   const allowSelfTarget = opts.allowSelfTarget !== false;
   let role: GuardResult['role'] = 'unknown';
-  if (targetUserId && !(allowSelfTarget && targetUserId === pluginState.botId)) {
+  if (targetUserId && !(allowSelfTarget && targetUserId === identityStateService.getBotId())) {
     role = await getTargetRole(groupId, targetUserId);
     if (protectedByRole(role, s, 'recall')) {
       const r: GuardResult = { ok: false, code: 'skip_target_protected', role };
@@ -239,7 +244,7 @@ export async function safeRecall(opts: { groupId: string; messageId: string; tar
       return r;
     }
   }
-  const res = await pluginState.callApi('delete_msg', { message_id: String(opts.messageId) });
+  const res = await communicationStateService.callApi('delete_msg', { message_id: String(opts.messageId) });
   if (res === null) {
     const r: GuardResult = { ok: false, code: 'fail_api', role };
     logAction(groupId, 'recall', r, { reason: opts.reason, targetUserId });
@@ -267,7 +272,7 @@ export async function safeBan(opts: { groupId: string; userId: string; durationS
     logAction(groupId, 'ban', r, { reason: opts.reason, targetUserId: opts.userId });
     return r;
   }
-  if (!await pluginState.isBotAdmin(groupId)) {
+  if (!await authStateService.isBotAdmin(groupId)) {
     const r: GuardResult = { ok: false, code: 'skip_bot_not_admin' };
     logAction(groupId, 'ban', r, { reason: opts.reason, targetUserId: opts.userId });
     recordRisk(groupId, false, automatic);
@@ -279,7 +284,7 @@ export async function safeBan(opts: { groupId: string; userId: string; durationS
     logAction(groupId, 'ban', r, { reason: opts.reason, targetUserId: opts.userId });
     return r;
   }
-  const res = await pluginState.callApi('set_group_ban', { group_id: groupId, user_id: String(opts.userId), duration: Math.max(0, Math.floor(opts.durationSeconds)) });
+  const res = await communicationStateService.callApi('set_group_ban', { group_id: groupId, user_id: String(opts.userId), duration: Math.max(0, Math.floor(opts.durationSeconds)) });
   if (res === null) {
     const r: GuardResult = { ok: false, code: 'fail_api', role };
     logAction(groupId, 'ban', r, { reason: opts.reason, targetUserId: opts.userId });
@@ -306,7 +311,7 @@ export async function safeKick(opts: { groupId: string; userId: string; reason: 
     logAction(groupId, 'kick', r, { reason: opts.reason, targetUserId: opts.userId });
     return r;
   }
-  if (!await pluginState.isBotAdmin(groupId)) {
+  if (!await authStateService.isBotAdmin(groupId)) {
     const r: GuardResult = { ok: false, code: 'skip_bot_not_admin' };
     logAction(groupId, 'kick', r, { reason: opts.reason, targetUserId: opts.userId });
     recordRisk(groupId, false, automatic);
@@ -318,7 +323,7 @@ export async function safeKick(opts: { groupId: string; userId: string; reason: 
     logAction(groupId, 'kick', r, { reason: opts.reason, targetUserId: opts.userId });
     return r;
   }
-  const res = await pluginState.callApi('set_group_kick', { group_id: groupId, user_id: String(opts.userId), reject_add_request: opts.rejectAddRequest === true });
+  const res = await communicationStateService.callApi('set_group_kick', { group_id: groupId, user_id: String(opts.userId), reject_add_request: opts.rejectAddRequest === true });
   if (res === null) {
     const r: GuardResult = { ok: false, code: 'fail_api', role };
     logAction(groupId, 'kick', r, { reason: opts.reason, targetUserId: opts.userId });

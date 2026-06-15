@@ -1,8 +1,21 @@
-import { pluginState } from '../state';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 import { safeBan, safeKick, safeRecall, type GuardResult } from './action_guard_service';
 import { groupguardRepository } from '../repositories/groupguard_repository';
+import type {
+  ActionQueueTaskLookupResult,
+  ActionQueueTaskTraceView,
+  ActionQueueTraceItem,
+  ActionQueueEventRecord,
+  AuditEventRecord,
+  RecallTaskRecord,
+  SelfRecallTaskRecord,
+  StandardAuditPayload
+} from '../types';
 
 type ActionType = 'recall' | 'self_recall' | 'ban' | 'kick' | 'misc';
+export type QueueLinkedGuardResult = GuardResult & { taskId?: string; actionId?: string; };
 
 interface QueueCounters {
   queueDropped: number;
@@ -21,6 +34,7 @@ interface BaseTask<T> {
   actionId: string;
   type: ActionType;
   groupId: string;
+  priorityScore: number;
   createdAt: number;
   retries: number;
   maxRetries: number;
@@ -88,8 +102,13 @@ interface MiscTask extends BaseTask<{ ok: boolean; code: string; }> {
 type QueueTask = RecallTask | SelfRecallTask | BanTask | KickTask | MiscTask;
 
 const queue: QueueTask[] = [];
+const MAX_QUEUE_HARD_LIMIT = 2000;
+const MAX_GROUP_PENDING_HARD_LIMIT = 500;
+const MAX_DEDUP_KEYS = 5000;
+const MAX_HISTORY_PER_KEY = 300;
 const groupPending = new Map<string, number>();
 const dedupMap = new Map<string, number>();
+const dedupOrder: string[] = [];
 const actionHistoryGlobal = new Map<string, number[]>();
 const actionHistoryGroup = new Map<string, number[]>();
 const activeByType = new Map<ActionType, number>();
@@ -104,6 +123,8 @@ const stats: QueueCounters = {
 let activeWorkers = 0;
 let actionSeq = 0;
 const recentLogs: QueueLogItem[] = [];
+let retryBudgetWindowStart = 0;
+let retryBudgetCount = 0;
 let selfRecallRecoveryStarted = false;
 let selfRecallRecoveryTicking = false;
 let selfRecallRecoveryTimer: NodeJS.Timeout | null = null;
@@ -126,7 +147,7 @@ function nextActionId(): string {
 function appendQueueLog(line: string): void {
   recentLogs.push({ ts: Date.now(), line });
   if (recentLogs.length > 100) recentLogs.splice(0, recentLogs.length - 100);
-  pluginState.debug(`[ActionQueue] ${line}`);
+  loggingStateService.debug(`[ActionQueue] ${line}`);
 }
 
 function shouldRetrySelfRecallCode(code: string): boolean {
@@ -165,15 +186,54 @@ function taskSubject(task: QueueTask): string {
   return `group=${task.groupId} action=${task.payload.action}`;
 }
 
+function taskQueueTaskId(task: QueueTask): string {
+  if (task.type === 'recall' || task.type === 'self_recall') return String(task.payload.taskId || task.dedupKey || task.actionId);
+  return String(task.dedupKey || task.actionId);
+}
+
+function taskMessageId(task: QueueTask): string {
+  if (task.type === 'recall' || task.type === 'self_recall') return String(task.payload.messageId || '');
+  return '';
+}
+
+function taskReason(task: QueueTask): string {
+  return String((task.payload as any)?.reason || '');
+}
+
+function recordActionQueueEvent(task: QueueTask, event: string, extra: Partial<ActionQueueEventRecord> = {}): void {
+  const entry: ActionQueueEventRecord = {
+    taskId: extra.taskId || taskQueueTaskId(task),
+    actionId: extra.actionId || task.actionId,
+    taskType: extra.taskType || task.type,
+    groupId: extra.groupId || task.groupId,
+    userId: extra.userId || task.targetUserId || (task.type === 'ban' || task.type === 'kick' ? task.payload.userId : ''),
+    messageId: extra.messageId || taskMessageId(task),
+    event,
+    code: extra.code || '',
+    ok: extra.ok === true,
+    reason: extra.reason || taskReason(task),
+    attemptCount: extra.attemptCount ?? task.retries,
+    payload: extra.payload || JSON.stringify({
+      dedupKey: task.dedupKey || '',
+      priorityScore: task.priorityScore,
+      maxRetries: task.maxRetries
+    }),
+    createdAt: extra.createdAt || Date.now()
+  };
+  void groupguardRepository.insertActionQueueEvent(entry).catch((error) => {
+    loggingStateService.debug(`[ActionQueue] history_write_failed ${String(error)}`);
+  });
+}
+
 function getConcurrency(groupId: string): number {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const n = Number(settings.actionQueueConcurrency ?? settings.queueConcurrency ?? 2);
   if (!Number.isFinite(n)) return 2;
   return Math.max(1, Math.min(20, n));
 }
 
 function getActionPriority(groupId: string, type: ActionType): number {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const configured = settings.actionPriority;
   if (!configured) return DEFAULT_ACTION_PRIORITY[type] ?? 0;
   if (type === 'ban') return Number.isFinite(Number(configured.ban)) ? Number(configured.ban) : DEFAULT_ACTION_PRIORITY.ban;
@@ -184,21 +244,21 @@ function getActionPriority(groupId: string, type: ActionType): number {
 }
 
 function getGroupQueueLimit(groupId: string): number {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const n = Number(settings.maxActionQueueSizePerGroup ?? 200);
   if (!Number.isFinite(n)) return 200;
   return Math.max(20, n);
 }
 
 function getGlobalQueueLimit(groupId: string): number {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const n = Number(settings.maxActionQueueSizeGlobal ?? 5000);
   if (!Number.isFinite(n)) return 5000;
   return Math.max(200, n);
 }
 
 function getDelayRange(groupId: string, type: ActionType): { min: number; max: number; } {
-  const s = pluginState.getGroupSettings(groupId);
+  const s = configStateService.resolveGroupSettings(groupId);
   if (type === 'kick') {
     const min = Number(s.kickDelayMinSeconds ?? 5) * 1000;
     const max = Number(s.kickDelayMaxSeconds ?? 20) * 1000;
@@ -220,7 +280,7 @@ function getDelayRange(groupId: string, type: ActionType): { min: number; max: n
 }
 
 function getMaxPerMinute(groupId: string, type: ActionType): number {
-  const s = pluginState.getGroupSettings(groupId);
+  const s = configStateService.resolveGroupSettings(groupId);
   if (type === 'kick') return Math.max(1, Number(s.maxKickPerMinute ?? 3));
   if (type === 'ban') return Math.max(1, Number(s.maxBanPerMinute ?? 5));
   if (type === 'recall' || type === 'self_recall') return Math.max(1, Number(s.maxRecallPerMinute ?? 60));
@@ -228,7 +288,7 @@ function getMaxPerMinute(groupId: string, type: ActionType): number {
 }
 
 function getDedupSeconds(groupId: string): number {
-  const s = pluginState.getGroupSettings(groupId);
+  const s = configStateService.resolveGroupSettings(groupId);
   const n = Number(s.actionDedupSeconds ?? 20);
   if (!Number.isFinite(n)) return 20;
   return Math.max(1, n);
@@ -238,6 +298,25 @@ function randomDelay(min: number, max: number): Promise<void> {
   if (max <= min) return new Promise(resolve => setTimeout(resolve, Math.max(0, min)));
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isBackpressureActive(): boolean {
+  if (queue.length >= MAX_QUEUE_HARD_LIMIT) return true;
+  if (activeWorkers >= 20 && queue.length >= Math.floor(MAX_QUEUE_HARD_LIMIT * 0.5)) return true;
+  if (dedupMap.size >= MAX_DEDUP_KEYS) return true;
+  return false;
+}
+
+function consumeRetryBudget(): boolean {
+  const now = Date.now();
+  if (!retryBudgetWindowStart || now - retryBudgetWindowStart >= 60000) {
+    retryBudgetWindowStart = now;
+    retryBudgetCount = 0;
+  }
+  const maxRetryPerMinute = 300;
+  if (retryBudgetCount >= maxRetryPerMinute) return false;
+  retryBudgetCount += 1;
+  return true;
 }
 
 function buildHistoryKey(type: ActionType, groupId?: string): string {
@@ -250,8 +329,10 @@ function hitRateLimit(groupId: string, type: ActionType): boolean {
   const winMs = 60000;
   const gk = buildHistoryKey(type);
   const lk = buildHistoryKey(type, groupId);
-  const gl = (actionHistoryGlobal.get(gk) || []).filter(ts => now - ts < winMs);
-  const ll = (actionHistoryGroup.get(lk) || []).filter(ts => now - ts < winMs);
+  const gl = actionHistoryGlobal.get(gk) || [];
+  const ll = actionHistoryGroup.get(lk) || [];
+  while (gl.length && now - gl[0] >= winMs) gl.shift();
+  while (ll.length && now - ll[0] >= winMs) ll.shift();
   if (gl.length >= max || ll.length >= max) {
     actionHistoryGlobal.set(gk, gl);
     actionHistoryGroup.set(lk, ll);
@@ -259,6 +340,8 @@ function hitRateLimit(groupId: string, type: ActionType): boolean {
   }
   gl.push(now);
   ll.push(now);
+  while (gl.length > MAX_HISTORY_PER_KEY) gl.shift();
+  while (ll.length > MAX_HISTORY_PER_KEY) ll.shift();
   actionHistoryGlobal.set(gk, gl);
   actionHistoryGroup.set(lk, ll);
   return false;
@@ -268,16 +351,24 @@ function isDedupHit(groupId: string, key?: string): boolean {
   if (!key) return false;
   const now = Date.now();
   const dedupMs = getDedupSeconds(groupId) * 1000;
-  for (const [k, ts] of dedupMap.entries()) {
-    if (now - ts > dedupMs) dedupMap.delete(k);
-  }
-  if (dedupMap.has(key)) return true;
+  const existing = dedupMap.get(key);
+  if (existing && now - existing <= dedupMs) return true;
   dedupMap.set(key, now);
+  dedupOrder.push(key);
+  while (dedupOrder.length > MAX_DEDUP_KEYS) {
+    const oldKey = dedupOrder.shift();
+    if (!oldKey) break;
+    const ts = dedupMap.get(oldKey);
+    if (ts === undefined) continue;
+    if (now - ts > dedupMs || oldKey !== key) {
+      dedupMap.delete(oldKey);
+    }
+  }
   return false;
 }
 
 function getTimeoutMs(groupId: string): number {
-  const s = pluginState.getGroupSettings(groupId);
+  const s = configStateService.resolveGroupSettings(groupId);
   const n = Number((s as any).actionTimeoutMs ?? 8000);
   if (!Number.isFinite(n)) return 8000;
   return Math.max(1000, n);
@@ -286,13 +377,16 @@ function getTimeoutMs(groupId: string): number {
 function recordMinuteMetric(key: 'executed' | 'dropped' | 'rate_limited' | 'retried' | 'timeout'): void {
   const now = Date.now();
   const arr = minuteWindows.get(key) || [];
+  while (arr.length && now - arr[0] >= 60000) arr.shift();
   arr.push(now);
-  minuteWindows.set(key, arr.filter(ts => now - ts < 60000));
+  if (arr.length > 600) arr.shift();
+  minuteWindows.set(key, arr);
 }
 
 function getMinuteMetricCount(key: 'executed' | 'dropped' | 'rate_limited' | 'retried' | 'timeout'): number {
   const now = Date.now();
-  const arr = (minuteWindows.get(key) || []).filter(ts => now - ts < 60000);
+  const arr = minuteWindows.get(key) || [];
+  while (arr.length && now - arr[0] >= 60000) arr.shift();
   minuteWindows.set(key, arr);
   return arr.length;
 }
@@ -320,10 +414,12 @@ function replaceWeakerPenaltyTask(task: QueueTask): void {
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
       appendQueueLog(`${task.type} ${taskSubject(task)} dropped_duplicate_or_weaker`);
+      recordActionQueueEvent(task, 'dropped', { code: 'skip_duplicate_or_weaker', ok: false });
       task.resolve({ ok: false, code: 'skip_duplicate' } as any);
       throw new Error('__queue_skip_enqueue__');
     }
     appendQueueLog(`${current.type} ${taskSubject(current)} replaced`);
+    recordActionQueueEvent(current, 'replaced', { code: 'skip_replaced', ok: false });
     queue.splice(i, 1);
     decGroupPending(current.groupId);
     if (current.type === 'misc') current.resolve({ ok: false, code: 'skip_replaced' });
@@ -331,41 +427,59 @@ function replaceWeakerPenaltyTask(task: QueueTask): void {
   }
 }
 
-function enqueueTask(task: QueueTask): boolean {
+function compareTaskOrder(left: QueueTask, right: QueueTask): number {
+  const priorityDiff = right.priorityScore - left.priorityScore;
+  if (priorityDiff !== 0) return priorityDiff;
+  return left.createdAt - right.createdAt;
+}
+
+function insertTaskSorted(task: QueueTask): void {
+  if (!queue.length) {
+    queue.push(task);
+    return;
+  }
+  let lo = 0;
+  let hi = queue.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (compareTaskOrder(task, queue[mid]) < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  queue.splice(lo, 0, task);
+}
+
+function enqueueTask(task: QueueTask): 'ok' | 'queue_overflow' | 'backpressure_reject' | 'skip_duplicate' {
+  if (isBackpressureActive()) {
+    stats.queueDropped += 1;
+    recordMinuteMetric('dropped');
+    appendQueueLog(`${task.type} ${taskSubject(task)} dropped_backpressure`);
+    recordActionQueueEvent(task, 'dropped', { code: 'backpressure_reject', ok: false });
+    return 'backpressure_reject';
+  }
   const groupCount = groupPending.get(task.groupId) || 0;
-  if (groupCount >= getGroupQueueLimit(task.groupId) || queue.length >= getGlobalQueueLimit(task.groupId)) {
+  if (groupCount >= Math.min(MAX_GROUP_PENDING_HARD_LIMIT, getGroupQueueLimit(task.groupId)) || queue.length >= Math.min(MAX_QUEUE_HARD_LIMIT, getGlobalQueueLimit(task.groupId))) {
     stats.queueDropped += 1;
     recordMinuteMetric('dropped');
     appendQueueLog(`${task.type} ${taskSubject(task)} dropped_queue_overflow`);
-    return false;
+    recordActionQueueEvent(task, 'dropped', { code: 'queue_overflow', ok: false });
+    return 'queue_overflow';
   }
   try {
     replaceWeakerPenaltyTask(task);
-    queue.push(task);
+    insertTaskSorted(task);
     incGroupPending(task.groupId);
     appendQueueLog(`${task.type} ${taskSubject(task)} queued`);
+    recordActionQueueEvent(task, 'queued');
     kickWorkers();
-    return true;
+    return 'ok';
   } catch (e) {
-    if (String(e).includes('__queue_skip_enqueue__')) return false;
+    if (String(e).includes('__queue_skip_enqueue__')) return 'skip_duplicate';
     throw e;
   }
 }
 
 function pickTask(): QueueTask | null {
-  if (!queue.length) return null;
-  let bestIndex = 0;
-  let bestScore = getActionPriority(queue[0].groupId, queue[0].type);
-  for (let i = 1; i < queue.length; i += 1) {
-    const task = queue[i];
-    const score = getActionPriority(task.groupId, task.type);
-    if (score > bestScore || (score === bestScore && task.createdAt < queue[bestIndex].createdAt)) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-  const [picked] = queue.splice(bestIndex, 1);
-  return picked || null;
+  return queue.shift() || null;
 }
 
 async function executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<{ timeout: boolean; value?: T; }> {
@@ -393,8 +507,9 @@ function decActiveType(type: ActionType): void {
 
 async function executeTask(task: QueueTask): Promise<void> {
   const timeoutMs = getTimeoutMs(task.groupId);
-  pluginState.debug(`[ActionQueue] exec actionId=${task.actionId} type=${task.type} group=${task.groupId}${task.targetUserId ? ` user=${task.targetUserId}` : ''}`);
+  loggingStateService.debug(`[ActionQueue] exec actionId=${task.actionId} type=${task.type} group=${task.groupId}${task.targetUserId ? ` user=${task.targetUserId}` : ''}`);
   appendQueueLog(`${task.type} ${taskSubject(task)} executing`);
+  recordActionQueueEvent(task, 'executing');
   incActiveType(task.type);
   try {
     if (task.retries <= 0 && isDedupHit(task.groupId, task.dedupKey)) {
@@ -406,6 +521,7 @@ async function executeTask(task: QueueTask): Promise<void> {
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
       appendQueueLog(`${task.type} ${taskSubject(task)} dropped_duplicate`);
+      recordActionQueueEvent(task, 'dropped', { code: 'skip_duplicate', ok: false });
       return;
     }
     if (hitRateLimit(task.groupId, task.type)) {
@@ -419,6 +535,7 @@ async function executeTask(task: QueueTask): Promise<void> {
       stats.queueRateLimited += 1;
       recordMinuteMetric('rate_limited');
       appendQueueLog(`${task.type} ${taskSubject(task)} dropped_rate_limited`);
+      recordActionQueueEvent(task, 'rate_limited', { code: 'skip_rate_limited', ok: false });
       return;
     }
     const delay = getDelayRange(task.groupId, task.type);
@@ -438,6 +555,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
+        recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
         const nextRetries = task.retries + 1;
         const retryAfter = nextRetries <= task.maxRetries ? computeRecallRetryDelayMs(nextRetries) : 0;
         await groupguardRepository.resolveRecallTask(task.payload.taskId, 'action_failed_timeout', false, retryAfter);
@@ -446,7 +564,12 @@ async function executeTask(task: QueueTask): Promise<void> {
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
           appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-          queue.push(task);
+          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
+          if (!consumeRetryBudget()) {
+            task.resolve({ ok: false, code: 'backpressure_reject' });
+            return;
+          }
+          insertTaskSorted(task);
           incGroupPending(task.groupId);
           return;
         }
@@ -466,7 +589,12 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
         appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
-        queue.push(task);
+        recordActionQueueEvent(task, 'retry', { code: result.code, ok: false, attemptCount: task.retries });
+        if (!consumeRetryBudget()) {
+          task.resolve({ ok: false, code: 'backpressure_reject' });
+          return;
+        }
+        insertTaskSorted(task);
         incGroupPending(task.groupId);
         return;
       }
@@ -475,8 +603,10 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
         appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+        recordActionQueueEvent(task, 'success', { code: result.code || 'ok', ok: true });
       } else {
         appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
+        recordActionQueueEvent(task, 'fail', { code: result.code, ok: false });
       }
       return;
     }
@@ -494,6 +624,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
+        recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
         task.retries += 1;
         const retryAfter = task.retries < task.maxRetries ? computeSelfRecallRetryDelayMs(task.retries) : 0;
         await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, 'action_failed_timeout', false, retryAfter);
@@ -501,6 +632,7 @@ async function executeTask(task: QueueTask): Promise<void> {
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
           appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} after=${retryAfter}`);
+          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
           task.resolve({ ok: false, code: 'action_failed_timeout' });
           return;
         }
@@ -519,6 +651,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
         appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code} after=${retryAfter}`);
+        recordActionQueueEvent(task, 'retry', { code: result.code, ok: false, attemptCount: task.retries });
         task.resolve(result);
         return;
       }
@@ -527,8 +660,10 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
         appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+        recordActionQueueEvent(task, 'success', { code: result.code || 'ok', ok: true });
       } else {
         appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
+        recordActionQueueEvent(task, 'fail', { code: result.code, ok: false });
       }
       return;
     }
@@ -546,12 +681,18 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
+        recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
         if (task.retries < task.maxRetries) {
           task.retries += 1;
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
           appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-          queue.push(task);
+          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
+          if (!consumeRetryBudget()) {
+            task.resolve({ ok: false, code: 'backpressure_reject' });
+            return;
+          }
+          insertTaskSorted(task);
           incGroupPending(task.groupId);
           return;
         }
@@ -564,7 +705,12 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
         appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
-        queue.push(task);
+        recordActionQueueEvent(task, 'retry', { code: result.code, ok: false, attemptCount: task.retries });
+        if (!consumeRetryBudget()) {
+          task.resolve({ ok: false, code: 'backpressure_reject' });
+          return;
+        }
+        insertTaskSorted(task);
         incGroupPending(task.groupId);
         return;
       }
@@ -573,8 +719,10 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
         appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+        recordActionQueueEvent(task, 'success', { code: result.code || 'ok', ok: true });
       } else {
         appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
+        recordActionQueueEvent(task, 'fail', { code: result.code, ok: false });
       }
       return;
     }
@@ -591,12 +739,18 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.timeoutCount += 1;
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
+        recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
         if (task.retries < task.maxRetries) {
           task.retries += 1;
           stats.queueRetried += 1;
           recordMinuteMetric('retried');
           appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-          queue.push(task);
+          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
+          if (!consumeRetryBudget()) {
+            task.resolve({ ok: false, code: 'backpressure_reject' });
+            return;
+          }
+          insertTaskSorted(task);
           incGroupPending(task.groupId);
           return;
         }
@@ -609,7 +763,12 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
         appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} code=${result.code}`);
-        queue.push(task);
+        recordActionQueueEvent(task, 'retry', { code: result.code, ok: false, attemptCount: task.retries });
+        if (!consumeRetryBudget()) {
+          task.resolve({ ok: false, code: 'backpressure_reject' });
+          return;
+        }
+        insertTaskSorted(task);
         incGroupPending(task.groupId);
         return;
       }
@@ -618,22 +777,30 @@ async function executeTask(task: QueueTask): Promise<void> {
         stats.queueExecuted += 1;
         recordMinuteMetric('executed');
         appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+        recordActionQueueEvent(task, 'success', { code: result.code || 'ok', ok: true });
       } else {
         appendQueueLog(`${task.type} ${taskSubject(task)} fail code=${result.code}`);
+        recordActionQueueEvent(task, 'fail', { code: result.code, ok: false });
       }
       return;
     }
-    const wrapped = await executeWithTimeout(pluginState.callApi(task.payload.action, task.payload.params), timeoutMs);
+    const wrapped = await executeWithTimeout(communicationStateService.callApi(task.payload.action, task.payload.params), timeoutMs);
     if (wrapped.timeout) {
       stats.timeoutCount += 1;
       recordMinuteMetric('timeout');
       appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
+      recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
       if (task.retries < task.maxRetries) {
         task.retries += 1;
         stats.queueRetried += 1;
         recordMinuteMetric('retried');
         appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-        queue.push(task);
+        recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
+        if (!consumeRetryBudget()) {
+          task.resolve({ ok: false, code: 'backpressure_reject' });
+          return;
+        }
+        insertTaskSorted(task);
         incGroupPending(task.groupId);
         return;
       }
@@ -647,7 +814,12 @@ async function executeTask(task: QueueTask): Promise<void> {
       stats.queueRetried += 1;
       recordMinuteMetric('retried');
       appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-      queue.push(task);
+      recordActionQueueEvent(task, 'retry', { code: 'fail_api', ok: false, attemptCount: task.retries });
+      if (!consumeRetryBudget()) {
+        task.resolve({ ok: false, code: 'backpressure_reject' });
+        return;
+      }
+      insertTaskSorted(task);
       incGroupPending(task.groupId);
       return;
     }
@@ -656,14 +828,17 @@ async function executeTask(task: QueueTask): Promise<void> {
       stats.queueExecuted += 1;
       recordMinuteMetric('executed');
       appendQueueLog(`${task.type} ${taskSubject(task)} success`);
+      recordActionQueueEvent(task, 'success', { code: 'ok', ok: true });
     } else {
       appendQueueLog(`${task.type} ${taskSubject(task)} fail code=fail_api`);
+      recordActionQueueEvent(task, 'fail', { code: 'fail_api', ok: false });
     }
   } catch (e) {
     if (task.type === 'recall') {
       await groupguardRepository.resolveRecallTask(task.payload.taskId, 'exception', false, 0);
     }
     appendQueueLog(`${task.type} ${taskSubject(task)} exception`);
+    recordActionQueueEvent(task, 'exception', { code: 'exception', ok: false, payload: JSON.stringify({ error: String(e) }) });
     task.reject(e);
   } finally {
     decActiveType(task.type);
@@ -696,7 +871,7 @@ export async function enqueueRecallAction(opts: {
   allowSelfTarget?: boolean;
   dedupKey?: string;
   maxRetries?: number;
-}): Promise<GuardResult> {
+}): Promise<QueueLinkedGuardResult> {
   const taskId = String(opts.taskId || `${opts.groupId}:${opts.messageId}:recall`);
   const now = Date.now();
   try {
@@ -710,13 +885,15 @@ export async function enqueueRecallAction(opts: {
       maxAttempts: Math.max(1, Number(opts.maxRetries ?? 1) + 1)
     });
   } catch (e) {
-    pluginState.log('warn', `撤回持久化写入失败: ${String(e)}`);
+    loggingStateService.warn(`撤回持久化写入失败: ${String(e)}`);
   }
-  return new Promise<GuardResult>((resolve, reject) => {
+  return new Promise<QueueLinkedGuardResult>((resolve, reject) => {
+    const actionId = nextActionId();
     const task: RecallTask = {
-      actionId: nextActionId(),
+      actionId,
       type: 'recall',
       groupId: opts.groupId,
+      priorityScore: getActionPriority(opts.groupId, 'recall'),
       createdAt: Date.now(),
       retries: 0,
       maxRetries: Math.max(0, Number(opts.maxRetries ?? 1)),
@@ -730,10 +907,11 @@ export async function enqueueRecallAction(opts: {
         automatic: opts.automatic,
         allowSelfTarget: opts.allowSelfTarget
       },
-      resolve,
+      resolve: (value) => resolve({ ...value, taskId, actionId }),
       reject
     };
-    if (!enqueueTask(task)) resolve({ ok: false, code: 'skip_queue_overflow' });
+    const enqueueResult = enqueueTask(task);
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_queue_overflow', taskId, actionId });
   });
 }
 
@@ -754,6 +932,7 @@ export async function enqueueSelfRecallAction(opts: {
       actionId: nextActionId(),
       type: 'self_recall',
       groupId: opts.groupId,
+      priorityScore: getActionPriority(opts.groupId, 'self_recall'),
       createdAt: Date.now(),
       retries: 0,
       maxRetries: Math.max(1, Number(opts.maxRetries ?? 6)),
@@ -769,7 +948,8 @@ export async function enqueueSelfRecallAction(opts: {
       resolve,
       reject
     };
-    if (!enqueueTask(task)) resolve({ ok: false, code: 'skip_queue_overflow' });
+    const enqueueResult = enqueueTask(task);
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_queue_overflow' });
   });
 }
 
@@ -782,18 +962,21 @@ export async function enqueueBanAction(opts: {
   ignoreTargetProtection?: boolean;
   dedupKey?: string;
   maxRetries?: number;
-}): Promise<GuardResult> {
+}): Promise<QueueLinkedGuardResult> {
   const uid = String(opts.userId);
-  return new Promise<GuardResult>((resolve, reject) => {
+  const taskId = String(opts.dedupKey || `${opts.groupId}:ban:${uid}`);
+  return new Promise<QueueLinkedGuardResult>((resolve, reject) => {
+    const actionId = nextActionId();
     const task: BanTask = {
-      actionId: nextActionId(),
+      actionId,
       type: 'ban',
       groupId: opts.groupId,
+      priorityScore: getActionPriority(opts.groupId, 'ban'),
       createdAt: Date.now(),
       retries: 0,
       maxRetries: Math.max(0, Number(opts.maxRetries ?? 1)),
       targetUserId: uid,
-      dedupKey: opts.dedupKey || `${opts.groupId}:ban:${uid}`,
+      dedupKey: taskId,
       payload: {
         userId: uid,
         durationSeconds: opts.durationSeconds,
@@ -801,10 +984,11 @@ export async function enqueueBanAction(opts: {
         automatic: opts.automatic,
         ignoreTargetProtection: opts.ignoreTargetProtection
       },
-      resolve,
+      resolve: (value) => resolve({ ...value, taskId, actionId }),
       reject
     };
-    if (!enqueueTask(task)) resolve({ ok: false, code: 'skip_rate_limited' });
+    const enqueueResult = enqueueTask(task);
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_rate_limited', taskId, actionId });
   });
 }
 
@@ -816,28 +1000,32 @@ export async function enqueueKickAction(opts: {
   automatic?: boolean;
   dedupKey?: string;
   maxRetries?: number;
-}): Promise<GuardResult> {
+}): Promise<QueueLinkedGuardResult> {
   const uid = String(opts.userId);
-  return new Promise<GuardResult>((resolve, reject) => {
+  const taskId = String(opts.dedupKey || `${opts.groupId}:kick:${uid}`);
+  return new Promise<QueueLinkedGuardResult>((resolve, reject) => {
+    const actionId = nextActionId();
     const task: KickTask = {
-      actionId: nextActionId(),
+      actionId,
       type: 'kick',
       groupId: opts.groupId,
+      priorityScore: getActionPriority(opts.groupId, 'kick'),
       createdAt: Date.now(),
       retries: 0,
       maxRetries: Math.max(0, Number(opts.maxRetries ?? 1)),
       targetUserId: uid,
-      dedupKey: opts.dedupKey || `${opts.groupId}:kick:${uid}`,
+      dedupKey: taskId,
       payload: {
         userId: uid,
         reason: opts.reason,
         rejectAddRequest: opts.rejectAddRequest,
         automatic: opts.automatic
       },
-      resolve,
+      resolve: (value) => resolve({ ...value, taskId, actionId }),
       reject
     };
-    if (!enqueueTask(task)) resolve({ ok: false, code: 'skip_rate_limited' });
+    const enqueueResult = enqueueTask(task);
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_rate_limited', taskId, actionId });
   });
 }
 
@@ -855,6 +1043,7 @@ export async function enqueueMiscAction(opts: {
       actionId: nextActionId(),
       type: 'misc',
       groupId: opts.groupId,
+      priorityScore: getActionPriority(opts.groupId, 'misc'),
       createdAt: Date.now(),
       retries: 0,
       maxRetries: Math.max(0, Number(opts.maxRetries ?? 1)),
@@ -868,7 +1057,8 @@ export async function enqueueMiscAction(opts: {
       resolve,
       reject
     };
-    if (!enqueueTask(task)) resolve({ ok: false, code: 'skip_queue_overflow' });
+    const enqueueResult = enqueueTask(task);
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_queue_overflow' });
   });
 }
 
@@ -925,6 +1115,282 @@ export function getActionQueueRecentLogs(limit = 10): string[] {
   });
 }
 
+function buildRecentLogHits(taskId: string, limit = 5): string[] {
+  const safe = Math.max(1, Math.min(20, Number(limit) || 5));
+  return getActionQueueRecentLogs(100).filter(line => line.includes(taskId)).slice(0, safe);
+}
+
+function parseAuditPayload(row: AuditEventRecord): StandardAuditPayload | Record<string, any> | null {
+  try {
+    return JSON.parse(String(row.payload || '{}'));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAuditSource(value: unknown): string {
+  return String(value || '').trim();
+}
+
+function buildLookupFromRecallTask(taskId: string, row: RecallTaskRecord): ActionQueueTaskLookupResult {
+  return {
+    taskId,
+    found: true,
+    source: 'recall_tasks',
+    taskType: 'recall',
+    status: row.status,
+    groupId: row.groupId,
+    userId: row.targetUserId || '',
+    messageId: row.messageId,
+    reason: row.reason,
+    createdAt: row.createdAt,
+    dueAt: row.dueAt,
+    nextRetryAt: row.nextRetryAt,
+    attemptCount: row.attemptCount,
+    maxAttempts: row.maxAttempts,
+    lastCode: row.lastCode,
+    lastError: row.lastError,
+    updatedAt: row.updatedAt,
+    recentLogs: buildRecentLogHits(taskId),
+    raw: row
+  };
+}
+
+function buildLookupFromSelfRecallTask(taskId: string, row: SelfRecallTaskRecord): ActionQueueTaskLookupResult {
+  return {
+    taskId,
+    found: true,
+    source: 'self_recall_tasks',
+    taskType: 'self_recall',
+    status: row.status,
+    groupId: row.groupId,
+    messageId: row.messageId,
+    reason: row.reason,
+    createdAt: row.createdAt,
+    dueAt: row.dueAt,
+    nextRetryAt: row.nextRetryAt,
+    attemptCount: row.attemptCount,
+    maxAttempts: row.maxAttempts,
+    lastCode: row.lastCode,
+    lastError: row.lastError,
+    updatedAt: row.updatedAt,
+    recentLogs: buildRecentLogHits(taskId),
+    raw: row
+  };
+}
+
+export async function getActionQueueTaskSnapshot(taskId: string): Promise<ActionQueueTaskLookupResult | null> {
+  const normalized = String(taskId || '').trim();
+  if (!normalized) return null;
+  const queueIndex = queue.findIndex(task => {
+    if (task.type === 'recall' || task.type === 'self_recall') {
+      return String(task.payload.taskId || '') === normalized;
+    }
+    return String(task.dedupKey || '') === normalized;
+  });
+  if (queueIndex >= 0) {
+    const task = queue[queueIndex];
+    const result: ActionQueueTaskLookupResult = {
+      taskId: normalized,
+      found: true,
+      source: 'memory_queue',
+      taskType: task.type,
+      status: 'pending',
+      groupId: task.groupId,
+      userId: task.targetUserId || (task.type === 'ban' || task.type === 'kick' ? (task.payload as any).userId : undefined),
+      messageId: task.type === 'recall' || task.type === 'self_recall' ? task.payload.messageId : undefined,
+      reason: task.type === 'recall' || task.type === 'self_recall' ? task.payload.reason : (task.payload as any).reason,
+      actionId: task.actionId,
+      queuePosition: queueIndex + 1,
+      recentLogs: buildRecentLogHits(normalized),
+      raw: {
+        actionId: task.actionId,
+        type: task.type,
+        groupId: task.groupId,
+        dedupKey: task.dedupKey,
+        payload: task.payload,
+        createdAt: task.createdAt,
+        retries: task.retries,
+        maxRetries: task.maxRetries
+      }
+    };
+    return result;
+  }
+  const recallTask = await groupguardRepository.getRecallTask(normalized);
+  if (recallTask) return buildLookupFromRecallTask(normalized, recallTask);
+  const selfRecallTask = await groupguardRepository.getSelfRecallTask(normalized);
+  if (selfRecallTask) return buildLookupFromSelfRecallTask(normalized, selfRecallTask);
+  const logs = buildRecentLogHits(normalized);
+  return {
+    taskId: normalized,
+    found: false,
+    source: logs.length ? 'memory_log' : 'not_found',
+    recentLogs: logs.length ? logs : undefined
+  };
+}
+
+function buildTraceTimelineItemFromAudit(row: AuditEventRecord, payload: any): ActionQueueTraceItem {
+  const standard = payload && typeof payload === 'object' && payload.schemaVersion === 1 ? payload as StandardAuditPayload : null;
+  const queueTaskId = String(standard?.queueTaskId || payload?.queueTaskId || '');
+  const correlationId = String(standard?.correlationId || payload?.correlationId || payload?.context?.correlationId || '');
+  const actions = Array.isArray(standard?.actions) ? standard.actions : Array.isArray(payload?.actions) ? payload.actions : [];
+  const action = actions[0] || {};
+  const title = standard
+    ? `${standard.eventType} · ${standard.decision}`
+    : `${row.eventType} · ${row.kind || '-'}`;
+  const detailBits = [
+    standard?.source || payload?.source || '',
+    standard?.actionType || payload?.actionType || action?.type || '',
+    standard?.reason || payload?.reason || row.reason || '',
+    queueTaskId ? `task=${queueTaskId}` : '',
+    action?.code ? `code=${String(action.code)}` : '',
+    action?.ok !== undefined ? `ok=${action.ok === true ? 'true' : 'false'}` : ''
+  ].filter(Boolean);
+  return {
+    ts: row.createdAt,
+    stage: row.eventType,
+    title,
+    detail: detailBits.join(' · '),
+    auditEventId: row.id,
+    eventType: row.eventType,
+    correlationId: correlationId || undefined,
+    queueTaskId: queueTaskId || undefined,
+    actionId: String(action?.actionId || standard?.legacy?.actionId || payload?.actionId || ''),
+    code: String(action?.code || standard?.legacy?.code || payload?.code || ''),
+    ok: action?.ok !== undefined ? action.ok === true : undefined,
+    source: normalizeAuditSource(standard?.source || payload?.source),
+    raw: row
+  };
+}
+
+function buildQueueSnapshotTimelineItem(snapshot: ActionQueueTaskLookupResult): ActionQueueTraceItem {
+  return {
+    ts: snapshot.updatedAt || snapshot.createdAt || Date.now(),
+    stage: 'queue_snapshot',
+    title: `队列状态 · ${snapshot.source}`,
+    detail: [
+      snapshot.found ? 'found' : 'missing',
+      snapshot.status ? `status=${snapshot.status}` : '',
+      snapshot.groupId ? `group=${snapshot.groupId}` : '',
+      snapshot.userId ? `user=${snapshot.userId}` : '',
+      snapshot.messageId ? `msg=${snapshot.messageId}` : '',
+      snapshot.actionId ? `action=${snapshot.actionId}` : ''
+    ].filter(Boolean).join(' · '),
+    queueTaskId: snapshot.taskId,
+    actionId: snapshot.actionId,
+    source: snapshot.source,
+    raw: snapshot
+  };
+}
+
+function buildTraceTimelineItemFromActionEvent(row: ActionQueueEventRecord): ActionQueueTraceItem {
+  return {
+    ts: row.createdAt,
+    stage: 'action_queue_event',
+    title: `动作队列 · ${row.event}`,
+    detail: [
+      row.taskType ? `type=${row.taskType}` : '',
+      row.code ? `code=${row.code}` : '',
+      row.reason ? `reason=${row.reason}` : '',
+      row.groupId ? `group=${row.groupId}` : '',
+      row.userId ? `user=${row.userId}` : '',
+      row.messageId ? `msg=${row.messageId}` : ''
+    ].filter(Boolean).join(' · '),
+    queueTaskId: row.taskId,
+    actionId: row.actionId,
+    code: row.code,
+    ok: row.ok,
+    source: 'action_queue_events',
+    raw: row
+  };
+}
+
+export async function getActionQueueTaskTrace(taskId: string): Promise<ActionQueueTaskTraceView | null> {
+  const normalized = String(taskId || '').trim();
+  if (!normalized) return null;
+  const snapshot = await getActionQueueTaskSnapshot(normalized);
+  const relatedAuditEvents = await groupguardRepository.getAuditEventsByQueueTaskId(normalized, 50);
+  const actionEvents = await groupguardRepository.getActionQueueEventsByTaskId(normalized, 100);
+  const relatedTimeline: ActionQueueTraceItem[] = [];
+  if (snapshot) relatedTimeline.push(buildQueueSnapshotTimelineItem(snapshot));
+  for (const event of actionEvents) relatedTimeline.push(buildTraceTimelineItemFromActionEvent(event));
+  const parsedEvents = relatedAuditEvents.map(row => ({ row, payload: parseAuditPayload(row) }));
+  const queueTaskIds = new Set<string>();
+  const correlationIds = new Set<string>();
+  for (const { row, payload } of parsedEvents) {
+    const standard = payload && typeof payload === 'object' && payload.schemaVersion === 1 ? payload as StandardAuditPayload : null;
+    const correlationId = String(standard?.correlationId || payload?.correlationId || payload?.context?.correlationId || '').trim();
+    if (correlationId) correlationIds.add(correlationId);
+    const ids = [
+      String(standard?.queueTaskId || payload?.queueTaskId || ''),
+      ...(Array.isArray(standard?.actions) ? standard.actions.map(action => String(action?.queueTaskId || '')) : []),
+      ...(Array.isArray(payload?.actions) ? payload.actions.map((action: any) => String(action?.queueTaskId || '')) : [])
+    ].map(item => item.trim()).filter(Boolean);
+    for (const id of ids) queueTaskIds.add(id);
+    relatedTimeline.push(buildTraceTimelineItemFromAudit(row, payload));
+  }
+  let anchorEventType: ActionQueueTraceItem['eventType'] | undefined;
+  let anchorCreatedAt: number | undefined;
+  let source: string = snapshot?.source || 'not_found';
+  if (relatedAuditEvents.length) {
+    const anchor = relatedAuditEvents.find(row => row.eventType === 'manual_policy_action') || relatedAuditEvents.find(row => row.eventType === 'policy_decision') || relatedAuditEvents[0];
+    anchorEventType = anchor.eventType;
+    anchorCreatedAt = anchor.createdAt;
+    const anchorPayload = parseAuditPayload(anchor);
+    const standard = anchorPayload && typeof anchorPayload === 'object' && anchorPayload.schemaVersion === 1 ? anchorPayload as StandardAuditPayload : null;
+    const anchorCorrelationId = String(standard?.correlationId || anchorPayload?.correlationId || anchorPayload?.context?.correlationId || '').trim();
+    if (anchorCorrelationId) correlationIds.add(anchorCorrelationId);
+    source = standard?.source || normalizeAuditSource(anchorPayload?.source) || source;
+    if (standard?.eventType === 'manual_policy_action' || anchor.eventType === 'manual_policy_action') {
+      source = 'manual_policy_channel';
+    } else if (standard?.eventType === 'policy_decision' || anchor.eventType === 'policy_decision') {
+      source = 'policy_engine';
+    }
+    if (anchor.groupId && anchor.userId) {
+      const contextual = anchorCorrelationId
+        ? await groupguardRepository.queryAuditEvents({ correlationId: anchorCorrelationId, limit: 80, offset: 0 })
+        : await groupguardRepository.queryAuditEvents({
+          groupId: anchor.groupId,
+          userId: anchor.userId,
+          limit: 80,
+          offset: 0
+        });
+      const windowStart = Math.max(0, anchor.createdAt - 10 * 60 * 1000);
+      const windowEnd = anchor.createdAt + 10 * 60 * 1000;
+      for (const row of contextual.rows.reverse()) {
+        if (!anchorCorrelationId && (row.createdAt < windowStart || row.createdAt > windowEnd)) continue;
+        if (row.eventType === 'risk_signal' || row.eventType === 'risk_assessment') {
+          const payload = parseAuditPayload(row);
+          relatedTimeline.push(buildTraceTimelineItemFromAudit(row, payload));
+        }
+      }
+    }
+  }
+  relatedTimeline.sort((a, b) => a.ts - b.ts || String(a.stage).localeCompare(String(b.stage)));
+  const timeline = Array.from(new Map(relatedTimeline.map(item => [`${item.stage}:${item.ts}:${item.title}:${item.detail}`, item])).values());
+  const summary = snapshot
+    ? snapshot.found
+      ? `${snapshot.source === 'memory_queue' ? '任务仍在队列中等待执行' : '任务已落在持久化状态中'}，关联审计 ${relatedAuditEvents.length} 条`
+      : `任务未在队列或任务表中找到，关联审计 ${relatedAuditEvents.length} 条`
+    : `任务未找到，关联审计 ${relatedAuditEvents.length} 条`;
+  return {
+    taskId: normalized,
+    snapshot,
+    attribution: {
+      summary,
+      source,
+      correlationId: Array.from(correlationIds)[0],
+      matchedAuditEvents: relatedAuditEvents.length,
+      matchedQueueTaskIds: Array.from(queueTaskIds),
+      anchorEventType,
+      anchorCreatedAt
+    },
+    timeline,
+    relatedAuditEvents,
+    actionEvents
+  };
+}
+
 async function runSelfRecallRecoveryBatch(limit = 200): Promise<void> {
   if (selfRecallRecoveryTicking) return;
   selfRecallRecoveryTicking = true;
@@ -943,7 +1409,7 @@ async function runSelfRecallRecoveryBatch(limit = 200): Promise<void> {
       });
     }
   } catch (e) {
-    pluginState.log('warn', `自撤回补偿调度失败: ${String(e)}`);
+    loggingStateService.warn(`自撤回补偿调度失败: ${String(e)}`);
   } finally {
     selfRecallRecoveryTicking = false;
   }
@@ -967,7 +1433,7 @@ async function runRecallRecoveryBatch(limit = 200): Promise<void> {
       });
     }
   } catch (e) {
-    pluginState.log('warn', `撤回补偿调度失败: ${String(e)}`);
+    loggingStateService.warn(`撤回补偿调度失败: ${String(e)}`);
   } finally {
     recallRecoveryTicking = false;
   }

@@ -396,6 +396,49 @@
     .stat:hover {
       transform: translateY(-1px)
     }
+
+    .group-picker-panel {
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid rgba(96, 165, 250, .18);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .9);
+      padding: 6px;
+    }
+
+    .dark .group-picker-panel {
+      background: rgba(15, 23, 42, .6);
+      border-color: rgba(96, 165, 250, .12);
+    }
+
+    .group-picker-item {
+      width: 100%;
+      text-align: left;
+      border: none;
+      background: transparent;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      color: inherit;
+    }
+
+    .group-picker-item:hover {
+      background: rgba(96, 165, 250, .08);
+    }
+
+    .help-layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .help-layout {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 
@@ -428,6 +471,7 @@
         <div class="sb" onclick="go('license',this)">授权管理</div>
         <div class="sb" onclick="go('activity',this)">活跃统计</div>
         <div class="sb" onclick="go('sessions',this)">验证状态</div>
+        <div class="sb" onclick="go('audit',this)">审计查询</div>
         <div class="sb" onclick="go('logs',this)">调试日志</div>
       </nav>
       <div class="px-3 py-2.5 border-t border-blue-100/40 dark:border-blue-900/15 flex flex-col items-center gap-1.5">
@@ -493,13 +537,29 @@
           <div class="glass p-5 mb-4">
             <div class="flex items-center gap-3 flex-wrap mb-3">
               <h3 class="font-bold text-base">全局默认配置</h3>
-              <select id="grpSel" class="ipt" style="width:auto;min-width:160px" onchange="onGrp()">
-                <option value="">全局配置</option>
-              </select>
+              <div class="flex items-center gap-2 flex-wrap">
+                <select id="grpSel" class="ipt" style="width:auto;min-width:220px" onchange="onGrp()">
+                  <option value="">全局配置</option>
+                </select>
+                <input id="grpSelKw" class="ipt" style="width:220px" placeholder="筛选群号/群名" oninput="renderGroupPickerList()">
+                <button class="btn btn-s" onclick="const p=$('grpPickerWrap'); p.style.display = p.style.display==='none'?'block':'none';">展开群列表</button>
+              </div>
               <div id="grpUgWrap" style="display:none" class="flex items-center gap-2">
                 <span class="text-xs text-slate-500">使用全局</span>
                 <div class="tgl on" id="grp-ug" onclick="tg(this);onGrpToggle()"></div>
               </div>
+            </div>
+            <div id="grpPickerWrap" style="display:none" class="mb-3">
+              <div class="group-picker-panel scr" id="grpPickerList"></div>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap mb-3" data-scope="group">
+              <button class="btn btn-s" onclick="exportCurrentGroupConfig()">导出当前分群</button>
+              <button class="btn btn-s" onclick="triggerImportGroupConfig()">导入到当前分群</button>
+              <select id="grpImportMode" class="ipt" style="width:160px">
+                <option value="overwrite">覆盖导入</option>
+                <option value="merge">合并导入</option>
+              </select>
+              <input id="grpImportFile" type="file" accept=".json,application/json" style="display:none" onchange="importCurrentGroupConfig()">
             </div>
             
             <div class="flex gap-1.5 mb-4 flex-wrap">
@@ -532,6 +592,19 @@
                   <input type="text" id="c-wm" class="ipt" placeholder="欢迎 {user} 加入本群！">
                 </div>
               </div>
+              <div class="cfg-sec" data-scope="group">
+                <div class="cfg-row">
+                  <div>
+                    <div class="text-sm font-medium">入群私聊</div>
+                    <div class="text-xs text-slate-400">新成员入群后自动发送私聊</div>
+                  </div>
+                  <div class="tgl" id="c-jpe" onclick="tg(this)"></div>
+                </div>
+                <div class="mt-2">
+                  <label class="text-xs text-slate-500">私聊内容模板</label>
+                  <input type="text" id="c-jpm" class="ipt" placeholder="欢迎加入，进群后请先阅读群公告与群规。">
+                </div>
+              </div>
               <div class="cfg-sec">
                 <div class="sec-t">入群拒绝关键词</div>
                 <textarea id="c-rk" class="ipt mt-2" rows="3" placeholder="每行一个拒绝关键词"></textarea>
@@ -559,6 +632,51 @@
                 </div>
               </div>
               <div class="cfg-sec">
+                <div class="sec-t">战绩查询（商用）</div>
+                <div class="cfg-row">
+                  <div>
+                    <div class="text-sm font-medium">战绩查询功能开关</div>
+                    <div class="text-xs text-slate-400">支持全局默认与分群覆盖</div>
+                  </div>
+                  <div class="tgl on" id="c-lqe" onclick="tg(this)"></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+                  <div data-scope="global">
+                    <label class="text-xs text-slate-500">全局次数限制（次/分钟）</label>
+                    <input type="number" id="c-lqgpm" class="ipt" value="120" min="1">
+                  </div>
+                  <div data-scope="global">
+                    <label class="text-xs text-slate-500">全局频率限制（秒）</label>
+                    <input type="number" id="c-lqgmi" class="ipt" value="1" min="0">
+                  </div>
+                  <div data-scope="global">
+                    <label class="text-xs text-slate-500">接口等待时长（秒）</label>
+                    <input type="number" id="c-lqto" class="ipt" value="20" min="3" max="120">
+                  </div>
+                  <div data-scope="group">
+                    <label class="text-xs text-slate-500">分群次数限制（次/分钟）</label>
+                    <input type="number" id="c-lqpm" class="ipt" value="20" min="1">
+                  </div>
+                  <div data-scope="group">
+                    <label class="text-xs text-slate-500">分群频率限制（秒）</label>
+                    <input type="number" id="c-lqmi" class="ipt" value="2" min="0">
+                  </div>
+                  <div data-scope="group">
+                    <label class="text-xs text-slate-500">分群每日上限（次）</label>
+                    <input type="number" id="c-lqdl" class="ipt" value="200" min="1">
+                  </div>
+                </div>
+                <div class="mt-2" data-scope="group">
+                  <label class="text-xs text-slate-500">分群输出方式</label>
+                  <select id="c-lqof" class="ipt">
+                    <option value="forward">合并转发（默认）</option>
+                    <option value="text">纯文本</option>
+                    <option value="image">图片</option>
+                    <option value="card">卡片</option>
+                  </select>
+                </div>
+              </div>
+              <div class="cfg-sec">
                 <div class="sec-t">警告系统</div>
                 <div class="grid grid-cols-2 gap-3">
                   <div><label class="text-xs text-slate-500">警告上限次数</label><input type="number" id="c-wl-limit" class="ipt" value="3"></div>
@@ -576,7 +694,7 @@
                   <div><label class="text-xs text-slate-500">结束时间 (HH:mm)</label><input type="text" id="c-ce" class="ipt" placeholder="06:00"></div>
                 </div>
               </div>
-                <div class="cfg-sec" id="sec-antirisk">
+                <div class="cfg-sec" id="sec-antirisk" data-scope="global">
                 <div class="sec-t">防风控设置</div>
                 <div class="cfg-row">
                   <div>
@@ -610,6 +728,22 @@
                     <div class="text-xs text-slate-400">在消息末尾添加随机不可见字符 (全局生效)</div>
                   </div>
                   <div class="tgl" id="c-rs" onclick="tg(this)"></div>
+                </div>
+                <div class="mt-2 grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-3">
+                  <div>
+                    <label class="text-xs text-slate-500">后缀模式</label>
+                    <select id="c-basm" class="ipt">
+                      <option value="mixed">混合</option>
+                      <option value="invisible">仅不可见字符</option>
+                      <option value="punctuation">仅标点/空格</option>
+                      <option value="none">不加后缀</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="text-xs text-slate-500">场景化免风控策略 JSON</label>
+                    <textarea id="c-basp" class="ipt" rows="3" placeholder='{"raw_text":{"delayMinMs":500,"delayMaxMs":1500,"suffixMode":"global","replyProbability":100}}'></textarea>
+                    <div class="text-[10px] text-slate-400 mt-1">可按 scene 覆盖 delayMinMs/delayMaxMs/replyProbability/suffixMode</div>
+                  </div>
                 </div>
                 <div class="cfg-row">
                   <div>
@@ -734,6 +868,12 @@
                   <div><label class="text-xs text-slate-500">风险预警分</label><input type="number" id="c-rw" class="ipt" value="3" min="1"></div>
                   <div><label class="text-xs text-slate-500">风险保护分</label><input type="number" id="c-rp2" class="ipt" value="8" min="1"></div>
                   <div><label class="text-xs text-slate-500">风险衰减（秒）</label><input type="number" id="c-rdc" class="ipt" value="300" min="1"></div>
+                </div>
+                <div class="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div><label class="text-xs text-slate-500">审计保留天数</label><input type="number" id="c-armd" class="ipt" value="30" min="1" max="3650"></div>
+                  <div><label class="text-xs text-slate-500">审计最多条数</label><input type="number" id="c-armr" class="ipt" value="20000" min="100" max="1000000"></div>
+                  <div><label class="text-xs text-slate-500">动作历史保留天数</label><input type="number" id="c-aqemd" class="ipt" value="7" min="1" max="3650"></div>
+                  <div><label class="text-xs text-slate-500">动作历史最多条数</label><input type="number" id="c-aqemr" class="ipt" value="50000" min="100" max="1000000"></div>
                 </div>
                 <div class="mt-2">
                   <label class="text-xs text-slate-500">回复模板池（用 | 分隔，必须包含 {msg}）</label>
@@ -902,21 +1042,26 @@
               <h3 class="font-bold text-base">模块帮助中心</h3>
               <button onclick="loadHelpManual()" class="btn btn-s">刷新</button>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-              <input id="help-kw" class="ipt" placeholder="搜索命令/描述" oninput="renderHelpManual()">
-              <select id="help-mod" class="ipt" onchange="renderHelpManual()">
-                <option value="">全部模块</option>
-              </select>
-              <select id="help-perm" class="ipt" onchange="renderHelpManual()">
-                <option value="">全部权限</option>
-                <option value="owner">owner</option>
-                <option value="admin">admin</option>
-                <option value="all">all</option>
-                <option value="owner/admin">owner/admin</option>
-              </select>
-              <label class="flex items-center gap-2 text-xs"><input type="checkbox" id="help-hot" onchange="renderHelpManual()"> 仅看常用</label>
+            <div id="helpSource" class="text-xs text-slate-500 mb-3">命令手册来源：加载中</div>
+            <div class="help-layout">
+              <div class="glass p-3 border border-blue-100/30 dark:border-blue-900/20">
+                <div class="grid grid-cols-1 gap-2">
+                  <input id="help-kw" class="ipt" placeholder="搜索命令/描述" oninput="renderHelpManual()">
+                  <select id="help-mod" class="ipt" onchange="renderHelpManual()">
+                    <option value="">全部模块</option>
+                  </select>
+                  <select id="help-perm" class="ipt" onchange="renderHelpManual()">
+                    <option value="">全部权限</option>
+                    <option value="owner">owner</option>
+                    <option value="admin">admin</option>
+                    <option value="all">all</option>
+                    <option value="owner/admin">owner/admin</option>
+                  </select>
+                  <label class="flex items-center gap-2 text-xs"><input type="checkbox" id="help-hot" onchange="renderHelpManual()"> 仅看常用</label>
+                </div>
+              </div>
+              <div id="helpList" class="scr" style="max-height:70vh;overflow-y:auto"></div>
             </div>
-            <div id="helpList"></div>
           </div>
         </div>
 
@@ -962,6 +1107,23 @@
               <div class="stat bg-violet-50/80 dark:bg-violet-950/30"><div class="text-lg font-bold text-violet-500" id="rt-rp">-</div><div class="text-[10px] text-slate-500">回复概率</div></div>
             </div>
             <div id="runtimeText" class="text-xs text-slate-500 whitespace-pre-wrap"></div>
+            <div class="mt-3">
+              <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <div>
+                  <div class="text-sm font-semibold" id="botAntiRiskTitle">机器人免风控画像</div>
+                  <div class="text-[10px] text-slate-400">发送画像、自身撤回结果、场景与群排行</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <select id="botAntiRiskWindow" class="ipt" style="width:auto;min-width:100px" onchange="loadBotAntiRiskStats()">
+                    <option value="1">最近1小时</option>
+                    <option value="24" selected>最近24小时</option>
+                    <option value="168">最近7天</option>
+                  </select>
+                  <button onclick="loadBotAntiRiskStats()" class="btn btn-s">刷新画像</button>
+                </div>
+              </div>
+              <div id="botAntiRiskStats" class="text-xs text-slate-500"></div>
+            </div>
             <div class="mt-3">
               <div class="text-sm font-semibold mb-2">人格模板审计</div>
               <div id="personaAuditView" class="text-xs text-slate-500"></div>
@@ -1099,6 +1261,203 @@
           </div>
         </div>
 
+        <!-- 审计查询 -->
+        <div id="pg-audit" class="pg">
+          <div class="glass p-5 mb-4">
+            <div class="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 class="font-bold text-base">审计查询</h3>
+                <p class="text-xs text-slate-400 mt-1">只读查看 RiskEngine / PolicyEngine 写入的 audit_events</p>
+                <p class="text-[10px] text-slate-400 mt-1" id="aud-recent-hint">最近查询条件：未记录</p>
+              </div>
+              <button onclick="loadAuditEvents(0)" class="btn btn-p">查询</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+              <div>
+                <label class="lbl">群号</label>
+                <input id="aud-gid" class="ipt" placeholder="全部群">
+              </div>
+              <div>
+                <label class="lbl">用户</label>
+                <input id="aud-uid" class="ipt" placeholder="全部用户">
+              </div>
+              <div>
+                <label class="lbl">类型</label>
+                <select id="aud-type" class="ipt">
+                  <option value="">全部类型</option>
+                  <option value="risk_signal">risk_signal</option>
+                  <option value="risk_assessment">risk_assessment</option>
+                  <option value="policy_decision">policy_decision</option>
+                  <option value="manual_policy_action">manual_policy_action</option>
+                </select>
+              </div>
+              <div>
+                <label class="lbl">读取数量</label>
+                <input id="aud-limit" class="ipt" type="number" min="1" max="500" value="100">
+              </div>
+              <div>
+                <label class="lbl">每页</label>
+                <select id="aud-page-size" class="ipt" onchange="auditPageSize=Number(this.value)||20;loadAuditEvents(0)">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-4 mb-4">
+              <div class="border border-blue-100/40 dark:border-blue-900/20 rounded-lg p-3">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="text-xs font-semibold" id="aud-stats-title">最近 24 小时</div>
+                  <div class="flex items-center gap-1">
+                    <select id="aud-stats-window" class="ipt" style="width:auto;min-width:86px;font-size:11px;padding:4px 8px" onchange="loadAuditStats()">
+                      <option value="1">1h</option>
+                      <option value="24" selected>24h</option>
+                      <option value="168">7d</option>
+                    </select>
+                    <button onclick="loadAuditStats()" class="btn btn-s" style="font-size:10px;padding:3px 8px">刷新统计</button>
+                  </div>
+                </div>
+                <div id="aud-stats-cards" class="grid grid-cols-2 gap-2 text-xs"></div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="border border-blue-100/40 dark:border-blue-900/20 rounded-lg p-3">
+                  <div class="text-xs font-semibold mb-2">群排行</div>
+                  <div id="aud-top-groups" class="text-[11px] text-slate-500"></div>
+                </div>
+                <div class="border border-blue-100/40 dark:border-blue-900/20 rounded-lg p-3">
+                  <div class="text-xs font-semibold mb-2">用户排行</div>
+                  <div id="aud-top-users" class="text-[11px] text-slate-500"></div>
+                </div>
+              </div>
+            </div>
+            <div class="border border-blue-100/40 dark:border-blue-900/20 rounded-lg p-3 mb-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div>
+                  <div class="text-xs font-semibold" id="aqe-stats-title">动作历史表 · 最近 24 小时</div>
+                  <div class="text-[10px] text-slate-400">来自 action_queue_events，只读统计历史执行轨迹</div>
+                </div>
+                <div class="flex items-center gap-1">
+                  <select id="aqe-stats-window" class="ipt" style="width:auto;min-width:86px;font-size:11px;padding:4px 8px" onchange="loadActionQueueEventStats()">
+                    <option value="1">1h</option>
+                    <option value="24" selected>24h</option>
+                    <option value="168">7d</option>
+                  </select>
+                  <button onclick="loadActionQueueEventStats()" class="btn btn-s" style="font-size:10px;padding:3px 8px">刷新历史</button>
+                </div>
+              </div>
+              <div id="aqe-stats-cards" class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs mb-3"></div>
+              <div class="grid grid-cols-1 xl:grid-cols-3 gap-3 text-[11px]">
+                <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2">
+                  <div class="font-semibold mb-1">群排行</div>
+                  <div id="aqe-top-groups" class="text-slate-500"></div>
+                </div>
+                <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2">
+                  <div class="font-semibold mb-1">用户排行</div>
+                  <div id="aqe-top-users" class="text-slate-500"></div>
+                </div>
+                <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2">
+                  <div class="font-semibold mb-1">最近任务</div>
+                  <div id="aqe-top-tasks" class="text-slate-500"></div>
+                </div>
+              </div>
+            </div>
+            <div class="border border-blue-100/40 dark:border-blue-900/20 rounded-lg p-3 mb-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div>
+                  <div class="text-xs font-semibold">风险用户画像</div>
+                  <div class="text-[10px] text-slate-400" id="aud-profile-title">选择用户后查看近期风险概览</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <input id="aud-profile-user" class="ipt" style="width:150px" placeholder="用户 QQ">
+                  <select id="aud-profile-window" class="ipt" style="width:auto;min-width:86px;font-size:11px;padding:4px 8px" onchange="loadAuditUserProfile()">
+                    <option value="1">1h</option>
+                    <option value="24" selected>24h</option>
+                    <option value="168">7d</option>
+                  </select>
+                  <button onclick="loadAuditUserProfile()" class="btn btn-s" style="font-size:10px;padding:3px 8px">查看画像</button>
+                </div>
+              </div>
+              <div id="aud-profile" class="text-[11px] text-slate-500">暂无画像数据</div>
+            </div>
+            <div class="border border-blue-100/40 dark:border-blue-900/20 rounded-lg p-3 mb-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div>
+                  <div class="text-xs font-semibold">动作队列状态反查</div>
+                  <div class="text-[10px] text-slate-400">按任务 ID 反查内存队列、持久化任务表、最近日志与关联审计</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <input id="aud-task-id" class="ipt" style="width:180px" placeholder="任务 ID / queueTaskId">
+                  <select id="aud-trace-stage" class="ipt" style="width:auto;min-width:120px;font-size:11px;padding:4px 8px" onchange="auditTraceStageFilter=this.value;renderActionQueueTaskTrace(auditCurrentTrace)">
+                    <option value="">全部阶段</option>
+                    <option value="risk">Risk链路</option>
+                    <option value="policy">Policy/Manual</option>
+                    <option value="action_queue_event">动作历史</option>
+                    <option value="queue_snapshot">队列快照</option>
+                  </select>
+                  <input id="aud-trace-q" class="ipt" style="width:150px" placeholder="过滤轨迹文本" oninput="auditTraceQuery=this.value;renderActionQueueTaskTrace(auditCurrentTrace)">
+                  <button onclick="loadActionQueueTask()" class="btn btn-s" style="font-size:10px;padding:3px 8px">查询轨迹</button>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 mb-3">
+                <select id="aud-trace-search-kind" class="ipt" style="width:auto;min-width:120px;font-size:11px;padding:4px 8px">
+                  <option value="task_id">任务ID</option>
+                  <option value="correlation_id">关联ID</option>
+                  <option value="action_id">动作ID</option>
+                  <option value="group_id">群号</option>
+                  <option value="user_id">用户</option>
+                  <option value="message_id">消息ID</option>
+                  <option value="event">历史事件</option>
+                </select>
+                <input id="aud-trace-search-value" class="ipt" style="width:220px" placeholder="输入搜索值">
+                <button onclick="searchActionQueueTrace()" class="btn btn-s" style="font-size:10px;padding:3px 8px">搜索候选</button>
+                <div class="text-[10px] text-slate-400">先找候选任务，再打开轨迹明细</div>
+              </div>
+              <div id="aud-trace-search-results" class="text-[11px] text-slate-500 mb-3"></div>
+              <div id="aud-task-detail" class="text-[11px] text-slate-500">输入任务 ID 后查看轨迹</div>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div class="flex gap-1.5">
+                <button class="lfb active" onclick="setAuditType('',this)">全部</button>
+                <button class="lfb" onclick="setAuditType('risk_signal',this)">Signal</button>
+                <button class="lfb" onclick="setAuditType('risk_assessment',this)">Risk</button>
+                <button class="lfb" onclick="setAuditType('policy_decision',this)">Policy</button>
+                <button class="lfb" onclick="setAuditType('manual_policy_action',this)">Manual</button>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="exportAuditEvents('json')" class="btn btn-s">导出 JSON</button>
+                <button onclick="exportAuditEvents('csv')" class="btn btn-s">导出 CSV</button>
+                <span class="text-[10px] text-slate-400" id="aud-count">0 条</span>
+              </div>
+            </div>
+            <div class="text-[10px] text-slate-400 mb-2" id="aud-sort-hint">排序：按创建时间倒序，最新事件在前</div>
+            <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)] gap-4">
+              <div class="overflow-auto border border-blue-100/40 dark:border-blue-900/20 rounded-lg">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="bg-slate-50/80 dark:bg-slate-800/50 text-slate-500">
+                      <th class="text-left p-2 font-semibold">时间</th>
+                      <th class="text-left p-2 font-semibold">类型</th>
+                      <th class="text-left p-2 font-semibold">群</th>
+                      <th class="text-left p-2 font-semibold">用户</th>
+                      <th class="text-left p-2 font-semibold">摘要</th>
+                    </tr>
+                  </thead>
+                  <tbody id="aud-body"></tbody>
+                </table>
+              </div>
+              <div class="border border-blue-100/40 dark:border-blue-900/20 rounded-lg p-3 min-h-[260px]">
+                <div class="text-xs font-semibold mb-2">事件明细</div>
+                <div id="aud-detail" class="text-[11px] text-slate-500 max-h-[420px] overflow-auto scr">请选择一条审计事件</div>
+              </div>
+            </div>
+            <div class="flex items-center justify-between mt-3">
+              <button onclick="auditPrev()" class="btn btn-s">上一页</button>
+              <span class="text-[10px] text-slate-400" id="aud-page">第 1 页</span>
+              <button onclick="auditNext()" class="btn btn-s">下一页</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 调试日志 -->
         <div id="pg-logs" class="pg">
           <div class="glass p-5 mb-4">
@@ -1134,6 +1493,9 @@
     const API = '/plugin/napcat-plugin-groupguard/api';
     const WEBROOT = '/plugin/napcat-plugin-groupguard/webui';
     let C = {}, GL = [], logD = [], logFlt = 'all', logTmr = null, editMode = '', helpManual = [], runtimeState = null, personaCatalog = {}, builtinSceneTemplates = {};
+    let auditEvents = [], auditPage = 0, auditPageSize = 20, auditTypeFilter = '', auditSelected = null, auditPinnedEvent = null, auditCurrentTrace = null, auditTraceStageFilter = '', auditTraceQuery = '', auditLoadedLimit = 100, auditTotal = 0, auditHasMore = false;
+    const auditTraceCollapsed = { summary: false, snapshot: false, timeline: false, logs: false };
+    const auditEventCacheById = new Map();
     function $ (id) { return document.getElementById(id); }
     function toast (m, t = 'info') { const c = $('tc'), icons = { success: '<svg class="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>', error: '<svg class="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>', info: '<svg class="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' }, d = document.createElement('div'); d.className = 'toast'; d.innerHTML = `<span>${icons[t] || ''}</span><span>${m}</span>`; c.appendChild(d); setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 300); }, 3000); }
     function tg (el) { el.classList.toggle('on'); }
@@ -1143,7 +1505,7 @@
     function gn (id, d) { const v = parseInt($(id)?.value); return isNaN(v) ? d : v; }
     function esc (s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     async function af (p, m = 'GET', b = null) { const o = { method: m, headers: { 'Content-Type': 'application/json' } }; if (b) o.body = JSON.stringify(b); return (await fetch(API + p, o)).json(); }
-    function go (pg, el) { document.querySelectorAll('.pg').forEach(p => p.classList.remove('active')); document.querySelectorAll('.sb').forEach(s => s.classList.remove('active')); $('pg-' + pg)?.classList.add('active'); el?.classList.add('active'); if (pg === 'dashboard') updDash(); if (pg === 'sessions') loadSess(); if (pg === 'global') popGrpSel(); if (pg === 'activity') { popActSel(); loadAct(); } if (pg === 'assistant') loadBlMgr(); if (pg === 'help') loadHelpManual(); if (pg === 'persona') loadPersonaView(); if (pg === 'runtime') loadRuntime(); if (pg === 'tools') loadRuntime(); if (pg === 'license') { popLicGrp(); loadLic(); } if (pg === 'logs') { stg('l-db', C.debug); loadLogs(); startLR(); } else stopLR(); }
+    function go (pg, el) { document.querySelectorAll('.pg').forEach(p => p.classList.remove('active')); document.querySelectorAll('.sb').forEach(s => s.classList.remove('active')); $('pg-' + pg)?.classList.add('active'); el?.classList.add('active'); if (pg === 'dashboard') updDash(); if (pg === 'sessions') loadSess(); if (pg === 'global') popGrpSel(); if (pg === 'activity') { popActSel(); loadAct(); } if (pg === 'assistant') loadBlMgr(); if (pg === 'help') loadHelpManual(); if (pg === 'persona') loadPersonaView(); if (pg === 'runtime') loadRuntime(); if (pg === 'tools') loadRuntime(); if (pg === 'license') { popLicGrp(); loadLic(); } if (pg === 'audit') { loadAuditQueryMemory(); loadAuditStats(); loadActionQueueEventStats(); loadAuditEvents(0); } if (pg === 'logs') { stg('l-db', C.debug); loadLogs(); startLR(); } else stopLR(); }
     function popLicGrp() {
       const s = $('l-grp');
       s.innerHTML = GL.map(g => `<option value="${g.group_id}">${g.group_name || g.group_id} (${g.group_id})</option>`).join('');
@@ -1233,7 +1595,18 @@
     }
     function badge (id, on) { const e = $(id); if (!e) return; e.textContent = on ? '已开启' : '已关闭'; e.className = on ? 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'; }
     async function loadCfg () { try { const r = await af('/config'); if (r.code === 0) { C = r.data || {}; fillGlobal(); $('sDot').className = 'w-2 h-2 rounded-full bg-emerald-400'; $('sTxt').textContent = '已连接'; if (r.version) { const v = 'v' + r.version; $('sidebar-ver').textContent = 'GroupGuard ' + v; $('dash-ver').textContent = 'GroupGuard ' + v + ' · by 冷曦'; } return true; } } catch { } toast('加载配置失败', 'error'); return false; }
-    async function loadGrps () { try { const r = await af('/groups'); if (r.code === 0) GL = r.data || []; } catch { } }
+    async function loadGrps () {
+      try {
+        const r = await af('/groups');
+        if (r.code === 0) {
+          const list = Array.isArray(r.data) ? r.data : [];
+          GL = list
+            .map(g => ({ group_id: String(g.group_id || ''), group_name: String(g.group_name || '') }))
+            .filter(g => g.group_id)
+            .sort((a, b) => Number(a.group_id) - Number(b.group_id));
+        }
+      } catch { }
+    }
     function renderPersonaSelects () {
       const entries = Object.entries(personaCatalog || {});
       if (!entries.length) return;
@@ -1265,6 +1638,8 @@
       sv('c-vt', g.verifyTimeout || 300); sv('c-ma', g.maxAttempts || 5); sv('c-mn', g.mathMin || 1); sv('c-mx', g.mathMax || 100);
       sv('c-tu', (g.targetUsers || []).join(','));
       sv('c-wm', g.welcomeMessage || '');
+      stg('c-jpe', g.joinPrivateEnabled === true);
+      sv('c-jpm', g.joinPrivateMessage || '欢迎加入，进群后请先阅读群公告与群规。');
       sv('c-rk', (g.rejectKeywords || []).join('\n'));
       sv('c-fk', (g.filterKeywords || []).join('\n'));
       $('c-fp').value = g.filterPunishLevel || 1;
@@ -1292,6 +1667,8 @@
       sv('c-srmax', sr.maxDelay !== undefined ? sr.maxDelay : 90);
       sv('c-srj', sr.jitter !== undefined ? sr.jitter : 0);
       stg('c-rs', g.randomSuffix);
+      if ($('c-basm')) $('c-basm').value = g.botAntiRiskSuffixMode || 'mixed';
+      sv('c-basp', JSON.stringify(g.botAntiRiskScenePolicies || {}, null, 2));
       stg('c-drt', !!g.disableReplyTemplate);
       sv('c-rdn', g.randomDelayMin || 0);
       sv('c-rdx', g.randomDelayMax || 0);
@@ -1316,6 +1693,14 @@
       stg('c-dlo', g.disableLottery !== true);
       stg('c-din', g.disableInvite !== true);
       stg('c-dac', g.disableActivity !== true);
+      stg('c-lqe', g.disableLolQuery !== true);
+      sv('c-lqgpm', g.lolQueryGlobalRateLimitPerMinute !== undefined ? g.lolQueryGlobalRateLimitPerMinute : 120);
+      sv('c-lqgmi', g.lolQueryGlobalMinIntervalSeconds !== undefined ? g.lolQueryGlobalMinIntervalSeconds : 1);
+      sv('c-lqto', g.lolQueryRequestTimeoutSeconds !== undefined ? g.lolQueryRequestTimeoutSeconds : 20);
+      sv('c-lqpm', g.lolQueryGroupRateLimitPerMinute !== undefined ? g.lolQueryGroupRateLimitPerMinute : 20);
+      sv('c-lqmi', g.lolQueryGroupMinIntervalSeconds !== undefined ? g.lolQueryGroupMinIntervalSeconds : 2);
+      sv('c-lqdl', g.lolQueryDailyLimit !== undefined ? g.lolQueryDailyLimit : 200);
+      $('c-lqof').value = g.lolQueryOutputFormat || 'forward';
       stg('c-pa', g.protectAdminActions !== false);
       stg('c-po', g.protectOwnerActions !== false);
       stg('c-arc', g.autoRiskControl !== false);
@@ -1341,6 +1726,10 @@
       sv('c-rw', g.riskWarnScore || 3);
       sv('c-rp2', g.riskProtectScore || 8);
       sv('c-rdc', g.riskDecaySeconds || 300);
+      sv('c-armd', g.auditRetentionMaxAgeDays || 30);
+      sv('c-armr', g.auditRetentionMaxRows || 20000);
+      sv('c-aqemd', g.actionQueueEventRetentionMaxAgeDays || 7);
+      sv('c-aqemr', g.actionQueueEventRetentionMaxRows || 50000);
       $('c-rpd').value = g.replyPersonaDefault || 'formal';
       stg('c-arp', !!g.autoRandomPersona);
       sv('c-rpb', JSON.stringify(g.replyPersonaByScene || {}));
@@ -1390,6 +1779,8 @@
         verifyTimeout: gn('c-vt', 300), maxAttempts: gn('c-ma', 5), mathMin: gn('c-mn', 1), mathMax: gn('c-mx', 100),
         targetUsers: ($('c-tu')?.value || '').split(',').map(s => s.trim()).filter(Boolean),
         welcomeMessage: $('c-wm')?.value || '',
+        joinPrivateEnabled: gtg('c-jpe'),
+        joinPrivateMessage: $('c-jpm')?.value || '',
         rejectKeywords: ($('c-rk')?.value || '').split('\n').map(s => s.trim()).filter(Boolean),
         filterKeywords: ($('c-fk')?.value || '').split('\n').map(s => s.trim()).filter(Boolean),
         filterPunishLevel: parseInt($('c-fp')?.value) || 1, filterBanMinutes: gn('c-fb', 10),
@@ -1410,7 +1801,10 @@
           maxDelay: Math.min(300, gn('c-srmax', 90)),
           jitter: Math.min(300, gn('c-srj', 0))
         },
-        randomSuffix: gtg('c-rs'), disableReplyTemplate: gtg('c-drt'), randomDelayMin: gn('c-rdn', 0), randomDelayMax: gn('c-rdx', 0),
+        randomSuffix: gtg('c-rs'),
+        botAntiRiskSuffixMode: $('c-basm')?.value || 'mixed',
+        botAntiRiskScenePolicies: (() => { try { return JSON.parse(($('c-basp')?.value || '{}')); } catch { return {}; } })(),
+        disableReplyTemplate: gtg('c-drt'), randomDelayMin: gn('c-rdn', 0), randomDelayMax: gn('c-rdx', 0),
         queueMode: $('c-qm')?.value === 'global' ? 'global' : 'group',
         queueConcurrency: gn('c-qc', 2),
         globalMaxPerMinute: gn('c-gpm', 180),
@@ -1432,6 +1826,14 @@
         disableLottery: !gtg('c-dlo'),
         disableInvite: !gtg('c-din'),
         disableActivity: !gtg('c-dac'),
+        disableLolQuery: !gtg('c-lqe'),
+        lolQueryGlobalRateLimitPerMinute: gn('c-lqgpm', 120),
+        lolQueryGlobalMinIntervalSeconds: gn('c-lqgmi', 1),
+        lolQueryRequestTimeoutSeconds: gn('c-lqto', 20),
+        lolQueryGroupRateLimitPerMinute: gn('c-lqpm', 20),
+        lolQueryGroupMinIntervalSeconds: gn('c-lqmi', 2),
+        lolQueryDailyLimit: gn('c-lqdl', 200),
+        lolQueryOutputFormat: $('c-lqof')?.value || 'forward',
         protectAdminActions: gtg('c-pa'),
         protectOwnerActions: gtg('c-po'),
         autoRiskControl: gtg('c-arc'),
@@ -1458,6 +1860,10 @@
         riskWarnScore: gn('c-rw', 3),
         riskProtectScore: gn('c-rp2', 8),
         riskDecaySeconds: gn('c-rdc', 300),
+        auditRetentionMaxAgeDays: gn('c-armd', 30),
+        auditRetentionMaxRows: gn('c-armr', 20000),
+        actionQueueEventRetentionMaxAgeDays: gn('c-aqemd', 7),
+        actionQueueEventRetentionMaxRows: gn('c-aqemr', 50000),
         replyPersonaDefault: $('c-rpd')?.value || 'formal',
         autoRandomPersona: gtg('c-arp'),
         replyPersonaByScene: (() => { try { return JSON.parse(($('c-rpb')?.value || '{}')); } catch { return {}; } })(),
@@ -1493,14 +1899,97 @@
       af('/sessions').then(r => { if (r.code === 0) $('d-sc').textContent = (r.data || []).length; }).catch(() => { });
     }
 
-    function popGrpSel () { const s = $('grpSel'); const cv = s.value; s.innerHTML = '<option value="">全局配置</option>' + GL.map(g => `<option value="${g.group_id}">${g.group_name || g.group_id} (${g.group_id})</option>`).join(''); if (cv) s.value = cv; }
+    function popGrpSel () {
+      const s = $('grpSel');
+      const cv = s.value;
+      s.innerHTML = '<option value="">全局配置</option>' + GL.map(g => `<option value="${g.group_id}">${g.group_name || g.group_id} (${g.group_id})</option>`).join('');
+      if (cv) s.value = cv;
+      renderGroupPickerList();
+    }
+    function renderGroupPickerList () {
+      const kw = ($('grpSelKw')?.value || '').trim().toLowerCase();
+      const box = $('grpPickerList');
+      if (!box) return;
+      const list = GL.filter(g => {
+        if (!kw) return true;
+        const text = `${g.group_id} ${g.group_name || ''}`.toLowerCase();
+        return text.includes(kw);
+      });
+      if (!list.length) {
+        box.innerHTML = '<div class="text-xs text-slate-400 px-2 py-2">没有匹配的群</div>';
+        return;
+      }
+      box.innerHTML = list.map(g => `<button class="group-picker-item" onclick="chooseGroupFromPanel('${esc(String(g.group_id))}')">${esc(g.group_name || g.group_id)} (${esc(String(g.group_id))})</button>`).join('');
+    }
+    function chooseGroupFromPanel (gid) {
+      const s = $('grpSel');
+      if (!s) return;
+      s.value = gid;
+      $('grpPickerWrap').style.display = 'none';
+      onGrp();
+    }
+    async function exportCurrentGroupConfig () {
+      const gid = $('grpSel')?.value || '';
+      if (!gid) { toast('请先选择分群', 'error'); return; }
+      try {
+        const r = await af(`/group-config/export?group_id=${encodeURIComponent(gid)}`);
+        if (r.code !== 0) { toast(r.message || '导出失败', 'error'); return; }
+        const payload = r.data || {};
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `group-config-${gid}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast('分群配置已导出', 'success');
+      } catch {
+        toast('导出失败', 'error');
+      }
+    }
+    function triggerImportGroupConfig () {
+      const gid = $('grpSel')?.value || '';
+      if (!gid) { toast('请先选择分群', 'error'); return; }
+      const input = $('grpImportFile');
+      if (!input) return;
+      input.value = '';
+      input.click();
+    }
+    async function importCurrentGroupConfig () {
+      const gid = $('grpSel')?.value || '';
+      const file = $('grpImportFile')?.files?.[0];
+      if (!gid || !file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const mode = $('grpImportMode')?.value === 'merge' ? 'merge' : 'overwrite';
+        const settings = parsed?.settings || parsed?.data?.settings || parsed;
+        const r = await af('/group-config/import', 'POST', { targetGroupId: gid, mode, settings });
+        if (r.code !== 0) { toast(r.message || '导入失败', 'error'); return; }
+        const fixes = Array.isArray(r?.data?.fixes) ? r.data.fixes : [];
+        await loadCfg();
+        popGrpSel();
+        $('grpSel').value = gid;
+        onGrp();
+        toast(`导入成功${fixes.length ? `，已修复${fixes.length}项` : ''}`, 'success');
+      } catch {
+        toast('导入失败，文件格式无效', 'error');
+      }
+    }
+    function applyScopeView (isGroupMode) {
+      const area = $('pg-global');
+      if (!area) return;
+      area.querySelectorAll('[data-scope]').forEach((el) => {
+        const scope = el.getAttribute('data-scope');
+        const show = scope === 'group' ? isGroupMode : !isGroupMode;
+        el.style.display = show ? '' : 'none';
+      });
+    }
     function onGrp () {
       if (editMode) collectGroup(editMode); else collectGlobal();
       const gid = $('grpSel').value;
       if (!gid) { 
         editMode = ''; $('grpUgWrap').style.display = 'none'; fillGlobal(); setFormDisabled(false); 
-        // Show Anti-Risk for Global
-        const ar = $('sec-antirisk'); if(ar) { ar.style.display = ''; ar.style.opacity = ''; ar.style.pointerEvents = ''; }
+        applyScopeView(false);
         return; 
       }
       editMode = gid;
@@ -1509,16 +1998,13 @@
       $('grpUgWrap').style.display = 'flex';
       stg('grp-ug', isGlobal);
       if (isGlobal) { fillGlobal(); setFormDisabled(true); } else { fillGroup(gid); setFormDisabled(false); }
-      
-      // Hide Anti-Risk for Group Mode (since it's global only)
-      const ar = $('sec-antirisk');
-      if (ar) { ar.style.display = 'none'; }
+      applyScopeView(true);
     }
-    function onGrpToggle () { const gid = editMode; if (!gid) return; const useG = gtg('grp-ug'); if (useG) { C.groups = C.groups || {}; C.groups[gid] = { useGlobal: true }; fillGlobal(); setFormDisabled(true); } else { fillGroup(gid); setFormDisabled(false); } }
+    function onGrpToggle () { const gid = editMode; if (!gid) return; const useG = gtg('grp-ug'); if (useG) { C.groups = C.groups || {}; C.groups[gid] = { useGlobal: true }; fillGlobal(); setFormDisabled(true); } else { fillGroup(gid); setFormDisabled(false); } applyScopeView(true); }
     function setFormDisabled (off) {
       const area = $('pg-global'); if (!area) return;
       area.querySelectorAll('input, select, textarea, .tgl').forEach(el => {
-        if (el.id === 'grpSel' || el.id === 'grp-ug') return;
+        if (el.id === 'grpSel' || el.id === 'grp-ug' || el.id === 'grpImportMode' || el.id === 'grpImportFile') return;
         if (off) { el.style.opacity = '.4'; el.style.pointerEvents = 'none'; } else { el.style.opacity = ''; el.style.pointerEvents = ''; }
       });
       // Also disable interact settings if inheriting? No, usually settings are all inherited or not.
@@ -1548,7 +2034,12 @@
     }
     function gTab (tabId, btn) { const p = btn.parentElement; p.querySelectorAll('.lfb').forEach(b => b.classList.remove('active')); btn.classList.add('active'); const pfx = tabId.substring(0, tabId.lastIndexOf('-')); document.querySelectorAll('div[id^="' + pfx + '-"]').forEach(d => d.style.display = 'none'); $(tabId).style.display = ''; }
     async function loadSess () { const c = $('sessList'); try { const r = await af('/sessions'); if (r.code === 0) { const l = r.data || []; if (!l.length) { c.innerHTML = '<p class="text-slate-400 text-xs">当前没有进行中的验证。</p>'; return; } c.innerHTML = l.map(s => `<div class="border border-blue-100/40 dark:border-blue-900/20 rounded-xl p-3 mb-2 bg-white/40 dark:bg-slate-800/30"><div class="flex items-center justify-between"><div><span class="font-bold text-sm">用户 ${s.userId}</span><span class="text-[10px] text-slate-400 ml-2">群 ${s.groupId}</span></div><span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">剩余 ${Math.ceil(s.remainingMs / 1000)}s</span></div><div class="text-xs text-slate-400 mt-1">题目: ${s.expression} | 已尝试 ${s.attempts}/${s.maxAttempts}</div></div>`).join(''); } } catch { c.innerHTML = '<p class="text-red-500 text-xs">获取失败</p>'; } }
-    function popActSel () { const s = $('actGrp'); s.innerHTML = '<option value="">全部群</option>' + GL.map(g => `<option value="${g.group_id}">${g.group_name || g.group_id} (${g.group_id})</option>`).join(''); }
+    function popActSel () {
+      const s = $('actGrp');
+      const cv = s.value;
+      s.innerHTML = '<option value="">全部群</option>' + GL.map(g => `<option value="${g.group_id}">${g.group_name || g.group_id} (${g.group_id})</option>`).join('');
+      if (cv) s.value = cv;
+    }
     async function loadAct () { const gid = $('actGrp')?.value || ''; try { const r = await af(gid ? `/activity?group_id=${gid}` : '/activity'); if (r.code === 0) { const st = r.data || {}, td = new Date().toISOString().slice(0, 10); const es = []; if (gid) { for (const [uid, v] of Object.entries(st)) es.push({ gid, uid, ...v }); } else { for (const [g, users] of Object.entries(st)) { for (const [uid, v] of Object.entries(users)) es.push({ gid: g, uid, ...v }); } } es.sort((a, b) => b.msgCount - a.msgCount); $('a-tu').textContent = es.length; $('a-tm').textContent = es.reduce((s, e) => s + (e.msgCount || 0), 0); const tde = es.filter(e => e.todayDate === td); $('a-tdm').textContent = tde.reduce((s, e) => s + (e.todayCount || 0), 0); $('a-tda').textContent = tde.filter(e => e.todayCount > 0).length; const tb = $('actTb'); if (!es.length) { tb.innerHTML = '<tr><td colspan="6" style="padding:12px;text-align:center;color:#6b7280">暂无数据</td></tr>'; return; } tb.innerHTML = es.slice(0, 100).map((e, i) => { const lt = e.lastActive ? new Date(e.lastActive).toLocaleString('zh-CN') : '-'; return `<tr style="border-bottom:1px solid rgba(96,165,250,.06)"><td style="padding:4px">${i + 1}</td><td style="padding:4px">${e.uid}</td><td style="padding:4px">${e.gid}</td><td style="padding:4px">${e.msgCount || 0}</td><td style="padding:4px">${e.todayDate === td ? (e.todayCount || 0) : 0}</td><td style="padding:4px;font-size:11px;color:#6b7280">${lt}</td></tr>`; }).join(''); } } catch { $('actTb').innerHTML = '<tr><td colspan="6" style="padding:12px;text-align:center;color:#ef4444">获取失败</td></tr>'; } }
     function loadBlMgr () { const c = $('blMgr'); const list = C.blacklist || []; if (!list.length) { c.innerHTML = '<p class="text-xs text-slate-400">黑名单为空</p>'; return; } c.innerHTML = '<div style="max-height:240px;overflow-y:auto" class="scr">' + list.map(qq => `<div class="flex items-center justify-between p-2 mb-1 rounded-lg bg-slate-50/80 dark:bg-slate-800/30"><span class="text-xs font-mono">${esc(qq)}</span><button onclick="rmBl('${esc(qq)}')" class="btn btn-d" style="font-size:10px;padding:2px 8px">移除</button></div>`).join('') + '</div><div class="text-[10px] text-slate-400 mt-1">共 ' + list.length + ' 人</div>'; }
     async function rmBl (qq) { C.blacklist = (C.blacklist || []).filter(q => q !== qq); try { const r = await af('/config', 'POST', C); if (r.code === 0) { toast('已移除 ' + qq, 'success'); loadBlMgr(); } else toast('操作失败', 'error'); } catch { toast('操作失败', 'error'); } }
@@ -1559,8 +2050,676 @@
     function tglDbg () { const on = gtg('l-db'); C.debug = on; af('/config', 'POST', C).then(() => { toast(on ? '调试模式已开启' : '调试模式已关闭', 'info'); updDash(); }).catch(() => { }); }
     function startLR () { if (logTmr) return; logTmr = setInterval(loadLogs, 3000); }
     function stopLR () { if (logTmr) { clearInterval(logTmr); logTmr = null; } }
+    function auditFilters (page = auditPage) {
+      const q = new URLSearchParams();
+      const gid = ($('aud-gid')?.value || '').trim();
+      const uid = ($('aud-uid')?.value || '').trim();
+      const type = ($('aud-type')?.value || auditTypeFilter || '').trim();
+      const limit = Math.max(1, Math.min(500, Number($('aud-limit')?.value || auditLoadedLimit || 100)));
+      const pageSize = Math.max(1, Number($('aud-page-size')?.value || auditPageSize || 20));
+      const offset = Math.max(0, page) * pageSize;
+      if (gid) q.set('group_id', gid);
+      if (uid) q.set('user_id', uid);
+      if (type) q.set('event_type', type);
+      q.set('limit', String(pageSize));
+      q.set('offset', String(offset));
+      return { q, limit, type, gid, uid, pageSize, offset };
+    }
+    function auditFilterLabel (filters) {
+      return `群=${filters.gid || '全部'} 用户=${filters.uid || '全部'} 类型=${filters.type || '全部'} limit=${filters.limit} 每页=${filters.pageSize}`;
+    }
+    function saveAuditQueryMemory (filters) {
+      const memory = { ...filters, savedAt: new Date().toISOString() };
+      try { localStorage.setItem('groupguard.audit.lastQuery', JSON.stringify(memory)); } catch { }
+      if ($('aud-recent-hint')) $('aud-recent-hint').textContent = `最近查询条件：${auditFilterLabel(memory)}`;
+    }
+    function loadAuditQueryMemory () {
+      let memory = null;
+      try { memory = JSON.parse(localStorage.getItem('groupguard.audit.lastQuery') || 'null'); } catch { memory = null; }
+      if (!memory) return;
+      if ($('aud-gid')) $('aud-gid').value = memory.gid || '';
+      if ($('aud-uid')) $('aud-uid').value = memory.uid || '';
+      if ($('aud-type')) $('aud-type').value = memory.type || '';
+      if ($('aud-limit')) $('aud-limit').value = memory.limit || 100;
+      if ($('aud-page-size')) $('aud-page-size').value = memory.pageSize || 20;
+      auditTypeFilter = memory.type || '';
+      auditPageSize = Number(memory.pageSize) || 20;
+      if ($('aud-recent-hint')) $('aud-recent-hint').textContent = `最近查询条件：${auditFilterLabel({ ...memory, limit: memory.limit || 100, pageSize: memory.pageSize || 20 })}`;
+    }
+    function normalizeAuditRow (row) {
+      return {
+        ...row,
+        eventType: row.eventType || row.event_type || '-',
+        groupId: row.groupId || row.group_id || '-',
+        userId: row.userId || row.user_id || '-',
+        createdAt: row.createdAt || row.created_at || row.time || '',
+        summary: row.summary || row.message || row.reason || row.kind || row.eventType || row.event_type || '-'
+      };
+    }
+    function auditTimeText (value) {
+      if (!value) return '-';
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('zh-CN');
+    }
+    function auditJsArg (value) {
+      return JSON.stringify(String(value || '')).replace(/"/g, '&quot;').replace(/</g, '\\u003c');
+    }
+    function auditTaskButton (taskId, label) {
+      const raw = String(taskId || '').trim();
+      if (!raw || raw === '-') return `<span class="font-mono break-all">${esc(String(taskId || '-'))}</span>`;
+      const ids = raw.split(/[,\s]+/).map(v => v.trim()).filter(Boolean);
+      const list = ids.length > 1 ? ids : [raw];
+      return list.map((id, idx) => {
+        const text = label ? String(label) : id;
+        const button = `<button class="font-mono text-left hover:text-blue-500 break-all" onclick="auditOpenQueueTask(${auditJsArg(id)})">${esc(text)}</button>`;
+        return idx ? `<span class="mx-1 text-slate-400">·</span>${button}` : button;
+      }).join('');
+    }
+    function auditCacheEvents (rows) {
+      if (!Array.isArray(rows)) return;
+      rows.forEach(row => {
+        const id = Number(row?.id || row?.eventId || 0);
+        if (id > 0) auditEventCacheById.set(id, normalizeAuditRow(row));
+      });
+    }
+    function auditOpenAuditTab () {
+      const btn = [...document.querySelectorAll('.sb')].find(el => el.textContent.trim() === '审计查询');
+      go('audit', btn);
+    }
+    function auditOpenEventDetail (eventId) {
+      const id = Number(eventId || 0);
+      if (!id) return;
+      const cached = auditEventCacheById.get(id) || auditEvents.find(row => Number(row.id || row.eventId || 0) === id) || null;
+      if (!cached) {
+        toast('审计事件未加载到当前视图', 'info');
+        return;
+      }
+      auditPinnedEvent = normalizeAuditRow(cached);
+      auditSelected = auditPinnedEvent;
+      auditOpenAuditTab();
+      renderAuditEvents();
+      $('aud-detail')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    function auditFileTime () {
+      return new Date().toISOString().replace(/[:.]/g, '-');
+    }
+    function auditPayload (row) {
+      const raw = row.payload || row.data || row.meta || row.details || row.rawPayload || null;
+      if (typeof raw === 'string') {
+        try { return JSON.parse(raw); } catch { return raw; }
+      }
+      return raw;
+    }
+    function auditStandardPayload (row) {
+      const payload = auditPayload(row);
+      if (payload && typeof payload === 'object' && payload.schemaVersion === 1) return payload;
+      return {
+        schemaVersion: 0,
+        eventType: row.eventType || payload?.event || '-',
+        source: payload?.source || '-',
+        ruleId: payload?.ruleId || payload?.kind || row.kind || '-',
+        actionType: payload?.actionType || payload?.type || '-',
+        decision: payload?.decision || (row.handled ? 'handled' : 'observed'),
+        score: payload?.score ?? row.riskScore ?? 0,
+        reason: payload?.reason || row.summary || row.reason || '-',
+        queueTaskId: payload?.queueTaskId || '',
+        context: payload?.context || {},
+        actions: payload?.actions || [],
+        reasons: payload?.reasons || []
+      };
+    }
+    function auditActionSummary (actions) {
+      if (!Array.isArray(actions) || !actions.length) return '<div class="text-slate-400 mb-3">无队列动作</div>';
+      return `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2 mb-3">
+        ${actions.map((action, idx) => `<div class="grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1 ${idx ? 'mt-2 pt-2 border-t border-blue-100/30 dark:border-blue-900/20' : ''}">
+          <div class="text-slate-400">动作</div><div class="font-mono">${esc(String(action.type || action.actionType || '-'))}</div>
+          <div class="text-slate-400">任务ID</div><div>${auditTaskButton(action.queueTaskId || '-')}</div>
+          <div class="text-slate-400">结果</div><div class="font-mono">${esc(String(action.code || '-'))} ${action.ok === true ? 'ok' : ''}</div>
+        </div>`).join('')}
+      </div>`;
+    }
+    function csvCell (value) {
+      const text = value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value);
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    function downloadTextFile (name, text, type) {
+      const blob = new Blob([text], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+    async function copyActionQueueTrace () {
+      if (!auditCurrentTrace) {
+        toast('请先查询任务轨迹', 'info');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(auditCurrentTrace, null, 2));
+        toast('任务轨迹已复制', 'success');
+      } catch {
+        toast('复制失败', 'error');
+      }
+    }
+    function exportActionQueueTrace () {
+      if (!auditCurrentTrace) {
+        toast('请先查询任务轨迹', 'info');
+        return;
+      }
+      const taskId = String(auditCurrentTrace.taskId || auditCurrentTrace.snapshot?.taskId || 'trace').replace(/[^\w.-]+/g, '_').slice(0, 80) || 'trace';
+      downloadTextFile(`action-trace-${taskId}-${auditFileTime()}.json`, JSON.stringify({
+        meta: {
+          exportedAt: new Date().toISOString(),
+          source: 'action_queue_task_trace',
+          taskId: auditCurrentTrace.taskId || auditCurrentTrace.snapshot?.taskId || ''
+        },
+        data: auditCurrentTrace
+      }, null, 2), 'application/json;charset=utf-8');
+      toast('任务轨迹已导出', 'success');
+    }
+    function toggleActionTraceSection (key) {
+      if (!(key in auditTraceCollapsed)) return;
+      auditTraceCollapsed[key] = !auditTraceCollapsed[key];
+      renderActionQueueTaskTrace(auditCurrentTrace);
+    }
+    function auditTraceItemVisible (item) {
+      if (!item) return false;
+      const stage = String(item.stage || '');
+      if (auditTraceStageFilter === 'risk' && !(stage === 'risk_signal' || stage === 'risk_assessment')) return false;
+      if (auditTraceStageFilter === 'policy' && !(stage === 'policy_decision' || stage === 'manual_policy_action')) return false;
+      if (auditTraceStageFilter && auditTraceStageFilter !== 'risk' && auditTraceStageFilter !== 'policy' && stage !== auditTraceStageFilter) return false;
+      const q = String(auditTraceQuery || '').trim().toLowerCase();
+      if (!q) return true;
+      return [item.stage, item.title, item.detail, item.queueTaskId, item.actionId, item.code, item.source, item.correlationId]
+        .some(value => String(value || '').toLowerCase().includes(q));
+    }
+    function actionTraceSectionHeader (key, title, meta = '') {
+      const collapsed = !!auditTraceCollapsed[key];
+      return `<div class="flex items-center justify-between gap-2 mb-1">
+        <div class="text-slate-400">${esc(title)}${meta ? `<span class="ml-1 text-[10px]">${esc(meta)}</span>` : ''}</div>
+        <button onclick="toggleActionTraceSection(${auditJsArg(key)})" class="btn btn-s" style="font-size:10px;padding:3px 8px">${collapsed ? '展开' : '折叠'}</button>
+      </div>`;
+    }
+    function exportAuditEvents (format) {
+      if (!auditEvents.length) {
+        toast('暂无可导出的审计记录', 'info');
+        return;
+      }
+      const stamp = auditFileTime();
+      const filters = auditFilters();
+      const exportMeta = {
+        exportedAt: new Date().toISOString(),
+        order: 'created_at desc',
+        filters: {
+          groupId: filters.gid || null,
+          userId: filters.uid || null,
+          eventType: filters.type || null,
+          limit: filters.limit,
+          pageSize: filters.pageSize,
+          offset: filters.offset,
+          total: auditTotal
+        },
+        count: auditEvents.length
+      };
+      if (format === 'csv') {
+        const head = ['id', 'event_type', 'group_id', 'user_id', 'created_at', 'summary', 'payload'];
+        const rows = auditEvents.map(row => [
+          row.id || row.eventId || '',
+          row.eventType || '',
+          row.groupId || '',
+          row.userId || '',
+          row.createdAt || '',
+          row.summary || '',
+          auditPayload(row) || ''
+        ].map(csvCell).join(','));
+        const metaRows = [
+          `# exported_at=${exportMeta.exportedAt}`,
+          `# order=${exportMeta.order}`,
+          `# filters=${JSON.stringify(exportMeta.filters)}`,
+          `# count=${exportMeta.count}`
+        ];
+        downloadTextFile(`audit-events-${stamp}.csv`, [...metaRows, head.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8');
+      } else {
+        downloadTextFile(`audit-events-${stamp}.json`, JSON.stringify({ meta: exportMeta, data: auditEvents }, null, 2), 'application/json;charset=utf-8');
+      }
+      toast('审计记录已导出', 'success');
+    }
+    function setAuditType (type, btn) {
+      auditTypeFilter = type;
+      btn?.parentElement?.querySelectorAll('.lfb').forEach(b => b.classList.remove('active'));
+      btn?.classList.add('active');
+      if ($('aud-type')) $('aud-type').value = type;
+      loadAuditEvents(0);
+    }
+    async function loadAuditEvents (page = 0) {
+      auditPage = Math.max(0, page);
+      const filters = auditFilters(auditPage);
+      const { q, limit, type } = filters;
+      auditLoadedLimit = limit;
+      auditTypeFilter = type;
+      saveAuditQueryMemory(filters);
+      try {
+        const r = await af(`/audit-events?${q.toString()}`);
+        if (r.code !== 0) throw new Error(r.message || 'audit_query_failed');
+        const pageData = Array.isArray(r.data) ? { rows: r.data, total: r.data.length, hasMore: false, limit: r.data.length, offset: 0 } : (r.data || {});
+        auditCacheEvents(pageData.rows);
+        auditEvents = Array.isArray(pageData.rows) ? pageData.rows.map(normalizeAuditRow) : [];
+        auditTotal = Math.max(0, Number(pageData.total || auditEvents.length));
+        auditHasMore = !!pageData.hasMore;
+        auditSelected = auditEvents[0] || null;
+        renderAuditEvents();
+      } catch {
+        if ($('aud-body')) $('aud-body').innerHTML = '<tr><td colspan="5" class="p-3 text-center text-red-500">获取失败</td></tr>';
+        if ($('aud-count')) $('aud-count').textContent = '0 条';
+        if ($('aud-detail')) $('aud-detail').textContent = '审计查询失败';
+      }
+    }
+    async function loadAuditStats () {
+      try {
+        const hours = Math.max(1, Math.min(168, Number($('aud-stats-window')?.value || 24)));
+        const r = await af(`/audit-events/stats?hours=${hours}&limit=10`);
+        if (r.code !== 0) throw new Error(r.message || 'audit_stats_failed');
+        renderAuditStats(r.data || {});
+      } catch {
+        if ($('aud-stats-cards')) $('aud-stats-cards').innerHTML = '<div class="text-red-500">统计获取失败</div>';
+      }
+    }
+    function renderAuditStats (stats) {
+      const byType = stats.byType || {};
+      const hours = Number(stats.hours || $('aud-stats-window')?.value || 24);
+      const title = hours === 1 ? '最近 1 小时' : hours === 168 ? '最近 7 天' : `最近 ${hours} 小时`;
+      if ($('aud-stats-title')) $('aud-stats-title').textContent = title;
+      const card = (name, value) => `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/30 border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="text-[10px] text-slate-400">${esc(name)}</div><div class="font-semibold text-base">${Number(value || 0)}</div></div>`;
+      if ($('aud-stats-cards')) $('aud-stats-cards').innerHTML = [
+        card('总事件', stats.total),
+        card('Signal', byType.risk_signal),
+        card('Policy', byType.policy_decision),
+        card('Manual', byType.manual_policy_action)
+      ].join('');
+      const rank = (items, key, type) => (items || []).length
+        ? (items || []).map((it, i) => `<div class="flex items-center justify-between gap-2 py-1 border-b border-blue-100/20 dark:border-blue-900/10"><button class="font-mono text-left hover:text-blue-500" onclick="auditJump('${type}',${auditJsArg(it[key])})">${i + 1}. ${esc(String(it[key] || '-'))}</button><span>${Number(it.count || 0)}</span></div>`).join('')
+        : '<div class="text-slate-400">暂无数据</div>';
+      if ($('aud-top-groups')) $('aud-top-groups').innerHTML = rank(stats.topGroups, 'groupId', 'group');
+      if ($('aud-top-users')) $('aud-top-users').innerHTML = rank(stats.topUsers, 'userId', 'user');
+    }
+    async function loadActionQueueEventStats () {
+      try {
+        const hours = Math.max(1, Math.min(168, Number($('aqe-stats-window')?.value || 24)));
+        const r = await af(`/action-queue/events/stats?hours=${hours}&limit=10`);
+        if (r.code !== 0) throw new Error(r.message || 'action_history_stats_failed');
+        renderActionQueueEventStats(r.data || {});
+      } catch {
+        if ($('aqe-stats-cards')) $('aqe-stats-cards').innerHTML = '<div class="text-red-500">历史统计获取失败</div>';
+      }
+    }
+    function renderActionQueueEventStats (stats) {
+      const byEvent = stats.byEvent || {};
+      const byTaskType = stats.byTaskType || {};
+      const hours = Number(stats.hours || $('aqe-stats-window')?.value || 24);
+      const title = hours === 1 ? '动作历史表 · 最近 1 小时' : hours === 168 ? '动作历史表 · 最近 7 天' : `动作历史表 · 最近 ${hours} 小时`;
+      if ($('aqe-stats-title')) $('aqe-stats-title').textContent = title;
+      const card = (name, value) => `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/30 border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="text-[10px] text-slate-400">${esc(name)}</div><div class="font-semibold text-base">${Number(value || 0)}</div></div>`;
+      if ($('aqe-stats-cards')) $('aqe-stats-cards').innerHTML = [
+        card('总历史', stats.total),
+        card('Queued', byEvent.queued),
+        card('Success', byEvent.success),
+        card('Fail', byEvent.fail),
+        card('Recall', byTaskType.recall)
+      ].join('');
+      const rank = (items, key, type) => (items || []).length
+        ? (items || []).map((it, i) => `<div class="flex items-center justify-between gap-2 py-1 border-b border-blue-100/20 dark:border-blue-900/10"><button class="font-mono text-left hover:text-blue-500" onclick="auditJump('${type}',${auditJsArg(it[key])})">${i + 1}. ${esc(String(it[key] || '-'))}</button><span>${Number(it.count || 0)}</span></div>`).join('')
+        : '<div class="text-slate-400">暂无数据</div>';
+      const taskRank = (stats.topTasks || []).length
+        ? (stats.topTasks || []).map((it, i) => `<div class="py-1 border-b border-blue-100/20 dark:border-blue-900/10">
+            <div class="flex items-center justify-between gap-2">
+              <button class="font-mono text-left hover:text-blue-500 break-all" onclick="auditOpenQueueTask(${auditJsArg(it.taskId)})">${i + 1}. ${esc(String(it.taskId || '-'))}</button>
+              <span>${Number(it.count || 0)}</span>
+            </div>
+            <div class="text-[10px] text-slate-400">${esc(String(it.taskType || '-'))} · ${esc(String(it.lastEvent || '-'))} · ${esc(auditTimeText(it.updatedAt))}</div>
+          </div>`).join('')
+        : '<div class="text-slate-400">暂无数据</div>';
+      if ($('aqe-top-groups')) $('aqe-top-groups').innerHTML = rank(stats.topGroups, 'groupId', 'group');
+      if ($('aqe-top-users')) $('aqe-top-users').innerHTML = rank(stats.topUsers, 'userId', 'user');
+      if ($('aqe-top-tasks')) $('aqe-top-tasks').innerHTML = taskRank;
+    }
+    function auditJump (type, value) {
+      if (type === 'group' && $('aud-gid')) $('aud-gid').value = value;
+      if (type === 'user' && $('aud-uid')) {
+        $('aud-uid').value = value;
+        if ($('aud-profile-user')) $('aud-profile-user').value = value;
+        void loadAuditUserProfile();
+      }
+      loadAuditEvents(0);
+    }
+    async function auditOpenUserProfile (userId) {
+      if (!userId || userId === '-') return;
+      if ($('aud-profile-user')) $('aud-profile-user').value = String(userId);
+      await loadAuditUserProfile();
+    }
+    async function auditOpenQueueTask (taskId) {
+      const value = String(taskId || '').trim();
+      if (!value || value === '-') return;
+      if ($('aud-task-id')) $('aud-task-id').value = value;
+      await loadActionQueueTask(value);
+    }
+    async function searchActionQueueTrace () {
+      const kind = ($('aud-trace-search-kind')?.value || 'task_id').trim();
+      const value = ($('aud-trace-search-value')?.value || '').trim();
+      const el = $('aud-trace-search-results');
+      if (!value) {
+        if (el) el.innerHTML = '<div class="text-slate-400">请输入搜索值</div>';
+        return;
+      }
+      if (el) el.innerHTML = '<div class="text-slate-400">搜索中...</div>';
+      try {
+        const r = await af(`/action-queue/trace-search?kind=${encodeURIComponent(kind)}&value=${encodeURIComponent(value)}&limit=20`);
+        if (r.code !== 0) throw new Error(r.message || 'trace_search_failed');
+        renderActionQueueTraceSearch(r.data || {});
+      } catch {
+        if (el) el.innerHTML = '<div class="text-red-500">轨迹搜索失败</div>';
+      }
+    }
+    function renderActionQueueTraceSearch (data) {
+      const el = $('aud-trace-search-results');
+      if (!el) return;
+      const items = Array.isArray(data.candidates) ? data.candidates : [];
+      if (!items.length) {
+        el.innerHTML = '<div class="text-slate-400">暂无候选任务</div>';
+        return;
+      }
+      el.innerHTML = `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2 max-h-48 overflow-auto">
+        ${items.map(item => `<div class="py-2 border-b border-blue-100/20 dark:border-blue-900/10 last:border-b-0">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <button class="font-mono text-left hover:text-blue-500 break-all" onclick="auditOpenQueueTask(${auditJsArg(item.taskId)})">${esc(String(item.taskId || '-'))}</button>
+            <span class="text-[10px] text-blue-500">${esc(String(item.lastEvent || '-'))}</span>
+          </div>
+          <div class="text-[10px] text-slate-400 break-all">${esc(String(item.taskType || '-'))} · 群 ${esc(String(item.groupId || '-'))} · 用户 ${esc(String(item.userId || '-'))} · ${esc(auditTimeText(item.updatedAt))} · ${Number(item.count || 0)} 条</div>
+          ${item.reason ? `<div class="text-slate-500 break-all">${esc(String(item.reason))}</div>` : ''}
+        </div>`).join('')}
+      </div>`;
+    }
+    async function loadActionQueueTask (taskId) {
+      const value = String(taskId || ($('aud-task-id')?.value || '')).trim();
+      const el = $('aud-task-detail');
+      if (!value) {
+        if (el) el.innerHTML = '<div class="text-slate-400">请输入任务 ID</div>';
+        return;
+      }
+      if (el) el.innerHTML = '<div class="text-slate-400">查询中...</div>';
+      try {
+        const r = await af(`/action-queue/task-trace?task_id=${encodeURIComponent(value)}`);
+        if (r.code !== 0) throw new Error(r.message || 'task_lookup_failed');
+        const trace = r.data || { taskId: value, snapshot: { taskId: value, found: false, source: 'not_found' }, attribution: { summary: '未找到轨迹', source: 'not_found', matchedAuditEvents: 0, matchedQueueTaskIds: [] }, timeline: [], relatedAuditEvents: [] };
+        auditCurrentTrace = trace;
+        auditCacheEvents(trace.relatedAuditEvents);
+        renderActionQueueTaskTrace(trace);
+      } catch {
+        if (el) el.innerHTML = '<div class="text-red-500">任务轨迹查询失败</div>';
+      }
+    }
+    function renderActionQueueTaskTrace (trace) {
+      const el = $('aud-task-detail');
+      if (!el) return;
+      const task = trace?.snapshot || null;
+      if (!trace || !task || !task.taskId) {
+        el.innerHTML = '<div class="text-slate-400">输入任务 ID 后查看轨迹</div>';
+        return;
+      }
+      const allTimeline = Array.isArray(trace.timeline) ? trace.timeline : [];
+      const visibleTimeline = allTimeline.filter(auditTraceItemVisible);
+      const rows = [
+        ['任务ID', task.taskId],
+        ['找到', task.found ? '是' : '否'],
+        ['来源', task.source || '-'],
+        ['类型', task.taskType || '-'],
+        ['状态', task.status || '-'],
+        ['关联ID', trace.attribution?.correlationId || '-'],
+        ['动作ID', task.actionId || '-'],
+        ['群号', task.groupId || '-'],
+        ['用户', task.userId || '-'],
+        ['消息ID', task.messageId || '-'],
+        ['原因', task.reason || '-'],
+        ['创建时间', task.createdAt ? auditTimeText(task.createdAt) : '-'],
+        ['计划时间', task.dueAt ? auditTimeText(task.dueAt) : '-'],
+        ['下次重试', task.nextRetryAt ? auditTimeText(task.nextRetryAt) : '-'],
+        ['尝试次数', task.attemptCount ?? '-'],
+        ['最大重试', task.maxAttempts ?? '-'],
+        ['最近代码', task.lastCode || '-'],
+        ['最近错误', task.lastError || '-'],
+        ['更新时间', task.updatedAt ? auditTimeText(task.updatedAt) : '-'],
+        ['队列位置', task.queuePosition ? `#${task.queuePosition}` : '-']
+      ];
+      const logs = Array.isArray(task.recentLogs) && task.recentLogs.length
+        ? task.recentLogs.map(line => `<div class="font-mono break-all">${esc(String(line))}</div>`).join('')
+        : '<div class="text-slate-400">暂无最近命中日志</div>';
+      const timeline = visibleTimeline.length
+        ? visibleTimeline.map(item => `<div class="py-2 border-b border-blue-100/20 dark:border-blue-900/10 last:border-b-0">
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-mono text-[10px] text-slate-400">${esc(auditTimeText(item.ts))}</div>
+              <div class="flex items-center gap-1">
+                <div class="text-[10px] text-blue-500">${esc(String(item.stage || '-'))}</div>
+                ${item.auditEventId ? `<button class="text-[10px] hover:text-blue-500" onclick="auditOpenEventDetail(${Number(item.auditEventId)})">跳回明细</button>` : ''}
+              </div>
+            </div>
+            <div class="font-semibold">${esc(String(item.title || '-'))}</div>
+            <div class="text-slate-500 break-all">${esc(String(item.detail || '-'))}</div>
+          </div>`).join('')
+        : '<div class="text-slate-400">暂无匹配轨迹</div>';
+      const timelineMeta = `${visibleTimeline.length}/${allTimeline.length}`;
+      el.innerHTML = `
+        ${actionTraceSectionHeader('summary', '归因摘要')}
+        ${auditTraceCollapsed.summary ? '' : `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2 mb-3">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <div class="font-medium break-all">${esc(String(trace.attribution?.summary || '-'))}</div>
+              <div class="text-[10px] text-slate-400 mt-1">关联审计 ${Number(trace.attribution?.matchedAuditEvents || 0)} 条 · 关联任务 ${Array.isArray(trace.attribution?.matchedQueueTaskIds) ? trace.attribution.matchedQueueTaskIds.length : 0} 个</div>
+            </div>
+            <div class="flex items-center gap-1">
+              <button onclick="copyActionQueueTrace()" class="btn btn-s" style="font-size:10px;padding:3px 8px">复制轨迹</button>
+              <button onclick="exportActionQueueTrace()" class="btn btn-s" style="font-size:10px;padding:3px 8px">导出轨迹</button>
+              <div class="text-[10px] text-blue-500">${esc(String(trace.attribution?.source || '-'))}</div>
+            </div>
+          </div>
+        </div>`}
+        ${actionTraceSectionHeader('snapshot', '任务快照')}
+        ${auditTraceCollapsed.snapshot ? '' : `<div class="grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1 mb-3">
+          ${rows.map(([k, v]) => `<div class="text-slate-400">${esc(String(k))}</div><div class="font-mono break-all">${esc(String(v ?? '-'))}</div>`).join('')}
+        </div>`}
+        ${actionTraceSectionHeader('timeline', '历史轨迹', timelineMeta)}
+        ${auditTraceCollapsed.timeline ? '' : `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2 mb-3 max-h-56 overflow-auto">${timeline}</div>`}
+        ${actionTraceSectionHeader('logs', '最近日志')}
+        ${auditTraceCollapsed.logs ? '' : `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2 max-h-40 overflow-auto">${logs}</div>`}
+      `;
+    }
+    async function loadAuditUserProfile () {
+      const userId = ($('aud-profile-user')?.value || '').trim();
+      if (!userId) {
+        if ($('aud-profile')) $('aud-profile').innerHTML = '<div class="text-slate-400">请输入用户 QQ</div>';
+        return;
+      }
+      const hours = Math.max(1, Math.min(168, Number($('aud-profile-window')?.value || 24)));
+      try {
+        const r = await af(`/audit-events/user-profile?user_id=${encodeURIComponent(userId)}&hours=${hours}&limit=20`);
+        if (r.code !== 0) throw new Error(r.message || 'profile_failed');
+        renderAuditUserProfile(r.data || {});
+      } catch {
+        if ($('aud-profile')) $('aud-profile').innerHTML = '<div class="text-red-500">用户画像获取失败</div>';
+      }
+    }
+    function renderAuditUserProfile (profile) {
+      const el = $('aud-profile');
+      if (!el) return;
+      const byType = profile.byType || {};
+      const hours = Number(profile.hours || $('aud-profile-window')?.value || 24);
+      const title = hours === 1 ? '最近 1 小时' : hours === 168 ? '最近 7 天' : `最近 ${hours} 小时`;
+      if ($('aud-profile-title')) $('aud-profile-title').textContent = `${profile.userId || '-'} · ${title}`;
+      const card = (name, value) => `<div class="rounded-lg bg-slate-50/80 dark:bg-slate-900/30 border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="text-[10px] text-slate-400">${esc(name)}</div><div class="font-semibold text-base">${esc(String(value ?? 0))}</div></div>`;
+      const groups = (profile.groups || []).length
+        ? profile.groups.map(g => `<button class="font-mono hover:text-blue-500 mr-2 mb-1" onclick="auditJump('group',${auditJsArg(g.groupId)})">${esc(String(g.groupId))}(${Number(g.count || 0)})</button>`).join('')
+        : '<span class="text-slate-400">暂无相关群</span>';
+      const actions = (profile.recentActions || []).length
+        ? profile.recentActions.map(a => `<div class="grid grid-cols-[86px_minmax(0,1fr)] gap-x-2 gap-y-1 py-1 border-b border-blue-100/20 dark:border-blue-900/10">
+            <div class="text-slate-400">动作</div><div class="font-mono">${esc(String(a.actionType || '-'))}</div>
+            <div class="text-slate-400">任务ID</div><div>${auditTaskButton(a.queueTaskId || '-')}</div>
+            <div class="text-slate-400">原因</div><div>${esc(String(a.reason || '-'))}</div>
+          </div>`).join('')
+        : '<div class="text-slate-400">暂无近期动作</div>';
+      const events = (profile.recentEvents || []).length
+        ? profile.recentEvents.slice(0, 8).map(e => `<div class="flex items-center justify-between gap-2 py-1 border-b border-blue-100/20 dark:border-blue-900/10"><span class="font-mono">${esc(String(e.eventType || '-'))}</span><span>${esc(auditTimeText(e.createdAt))}</span></div>`).join('')
+        : '<div class="text-slate-400">暂无近期事件</div>';
+      el.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+          ${card('总事件', profile.total)}
+          ${card('Signal', byType.risk_signal)}
+          ${card('Decision', byType.policy_decision)}
+          ${card('最高分', profile.highestScore)}
+          ${card('最近等级', profile.latestRiskLevel || '-')}
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
+          <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="font-semibold mb-1">相关群</div>${groups}</div>
+          <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="font-semibold mb-1">最近动作</div>${actions}</div>
+          <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="font-semibold mb-1">最近事件</div>${events}</div>
+        </div>`;
+    }
+    function auditOpenRuntime () {
+      const btn = [...document.querySelectorAll('.sb')].find(el => el.textContent.trim() === '运行态');
+      go('runtime', btn);
+    }
+    function auditOpenGroupConfig (groupId) {
+      if (!groupId || groupId === '-') return;
+      const btn = [...document.querySelectorAll('.sb')].find(el => el.textContent.trim() === '群管设置');
+      go('global', btn);
+      popGrpSel();
+      if ($('grpSel')) {
+        $('grpSel').value = String(groupId);
+        onGrp();
+      }
+    }
+    function renderAuditEvents () {
+      const body = $('aud-body'), detail = $('aud-detail'), countEl = $('aud-count'), pageEl = $('aud-page');
+      if (!body || !detail || !countEl || !pageEl) return;
+      const total = auditTotal;
+      const pageSize = Math.max(1, Number($('aud-page-size')?.value || auditPageSize || 20));
+      auditPageSize = pageSize;
+      const start = auditPage * pageSize;
+      const rows = auditEvents;
+      countEl.textContent = `${start + rows.length}/${total} 条`;
+      pageEl.textContent = total ? `第 ${auditPage + 1} 页 / 共 ${Math.max(1, Math.ceil(total / pageSize))} 页` : '第 1 页 / 共 1 页';
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-slate-400">暂无审计记录</td></tr>';
+        detail.textContent = '请选择一条审计事件';
+        return;
+      }
+      body.innerHTML = rows.map((row, idx) => {
+        const key = row.id || row.eventId || `${row.createdAt}-${start + idx}`;
+        const selectedKey = auditSelected ? (auditSelected.id || auditSelected.eventId || `${auditSelected.createdAt}-${auditEvents.indexOf(auditSelected)}`) : '';
+        const active = key === selectedKey ? ' bg-blue-50/80 dark:bg-blue-900/20' : '';
+        return `<tr class="cursor-pointer border-b border-blue-100/30 dark:border-blue-900/20 hover:bg-blue-50/60 dark:hover:bg-blue-900/10${active}" onclick="selectAuditEvent(${idx})">
+          <td class="p-2 whitespace-nowrap">${esc(auditTimeText(row.createdAt))}</td>
+          <td class="p-2 whitespace-nowrap">${esc(String(row.eventType || '-'))}</td>
+          <td class="p-2 whitespace-nowrap">${esc(String(row.groupId || '-'))}</td>
+          <td class="p-2 whitespace-nowrap">${esc(String(row.userId || '-'))}</td>
+          <td class="p-2 break-all">${esc(String(row.summary || '-'))}</td>
+        </tr>`;
+      }).join('');
+      if (!auditSelected && rows[0]) auditSelected = rows[0];
+      if (auditPinnedEvent) renderAuditDetail(auditPinnedEvent);
+      else if (auditSelected) renderAuditDetail(auditSelected);
+    }
+    function selectAuditEvent (idx) {
+      auditPinnedEvent = null;
+      auditSelected = auditEvents[idx] || null;
+      renderAuditEvents();
+    }
+    function toggleAuditSection (id, btn) {
+      const el = $(id);
+      if (!el) return;
+      const hidden = el.style.display === 'none';
+      el.style.display = hidden ? '' : 'none';
+      if (btn) btn.textContent = hidden ? '折叠' : '展开';
+    }
+    async function copyAuditDetail () {
+      if (!auditSelected) {
+        toast('请选择一条审计事件', 'info');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(auditSelected, null, 2));
+        toast('审计事件已复制', 'success');
+      } catch {
+        toast('复制失败', 'error');
+      }
+    }
+    function renderAuditDetail (row) {
+      const detail = $('aud-detail');
+      if (!detail || !row) return;
+      const payload = auditPayload(row);
+      const standard = auditStandardPayload(row);
+      const raw = {
+        id: row.id || row.eventId || '-',
+        eventType: row.eventType || '-',
+        groupId: row.groupId || '-',
+        userId: row.userId || '-',
+        createdAt: auditTimeText(row.createdAt),
+        summary: row.summary || '-',
+        payload,
+        raw: row
+      };
+      const fields = [
+        ['事件ID', raw.id],
+        ['事件类型', raw.eventType],
+        ['来源', standard.source],
+        ['规则ID', standard.ruleId],
+        ['动作类型', standard.actionType],
+        ['决策', standard.decision],
+        ['分数', standard.score],
+        ['队列任务', standard.queueTaskId || '-'],
+        ['群号', raw.groupId],
+        ['用户', raw.userId],
+        ['创建时间', raw.createdAt],
+        ['原因', standard.reason || raw.summary]
+      ];
+      detail.innerHTML = `
+        <div class="flex items-center justify-between gap-2 mb-3">
+          <div class="text-slate-400">结构化字段</div>
+          <div class="flex gap-1">
+            <button onclick="copyAuditDetail()" class="btn btn-s" style="font-size:10px;padding:3px 8px">复制事件</button>
+            <button onclick="auditJump('group',${auditJsArg(raw.groupId)})" class="btn btn-s" style="font-size:10px;padding:3px 8px">查此群</button>
+            <button onclick="auditJump('user',${auditJsArg(raw.userId)})" class="btn btn-s" style="font-size:10px;padding:3px 8px">查此用户</button>
+            <button onclick="auditOpenUserProfile(${auditJsArg(raw.userId)})" class="btn btn-s" style="font-size:10px;padding:3px 8px">用户画像</button>
+            <button onclick="auditOpenGroupConfig(${auditJsArg(raw.groupId)})" class="btn btn-s" style="font-size:10px;padding:3px 8px">群配置</button>
+            <button onclick="auditOpenRuntime()" class="btn btn-s" style="font-size:10px;padding:3px 8px">运行态</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1 mb-3">
+          ${fields.map(([k, v]) => `<div class="text-slate-400">${esc(String(k))}</div><div class="font-mono break-all">${k === '队列任务' ? auditTaskButton(v || '-') : esc(String(v || '-'))}</div>`).join('')}
+        </div>
+        <div class="text-slate-400 mb-1">动作队列关联</div>
+        ${auditActionSummary(standard.actions)}
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <div class="text-slate-400">标准字段</div>
+          <button onclick="toggleAuditSection('aud-standard',this)" class="btn btn-s" style="font-size:10px;padding:3px 8px">折叠</button>
+        </div>
+        <pre id="aud-standard" class="whitespace-pre-wrap break-all rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2 mb-3">${esc(JSON.stringify(standard, null, 2))}</pre>
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <div class="text-slate-400">结构化载荷</div>
+          <button onclick="toggleAuditSection('aud-payload',this)" class="btn btn-s" style="font-size:10px;padding:3px 8px">折叠</button>
+        </div>
+        <pre id="aud-payload" class="whitespace-pre-wrap break-all rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2 mb-3">${esc(JSON.stringify(payload || {}, null, 2))}</pre>
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <div class="text-slate-400">原始事件</div>
+          <button onclick="toggleAuditSection('aud-raw',this)" class="btn btn-s" style="font-size:10px;padding:3px 8px">折叠</button>
+        </div>
+        <pre id="aud-raw" class="whitespace-pre-wrap break-all rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-blue-100/40 dark:border-blue-900/20 p-2">${esc(JSON.stringify(raw, null, 2))}</pre>`;
+    }
+    function auditPrev () { if (auditPage > 0) loadAuditEvents(auditPage - 1); }
+    function auditNext () { if (auditHasMore) loadAuditEvents(auditPage + 1); }
     function permBadge(p){ const c = p === 'owner' ? 'bg-rose-100 text-rose-600' : p === 'admin' ? 'bg-blue-100 text-blue-600' : p === 'owner/admin' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'; return `<span class="text-[10px] px-2 py-0.5 rounded-full ${c}">${esc(p)}</span>`; }
-    async function loadHelpManual(){ try{ const r = await fetch(WEBROOT + '/assets/command_manual.json'); const j = await r.json(); helpManual = j.modules || []; const s = $('help-mod'); if (s) s.innerHTML = '<option value="">全部模块</option>' + helpManual.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); renderHelpManual(); }catch(e){ $('helpList').innerHTML = '<p class="text-xs text-red-500">命令手册加载失败</p>'; } }
+    async function loadHelpManual(){ try{ const runtime = await af('/runtime/schema'); if (runtime.code !== 0 || !Array.isArray(runtime.data)) throw new Error('runtime_schema_unavailable'); helpManual = runtime.data; const s = $('help-mod'); if (s) s.innerHTML = '<option value="">全部模块</option>' + helpManual.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); $('helpSource').textContent = '命令手册来源：/runtime/schema'; renderHelpManual(); }catch(e){ $('helpSource').textContent = '命令手册来源：加载失败'; $('helpList').innerHTML = '<p class="text-xs text-red-500">命令手册加载失败，请检查 /runtime/schema 接口</p>'; } }
     function renderHelpManual(){ const kw = ($('help-kw')?.value || '').trim().toLowerCase(); const mod = $('help-mod')?.value || ''; const perm = $('help-perm')?.value || ''; const hot = !!$('help-hot')?.checked; const rows = []; for (const m of (helpManual || [])) { if (mod && m.id !== mod) continue; for (const it of (m.items || [])) { if (perm && it.permission !== perm) continue; if (hot && !it.hot) continue; const blob = `${it.trigger} ${it.desc} ${m.name}`.toLowerCase(); if (kw && !blob.includes(kw)) continue; rows.push({ ...it, moduleName: m.name }); } } if (!rows.length) { $('helpList').innerHTML = '<p class="text-xs text-slate-400">没有匹配结果</p>'; return; } $('helpList').innerHTML = rows.map(it => `<div class="border border-blue-100/40 dark:border-blue-900/20 rounded-xl p-3 mb-2 bg-white/40 dark:bg-slate-800/30"><div class="flex items-center justify-between gap-2"><div class="font-mono text-xs">${it.hot ? '⭐ ' : ''}${esc(it.trigger)}</div>${permBadge(it.permission)}</div><div class="text-[11px] text-slate-500 mt-1">${esc(it.moduleName)} · ${esc(it.scope)}</div><div class="text-xs mt-1">${esc(it.desc)}</div></div>`).join(''); }
     function mergedSceneTemplates(){
       const builtin = builtinSceneTemplates || {};
@@ -1579,7 +2738,7 @@
     function renderPersonaList(){ const p = $('pv-persona')?.value || ''; const sceneKw = ($('pv-scene')?.value || '').trim().toLowerCase(); const kw = ($('pv-kw')?.value || '').trim().toLowerCase(); const data = mergedSceneTemplates(); renderPersonaIndex(data); const lines = []; for (const [scene, entry] of Object.entries(data)) { if (sceneKw && !scene.toLowerCase().includes(sceneKw)) continue; const map = (entry && entry.personaTemplates) || {}; for (const [persona, arr] of Object.entries(map)) { if (p && persona !== p) continue; const list = Array.isArray(arr) ? arr : []; for (const tpl of list) { const text = String(tpl || ''); if (kw && !(`${scene} ${persona} ${text}`.toLowerCase().includes(kw))) continue; lines.push({ scene, persona, text }); } } } if (!lines.length) { $('personaList').innerHTML = '<p class="text-xs text-slate-400">没有匹配模板</p>'; return; } $('personaList').innerHTML = lines.map(x => `<div class="border border-blue-100/40 dark:border-blue-900/20 rounded-xl p-3 mb-2 bg-white/40 dark:bg-slate-800/30"><div class="flex items-center gap-2 text-[11px]"><span class="px-2 py-0.5 rounded bg-blue-100 text-blue-600">${esc(x.scene)}</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-600">${esc(x.persona)}</span></div><div class="font-mono text-xs mt-2">${esc(x.text)}</div></div>`).join(''); }
     function exportSceneTemplates(){ const obj = ((C.global || {}).replySceneTemplates || {}); const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'replySceneTemplates.json'; a.click(); URL.revokeObjectURL(a.href); toast('模板已导出', 'success'); }
     async function importSceneTemplates(){ const f = $('pv-import')?.files?.[0]; if (!f) { toast('请选择 JSON 文件', 'error'); return; } try { const txt = await f.text(); const obj = JSON.parse(txt); const draftGlobal = { ...(C.global || {}), replySceneTemplates: obj || {}, replyPersonaByScene: (() => { try { return JSON.parse(($('c-rpb')?.value || '{}')); } catch { return {}; } })(), personaAuditStrictMode: gtg('c-pas') }; const preview = await af('/persona/audit/preview', 'POST', { global: draftGlobal }); const report = preview?.data?.report || {}; const count = report?.issueCount || {}; const high = Number(count.high || 0); if (draftGlobal.personaAuditStrictMode && high > 0) { toast(`导入已阻断：高风险问题 ${high} 条`, 'error'); return; } if (Number(count.total || 0) > 0) { const issues = Array.isArray(report.issues) ? report.issues.slice(0, 8) : []; const text = issues.map((x, i) => `${i + 1}. [${x.severity}] ${x.scene || '-'} ${x.persona || '-'} ${x.type}`).join('\n'); const ok = window.confirm(`模板审计：高${count.high || 0} 中${count.medium || 0} 低${count.low || 0}\n\n${text}\n\n确认继续导入吗？`); if (!ok) return; } C.global = C.global || {}; C.global.replySceneTemplates = obj || {}; sv('c-rst', JSON.stringify(C.global.replySceneTemplates, null, 2)); renderPersonaList(); toast('模板已导入，请保存配置', 'success'); } catch { toast('导入失败，JSON 格式无效', 'error'); } }
-    async function loadRuntimeLegacy(){ try { const r = await af('/runtime'); if (r.code !== 0) throw new Error(r.message || 'error'); runtimeState = r.data || {}; $('rt-fb').textContent = runtimeState.legacyFallback ? '开启' : '关闭'; $('rt-qm').textContent = runtimeState.sendPolicy?.queueMode || '-'; $('rt-gpm').textContent = `${runtimeState.sendPolicy?.globalMaxPerMinute || '-'} /分`; $('rt-rp').textContent = `${runtimeState.sendPolicy?.replyProbability ?? '-'}%`; const txt = `Fallback: ${runtimeState.legacyFallback ? '开启' : '关闭'}\n发送并发: ${runtimeState.sendPolicy?.queueConcurrency || 1}\n模板池数量: ${runtimeState.sendPolicy?.replyTemplatePoolSize || 0}\n纯文本回复: ${runtimeState.sendPolicy?.disableReplyTemplate ? '开启' : '关闭'}\n随机人格: ${runtimeState.sendPolicy?.autoRandomPersona ? '开启' : '关闭'}\n问答冷却: ${runtimeState.riskPolicy?.qaCooldownSeconds ?? 30}s\n同用户冷却: ${runtimeState.riskPolicy?.qaUserCooldownSeconds ?? 12}s\n群熔断: 窗口${runtimeState.riskPolicy?.groupFuseWindowSeconds ?? 60}s 阈值${runtimeState.riskPolicy?.groupFuseThreshold ?? 45} 冷却${runtimeState.riskPolicy?.groupFuseCooldownSeconds ?? 90}s\n动作策略: 管理员撤回=${runtimeState.riskPolicy?.allowRecallAdminMessage ? '允许' : '禁止'} 群主撤回=${runtimeState.riskPolicy?.allowRecallOwnerMessage ? '允许' : '禁止'} 管理员保护=${runtimeState.riskPolicy?.protectAdminActions ? '开启' : '关闭'} 群主保护=${runtimeState.riskPolicy?.protectOwnerActions ? '开启' : '关闭'}\n风控收敛: ${runtimeState.riskPolicy?.autoRiskControl ? '开启' : '关闭'}\n功能开关: QA=${runtimeState.featureFlags?.disableQA ? '关' : '开'} 签到=${runtimeState.featureFlags?.disableSignin ? '关' : '开'} 抽奖=${runtimeState.featureFlags?.disableLottery ? '关' : '开'} 邀请=${runtimeState.featureFlags?.disableInvite ? '关' : '开'} 活跃=${runtimeState.featureFlags?.disableActivity ? '关' : '开'}`; $('runtimeText').textContent = txt; $('toolsOut').textContent = `数据库: ${(runtimeState.storage || {}).dbPath || '-'}\n迁移状态: ${(runtimeState.storage || {}).migrated ? '已完成' : '未完成'}\n表计数: ${JSON.stringify((runtimeState.storage || {}).tableCounts || {}, null, 2)}`; } catch { $('runtimeText').textContent = '运行态获取失败'; } }
+    async function loadRuntimeLegacy(){ try { const r = await af('/runtime'); if (r.code !== 0) throw new Error(r.message || 'error'); runtimeState = r.data || {}; $('rt-fb').textContent = runtimeState.legacyFallback ? '开启' : '关闭'; $('rt-qm').textContent = runtimeState.sendPolicy?.queueMode || '-'; $('rt-gpm').textContent = `${runtimeState.sendPolicy?.globalMaxPerMinute || '-'} /分`; $('rt-rp').textContent = `${runtimeState.sendPolicy?.replyProbability ?? '-'}%`; const dc = runtimeState.dynamicCommands || {}; const dcOverview = dc.overview || {}; const txt = `Fallback: ${runtimeState.legacyFallback ? '开启' : '关闭'}\n发送并发: ${runtimeState.sendPolicy?.queueConcurrency || 1}\n模板池数量: ${runtimeState.sendPolicy?.replyTemplatePoolSize || 0}\n纯文本回复: ${runtimeState.sendPolicy?.disableReplyTemplate ? '开启' : '关闭'}\n随机人格: ${runtimeState.sendPolicy?.autoRandomPersona ? '开启' : '关闭'}\n问答冷却: ${runtimeState.riskPolicy?.qaCooldownSeconds ?? 30}s\n同用户冷却: ${runtimeState.riskPolicy?.qaUserCooldownSeconds ?? 12}s\n群熔断: 窗口${runtimeState.riskPolicy?.groupFuseWindowSeconds ?? 60}s 阈值${runtimeState.riskPolicy?.groupFuseThreshold ?? 45} 冷却${runtimeState.riskPolicy?.groupFuseCooldownSeconds ?? 90}s\n动作策略: 管理员撤回=${runtimeState.riskPolicy?.allowRecallAdminMessage ? '允许' : '禁止'} 群主撤回=${runtimeState.riskPolicy?.allowRecallOwnerMessage ? '允许' : '禁止'} 管理员保护=${runtimeState.riskPolicy?.protectAdminActions ? '开启' : '关闭'} 群主保护=${runtimeState.riskPolicy?.protectOwnerActions ? '开启' : '关闭'}\n风控收敛: ${runtimeState.riskPolicy?.autoRiskControl ? '开启' : '关闭'}\n功能开关: QA=${runtimeState.featureFlags?.disableQA ? '关' : '开'} 签到=${runtimeState.featureFlags?.disableSignin ? '关' : '开'} 抽奖=${runtimeState.featureFlags?.disableLottery ? '关' : '开'} 邀请=${runtimeState.featureFlags?.disableInvite ? '关' : '开'} 活跃=${runtimeState.featureFlags?.disableActivity ? '关' : '开'}\n动态命令: ${dcOverview.activeCommandCount || 0} 个 / 注册表版本 ${dc.registryVersion || 0} / 打开熔断 ${dcOverview.openBreakers || 0}`; $('runtimeText').textContent = txt; $('toolsOut').textContent = `数据库: ${(runtimeState.storage || {}).dbPath || '-'}\n迁移状态: ${(runtimeState.storage || {}).migrated ? '已完成' : '未完成'}\n表计数: ${JSON.stringify((runtimeState.storage || {}).tableCounts || {}, null, 2)}`; } catch { $('runtimeText').textContent = '运行态获取失败'; } }
     async function toggleFallbackQuick(enabled){ try{ const r = await af('/runtime/fallback','POST',{ enabled }); if (r.code === 0) { toast(`Fallback已${enabled ? '开启' : '关闭'}`, 'success'); loadRuntime(); loadLogs(); } else toast('操作失败','error'); }catch{ toast('操作失败','error'); } }
     async function toggleRiskQuick(key, enabled){ try{ const r = await af('/runtime/risk-toggle','POST',{ key, enabled }); if (r.code === 0) { toast(`${key} 已${enabled ? '开启' : '关闭'}`,'success'); loadRuntime(); } else toast('操作失败','error'); }catch{ toast('操作失败','error'); } }
     async function loadStorageStatus(){ try { const r = await af('/runtime'); if (r.code !== 0) throw new Error('error'); const s = r.data?.storage || {}; $('toolsOut').textContent = `数据库: ${s.dbPath || '-'}\n迁移状态: ${s.migrated ? '已完成' : '未完成'}\n表计数:\n${Object.entries(s.tableCounts || {}).map(([k,v]) => `${k}: ${v}`).join('\n')}`; } catch { $('toolsOut').textContent = '数据库状态获取失败'; } }
@@ -1650,6 +2809,53 @@
       const rows = top.length ? top.map((x, i) => `${i + 1}. [${x.severity}] ${x.scene || '-'} ${x.persona || '-'} ${x.type}`).join('<br>') : '无';
       el.innerHTML = `<div class="text-[11px]">严格模式：${strict ? '开启' : '关闭'} ｜ 总计：high=${summary.high || 0} medium=${summary.medium || 0} low=${summary.low || 0} total=${summary.total || 0} ｜ 异常群数=${groups.length}</div><div class="text-[11px] mt-1 text-slate-400">${rows}</div>`;
     }
+    async function loadBotAntiRiskStats(){
+      const el = $('botAntiRiskStats');
+      try {
+        const hours = Math.max(1, Math.min(168, Number($('botAntiRiskWindow')?.value || 24)));
+        const r = await af(`/bot-antirisk/send-stats?hours=${hours}&limit=10`);
+        if (r.code !== 0) throw new Error(r.message || 'bot_antirisk_failed');
+        renderBotAntiRiskStats(r.data || {});
+      } catch {
+        if (el) el.innerHTML = '<div class="text-xs text-red-500">机器人免风控画像获取失败</div>';
+      }
+    }
+    function renderBotAntiRiskStats(stats){
+      const el = $('botAntiRiskStats');
+      if (!el) return;
+      const hours = Number(stats.hours || $('botAntiRiskWindow')?.value || 24);
+      const title = hours === 1 ? '机器人免风控画像 · 最近1小时' : hours === 168 ? '机器人免风控画像 · 最近7天' : `机器人免风控画像 · 最近${hours}小时`;
+      if ($('botAntiRiskTitle')) $('botAntiRiskTitle').textContent = title;
+      const card = (name, value, hint = '') => `<div class="stat bg-slate-50/80 dark:bg-slate-900/30"><div class="text-lg font-bold text-blue-500">${esc(String(value ?? 0))}</div><div class="text-[10px] text-slate-500">${esc(name)}</div>${hint ? `<div class="text-[9px] text-slate-400">${esc(hint)}</div>` : ''}</div>`;
+      const rank = (items, key) => (items || []).length
+        ? (items || []).map((it, i) => `<div class="flex items-center justify-between gap-2 py-1 border-b border-blue-100/20 dark:border-blue-900/10"><span class="font-mono break-all">${i + 1}. ${esc(String(it[key] || '-'))}</span><span>${Number(it.count || 0)} / sent ${Number(it.sent || 0)} / drop ${Number(it.dropped || 0)}</span></div>`).join('')
+        : '<div class="text-slate-400">暂无数据</div>';
+      const recent = (stats.recent || []).length
+        ? (stats.recent || []).slice(0, 8).map(row => `<div class="py-1 border-b border-blue-100/20 dark:border-blue-900/10">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-mono">${esc(String(row.status || '-'))}</span>
+              <span>${esc(auditTimeText(row.createdAt))}</span>
+            </div>
+            <div class="text-[10px] text-slate-400 break-all">群 ${esc(String(row.groupId || '-'))} · ${esc(String(row.scene || '-'))} · msg ${esc(String(row.messageId || '-'))} · delay ${Number(row.randomDelayMs || 0)}ms · ${row.suffixApplied ? '后缀' : '无后缀'}</div>
+          </div>`).join('')
+        : '<div class="text-slate-400">暂无发送画像</div>';
+      el.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 mb-3">
+          ${card('总发送画像', stats.total)}
+          ${card('已发送', stats.sent)}
+          ${card('丢弃', stats.dropped)}
+          ${card('失败', stats.failed)}
+          ${card('后缀命中', stats.suffixApplied)}
+          ${card('模板命中', stats.templateApplied)}
+          ${card('自撤回成功', stats.selfRecallSuccess, `待处理 ${Number(stats.selfRecallPending || 0)}`)}
+          ${card('缺失msgId', stats.messageIdMissing, `均延迟 ${Number(stats.avgDelayMs || 0)}ms`)}
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
+          <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="font-semibold mb-1">场景排行</div>${rank(stats.byScene, 'scene')}</div>
+          <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="font-semibold mb-1">群排行</div>${rank(stats.topGroups, 'groupId')}</div>
+          <div class="rounded-lg border border-blue-100/40 dark:border-blue-900/20 p-2"><div class="font-semibold mb-1">最近画像</div>${recent}</div>
+        </div>`;
+    }
     async function loadRuntime(){
       try {
         const r = await af('/runtime');
@@ -1664,13 +2870,15 @@
         $('toolsOut').textContent = `数据库: ${(runtimeState.storage || {}).dbPath || '-'}\n迁移状态: ${(runtimeState.storage || {}).migrated ? '已完成' : '未完成'}\n表计数: ${JSON.stringify((runtimeState.storage || {}).tableCounts || {}, null, 2)}`;
         renderGuardStatsPanel(runtimeState.guardRuntime);
         renderPersonaAuditPanel(runtimeState.personaAudit);
+        void loadBotAntiRiskStats();
       } catch {
         $('runtimeText').textContent = '运行态获取失败';
         if ($('guardStats')) $('guardStats').innerHTML = '<div class="text-xs text-red-500">安全执行统计获取失败</div>';
         if ($('personaAuditView')) $('personaAuditView').innerHTML = '<div class="text-xs text-red-500">人格模板审计获取失败</div>';
+        if ($('botAntiRiskStats')) $('botAntiRiskStats').innerHTML = '<div class="text-xs text-red-500">机器人免风控画像获取失败</div>';
       }
     }
-    async function init () { await Promise.all([loadCfg(), loadGrps(), loadHelpManual(), loadPersonaSource()]); popGrpSel(); updDash(); loadPersonaView(); loadRuntime(); $('d-owner')?.addEventListener('input', function () { C.ownerQQs = this.value; const ow = this.value.split(',').map(s => s.trim()).filter(Boolean); $('ownerPv').textContent = ow.length ? `当前主人：${ow.join('、')}（共${ow.length}人）` : '尚未设置主人'; }); }
+    async function init () { await Promise.all([loadCfg(), loadGrps(), loadHelpManual(), loadPersonaSource()]); popGrpSel(); applyScopeView(false); updDash(); loadPersonaView(); loadRuntime(); $('d-owner')?.addEventListener('input', function () { C.ownerQQs = this.value; const ow = this.value.split(',').map(s => s.trim()).filter(Boolean); $('ownerPv').textContent = ow.length ? `当前主人：${ow.join('、')}（共${ow.length}人）` : '尚未设置主人'; }); }
     init();
   </script>
 </body>

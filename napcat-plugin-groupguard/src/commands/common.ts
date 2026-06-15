@@ -1,6 +1,11 @@
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import { pluginState } from '../state';
 import fs from 'fs';
+import { authStateService } from '../core/state-services/auth_state_service';
+import { cacheStateService } from '../core/state-services/cache_state_service';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
+import { send } from '../dynamic-commands/response_capture_runtime';
 import { storageAdapter } from '../storage_adapter';
 
 export function extractAt(raw: string): string | null {
@@ -18,20 +23,20 @@ export function getTarget(raw: string, textAfterCmd: string): string | null {
 }
 
 export async function isAdminOrOwner(groupId: string, userId: string): Promise<boolean> {
-  if (pluginState.isOwner(userId)) return true;
+  if (authStateService.isOwner(userId)) return true;
   const key = `${groupId}:${userId}`;
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const cacheSeconds = settings.adminCacheSeconds !== undefined ? settings.adminCacheSeconds : 60;
   if (cacheSeconds > 0) {
-    const cached = pluginState.adminCache.get(key);
+    const cached = cacheStateService.getAdminCacheEntry(key);
     if (cached && Date.now() < cached.expire) {
       return cached.role === 'admin' || cached.role === 'owner';
     }
   }
-  const info = await pluginState.callApi('get_group_member_info', { group_id: groupId, user_id: userId }) as any;
+  const info = await communicationStateService.callApi('get_group_member_info', { group_id: groupId, user_id: userId }) as any;
   const role = info?.role || 'member';
   if (cacheSeconds > 0) {
-    pluginState.adminCache.set(key, { role, expire: Date.now() + cacheSeconds * 1000 });
+    cacheStateService.setAdminCacheEntry(key, { role, expire: Date.now() + cacheSeconds * 1000 });
   }
   return role === 'admin' || role === 'owner';
 }
@@ -39,19 +44,20 @@ export async function isAdminOrOwner(groupId: string, userId: string): Promise<b
 export function saveConfig(ctx: NapCatPluginContext): void {
   try {
     if (ctx?.configPath) {
-      const mainConfig = { ...pluginState.config, groups: {} };
+      const config = configStateService.getConfig();
+      const mainConfig = { ...config, groups: {} };
       fs.writeFileSync(ctx.configPath, JSON.stringify(mainConfig, null, 2), 'utf-8');
-      storageAdapter.saveGroupConfigs(pluginState.config.groups || {});
+      storageAdapter.saveGroupConfigs(config.groups || {});
     }
   } catch (e) {
-    pluginState.log('error', `保存配置失败: ${e}`);
+    loggingStateService.error(`保存配置失败: ${e}`);
   }
 }
 
 export async function sendGroupScene(groupId: string, scene: string, fallback: string, vars?: Record<string, string | number | boolean>): Promise<void> {
-  await pluginState.sendGroupText(groupId, fallback, { scene, vars, force: true, applyTemplate: true });
+  await send({ channel: 'group', targetId: groupId, scene, message: fallback, vars, force: true, applyTemplate: true });
 }
 
 export async function sendPrivateScene(userId: string, scene: string, fallback: string, vars?: Record<string, string | number | boolean>): Promise<void> {
-  await pluginState.sendPrivateMsg(userId, fallback, { scene, vars, force: true, applyTemplate: true });
+  await send({ channel: 'private', targetId: userId, scene, message: fallback, vars, force: true, applyTemplate: true });
 }

@@ -28,14 +28,6 @@ export const QA_EXACT = [
   '违禁词列表'
 ];
 
-export function matchQaCommand(text: string): string | null {
-  if (QA_EXACT.includes(text)) return text;
-  for (const p of QA_PREFIXES) {
-    if (text.startsWith(p)) return p;
-  }
-  return null;
-}
-
 export async function handleQaCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
   const raw = event.raw_message || '';
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();

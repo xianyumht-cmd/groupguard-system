@@ -1,7 +1,7 @@
 // 插件全局状态管理
 import type { PluginLogger } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import type { NetworkAdapterConfig } from 'napcat-types/napcat-onebot/config/config';
-import type { PluginConfig, VerifySession, GroupGuardSettings, ActivityRecord, SigninData, InviteData } from './types';
+import type { PluginConfig, VerifySession, GroupGuardSettings, ActivityRecord, SigninData, InviteData, BotSendEventRecord } from './types';
 import { DEFAULT_PLUGIN_CONFIG } from './config';
 import fs from 'fs';
 import path from 'path';
@@ -33,6 +33,14 @@ interface GroupSendTask {
   message: any[];
   force: boolean;
   applyTemplate: boolean;
+  scene: string;
+  queuedAt: number;
+  templateApplied: boolean;
+  suffixApplied: boolean;
+  suffixMode: string;
+  contentLength: number;
+  hasMedia: boolean;
+  messageType: string;
   resolve: () => void;
   reject: (err?: any) => void;
 }
@@ -176,36 +184,85 @@ class PluginState {
 
   // ===== 辅助方法 =====
   /** 生成随机后缀 */
-  private getRandomSuffix(groupId?: string): string {
+  private getScenePolicy(scene?: string) {
+    const settings = this.getGlobalSettings();
+    const policies = settings.botAntiRiskScenePolicies || {};
+    return policies[String(scene || 'raw_text')] || {};
+  }
+
+  private getRandomSuffixInfo(groupId?: string, scene?: string): { suffix: string; mode: string; } {
     // 强制使用全局配置，防风控策略统一管理
     const settings = this.config.global;
-    if (!settings.randomSuffix) return '';
+    if (!settings.randomSuffix) return { suffix: '', mode: 'disabled' };
+    const scenePolicy = this.getScenePolicy(scene);
+    const globalMode = settings.botAntiRiskSuffixMode || 'mixed';
+    const mode = scenePolicy.suffixMode && scenePolicy.suffixMode !== 'global'
+      ? scenePolicy.suffixMode
+      : globalMode;
+    if (mode === 'none') return { suffix: '', mode };
     
     // 生成一个不可见字符或随机短字符串
     // 为了更好的防风控效果，使用随机的零宽字符组合或常见的末尾标点变体
-    const chars = ['\u200b', '\u200c', '\u200d', '\u2060', ' ', '.', '..', '~'];
+    const invisible = ['\u200b', '\u200c', '\u200d', '\u2060'];
+    const punctuation = [' ', '.', '..', '~'];
+    const chars = mode === 'invisible'
+      ? invisible
+      : mode === 'punctuation'
+        ? punctuation
+        : [...invisible, ...punctuation];
     const len = Math.floor(Math.random() * 3) + 1;
     let suffix = '';
     for (let i = 0; i < len; i++) {
       suffix += chars[Math.floor(Math.random() * chars.length)];
     }
-    return suffix;
+    return { suffix, mode };
+  }
+
+  private getRandomSuffix(groupId?: string, scene?: string): string {
+    return this.getRandomSuffixInfo(groupId, scene).suffix;
   }
 
   /** 随机延迟 */
-  private async randomSleep(groupId?: string): Promise<void> {
+  private async randomSleep(groupId?: string, scene?: string): Promise<number> {
     // 强制使用全局配置，防风控策略统一管理
     const settings = this.config.global;
-    const min = settings.randomDelayMin || 0;
-    const max = settings.randomDelayMax || 0;
+    const scenePolicy = this.getScenePolicy(scene);
+    const min = scenePolicy.delayMinMs !== undefined ? Number(scenePolicy.delayMinMs) : (settings.randomDelayMin || 0);
+    const max = scenePolicy.delayMaxMs !== undefined ? Number(scenePolicy.delayMaxMs) : (settings.randomDelayMax || 0);
     
     if (max > min && max > 0) {
       const delay = Math.floor(Math.random() * (max - min + 1)) + min;
       if (delay > 0) {
         if (this.config.debug) this.log('info', `[AntiRisk] 随机延迟: ${delay}ms`);
         await new Promise(resolve => setTimeout(resolve, delay));
+        return delay;
       }
     }
+    return 0;
+  }
+
+  private describeMessage(message: any[]): { contentLength: number; hasMedia: boolean; messageType: string; } {
+    const list = Array.isArray(message) ? message : [];
+    let contentLength = 0;
+    let hasMedia = false;
+    const types = new Set<string>();
+    for (const seg of list) {
+      const type = String(seg?.type || 'unknown');
+      types.add(type);
+      if (type === 'text') contentLength += String(seg?.data?.text || '').length;
+      if (type !== 'text') hasMedia = true;
+    }
+    return {
+      contentLength,
+      hasMedia,
+      messageType: types.size === 1 ? Array.from(types)[0] || 'text' : 'mixed'
+    };
+  }
+
+  private recordBotSendEvent(entry: BotSendEventRecord): void {
+    import('./repositories/groupguard_repository')
+      .then(mod => mod.groupguardRepository.insertBotSendEvent(entry))
+      .catch((err) => this.debug(`[AntiRisk] bot_send_event_write_failed err=${String(err)}`));
   }
 
   private getGlobalSettings() {
@@ -262,17 +319,17 @@ class PluginState {
     return '';
   }
 
-  scheduleSelfRecall(groupId: string, messageId: string, source: 'send_group_msg' | 'message_event' = 'send_group_msg'): void {
+  scheduleSelfRecall(groupId: string, messageId: string, source: 'send_group_msg' | 'message_event' = 'send_group_msg'): number {
     const gid = String(groupId || '');
     const msgId = String(messageId || '');
     if (!gid || !msgId) {
       this.debug(`[SelfRecall] skipped reason=msgId_missing source=${source} groupId=${gid || 'unknown'}`);
-      return;
+      return 0;
     }
     const delay = this.computeSelfRecallDelayMs();
     if (delay < 0) {
       this.debug(`[SelfRecall] skipped reason=disabled source=${source} groupId=${gid} msgId=${msgId}`);
-      return;
+      return 0;
     }
     const now = Date.now();
     for (const [k, ts] of this.selfRecallScheduleMap.entries()) {
@@ -281,7 +338,7 @@ class PluginState {
     const dedupKey = `${gid}:${msgId}`;
     if (this.selfRecallScheduleMap.has(dedupKey)) {
       this.debug(`[SelfRecall] skipped reason=duplicate_schedule source=${source} groupId=${gid} msgId=${msgId}`);
-      return;
+      return 0;
     }
     this.selfRecallScheduleMap.set(dedupKey, now);
     const taskId = `${gid}:${msgId}`;
@@ -320,6 +377,7 @@ class PluginState {
           this.debug(`[SelfRecall] enqueue_failed source=${source} groupId=${gid} msgId=${msgId} err=${String(err)}`);
         });
     }, delay);
+    return dueAt;
   }
 
   private applyReplyTemplate(text: string): string {
@@ -336,9 +394,10 @@ class PluginState {
     return this.getGlobalSettings().disableReplyTemplate === true;
   }
 
-  private shouldSendByProbability(): boolean {
+  private shouldSendByProbability(scene?: string): boolean {
     const settings = this.getGlobalSettings();
-    const p = Number(settings.replyProbability ?? 100);
+    const scenePolicy = this.getScenePolicy(scene);
+    const p = Number(scenePolicy.replyProbability ?? settings.replyProbability ?? 100);
     const probability = Math.max(0, Math.min(100, Number.isFinite(p) ? p : 100));
     return Math.random() * 100 < probability;
   }
@@ -405,13 +464,46 @@ class PluginState {
     }
   }
 
-  private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; }): Promise<void> {
+  private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; templateApplied?: boolean; suffixApplied?: boolean; suffixMode?: string; }): Promise<void> {
     if (!this.actions || !this.networkConfig) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
-      const task: GroupSendTask = { groupId, message, force: options?.force === true, applyTemplate: options?.applyTemplate !== false, resolve, reject };
+      const desc = this.describeMessage(message);
+      const task: GroupSendTask = {
+        groupId,
+        message,
+        force: options?.force === true,
+        applyTemplate: options?.applyTemplate !== false,
+        scene: options?.scene || 'raw_text',
+        queuedAt: Date.now(),
+        templateApplied: options?.templateApplied === true,
+        suffixApplied: options?.suffixApplied === true,
+        suffixMode: options?.suffixMode || '',
+        contentLength: desc.contentLength,
+        hasMedia: desc.hasMedia,
+        messageType: desc.messageType,
+        resolve,
+        reject
+      };
       if (this.getQueueMode() === 'global') {
         if (this.globalSendQueue.length >= this.getMaxQueueSizeGlobal()) {
           if (!task.force) {
+            this.recordBotSendEvent({
+              groupId,
+              scene: task.scene,
+              messageType: task.messageType,
+              contentLength: task.contentLength,
+              hasMedia: task.hasMedia,
+              force: task.force,
+              applyTemplate: task.applyTemplate,
+              templateApplied: task.templateApplied,
+              suffixApplied: task.suffixApplied,
+              suffixMode: task.suffixMode,
+              randomDelayMs: 0,
+              queuedAt: task.queuedAt,
+              status: 'dropped',
+              reason: 'send_queue_overflow',
+              createdAt: Date.now()
+            });
             resolve();
             return;
           }
@@ -422,6 +514,23 @@ class PluginState {
         const q = this.groupSendQueues.get(groupId) || [];
         if (q.length >= this.getMaxQueueSizePerGroup()) {
           if (!task.force) {
+            this.recordBotSendEvent({
+              groupId,
+              scene: task.scene,
+              messageType: task.messageType,
+              contentLength: task.contentLength,
+              hasMedia: task.hasMedia,
+              force: task.force,
+              applyTemplate: task.applyTemplate,
+              templateApplied: task.templateApplied,
+              suffixApplied: task.suffixApplied,
+              suffixMode: task.suffixMode,
+              randomDelayMs: 0,
+              queuedAt: task.queuedAt,
+              status: 'dropped',
+              reason: 'group_send_queue_overflow',
+              createdAt: Date.now()
+            });
             resolve();
             return;
           }
@@ -472,33 +581,104 @@ class PluginState {
   private async processTask(task: GroupSendTask): Promise<void> {
     try {
       if (!task.force && this.isGroupFused(task.groupId)) {
+        this.recordBotSendEvent({
+          groupId: task.groupId,
+          scene: task.scene,
+          messageType: task.messageType,
+          contentLength: task.contentLength,
+          hasMedia: task.hasMedia,
+          force: task.force,
+          applyTemplate: task.applyTemplate,
+          templateApplied: task.templateApplied,
+          suffixApplied: task.suffixApplied,
+          suffixMode: task.suffixMode,
+          randomDelayMs: 0,
+          queuedAt: task.queuedAt,
+          status: 'dropped',
+          reason: 'group_send_fused',
+          createdAt: Date.now()
+        });
         task.resolve();
         return;
       }
-      await this.randomSleep(task.groupId);
+      const randomDelayMs = await this.randomSleep(task.groupId, task.scene);
       const canSend = await this.acquireToken();
       if (!canSend) {
+        this.recordBotSendEvent({
+          groupId: task.groupId,
+          scene: task.scene,
+          messageType: task.messageType,
+          contentLength: task.contentLength,
+          hasMedia: task.hasMedia,
+          force: task.force,
+          applyTemplate: task.applyTemplate,
+          templateApplied: task.templateApplied,
+          suffixApplied: task.suffixApplied,
+          suffixMode: task.suffixMode,
+          randomDelayMs,
+          queuedAt: task.queuedAt,
+          status: 'dropped',
+          reason: 'send_rate_limited',
+          createdAt: Date.now()
+        });
         task.resolve();
         return;
       }
-      await this.sendGroupMessageRaw(task.groupId, task.message);
+      const sent = await this.sendGroupMessageRaw(task.groupId, task.message);
+      this.recordBotSendEvent({
+        groupId: task.groupId,
+        scene: task.scene,
+        messageType: task.messageType,
+        messageId: sent.messageId,
+        contentLength: task.contentLength,
+        hasMedia: task.hasMedia,
+        force: task.force,
+        applyTemplate: task.applyTemplate,
+        templateApplied: task.templateApplied,
+        suffixApplied: task.suffixApplied,
+        suffixMode: task.suffixMode,
+        randomDelayMs,
+        queuedAt: task.queuedAt,
+        sentAt: sent.sentAt,
+        selfRecallDueAt: sent.selfRecallDueAt,
+        status: 'sent',
+        createdAt: Date.now()
+      });
       this.markGroupSend(task.groupId);
       task.resolve();
     } catch (e) {
+      this.recordBotSendEvent({
+        groupId: task.groupId,
+        scene: task.scene,
+        messageType: task.messageType,
+        contentLength: task.contentLength,
+        hasMedia: task.hasMedia,
+        force: task.force,
+        applyTemplate: task.applyTemplate,
+        templateApplied: task.templateApplied,
+        suffixApplied: task.suffixApplied,
+        suffixMode: task.suffixMode,
+        randomDelayMs: 0,
+        queuedAt: task.queuedAt,
+        status: 'failed',
+        reason: String(e),
+        createdAt: Date.now()
+      });
       this.log('error', `发送群消息失败: ${e}`);
       task.reject(e);
     }
   }
 
-  private async sendGroupMessageRaw(groupId: string, message: any[]): Promise<void> {
-    if (!this.actions || !this.networkConfig) return;
+  private async sendGroupMessageRaw(groupId: string, message: any[]): Promise<{ messageId: string; sentAt: number; selfRecallDueAt: number; }> {
+    if (!this.actions || !this.networkConfig) return { messageId: '', sentAt: 0, selfRecallDueAt: 0 };
     const res = await this.actions.call('send_group_msg', {
       group_id: groupId,
       message
     } as never, this.adapterName, this.networkConfig) as { message_id?: number | string };
     const messageId = this.extractSendMessageId(res);
     this.debug(`[SelfRecall] message_sent groupId=${groupId} msgId=${messageId || 'missing'}`);
-    this.scheduleSelfRecall(groupId, messageId, 'send_group_msg');
+    const selfRecallDueAt = this.scheduleSelfRecall(groupId, messageId, 'send_group_msg');
+    return { messageId, sentAt: Date.now(), selfRecallDueAt };
   }
 
   /** 发送群消息 (Text) */
@@ -517,11 +697,20 @@ class PluginState {
       }).text;
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
-    if (!force && !this.shouldSendByProbability()) return;
+    const scene = options?.scene || 'raw_text';
+    if (!force && !this.shouldSendByProbability(scene)) return;
     const templated = (!templateDisabled && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
-    const suffix = this.getRandomSuffix(groupId);
+    const suffixInfo = this.getRandomSuffixInfo(groupId, scene);
+    const suffix = suffixInfo.suffix;
     const finalContent = templated + suffix;
-    await this.enqueueGroupTask(groupId, [{ type: 'text', data: { text: finalContent } }], { force, applyTemplate });
+    await this.enqueueGroupTask(groupId, [{ type: 'text', data: { text: finalContent } }], {
+      force,
+      applyTemplate,
+      scene,
+      templateApplied: !templateDisabled && applyTemplate,
+      suffixApplied: !!suffix,
+      suffixMode: suffix ? suffixInfo.mode : ''
+    });
   }
 
   /** 发送群消息 (Array) */
@@ -530,14 +719,15 @@ class PluginState {
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
-    if (!force && !this.shouldSendByProbability()) return;
+    const scene = options?.scene || 'raw_text';
+    if (!force && !this.shouldSendByProbability(scene)) return;
     const cloned = this.cloneMessage(message);
     const firstText = cloned.find(seg => seg && seg.type === 'text' && seg.data && typeof seg.data.text === 'string');
     if (firstText) {
       const renderedText = templateDisabled
         ? String(firstText.data.text || '')
         : generateReply({
-          scene: options?.scene || 'raw_text',
+          scene,
           raw: String(firstText.data.text || ''),
           vars: options?.vars,
           persona: options?.persona,
@@ -545,7 +735,8 @@ class PluginState {
         }).text;
       firstText.data.text = (!templateDisabled && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
     }
-    const suffix = this.getRandomSuffix(groupId);
+    const suffixInfo = this.getRandomSuffixInfo(groupId, scene);
+    const suffix = suffixInfo.suffix;
     if (suffix && Array.isArray(cloned)) {
       const lastNode = cloned[cloned.length - 1];
       if (lastNode && lastNode.type === 'text' && lastNode.data) {
@@ -554,7 +745,14 @@ class PluginState {
         cloned.push({ type: 'text', data: { text: suffix } });
       }
     }
-    await this.enqueueGroupTask(groupId, cloned, { force, applyTemplate });
+    await this.enqueueGroupTask(groupId, cloned, {
+      force,
+      applyTemplate,
+      scene,
+      templateApplied: !templateDisabled && applyTemplate && !!firstText,
+      suffixApplied: !!suffix,
+      suffixMode: suffix ? suffixInfo.mode : ''
+    });
   }
 
   /** 发送私聊消息 (Text) */
@@ -563,20 +761,21 @@ class PluginState {
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
-    if (!force && !this.shouldSendByProbability()) return;
+    const scene = options?.scene || 'raw_text';
+    if (!force && !this.shouldSendByProbability(scene)) return;
     const renderedText = templateDisabled
       ? content
       : generateReply({
-        scene: options?.scene || 'raw_text',
+        scene,
         raw: content,
         vars: options?.vars,
         persona: options?.persona,
         settings: this.config.global
       }).text;
 
-    await this.randomSleep();
+    await this.randomSleep(undefined, scene);
 
-    const suffix = this.getRandomSuffix();
+    const suffix = this.getRandomSuffix(undefined, scene);
     const templated = (!templateDisabled && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
     const finalContent = templated + suffix;
 

@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Architecture Report</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --line: #334155;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-2: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --code: #0b1220;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+      padding: 28px 20px 40px;
+    }
+    .brand {
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .brand .meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .nav-group {
+      margin-bottom: 22px;
+    }
+    .nav-title {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .nav a {
+      display: block;
+      padding: 9px 10px;
+      margin: 4px 0;
+      border-radius: 8px;
+      color: var(--text);
+      background: transparent;
+    }
+    .nav a:hover {
+      background: rgba(56, 189, 248, .12);
+    }
+    .content {
+      padding: 32px 40px 60px;
+    }
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      margin-bottom: 24px;
+      padding: 24px 26px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(56,189,248,.14), rgba(34,197,94,.08));
+    }
+    .hero h2 {
+      margin: 0 0 10px;
+      font-size: 32px;
+      line-height: 1.1;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 760px;
+    }
+    .pill-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .pill {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(15, 23, 42, .55);
+      color: var(--text);
+      font-size: 12px;
+    }
+    section {
+      margin-bottom: 24px;
+      padding: 24px 26px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(17, 24, 39, .88);
+    }
+    section h3 {
+      margin: 0 0 16px;
+      font-size: 24px;
+    }
+    .section-intro {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-2);
+      padding: 16px 18px;
+    }
+    .card h4 {
+      margin: 0 0 10px;
+      font-size: 17px;
+    }
+    .card ul, .card ol {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .card li + li {
+      margin-top: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+      font-size: 14px;
+    }
+    th {
+      background: rgba(148, 163, 184, .08);
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    .flow {
+      display: grid;
+      gap: 10px;
+    }
+    .flow-item {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: var(--panel-2);
+    }
+    .flow-path {
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .tree {
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--code);
+      overflow: auto;
+      white-space: pre-wrap;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .tag {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(15, 23, 42, .6);
+    }
+    .risk-high { color: #fecaca; border-color: rgba(239,68,68,.35); background: rgba(127,29,29,.28); }
+    .risk-medium { color: #fde68a; border-color: rgba(245,158,11,.35); background: rgba(120,53,15,.28); }
+    .risk-low { color: #bfdbfe; border-color: rgba(59,130,246,.35); background: rgba(30,64,175,.22); }
+    .foot {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    @media (max-width: 1100px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: relative;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+      }
+      .content {
+        padding: 24px 18px 48px;
+      }
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>System Architecture Report</h1>
+        <div class="meta">Project: napcat-plugin-groupguard</div>
+        <div class="meta">Runtime: NapCat / OneBot11 / Node.js / TypeScript</div>
+      </div>
+      <div class="nav">
+        <div class="nav-group">
+          <div class="nav-title">Sections</div>
+          <a href="#overview">A. System Overview</a>
+          <a href="#layers">B. Architecture Layers</a>
+          <a href="#dataflow">C. Data Flow</a>
+          <a href="#critical">D. Critical Path</a>
+          <a href="#legacy">E. Legacy / Redundant Modules</a>
+          <a href="#modulemap">F. Module Map</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-title">Key Files</div>
+          <a href="#entry-files">Entry & Lifecycle</a>
+          <a href="#core-services">Core Services</a>
+          <a href="#storage">Storage & Repository</a>
+          <a href="#webui">WebUI & Routes</a>
+        </div>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="hero">
+        <div>
+          <h2>System Architecture Report</h2>
+          <p>NapCat 群管插件采用“插件生命周期 + 命令路由 + 被动事件处理 + SQLite 持久化 + WebUI 管理面板”组合架构。核心控制点集中在 <strong>src/index.ts</strong>、<strong>src/commands.ts</strong>、<strong>src/state.ts</strong>、<strong>src/storage_adapter.ts</strong>。</p>
+          <div class="pill-row">
+            <span class="pill">Plugin Entry</span>
+            <span class="pill">Command Router</span>
+            <span class="pill">Event-Driven</span>
+            <span class="pill">SQLite Persistence</span>
+            <span class="pill">WebUI Admin Panel</span>
+          </div>
+        </div>
+      </div>
+
+      <section id="overview">
+        <h3>A. System Overview</h3>
+        <div class="grid-2" id="entry-files">
+          <div class="card">
+            <h4>Startup Sequence</h4>
+            <ol>
+              <li>NapCat 加载插件并调用 <strong>plugin_init</strong>。</li>
+              <li>初始化 <strong>pluginState</strong> 上下文、日志、适配器与运行配置。</li>
+              <li>加载主配置文件并执行全局/分群配置归一化。</li>
+              <li>执行历史目录迁移：旧 JSON 分群配置 → <code>data/groups/*</code> → SQLite。</li>
+              <li>初始化 <strong>storageAdapter</strong>、<strong>initDB</strong>、授权、邀请服务、自撤回恢复。</li>
+              <li>注册 WebUI 页面与 HTTP 路由。</li>
+              <li>拉取机器人登录信息并记录 botId。</li>
+            </ol>
+          </div>
+          <div class="card">
+            <h4>Main Entry Files</h4>
+            <ul>
+              <li><strong>src/index.ts</strong>：插件入口、生命周期、HTTP 路由、消息/事件主调度。</li>
+              <li><strong>src/state.ts</strong>：全局状态、发送队列、缓存、权限判断、运行指标。</li>
+              <li><strong>src/commands.ts</strong>：命令路由总入口。</li>
+              <li><strong>src/config.ts</strong>：默认配置与归一化规则。</li>
+              <li><strong>src/storage_adapter.ts</strong>：SQLite 与 JSON 迁移桥接层。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h4>Main Runtime Flow</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>阶段</th>
+                <th>入口</th>
+                <th>动作</th>
+                <th>输出</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>初始化</td>
+                <td>plugin_init</td>
+                <td>加载配置、初始化存储、注册路由、启动恢复任务</td>
+                <td>可运行插件实例</td>
+              </tr>
+              <tr>
+                <td>消息处理</td>
+                <td>plugin_onmessage</td>
+                <td>授权检查 → 路由命令/问答/风控/统计/缓存</td>
+                <td>群消息动作、私聊动作、持久化更新</td>
+              </tr>
+              <tr>
+                <td>事件处理</td>
+                <td>plugin_onevent</td>
+                <td>入群申请、入群通知、撤回通知、退群事件</td>
+                <td>验证、欢迎、踢出、拉黑、日志</td>
+              </tr>
+              <tr>
+                <td>管理界面</td>
+                <td>HTTP Routes</td>
+                <td>配置读取/保存、运行态查询、导入导出、审计接口</td>
+                <td>WebUI 响应与配置落盘</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="layers">
+        <h3>B. Architecture Layers</h3>
+        <div class="section-intro">分层方式以职责边界为主：表现层负责输入输出，业务层负责规则与流程，数据层负责持久化与迁移。</div>
+        <table>
+          <thead>
+            <tr>
+              <th>层级</th>
+              <th>模块</th>
+              <th>职责</th>
+              <th>典型文件</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>表现层</td>
+              <td>NapCat 插件入口、消息事件入口、WebUI 页面、HTTP 路由</td>
+              <td>接收消息/通知/请求，提供配置面板与管理 API，组织输出格式</td>
+              <td>src/index.ts、webui/config.html、webui/assets/command_manual.json</td>
+            </tr>
+            <tr>
+              <td>业务层</td>
+              <td>命令模块、服务模块、授权、验证、回复模板、动作队列</td>
+              <td>命令解析、风控判断、积分玩法、战绩查询、入群校验、执行节流与恢复</td>
+              <td>src/commands/*、src/services/*、src/auth.ts、src/verify.ts、src/join_verifier.ts</td>
+            </tr>
+            <tr>
+              <td>数据层</td>
+              <td>仓储、缓存、SQLite 适配、配置持久化</td>
+              <td>存储群配置、QA、签到、邀请、活跃、警告、自撤回任务</td>
+              <td>src/storage_adapter.ts、src/db.ts、src/repositories/groupguard_repository.ts</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="grid-2" style="margin-top:16px">
+          <div class="card">
+            <h4>表现层模块归属</h4>
+            <ul>
+              <li><strong>src/index.ts</strong>：生命周期与 HTTP 路由入口。</li>
+              <li><strong>webui/config.html</strong>：统一控制台，分全局/分群面板。</li>
+              <li><strong>src/commands/modules/*</strong>：命令匹配器与域级 handler 入口。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>业务层模块归属</h4>
+            <ul>
+              <li><strong>interaction_service.ts</strong>：互动、签到、抽奖、战绩、视频。</li>
+              <li><strong>moderation_service.ts</strong>：禁言、踢出、头衔、名片锁。</li>
+              <li><strong>risk_service.ts</strong>：风控策略与安全开关。</li>
+              <li><strong>action_queue_service.ts</strong>：动作排队、重试、恢复。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="dataflow">
+        <h3>C. Data Flow</h3>
+        <div class="flow">
+          <div class="flow-item">
+            <div class="flow-path">群消息 → plugin_onmessage → handleCommand / handleQA / 风控链路 → storageAdapter / NapCat API</div>
+            <div>输入源：OneBot 消息事件。处理路径覆盖授权校验、黑白名单、命令执行、问答、刷屏检测、消息缓存、活跃统计与表情回应。</div>
+          </div>
+          <div class="flow-item">
+            <div class="flow-path">群通知/请求 → plugin_onevent → GroupJoinVerifier / verify / sendWelcomeMessage / enqueueKickAction</div>
+            <div>输入源：入群申请、入群通知、撤回通知、退群通知。输出为审核动作、欢迎消息、私聊验证、拉黑或恢复任务。</div>
+          </div>
+          <div class="flow-item">
+            <div class="flow-path">WebUI → /config /runtime /group-config/* → normalizePluginConfig / healGroupSettings → saveConfig / SQLite</div>
+            <div>输入源：浏览器管理面板。输出为全局配置、分群配置、导入导出文件与运行态数据。</div>
+          </div>
+          <div class="flow-item">
+            <div class="flow-path">外部接口 → interaction_service.ts → fetch/fetchJsonWithTimeout → 输出为文本/转发/图片/卡片</div>
+            <div>输入源：战绩接口、封号接口、视频接口。输出为群消息内容，失败时返回降级提示。</div>
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:16px">
+          <div class="card" id="storage">
+            <h4>Storage Location</h4>
+            <ul>
+              <li><strong>主配置</strong>：NapCat 配置文件路径对应的插件配置。</li>
+              <li><strong>SQLite</strong>：<code>data/groupguard.db</code>。</li>
+              <li><strong>迁移来源</strong>：旧 <code>groups/*.json</code> 与 <code>data/groups/*/*.json</code>。</li>
+              <li><strong>内存缓存</strong>：state.ts 中的 sessions、msgCache、spamCache、adminCache、queue 状态。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Import / Export Flow</h4>
+            <ul>
+              <li><strong>全局配置</strong>：WebUI 通过 <code>GET/POST /config</code> 读取与保存。</li>
+              <li><strong>分群导出</strong>：<code>GET /group-config/export</code> 输出分群设置与修复记录。</li>
+              <li><strong>分群导入</strong>：<code>POST /group-config/import</code> 支持 overwrite / merge。</li>
+              <li><strong>导入自检</strong>：去重数组、修复 QA 结构、统一 <code>useGlobal=false</code>。</li>
+              <li><strong>历史迁移</strong>：启动时执行 JSON → SQLite 迁移并打标记。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px" id="webui">
+          <h4>Data Flow Matrix</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>数据类型</th>
+                <th>进入点</th>
+                <th>业务处理</th>
+                <th>落盘位置</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>群配置</td>
+                <td>WebUI /config</td>
+                <td>normalizePluginConfig、saveConfig</td>
+                <td>主配置文件 + SQLite group_config</td>
+              </tr>
+              <tr>
+                <td>问答词库</td>
+                <td>群命令 / WebUI 导入</td>
+                <td>QA 服务处理</td>
+                <td>SQLite group_qa</td>
+              </tr>
+              <tr>
+                <td>活跃统计</td>
+                <td>群消息</td>
+                <td>recordActivity</td>
+                <td>SQLite activity</td>
+              </tr>
+              <tr>
+                <td>签到/积分</td>
+                <td>互动命令</td>
+                <td>interaction_service</td>
+                <td>SQLite signin</td>
+              </tr>
+              <tr>
+                <td>邀请关系</td>
+                <td>group_increase</td>
+                <td>invite_service / recordInviteRelation</td>
+                <td>SQLite invites</td>
+              </tr>
+              <tr>
+                <td>撤回任务</td>
+                <td>发送结果 / message_event</td>
+                <td>scheduleSelfRecall / action queue</td>
+                <td>SQLite self_recall_tasks / recall_tasks</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="critical">
+        <h3>D. Critical Path</h3>
+        <div class="grid-2">
+          <div class="card">
+            <h4>Core Call Chains</h4>
+            <ul>
+              <li><strong>命令链</strong>：plugin_onmessage → handleCommand → registry → modules/* → services/* → pluginState/actions/storage。</li>
+              <li><strong>验证链</strong>：plugin_onevent(group_increase/request) → GroupJoinVerifier / createVerifySession → handleVerifyAnswer → 踢出或欢迎。</li>
+              <li><strong>撤回恢复链</strong>：state.scheduleSelfRecall → repository/db → action_queue_service recovery tick → safeRecall。</li>
+              <li><strong>WebUI 配置链</strong>：config.html → /config → normalizePluginConfig → saveConfig → storageAdapter.saveGroupConfig。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Single Point of Failure</h4>
+            <ul>
+              <li><span class="tag risk-high">High</span><strong>pluginState</strong>：配置、权限、发送、缓存全部集中依赖。</li>
+              <li><span class="tag risk-high">High</span><strong>storageAdapter / groupguard.db</strong>：持久化主入口失效会影响统计、配置与恢复任务。</li>
+              <li><span class="tag risk-high">High</span><strong>src/index.ts</strong>：生命周期、路由与消息事件总入口高度集中。</li>
+              <li><span class="tag risk-medium">Medium</span><strong>本地/外部接口</strong>：战绩、封号、视频查询依赖外部可用性。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h4>High-Risk Modules</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>模块</th>
+                <th>风险等级</th>
+                <th>原因</th>
+                <th>影响</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>src/index.ts</td>
+                <td><span class="tag risk-high">High</span></td>
+                <td>入口聚合过多：初始化、路由、消息、事件、迁移</td>
+                <td>变更风险大，回归范围广</td>
+              </tr>
+              <tr>
+                <td>src/state.ts</td>
+                <td><span class="tag risk-high">High</span></td>
+                <td>状态与发送控制集中，承担缓存、权限、队列、日志</td>
+                <td>运行时异常会影响全局功能</td>
+              </tr>
+              <tr>
+                <td>src/services/action_queue_service.ts</td>
+                <td><span class="tag risk-high">High</span></td>
+                <td>动作排队、重试、恢复逻辑复杂，涉及时序与幂等</td>
+                <td>禁言/踢出/撤回动作易出现重复或丢失</td>
+              </tr>
+              <tr>
+                <td>src/storage_adapter.ts</td>
+                <td><span class="tag risk-medium">Medium</span></td>
+                <td>同时承担 schema、迁移、读写适配</td>
+                <td>存储变更易影响历史数据兼容</td>
+              </tr>
+              <tr>
+                <td>src/services/interaction_service.ts</td>
+                <td><span class="tag risk-medium">Medium</span></td>
+                <td>聚合功能较多：签到、抽奖、战绩、视频、封号查询</td>
+                <td>接口波动或改动易产生联动回归</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="legacy">
+        <h3>E. Legacy / Redundant Modules</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>对象</th>
+              <th>状态</th>
+              <th>现象</th>
+              <th>建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>旧 JSON 分群结构</td>
+              <td>Legacy</td>
+              <td>启动时仍保留 <code>groups/*.json</code> 与 <code>data/groups/*</code> 迁移逻辑</td>
+              <td>迁移稳定后可拆出独立 migration 脚本，缩减 index.ts 负担</td>
+            </tr>
+            <tr>
+              <td>双份命令手册 JSON</td>
+              <td>Redundant</td>
+              <td><code>webui/command_manual.json</code> 与 <code>webui/assets/command_manual.json</code> 存在重复内容</td>
+              <td>统一单一来源，避免文档漂移</td>
+            </tr>
+            <tr>
+              <td>多份用户/主人手册 HTML/MD</td>
+              <td>Redundant</td>
+              <td>README、USER_MANUAL、USER_MANUAL1、OWNER_MANUAL、DEVELOPER_MANUAL 多版本并存</td>
+              <td>拆分“对外说明”与“内部设计”两套文档，减少重复维护</td>
+            </tr>
+            <tr>
+              <td>db.ts + repository + storageAdapter</td>
+              <td>Overlap</td>
+              <td>数据访问链较长，<code>db.ts</code> 与 <code>groupguard_repository.ts</code> 包装层存在重叠</td>
+              <td>可合并为统一 repository 层，减少跳转层级</td>
+            </tr>
+            <tr>
+              <td>src/index.ts 超大入口</td>
+              <td>Optimization Target</td>
+              <td>既做生命周期，又做路由、迁移、事件处理</td>
+              <td>拆分为 bootstrap、http-routes、message-pipeline、event-pipeline</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="modulemap">
+        <h3>F. Module Map</h3>
+        <div class="card">
+          <h4>Directory Tree</h4>
+          <div class="tree">napcat-plugin-groupguard
+├─ src
+│  ├─ index.ts                  插件生命周期、HTTP 路由、消息/事件总入口
+│  ├─ state.ts                  全局状态、缓存、发送控制、权限与日志
+│  ├─ config.ts                 默认配置、归一化规则、帮助菜单文本
+│  ├─ types.ts                  核心类型定义
+│  ├─ commands.ts               命令总分发入口
+│  ├─ auth.ts                   授权管理主模块
+│  ├─ db.ts                     数据访问缓存层，连接 storageAdapter
+│  ├─ storage_adapter.ts        SQLite schema、读写、JSON 迁移
+│  ├─ verify.ts                 数学验证会话与答题处理
+│  ├─ join_verifier.ts          入群申请规则引擎
+│  ├─ qr.ts                     二维码识别处理
+│  ├─ reply_generator.ts        回复模板与人格生成
+│  ├─ reply_template_audit.ts   人格模板审计
+│  ├─ reply_templates.ts        内置回复模板库
+│  ├─ repositories
+│  │  └─ groupguard_repository.ts  统一仓储接口
+│  ├─ commands
+│  │  ├─ registry.ts            命令路由解析
+│  │  ├─ common.ts              通用命令辅助
+│  │  ├─ passive.ts             被动处理出口
+│  │  ├─ command_validation.ts  命令冲突审计
+│  │  └─ modules
+│  │     ├─ auth.ts             授权类指令
+│  │     ├─ moderation.ts       群管理指令
+│  │     ├─ interaction.ts      互动/积分/战绩指令
+│  │     ├─ risk.ts             风控安全指令
+│  │     ├─ qa.ts               问答词库指令
+│  │     └─ system.ts           系统工具与管理指令
+│  └─ services
+│     ├─ auth_service.ts        授权业务逻辑
+│     ├─ moderation_service.ts  管理动作业务逻辑
+│     ├─ interaction_service.ts 互动功能、战绩、外部接口整合
+│     ├─ risk_service.ts        风控策略与配置逻辑
+│     ├─ qa_service.ts          问答业务逻辑
+│     ├─ system_service.ts      系统类命令处理
+│     ├─ passive_service.ts     欢迎词、黑名单、刷屏、过滤、活跃统计
+│     ├─ invite_service.ts      邀请关系与积分奖励
+│     ├─ action_guard_service.ts 动作安全门、权限校验
+│     └─ action_queue_service.ts 动作队列、重试与恢复
+├─ webui
+│  ├─ config.html               配置控制台
+│  ├─ command_manual.json       WebUI 命令手册
+│  └─ assets/command_manual.json  静态命令手册副本
+├─ scripts
+│  ├─ command_coverage_report.mjs  命令覆盖率报告脚本
+│  └─ legacy_command_manifest.json 旧命令清单
+├─ package.json                 构建入口与插件元数据
+├─ vite.config.ts               构建配置
+└─ 文档集合                      README、用户手册、主人手册、开发手册</div>
+        </div>
+        <div class="grid-2" style="margin-top:16px" id="core-services">
+          <div class="card">
+            <h4>Core Service Cluster</h4>
+            <ul>
+              <li><strong>Command Cluster</strong>：registry + modules + services。</li>
+              <li><strong>Runtime Cluster</strong>：state + action queue + guard service。</li>
+              <li><strong>Storage Cluster</strong>：storageAdapter + db + repository。</li>
+              <li><strong>WebUI Cluster</strong>：config.html + HTTP routes。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Audit Focus</h4>
+            <ul>
+              <li>入口聚合度高，适合按生命周期拆分。</li>
+              <li>动作队列与撤回恢复是时序敏感区域。</li>
+              <li>存储链路存在多层包装，适合压缩层次。</li>
+              <li>文档与命令手册存在重复维护面。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="foot">Document Type: HTML technical audit page · Suitable for direct browser opening and internal architecture review</div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

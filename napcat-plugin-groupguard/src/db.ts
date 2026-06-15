@@ -2,12 +2,29 @@ import type {
     ActivityRecord,
     SigninData,
     InviteData,
+  AuditEventQuery,
+  AuditEventPage,
+  AuditEventRecord,
+  AuditRetentionPolicy,
+  ActionQueueEventRetentionPolicy,
+  AuditStatsQuery,
+  AuditStatsView,
+  ActionQueueEventStatsQuery,
+  ActionQueueEventStatsView,
+  ActionQueueEventSearchQuery,
+  ActionQueueEventSearchView,
+  BotSendEventRecord,
+  BotSendStatsQuery,
+  BotSendStatsView,
+  AuditUserProfileQuery,
+  AuditUserProfileView,
+  ActionQueueEventRecord,
     SelfRecallScheduleInput,
     SelfRecallTaskRecord,
     RecallTaskScheduleInput,
     RecallTaskRecord
 } from './types';
-import { pluginState } from './state';
+import { contextStateService } from './core/state-services/context_state_service';
 import { storageAdapter } from './storage_adapter';
 
 // 内存缓存
@@ -19,7 +36,7 @@ const cache = {
 };
 
 export async function initDB() {
-    storageAdapter.init(pluginState.configDir);
+    storageAdapter.init(contextStateService.getConfigDir());
 }
 
 function loadData<T>(type: keyof typeof cache, groupId: string): Record<string, T> {
@@ -61,6 +78,48 @@ export const dbQuery = {
     getAllActivity: async (groupId: string): Promise<Record<string, ActivityRecord>> => {
         return { ...loadData<ActivityRecord>('activity', groupId) };
     },
+    insertAuditEvent: async (entry: AuditEventRecord): Promise<void> => {
+        storageAdapter.insertAuditEvent(entry);
+    },
+    getRecentAuditEvents: async (query: AuditEventQuery | number = 200): Promise<AuditEventRecord[]> => {
+        return storageAdapter.getRecentAuditEvents(query);
+    },
+    queryAuditEvents: async (query: AuditEventQuery | number = 200): Promise<AuditEventPage> => {
+        return storageAdapter.queryAuditEvents(query);
+    },
+    getAuditEventsByQueueTaskId: async (queueTaskId: string, limit = 20): Promise<AuditEventRecord[]> => {
+        return storageAdapter.getAuditEventsByQueueTaskId(queueTaskId, limit);
+    },
+    insertActionQueueEvent: async (entry: ActionQueueEventRecord): Promise<void> => {
+        storageAdapter.insertActionQueueEvent(entry);
+    },
+    getActionQueueEventsByTaskId: async (taskId: string, limit = 100): Promise<ActionQueueEventRecord[]> => {
+        return storageAdapter.getActionQueueEventsByTaskId(taskId, limit);
+    },
+    getAuditStats: async (query?: AuditStatsQuery): Promise<AuditStatsView> => {
+        return storageAdapter.getAuditStats(query);
+    },
+    getActionQueueEventStats: async (query?: ActionQueueEventStatsQuery): Promise<ActionQueueEventStatsView> => {
+        return storageAdapter.getActionQueueEventStats(query);
+    },
+    searchActionQueueEvents: async (query?: ActionQueueEventSearchQuery): Promise<ActionQueueEventSearchView> => {
+        return storageAdapter.searchActionQueueEvents(query);
+    },
+    insertBotSendEvent: async (entry: BotSendEventRecord): Promise<void> => {
+        storageAdapter.insertBotSendEvent(entry);
+    },
+    getBotSendStats: async (query?: BotSendStatsQuery): Promise<BotSendStatsView> => {
+        return storageAdapter.getBotSendStats(query);
+    },
+    getAuditUserProfile: async (query: AuditUserProfileQuery): Promise<AuditUserProfileView> => {
+        return storageAdapter.getAuditUserProfile(query);
+    },
+    pruneAuditEvents: async (policy?: AuditRetentionPolicy): Promise<number> => {
+        return storageAdapter.pruneAuditEvents(policy);
+    },
+    pruneActionQueueEvents: async (policy?: ActionQueueEventRetentionPolicy): Promise<number> => {
+        return storageAdapter.pruneActionQueueEvents(policy);
+    },
 
     // Signin
     getSignin: async (groupId: string, userId: string): Promise<SigninData | undefined> => {
@@ -94,6 +153,10 @@ export const dbQuery = {
         allData[userId] = data;
         storageAdapter.setInvite(groupId, userId, data);
     },
+    clearInvites: async (groupId: string): Promise<void> => {
+        cache.invites.delete(groupId);
+        storageAdapter.clearInvites(groupId);
+    },
     getAllInvites: async (groupId: string): Promise<Record<string, InviteData>> => {
         return { ...loadData<InviteData>('invites', groupId) };
     },
@@ -121,6 +184,9 @@ export const dbQuery = {
     getDueSelfRecallTasks: async (nowTs: number, limit: number): Promise<SelfRecallTaskRecord[]> => {
         return storageAdapter.getDueSelfRecallTasks(nowTs, limit);
     },
+    getSelfRecallTask: async (taskId: string): Promise<SelfRecallTaskRecord | undefined> => {
+        return storageAdapter.getSelfRecallTask(taskId);
+    },
     cleanupSelfRecallTasks: async (retentionMs: number): Promise<void> => {
         storageAdapter.cleanupSelfRecallTasks(retentionMs);
     },
@@ -135,6 +201,9 @@ export const dbQuery = {
     },
     getDueRecallTasks: async (nowTs: number, limit: number): Promise<RecallTaskRecord[]> => {
         return storageAdapter.getDueRecallTasks(nowTs, limit);
+    },
+    getRecallTask: async (taskId: string): Promise<RecallTaskRecord | undefined> => {
+        return storageAdapter.getRecallTask(taskId);
     },
     cleanupRecallTasks: async (retentionMs: number): Promise<void> => {
         storageAdapter.cleanupRecallTasks(retentionMs);

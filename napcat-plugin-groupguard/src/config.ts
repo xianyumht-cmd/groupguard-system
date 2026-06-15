@@ -1,5 +1,5 @@
 // 群管插件配置
-import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry } from './types';
+import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode } from './types';
 
 export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockVideo: false,
@@ -23,6 +23,9 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   targetUsers: [],
   groupBlacklist: [],
   leaveBlacklist: false,
+  joinPrivateEnabled: false,
+  joinPrivateMessage: '欢迎加入，进群后请先阅读群公告与群规。',
+  disableWelcome: false,
   warningLimit: 3,
   warningAction: 'ban',
   curfewEnabled: false,
@@ -46,6 +49,8 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
     jitter: 0,
   },
   randomSuffix: true,
+  botAntiRiskSuffixMode: 'mixed',
+  botAntiRiskScenePolicies: {},
   randomDelayMin: 500,
   randomDelayMax: 1500,
   queueMode: 'group',
@@ -72,6 +77,19 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   disableLottery: false,
   disableInvite: false,
   disableActivity: false,
+  disableLolQuery: false,
+  lolQueryGlobalRateLimitPerMinute: 120,
+  lolQueryGlobalMinIntervalSeconds: 1,
+  lolQueryRequestTimeoutSeconds: 20,
+  lolQueryGroupRateLimitPerMinute: 20,
+  lolQueryGroupMinIntervalSeconds: 2,
+  lolQueryDailyLimit: 200,
+  lolQueryOutputFormat: 'forward',
+  lolQueryCommandSwitch: {
+    battleQuery: true,
+    banQuery: true,
+    hiddenQuery: true,
+  },
   allowRecallAdminMessage: false,
   allowRecallOwnerMessage: false,
   protectAdminActions: true,
@@ -84,6 +102,10 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   riskProtectScore: 8,
   riskDecaySeconds: 300,
   personaAuditStrictMode: false,
+  auditRetentionMaxAgeDays: 30,
+  auditRetentionMaxRows: 20000,
+  actionQueueEventRetentionMaxAgeDays: 7,
+  actionQueueEventRetentionMaxRows: 50000,
   replyPersonaDefault: 'formal',
   autoRandomPersona: false,
   replyPersonaByScene: {},
@@ -151,12 +173,37 @@ function normalizeActionPriority(settings: GroupGuardSettings): ActionPrioritySe
   };
 }
 
+function normalizeSuffixMode(value: any, fallback: BotAntiRiskSuffixMode = 'global'): BotAntiRiskSuffixMode {
+  return value === 'mixed' || value === 'invisible' || value === 'punctuation' || value === 'none' || value === 'global'
+    ? value
+    : fallback;
+}
+
+function normalizeBotAntiRiskScenePolicies(input: any): Record<string, BotAntiRiskScenePolicy> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out: Record<string, BotAntiRiskScenePolicy> = {};
+  for (const [scene, raw] of Object.entries(input)) {
+    const key = String(scene || '').trim();
+    if (!key || !raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const item = raw as any;
+    const policy: BotAntiRiskScenePolicy = {};
+    if (item.delayMinMs !== undefined) policy.delayMinMs = normalizeNumber(item.delayMinMs, 0, 0, 60000);
+    if (item.delayMaxMs !== undefined) policy.delayMaxMs = normalizeNumber(item.delayMaxMs, policy.delayMinMs ?? 0, policy.delayMinMs ?? 0, 60000);
+    if (item.replyProbability !== undefined) policy.replyProbability = normalizeNumber(item.replyProbability, 100, 0, 100);
+    if (item.suffixMode !== undefined) policy.suffixMode = normalizeSuffixMode(item.suffixMode, 'global');
+    out[key] = policy;
+  }
+  return out;
+}
+
 export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSettings {
   const merged: GroupGuardSettings = {
     ...JSON.parse(JSON.stringify(DEFAULT_GROUP_SETTINGS)),
     ...(input || {}),
   };
   merged.selfRecall = normalizeSelfRecall(merged);
+  merged.botAntiRiskSuffixMode = normalizeSuffixMode(merged.botAntiRiskSuffixMode, 'mixed');
+  merged.botAntiRiskScenePolicies = normalizeBotAntiRiskScenePolicies(merged.botAntiRiskScenePolicies);
   merged.autoRecallSelf = merged.selfRecall.enabled;
   merged.autoRecallSelfDelay = merged.selfRecall.mode === 'fixed'
     ? merged.selfRecall.fixedDelay
@@ -169,6 +216,23 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
   merged.maxRecallPerMinute = normalizeNumber(merged.maxRecallPerMinute, 60, 1);
   merged.maxKickPerMinute = normalizeNumber(merged.maxKickPerMinute, 3, 1);
   merged.maxBanPerMinute = normalizeNumber(merged.maxBanPerMinute, 5, 1);
+  merged.disableWelcome = merged.disableWelcome === true;
+  merged.disableLolQuery = merged.disableLolQuery === true;
+  merged.lolQueryGlobalRateLimitPerMinute = normalizeNumber(merged.lolQueryGlobalRateLimitPerMinute, 120, 1, 5000);
+  merged.lolQueryGlobalMinIntervalSeconds = normalizeNumber(merged.lolQueryGlobalMinIntervalSeconds, 1, 0, 600);
+  merged.lolQueryRequestTimeoutSeconds = normalizeNumber(merged.lolQueryRequestTimeoutSeconds, 20, 3, 120);
+  merged.lolQueryGroupRateLimitPerMinute = normalizeNumber(merged.lolQueryGroupRateLimitPerMinute, 20, 1, 1000);
+  merged.lolQueryGroupMinIntervalSeconds = normalizeNumber(merged.lolQueryGroupMinIntervalSeconds, 2, 0, 600);
+  merged.lolQueryDailyLimit = normalizeNumber(merged.lolQueryDailyLimit, 200, 1, 100000);
+  merged.lolQueryOutputFormat = merged.lolQueryOutputFormat === 'text' || merged.lolQueryOutputFormat === 'image' || merged.lolQueryOutputFormat === 'card'
+    ? merged.lolQueryOutputFormat
+    : 'forward';
+  const switchInput = merged.lolQueryCommandSwitch || {};
+  merged.lolQueryCommandSwitch = {
+    battleQuery: (switchInput as any).battleQuery !== false,
+    banQuery: (switchInput as any).banQuery !== false,
+    hiddenQuery: (switchInput as any).hiddenQuery !== false,
+  };
   merged.inviteQueryPermission = merged.inviteQueryPermission === 'admin' || merged.inviteQueryPermission === 'owner' ? merged.inviteQueryPermission : 'all';
   merged.blacklistAction = merged.blacklistAction === 'ban' || merged.blacklistAction === 'kick' || merged.blacklistAction === 'kick_and_block' ? merged.blacklistAction : 'recall';
   merged.blacklistKickDelayMinSeconds = normalizeNumber(merged.blacklistKickDelayMinSeconds, merged.kickDelayMinSeconds ?? 5, 0);
@@ -177,6 +241,7 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
 }
 
 export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
+  configVersion: 4,
   licenseKey: '',
   debug: false,
   ownerQQs: '',
@@ -204,6 +269,11 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   lolAuthKey: '',
   lolBanPrimaryUrl: '',
   lolBanBackupUrls: [],
+  lolApiBaseUrl: 'http://192.168.3.94:5000',
+  videoApiTemplates: {
+    搞笑: 'https://api.pearktrue.cn/api/random_video/?name=搞笑',
+    热门: 'https://api.pearktrue.cn/api/random_video/?name=热门'
+  },
   msgFilter: { ...DEFAULT_MSG_FILTER },
   qaList: [],
   rejectKeywords: [],
@@ -221,6 +291,29 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
     ...JSON.parse(JSON.stringify(DEFAULT_PLUGIN_CONFIG)),
     ...(input || {}),
   };
+  const inputVersion = Number((input as any)?.configVersion || 1);
+  if (inputVersion < 2) {
+    merged.global = {
+      ...(merged.global || {}),
+      auditRetentionMaxAgeDays: (merged.global as any)?.auditRetentionMaxAgeDays || 30,
+      auditRetentionMaxRows: (merged.global as any)?.auditRetentionMaxRows || 20000
+    };
+  }
+  if (inputVersion < 3) {
+    merged.global = {
+      ...(merged.global || {}),
+      actionQueueEventRetentionMaxAgeDays: (merged.global as any)?.actionQueueEventRetentionMaxAgeDays || 7,
+      actionQueueEventRetentionMaxRows: (merged.global as any)?.actionQueueEventRetentionMaxRows || 50000
+    };
+  }
+  if (inputVersion < 4) {
+    merged.global = {
+      ...(merged.global || {}),
+      botAntiRiskSuffixMode: (merged.global as any)?.botAntiRiskSuffixMode || 'mixed',
+      botAntiRiskScenePolicies: (merged.global as any)?.botAntiRiskScenePolicies || {}
+    };
+  }
+  merged.configVersion = 4;
   const normalizedQaList: QAEntry[] = Array.isArray(merged.qaList)
     ? merged.qaList
       .filter((qa: any) => qa && typeof qa.keyword === 'string' && typeof qa.reply === 'string')
@@ -235,11 +328,22 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   }
   merged.qaList = normalizedQaList;
   merged.global = normalizeGroupSettings(merged.global || ({} as GroupGuardSettings));
+  merged.global.auditRetentionMaxAgeDays = Math.max(1, Math.min(3650, Number(merged.global.auditRetentionMaxAgeDays || 30)));
+  merged.global.auditRetentionMaxRows = Math.max(100, Math.min(1000000, Number(merged.global.auditRetentionMaxRows || 20000)));
+  merged.global.actionQueueEventRetentionMaxAgeDays = Math.max(1, Math.min(3650, Number(merged.global.actionQueueEventRetentionMaxAgeDays || 7)));
+  merged.global.actionQueueEventRetentionMaxRows = Math.max(100, Math.min(1000000, Number(merged.global.actionQueueEventRetentionMaxRows || 50000)));
   const groups: Record<string, GroupGuardSettings> = {};
   for (const [gid, gs] of Object.entries(merged.groups || {})) {
     groups[gid] = normalizeGroupSettings(gs as GroupGuardSettings);
   }
   merged.groups = groups;
+  const videoTemplates = merged.videoApiTemplates || {};
+  merged.videoApiTemplates = Object.entries(videoTemplates).reduce((acc, [k, v]) => {
+    const key = String(k || '').trim();
+    const val = String(v || '').trim();
+    if (key && val) acc[key] = val;
+    return acc;
+  }, {} as Record<string, string>);
   return merged;
 }
 

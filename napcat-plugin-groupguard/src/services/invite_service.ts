@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { pluginState } from '../state';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 
 export interface InviteRecord {
   group_id: number;
@@ -20,6 +20,7 @@ const dirtyGroups = new Set<string>();
 let inviteDataDir = '';
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 let flushInProgress = false;
+const MAX_GROUP_CACHE = 300;
 
 function ensureInviteData(groupId: string): GroupInviteData {
   if (groupCache.has(groupId)) return groupCache.get(groupId)!;
@@ -38,6 +39,13 @@ function ensureInviteData(groupId: string): GroupInviteData {
     }
   }
   groupCache.set(groupId, loaded);
+  if (groupCache.size > MAX_GROUP_CACHE) {
+    const keys = Array.from(groupCache.keys());
+    for (let i = 0; i < keys.length - MAX_GROUP_CACHE; i += 1) {
+      groupCache.delete(keys[i]);
+      dirtyGroups.delete(keys[i]);
+    }
+  }
   return loaded;
 }
 
@@ -74,6 +82,30 @@ export async function flushInviteService(): Promise<void> {
   await flushDirty();
 }
 
+export function stopInviteService(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
+}
+
+export async function resetInviteRelationData(groupId: string): Promise<void> {
+  const gid = String(groupId || '');
+  if (!gid) return;
+  groupCache.set(gid, { forward: {}, reverse: {}, records: {} });
+  dirtyGroups.delete(gid);
+  if (!inviteDataDir) return;
+  const target = path.join(inviteDataDir, `${gid}.json`);
+  const tmp = `${target}.tmp`;
+  try {
+    await fs.promises.mkdir(inviteDataDir, { recursive: true });
+    await fs.promises.writeFile(tmp, JSON.stringify({ forward: {}, reverse: {}, records: {} }), 'utf-8');
+    await fs.promises.rename(tmp, target);
+  } catch (error) {
+    loggingStateService.warn(`[InviteStat] reset relation file failed group=${gid}: ${error}`);
+  }
+}
+
 export async function recordInviteRelation(input: {
   groupId: string;
   inviterQQ: string;
@@ -103,7 +135,7 @@ export async function recordInviteRelation(input: {
   store.forward[inviterQQ] = list;
   store.records[invitedQQ] = record;
   dirtyGroups.add(groupId);
-  pluginState.log('info', `[InviteStat] group=${groupId} inviter=${inviterQQ} invited=${invitedQQ}`);
+  loggingStateService.info(`[InviteStat] group=${groupId} inviter=${inviterQQ} invited=${invitedQQ}`);
   return { created: true };
 }
 

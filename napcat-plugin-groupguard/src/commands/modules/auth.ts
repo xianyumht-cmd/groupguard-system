@@ -1,5 +1,6 @@
 import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { AuthCommand } from '../../app/use-cases/auth/types';
 import { executeAuthCommand } from '../../services/auth_service';
 
 export const AUTH_PREFIXES = [
@@ -15,10 +16,54 @@ export const AUTH_EXACT = [
   '授权查询'
 ];
 
-export function matchAuthCommand(text: string): string | null {
-  if (AUTH_EXACT.includes(text)) return text;
-  for (const p of AUTH_PREFIXES) {
-    if (text.startsWith(p)) return p;
+function toAuthCommand(text: string, userId: string, groupId: string): AuthCommand | null {
+  if (text.startsWith('授权 ')) {
+    const parts = text.split(' ');
+    return {
+      channel: 'private',
+      action: 'grant',
+      actorUserId: userId,
+      originalText: text,
+      targetGroupId: parts[1] || '',
+      durationToken: parts[2] || ''
+    };
+  }
+  if (text.startsWith('回收授权 ')) {
+    return {
+      channel: 'private',
+      action: 'revoke',
+      actorUserId: userId,
+      originalText: text,
+      targetGroupId: text.split(' ')[1] || ''
+    };
+  }
+  if (text.startsWith('查询授权 ')) {
+    return {
+      channel: 'private',
+      action: 'query_private',
+      actorUserId: userId,
+      originalText: text,
+      targetGroupId: text.split(' ')[1] || ''
+    };
+  }
+  if (text === '查询授权' || text === '授权状态' || text === '授权查询') {
+    return {
+      channel: 'group',
+      action: 'query_group',
+      actorUserId: userId,
+      originalText: text,
+      groupId
+    };
+  }
+  if (text.startsWith('激活 ')) {
+    return {
+      channel: 'group',
+      action: 'activate',
+      actorUserId: userId,
+      originalText: text,
+      groupId,
+      activationKey: text.slice(3).trim()
+    };
   }
   return null;
 }
@@ -28,5 +73,7 @@ export async function handleAuthCommand(event: OB11Message, ctx: NapCatPluginCon
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
   const userId = String(event.user_id);
   const groupId = String(event.group_id || '');
-  return executeAuthCommand({ event, ctx, raw, text, userId, groupId });
+  const command = toAuthCommand(text, userId, groupId);
+  if (!command) return false;
+  return executeAuthCommand(command, ctx);
 }

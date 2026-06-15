@@ -1,6 +1,6 @@
 # 🛡️ NapCat GroupGuard Plugin
 
-[![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-1.2.9-blue.svg)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 全功能企业级群管理插件，专为 NapCat/OneBot11 设计。集成风控防护、商业授权、互动娱乐、入群验证、自动问答等核心模块。
@@ -28,6 +28,7 @@
 - **积分商城**：消耗积分兑换免死金牌、自定义头衔、解除禁言等。
 - **抽奖系统**：积分抽奖，随机获取积分奖励。
 - **活跃统计**：群成员发言活跃度排行榜。
+- **战绩查询**：统一使用 `查战绩张三#12345`，支持全局/分群/指令级开关与限流，并以转发消息输出。
 
 ### 🤖 智能辅助
 - **问答系统**：支持精确、模糊、正则三种匹配模式的自动回复。
@@ -76,6 +77,8 @@
 | `积分商城` | 查看可兑换物品 |
 | `兑换 <物品>` | 兑换商城物品 |
 | `活跃统计` | 查看本群发言排行 |
+| `查战绩张三#12345` | 查询常规+隐藏战绩，转发消息输出 |
+| `战绩配置` | 查看本群生效的战绩开关与限流 |
 
 > 完整指令列表与详细说明请参阅插件目录下的 [USER_MANUAL.html](USER_MANUAL.html)。
 

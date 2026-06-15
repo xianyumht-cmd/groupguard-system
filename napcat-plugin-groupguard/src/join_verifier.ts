@@ -1,7 +1,10 @@
 // 入群验证逻辑核心模块 (商用重构)
-import { pluginState } from './state';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import type { JoinLogEntry } from './types';
+import { authStateService } from './core/state-services/auth_state_service';
+import { configStateService } from './core/state-services/config_state_service';
+import { contextStateService } from './core/state-services/context_state_service';
+import { loggingStateService } from './core/state-services/logging_state_service';
 import { storageAdapter } from './storage_adapter';
 
 /** 入群申请缓存 (防刷) key: groupId:userId value: timestamp[] */
@@ -9,8 +12,9 @@ const joinRequestCache = new Map<string, number[]>();
 
 /** 清理缓存间隔 (5分钟) */
 const CACHE_TTL = 300000;
+let joinCacheCleanupTimer: NodeJS.Timeout | null = null;
 
-setInterval(() => {
+joinCacheCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, timestamps] of joinRequestCache) {
     const valid = timestamps.filter(t => now - t < CACHE_TTL);
@@ -36,7 +40,7 @@ export class GroupJoinVerifier {
     }
   ): Promise<boolean> {
     const { group_id: groupId, user_id: userId, comment, flag } = event;
-    const settings = pluginState.getGroupSettings(groupId);
+    const settings = configStateService.resolveGroupSettings(groupId);
     
     // 提取验证信息
     // NapCat/OneBot11 的 comment 通常格式为 "问题：xxx 答案：yyy" 或直接就是答案
@@ -47,7 +51,7 @@ export class GroupJoinVerifier {
     answer = answer.replace(/[\r\n\t]/g, ' ').trim();
 
     // 1. 黑名单检查 (优先级最高)
-    if (pluginState.isBlacklisted(userId) || (settings.groupBlacklist || []).includes(userId)) {
+    if (authStateService.isBlacklisted(userId) || (settings.groupBlacklist || []).includes(userId)) {
       await this.reject(ctx, flag, '您已被列入黑名单');
       this.log(groupId, userId, answer, false, 'reject', '黑名单用户');
       return true;
@@ -102,7 +106,7 @@ export class GroupJoinVerifier {
     }
 
     // 回落到旧逻辑：拒绝词 -> 自动同意
-    const rejectKw = (settings.rejectKeywords?.length ? settings.rejectKeywords : pluginState.config.rejectKeywords) || [];
+    const rejectKw = (settings.rejectKeywords?.length ? settings.rejectKeywords : configStateService.getConfig().rejectKeywords) || [];
     if (rejectKw.length && comment) {
       const matched = rejectKw.find(k => comment.includes(k));
       if (matched) {
@@ -122,24 +126,28 @@ export class GroupJoinVerifier {
   }
 
   static async approve(ctx: NapCatPluginContext, flag: string) {
-    if (!pluginState.actions || !pluginState.networkConfig) return;
+    const actions = contextStateService.getActions();
+    const networkConfig = contextStateService.getNetworkConfig();
+    if (!actions || !networkConfig) return;
     try {
-      await pluginState.actions.call('set_group_add_request', {
+      await actions.call('set_group_add_request', {
         flag, sub_type: 'add', approve: true
-      } as never, pluginState.adapterName, pluginState.networkConfig);
+      } as never, contextStateService.getAdapterName(), networkConfig);
     } catch (e) {
-      pluginState.log('error', `自动同意失败: ${e}`);
+      loggingStateService.error(`自动同意失败: ${e}`);
     }
   }
 
   static async reject(ctx: NapCatPluginContext, flag: string, reason: string) {
-    if (!pluginState.actions || !pluginState.networkConfig) return;
+    const actions = contextStateService.getActions();
+    const networkConfig = contextStateService.getNetworkConfig();
+    if (!actions || !networkConfig) return;
     try {
-      await pluginState.actions.call('set_group_add_request', {
+      await actions.call('set_group_add_request', {
         flag, sub_type: 'add', approve: false, reason
-      } as never, pluginState.adapterName, pluginState.networkConfig);
+      } as never, contextStateService.getAdapterName(), networkConfig);
     } catch (e) {
-      pluginState.log('error', `自动拒绝失败: ${e}`);
+      loggingStateService.error(`自动拒绝失败: ${e}`);
     }
   }
 
@@ -152,8 +160,15 @@ export class GroupJoinVerifier {
       try {
         storageAdapter.insertJoinLog(entry);
       } catch (e) {
-        pluginState.log('error', `写入入群日志失败: ${e}`);
+        loggingStateService.error(`写入入群日志失败: ${e}`);
       }
     });
+  }
+}
+
+export function stopJoinVerifier(): void {
+  if (joinCacheCleanupTimer) {
+    clearInterval(joinCacheCleanupTimer);
+    joinCacheCleanupTimer = null;
   }
 }

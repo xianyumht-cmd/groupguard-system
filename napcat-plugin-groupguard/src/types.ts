@@ -29,6 +29,15 @@ export interface SelfRecallPolicy {
   jitter: number;
 }
 
+export type BotAntiRiskSuffixMode = 'global' | 'mixed' | 'invisible' | 'punctuation' | 'none';
+
+export interface BotAntiRiskScenePolicy {
+  delayMinMs?: number;
+  delayMaxMs?: number;
+  replyProbability?: number;
+  suffixMode?: BotAntiRiskSuffixMode;
+}
+
 export interface ActionPrioritySettings {
   ban: number;
   kick: number;
@@ -37,6 +46,7 @@ export interface ActionPrioritySettings {
 }
 
 export interface PluginConfig {
+  configVersion?: number;
   licenseKey?: string;
   debug: boolean;
   ownerQQs: string;
@@ -70,6 +80,9 @@ export interface PluginConfig {
   lolBanPrimaryUrl?: string;
   /** LOL封号备用查询接口地址列表 */
   lolBanBackupUrls?: string[];
+  /** 本地 LOL 战绩查询服务地址（如 http://192.168.3.94:5000） */
+  lolApiBaseUrl?: string;
+  videoApiTemplates?: Record<string, string>;
   /** 全局消息类型过滤 */
   msgFilter: MsgFilterSettings;
   /** 全局问答列表 */
@@ -97,6 +110,10 @@ export interface GroupGuardSettings {
   leaveBlacklist: boolean;
   /** 欢迎词（群级别，空则用全局） */
   welcomeMessage?: string;
+  /** 是否禁用入群欢迎 */
+  disableWelcome?: boolean;
+  joinPrivateEnabled?: boolean;
+  joinPrivateMessage?: string;
   /** 违禁词列表（群级别，空则用全局） */
   filterKeywords?: string[];
   /** 违禁词惩罚等级 */
@@ -152,6 +169,10 @@ export interface GroupGuardSettings {
   selfRecall?: SelfRecallPolicy;
   /** 随机后缀（防复读风控） */
   randomSuffix?: boolean;
+  /** 机器人发送后缀模式 */
+  botAntiRiskSuffixMode?: BotAntiRiskSuffixMode;
+  /** 机器人发送场景化免风控策略 */
+  botAntiRiskScenePolicies?: Record<string, BotAntiRiskScenePolicy>;
   /** 随机延迟发送（毫秒） */
   randomDelayMin?: number;
   randomDelayMax?: number;
@@ -204,6 +225,23 @@ export interface GroupGuardSettings {
   disableInvite?: boolean;
   /** 是否禁用活跃统计 */
   disableActivity?: boolean;
+  /** 是否禁用战绩查询 */
+  disableLolQuery?: boolean;
+  /** 战绩查询全局限流（每分钟） */
+  lolQueryGlobalRateLimitPerMinute?: number;
+  /** 战绩查询全局最小间隔（秒） */
+  lolQueryGlobalMinIntervalSeconds?: number;
+  /** 战绩查询接口请求超时（秒） */
+  lolQueryRequestTimeoutSeconds?: number;
+  /** 战绩查询分群限流（每分钟） */
+  lolQueryGroupRateLimitPerMinute?: number;
+  /** 战绩查询分群最小间隔（秒） */
+  lolQueryGroupMinIntervalSeconds?: number;
+  lolQueryDailyLimit?: number;
+  /** 战绩查询输出格式 */
+  lolQueryOutputFormat?: LolQueryOutputFormat;
+  /** 战绩查询指令开关 */
+  lolQueryCommandSwitch?: LolQueryCommandSwitch;
   /** 是否允许自动撤回管理员消息 */
   allowRecallAdminMessage?: boolean;
   /** 是否允许自动撤回群主消息 */
@@ -228,6 +266,14 @@ export interface GroupGuardSettings {
   riskDecaySeconds?: number;
   /** 人格模板高风险问题是否阻断保存 */
   personaAuditStrictMode?: boolean;
+  /** 审计事件保留天数 */
+  auditRetentionMaxAgeDays?: number;
+  /** 审计事件最多保留条数 */
+  auditRetentionMaxRows?: number;
+  /** 动作队列历史事件保留天数 */
+  actionQueueEventRetentionMaxAgeDays?: number;
+  /** 动作队列历史事件最多保留条数 */
+  actionQueueEventRetentionMaxRows?: number;
 
   // ===== 商用入群验证 =====
   /** 入群暗号（为空则关闭） */
@@ -275,6 +321,13 @@ export interface ReplySceneTemplateEntry {
 }
 
 export type ReplySceneTemplateMap = Record<string, ReplySceneTemplateEntry>;
+export type LolQueryOutputFormat = 'forward' | 'text' | 'image' | 'card';
+
+export interface LolQueryCommandSwitch {
+  battleQuery: boolean;
+  banQuery: boolean;
+  hiddenQuery: boolean;
+}
 
 /** 入群验证日志 */
 export interface JoinLogEntry {
@@ -289,6 +342,144 @@ export interface JoinLogEntry {
   /** 详情/理由 */
   reason: string;
   timestamp: number;
+}
+
+export type AuditEventType = 'risk_signal' | 'risk_assessment' | 'policy_decision' | 'manual_policy_action';
+
+export interface StandardAuditPayload {
+  schemaVersion: 1;
+  eventType: AuditEventType;
+  correlationId?: string;
+  source: string;
+  ruleId: string;
+  actionType: string;
+  decision: string;
+  score: number;
+  reason: string;
+  queueTaskId?: string;
+  context?: Record<string, unknown>;
+  actions?: Array<Record<string, unknown>>;
+  reasons?: string[];
+  legacy?: Record<string, unknown>;
+}
+
+export interface AuditEventRecord {
+  id?: number;
+  eventType: AuditEventType;
+  kind: string;
+  groupId: string;
+  userId: string;
+  messageId?: string;
+  handled: boolean;
+  reason: string;
+  riskScore?: number;
+  riskLevel?: string;
+  payload: string;
+  createdAt: number;
+}
+
+export interface AuditEventQuery {
+  groupId?: string;
+  userId?: string;
+  eventType?: AuditEventType;
+  correlationId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AuditEventPage {
+  rows: AuditEventRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface AuditRetentionPolicy {
+  maxAgeDays?: number;
+  maxRows?: number;
+}
+
+export interface ActionQueueEventRetentionPolicy {
+  maxAgeDays?: number;
+  maxRows?: number;
+}
+
+export interface AuditStatsQuery {
+  sinceMs?: number;
+  limit?: number;
+}
+
+export interface AuditStatsView {
+  sinceMs: number;
+  total: number;
+  byType: Record<AuditEventType, number>;
+  topGroups: Array<{ groupId: string; count: number; }>;
+  topUsers: Array<{ userId: string; count: number; }>;
+}
+
+export interface ActionQueueEventStatsQuery {
+  sinceMs?: number;
+  limit?: number;
+}
+
+export interface ActionQueueEventStatsView {
+  sinceMs: number;
+  total: number;
+  byEvent: Record<string, number>;
+  byTaskType: Record<string, number>;
+  topGroups: Array<{ groupId: string; count: number; }>;
+  topUsers: Array<{ userId: string; count: number; }>;
+  topTasks: Array<{ taskId: string; taskType: string; groupId: string; userId?: string; lastEvent: string; count: number; updatedAt: number; }>;
+}
+
+export interface ActionQueueEventSearchQuery {
+  taskId?: string;
+  actionId?: string;
+  groupId?: string;
+  userId?: string;
+  messageId?: string;
+  event?: string;
+  limit?: number;
+}
+
+export interface ActionQueueTaskSearchCandidate {
+  taskId: string;
+  actionId?: string;
+  taskType: string;
+  groupId: string;
+  userId?: string;
+  messageId?: string;
+  lastEvent: string;
+  code?: string;
+  ok?: boolean;
+  reason?: string;
+  count: number;
+  updatedAt: number;
+}
+
+export interface ActionQueueEventSearchView {
+  query: ActionQueueEventSearchQuery & { correlationId?: string; };
+  candidates: ActionQueueTaskSearchCandidate[];
+}
+
+export interface AuditUserProfileQuery {
+  userId: string;
+  sinceMs?: number;
+  limit?: number;
+}
+
+export interface AuditUserProfileView {
+  userId: string;
+  sinceMs: number;
+  total: number;
+  byType: Record<AuditEventType, number>;
+  highestScore: number;
+  latestRiskLevel: string;
+  groups: Array<{ groupId: string; count: number; }>;
+  recentQueueTaskIds: string[];
+  recentActions: Array<{ eventType: AuditEventType; actionType: string; decision: string; queueTaskId: string; reason: string; createdAt: number; }>;
+  recentEvents: AuditEventRecord[];
 }
 
 export interface ScheduledTask {
@@ -426,4 +617,129 @@ export interface RecallTaskScheduleInput {
   reason: string;
   dueAt: number;
   maxAttempts: number;
+}
+
+export type ActionQueueTaskLookupSource = 'recall_tasks' | 'self_recall_tasks' | 'memory_queue' | 'memory_log' | 'not_found';
+
+export interface ActionQueueTaskLookupResult {
+  taskId: string;
+  found: boolean;
+  source: ActionQueueTaskLookupSource;
+  taskType?: string;
+  status?: string;
+  groupId?: string;
+  userId?: string;
+  messageId?: string;
+  reason?: string;
+  createdAt?: number;
+  dueAt?: number;
+  nextRetryAt?: number;
+  attemptCount?: number;
+  maxAttempts?: number;
+  lastCode?: string;
+  lastError?: string;
+  updatedAt?: number;
+  actionId?: string;
+  queuePosition?: number;
+  recentLogs?: string[];
+  raw?: unknown;
+}
+
+export type ActionQueueTraceStage = 'queue_snapshot' | 'risk_signal' | 'risk_assessment' | 'policy_decision' | 'manual_policy_action' | 'audit_event' | 'action_queue_event';
+
+export interface ActionQueueTraceItem {
+  ts: number;
+  stage: ActionQueueTraceStage;
+  title: string;
+  detail: string;
+  auditEventId?: number;
+  eventType?: AuditEventType;
+  correlationId?: string;
+  queueTaskId?: string;
+  actionId?: string;
+  code?: string;
+  ok?: boolean;
+  source?: string;
+  raw?: unknown;
+}
+
+export interface ActionQueueTaskTraceView {
+  taskId: string;
+  snapshot: ActionQueueTaskLookupResult | null;
+  attribution: {
+    summary: string;
+    source: string;
+    correlationId?: string;
+    matchedAuditEvents: number;
+    matchedQueueTaskIds: string[];
+    anchorEventType?: AuditEventType;
+    anchorCreatedAt?: number;
+  };
+  timeline: ActionQueueTraceItem[];
+  relatedAuditEvents: AuditEventRecord[];
+  actionEvents?: ActionQueueEventRecord[];
+}
+
+export interface ActionQueueEventRecord {
+  id?: number;
+  taskId: string;
+  actionId?: string;
+  taskType: string;
+  groupId: string;
+  userId?: string;
+  messageId?: string;
+  event: string;
+  code?: string;
+  ok?: boolean;
+  reason?: string;
+  attemptCount?: number;
+  payload?: string;
+  createdAt: number;
+}
+
+export interface BotSendEventRecord {
+  id?: number;
+  groupId: string;
+  scene: string;
+  messageType: string;
+  messageId?: string;
+  contentLength: number;
+  hasMedia: boolean;
+  force: boolean;
+  applyTemplate: boolean;
+  templateApplied: boolean;
+  suffixApplied: boolean;
+  suffixMode?: string;
+  randomDelayMs: number;
+  queuedAt: number;
+  sentAt?: number;
+  selfRecallDueAt?: number;
+  status: 'queued' | 'sent' | 'dropped' | 'failed';
+  reason?: string;
+  payload?: string;
+  createdAt: number;
+}
+
+export interface BotSendStatsQuery {
+  sinceMs?: number;
+  limit?: number;
+}
+
+export interface BotSendStatsView {
+  sinceMs: number;
+  total: number;
+  sent: number;
+  dropped: number;
+  failed: number;
+  suffixApplied: number;
+  templateApplied: number;
+  withSelfRecall: number;
+  selfRecallSuccess: number;
+  selfRecallFailed: number;
+  selfRecallPending: number;
+  messageIdMissing: number;
+  avgDelayMs: number;
+  byScene: Array<{ scene: string; count: number; sent: number; dropped: number; failed: number; }>;
+  topGroups: Array<{ groupId: string; count: number; sent: number; dropped: number; failed: number; }>;
+  recent: BotSendEventRecord[];
 }

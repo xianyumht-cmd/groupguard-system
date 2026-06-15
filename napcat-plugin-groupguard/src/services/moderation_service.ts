@@ -1,9 +1,12 @@
-import { pluginState } from '../state';
 import { authManager } from '../auth';
+import { authStateService } from '../core/state-services/auth_state_service';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
 import { groupguardRepository } from '../repositories/groupguard_repository';
 import { getTarget, isAdminOrOwner, saveConfig, sendGroupScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
-import { enqueueBanAction, enqueueKickAction, enqueueMiscAction } from './action_queue_service';
+import { executeManualPolicyAction } from '../risk/policy_engine';
+import { enqueueMiscAction } from './action_queue_service';
 
 export async function executeModerationCommand(input: CommandExecutionContext): Promise<boolean> {
   const { raw, text, userId, groupId, ctx, event } = input;
@@ -16,17 +19,17 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标：警告@某人', { example: '警告@某人' }); return true; }
     const count = ((await groupguardRepository.getWarning(groupId, target)) || 0) + 1;
     await groupguardRepository.setWarning(groupId, target, count);
-    const settings = pluginState.getGroupSettings(groupId);
+    const settings = configStateService.resolveGroupSettings(groupId);
     const limit = settings.warningLimit || 3;
     if (count >= limit) {
       await groupguardRepository.setWarning(groupId, target, 0);
       if (settings.warningAction === 'kick') {
-        const result = await enqueueKickAction({ groupId, userId: target, reason: 'warning_limit', rejectAddRequest: false, automatic: false, maxRetries: 1 });
+        const result = await executeManualPolicyAction({ type: 'kick', groupId, userId: target, reason: 'warning_limit', rejectAddRequest: false, maxRetries: 1 });
         if (result.ok) await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，已被踢出。`, { target, count, limit });
         else await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，但执行踢出失败：${result.code}`, { target, count, limit });
       } else {
         const banTime = (settings.filterBanMinutes || 10) * 60;
-        const result = await enqueueBanAction({ groupId, userId: target, durationSeconds: banTime, reason: 'warning_limit', automatic: false, maxRetries: 1 });
+        const result = await executeManualPolicyAction({ type: 'ban', groupId, userId: target, durationSeconds: banTime, reason: 'warning_limit', maxRetries: 1 });
         if (result.ok) await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，禁言 ${settings.filterBanMinutes} 分钟。`, { target, count, limit });
         else await sendGroupScene(groupId, 'raw_text', `用户 ${target} 警告次数达到上限 (${count}/${limit})，但执行禁言失败：${result.code}`, { target, count, limit });
       }
@@ -48,14 +51,14 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const target = getTarget(raw, text.slice(5).trim());
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标', { example: '查看警告@某人' }); return true; }
-    await sendGroupScene(groupId, 'raw_text', `用户 ${target} 当前警告次数：${await groupguardRepository.getWarning(groupId, target)}/${pluginState.getGroupSettings(groupId).warningLimit || 3}`, { target });
+    await sendGroupScene(groupId, 'raw_text', `用户 ${target} 当前警告次数：${await groupguardRepository.getWarning(groupId, target)}/${configStateService.resolveGroupSettings(groupId).warningLimit || 3}`, { target });
     return true;
   }
   if (text.startsWith('踢出')) {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const target = getTarget(raw, text.slice(2).trim());
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标：踢出@某人 或 踢出QQ号', { example: '踢出@某人' }); return true; }
-    const result = await enqueueKickAction({ groupId, userId: target, reason: 'manual_kick', rejectAddRequest: false, automatic: false, maxRetries: 1 });
+    const result = await executeManualPolicyAction({ type: 'kick', groupId, userId: target, reason: 'manual_kick', rejectAddRequest: false, maxRetries: 1 });
     if (result.ok) await sendGroupScene(groupId, 'action_success', `已踢出 ${target}`, { target });
     else await sendGroupScene(groupId, 'raw_text', `踢出失败：${result.code}`, { target });
     return true;
@@ -67,7 +70,7 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标：禁言@某人 分钟 或 禁言QQ号 分钟', { example: '禁言@某人 10' }); return true; }
     const durationMatch = rest.replace(/\d{5,}/, '').match(/(\d+)/);
     const duration = durationMatch ? parseInt(durationMatch[1]) : 10;
-    const result = await enqueueBanAction({ groupId, userId: target, durationSeconds: duration * 60, reason: 'manual_ban', automatic: false, maxRetries: 1 });
+    const result = await executeManualPolicyAction({ type: 'ban', groupId, userId: target, durationSeconds: duration * 60, reason: 'manual_ban', maxRetries: 1 });
     if (result.ok) await sendGroupScene(groupId, 'action_success', `已禁言 ${target}，时长 ${duration} 分钟`, { target, duration });
     else await sendGroupScene(groupId, 'raw_text', `禁言失败：${result.code}`, { target, duration });
     return true;
@@ -76,7 +79,7 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const target = getTarget(raw, text.slice(2).trim());
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标：解禁@某人 或 解禁QQ号', { example: '解禁@某人' }); return true; }
-    const result = await enqueueBanAction({ groupId, userId: target, durationSeconds: 0, reason: 'manual_unban', automatic: false, ignoreTargetProtection: true, maxRetries: 1 });
+    const result = await executeManualPolicyAction({ type: 'ban', groupId, userId: target, durationSeconds: 0, reason: 'manual_unban', ignoreTargetProtection: true, maxRetries: 1 });
     if (result.ok) await sendGroupScene(groupId, 'action_success', `已解禁 ${target}`, { target });
     else await sendGroupScene(groupId, 'raw_text', `解禁失败：${result.code}`, { target });
     return true;
@@ -116,30 +119,30 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     const target = getTarget(raw, text.slice(4).trim());
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标', { example: '锁定名片@某人' }); return true; }
     if (text.startsWith('锁定名片')) {
-      const info = await pluginState.callApi('get_group_member_info', { group_id: groupId, user_id: target }) as any;
+      const info = await communicationStateService.callApi('get_group_member_info', { group_id: groupId, user_id: target }) as any;
       const card = info?.card || info?.nickname || '';
-      pluginState.config.cardLocks[`${groupId}:${target}`] = card;
+      configStateService.getConfig().cardLocks[`${groupId}:${target}`] = card;
       saveConfig(ctx);
       await sendGroupScene(groupId, 'action_success', `已锁定 ${target} 的名片为：${card || '(空)'}`, { target });
     } else {
-      delete pluginState.config.cardLocks[`${groupId}:${target}`];
+      delete configStateService.getConfig().cardLocks[`${groupId}:${target}`];
       saveConfig(ctx);
       await sendGroupScene(groupId, 'action_success', `已解锁 ${target} 的名片`, { target });
     }
     return true;
   }
   if (text === '名片锁定列表') {
-    const entries = Object.entries(pluginState.config.cardLocks).filter(([k]) => k.startsWith(groupId + ':'));
+    const entries = Object.entries(configStateService.getConfig().cardLocks).filter(([k]) => k.startsWith(groupId + ':'));
     await sendGroupScene(groupId, entries.length ? 'raw_text' : 'list_empty', entries.length ? `名片锁定列表：\n${entries.map(([k, v]) => `${k.split(':')[1]} → ${v}`).join('\n')}` : '当前群没有锁定的名片');
     return true;
   }
   if (text === '开启防撤回' || text === '关闭防撤回' || text === '防撤回列表') {
-    if (text === '防撤回列表') { await sendGroupScene(groupId, pluginState.config.antiRecallGroups.length ? 'raw_text' : 'list_empty', pluginState.config.antiRecallGroups.length ? `防撤回已开启的群：\n${pluginState.config.antiRecallGroups.join('\n')}` : '没有开启防撤回的群'); return true; }
+    if (text === '防撤回列表') { const list = configStateService.getConfig().antiRecallGroups; await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `防撤回已开启的群：\n${list.join('\n')}` : '没有开启防撤回的群'); return true; }
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     if (text === '开启防撤回') {
-      if (!pluginState.config.antiRecallGroups.includes(groupId)) pluginState.config.antiRecallGroups.push(groupId);
+      if (!configStateService.getConfig().antiRecallGroups.includes(groupId)) configStateService.getConfig().antiRecallGroups.push(groupId);
     } else {
-      pluginState.config.antiRecallGroups = pluginState.config.antiRecallGroups.filter(g => g !== groupId);
+      configStateService.getConfig().antiRecallGroups = configStateService.getConfig().antiRecallGroups.filter(g => g !== groupId);
     }
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', text === '开启防撤回' ? '已开启防撤回' : '已关闭防撤回');
@@ -147,20 +150,21 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
   }
   if (text === '开启回应表情' || text === '关闭回应表情') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (text === '开启回应表情') pluginState.config.emojiReactGroups[groupId] = pluginState.config.emojiReactGroups[groupId] || [];
-    else delete pluginState.config.emojiReactGroups[groupId];
+    if (text === '开启回应表情') configStateService.getConfig().emojiReactGroups[groupId] = configStateService.getConfig().emojiReactGroups[groupId] || [];
+    else delete configStateService.getConfig().emojiReactGroups[groupId];
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', text === '开启回应表情' ? '已开启回应表情' : '已关闭回应表情');
     return true;
   }
   if (text.startsWith('针对') || text.startsWith('取消针对') || text === '针对列表' || text === '清除针对') {
     if (text === '针对列表') {
-      const list = pluginState.getGroupSettings(groupId).targetUsers || [];
+      const list = configStateService.resolveGroupSettings(groupId).targetUsers || [];
       await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `当前群针对列表：\n${list.join('\n')}` : '当前群没有针对的用户');
       return true;
     }
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    const cfg = pluginState.config.groups[groupId] && !pluginState.config.groups[groupId].useGlobal ? pluginState.config.groups[groupId] : pluginState.config.global;
+    const groups = configStateService.getConfig().groups;
+    const cfg = groups[groupId] && !groups[groupId].useGlobal ? groups[groupId] : configStateService.getConfig().global;
     if (!cfg.targetUsers) cfg.targetUsers = [];
     if (text === '清除针对') cfg.targetUsers = [];
     else {
@@ -174,30 +178,31 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     return true;
   }
   if (text.startsWith('拉黑') || text.startsWith('取消拉黑') || text === '黑名单列表' || text.startsWith('群拉黑') || text.startsWith('群取消拉黑') || text === '群黑名单列表' || (text.startsWith('白名单') && text !== '白名单列表') || text.startsWith('取消白名单') || text === '白名单列表') {
-    if (text === '黑名单列表') { const list = pluginState.config.blacklist || []; await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `全局黑名单：\n${list.join('\n')}` : '黑名单为空'); return true; }
-    if (text === '群黑名单列表') { const list = pluginState.getGroupSettings(groupId).groupBlacklist || []; await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `本群黑名单：\n${list.join('\n')}` : '本群黑名单为空'); return true; }
-    if (text === '白名单列表') { const list = pluginState.config.whitelist || []; await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `全局白名单：\n${list.join('\n')}` : '白名单为空'); return true; }
+    if (text === '黑名单列表') { const list = configStateService.getConfig().blacklist || []; await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `全局黑名单：\n${list.join('\n')}` : '黑名单为空'); return true; }
+    if (text === '群黑名单列表') { const list = configStateService.resolveGroupSettings(groupId).groupBlacklist || []; await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `本群黑名单：\n${list.join('\n')}` : '本群黑名单为空'); return true; }
+    if (text === '白名单列表') { const list = configStateService.getConfig().whitelist || []; await sendGroupScene(groupId, list.length ? 'raw_text' : 'list_empty', list.length ? `全局白名单：\n${list.join('\n')}` : '白名单为空'); return true; }
     const isOwnerCmd = text.startsWith('拉黑') || text.startsWith('取消拉黑') || text.startsWith('白名单') || text.startsWith('取消白名单');
-    if (isOwnerCmd && !pluginState.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '需要主人权限'); return true; }
+    if (isOwnerCmd && !authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '需要主人权限'); return true; }
     if (!isOwnerCmd && !await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const source = text.startsWith('取消拉黑') ? text.slice(4).trim() : text.startsWith('拉黑') ? text.slice(2).trim() : text.startsWith('群取消拉黑') ? text.slice(5).trim() : text.startsWith('群拉黑') ? text.slice(3).trim() : text.startsWith('取消白名单') ? text.slice(5).trim() : text.slice(3).trim();
     const target = getTarget(raw, source);
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标', { example: '拉黑@某人' }); return true; }
-    if (text.startsWith('拉黑')) { pluginState.config.blacklist = pluginState.config.blacklist || []; if (!pluginState.config.blacklist.includes(target)) pluginState.config.blacklist.push(target); }
-    if (text.startsWith('取消拉黑')) pluginState.config.blacklist = (pluginState.config.blacklist || []).filter(q => q !== target);
-    if (text.startsWith('群拉黑')) { if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) }; const gs = pluginState.config.groups[groupId]; gs.groupBlacklist = gs.groupBlacklist || []; if (!gs.groupBlacklist.includes(target)) gs.groupBlacklist.push(target); }
-    if (text.startsWith('群取消拉黑')) { if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) }; const gs = pluginState.config.groups[groupId]; gs.groupBlacklist = (gs.groupBlacklist || []).filter(q => q !== target); }
-    if (text.startsWith('白名单') && text !== '白名单列表') { pluginState.config.whitelist = pluginState.config.whitelist || []; if (!pluginState.config.whitelist.includes(target)) pluginState.config.whitelist.push(target); }
-    if (text.startsWith('取消白名单')) pluginState.config.whitelist = (pluginState.config.whitelist || []).filter(q => q !== target);
+    const config = configStateService.getConfig();
+    if (text.startsWith('拉黑')) { config.blacklist = config.blacklist || []; if (!config.blacklist.includes(target)) config.blacklist.push(target); }
+    if (text.startsWith('取消拉黑')) config.blacklist = (config.blacklist || []).filter(q => q !== target);
+    if (text.startsWith('群拉黑')) { if (!config.groups[groupId]) config.groups[groupId] = { ...configStateService.resolveGroupSettings(groupId) }; const gs = config.groups[groupId]; gs.groupBlacklist = gs.groupBlacklist || []; if (!gs.groupBlacklist.includes(target)) gs.groupBlacklist.push(target); }
+    if (text.startsWith('群取消拉黑')) { if (!config.groups[groupId]) config.groups[groupId] = { ...configStateService.resolveGroupSettings(groupId) }; const gs = config.groups[groupId]; gs.groupBlacklist = (gs.groupBlacklist || []).filter(q => q !== target); }
+    if (text.startsWith('白名单') && text !== '白名单列表') { config.whitelist = config.whitelist || []; if (!config.whitelist.includes(target)) config.whitelist.push(target); }
+    if (text.startsWith('取消白名单')) config.whitelist = (config.whitelist || []).filter(q => q !== target);
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', '名单已更新');
     return true;
   }
   if (text.startsWith('开启自身撤回') || text === '关闭自身撤回') {
-    if (!pluginState.isOwner(userId)) return true;
+    if (!authStateService.isOwner(userId)) return true;
     if (text === '关闭自身撤回') {
-      pluginState.config.global.autoRecallSelf = false;
-      pluginState.config.global.selfRecall = {
+      configStateService.getConfig().global.autoRecallSelf = false;
+      configStateService.getConfig().global.selfRecall = {
         enabled: false,
         mode: 'fixed',
         fixedDelay: 60,
@@ -209,9 +214,9 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     else {
       const duration = parseInt(text.slice(6).trim());
       const seconds = isNaN(duration) ? 60 : Math.min(300, Math.max(0, duration));
-      pluginState.config.global.autoRecallSelf = true;
-      pluginState.config.global.autoRecallSelfDelay = seconds;
-      pluginState.config.global.selfRecall = {
+      configStateService.getConfig().global.autoRecallSelf = true;
+      configStateService.getConfig().global.autoRecallSelfDelay = seconds;
+      configStateService.getConfig().global.selfRecall = {
         enabled: true,
         mode: 'fixed',
         fixedDelay: seconds,
@@ -221,7 +226,7 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
       };
     }
     saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', text === '关闭自身撤回' ? '已关闭全局自身消息撤回' : `已开启全局自身消息撤回，延迟 ${pluginState.config.global.autoRecallSelfDelay || 60} 秒`);
+    await sendGroupScene(groupId, 'action_success', text === '关闭自身撤回' ? '已关闭全局自身消息撤回' : `已开启全局自身消息撤回，延迟 ${configStateService.getConfig().global.autoRecallSelfDelay || 60} 秒`);
     return true;
   }
 

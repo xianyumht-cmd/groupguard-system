@@ -1,5 +1,7 @@
-import { pluginState } from './state';
 import { GroupLicense } from './types';
+import { configStateService } from './core/state-services/config_state_service';
+import { loggingStateService } from './core/state-services/logging_state_service';
+import { send } from './dynamic-commands/response_capture_runtime';
 
 export type AuthLevel = 'free' | 'pro' | 'enterprise';
 
@@ -27,18 +29,26 @@ export class AuthManager {
     }, 3600000);
   }
 
+  public cleanup() {
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval);
+      this.checkInterval = null;
+    }
+  }
+
   private async checkLicenses() {
     const now = Date.now();
     let changed = false;
-    if (!pluginState.config.licenses) pluginState.config.licenses = {};
+    const config = configStateService.getConfig();
+    if (!config.licenses) config.licenses = {};
     
-    for (const [groupId, license] of Object.entries(pluginState.config.licenses)) {
+    for (const [groupId, license] of Object.entries(config.licenses)) {
       // 1. 清理过期
       if (license.expireTime > 0 && now > license.expireTime) {
-        pluginState.log('info', `群 ${groupId} 授权已过期，自动降级为免费版`);
-        delete pluginState.config.licenses[groupId];
+        loggingStateService.info(`群 ${groupId} 授权已过期，自动降级为免费版`);
+        delete config.licenses[groupId];
         changed = true;
-        await pluginState.sendGroupText(groupId, '⚠️ 本群授权已过期，所有高级功能已失效。请联系管理员续费。');
+        await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: '⚠️ 本群授权已过期，所有高级功能已失效。请联系管理员续费。', force: true, applyTemplate: true });
         continue;
       }
       
@@ -49,7 +59,7 @@ export class AuthManager {
          // 简化策略：如果剩余时间在 23-24 小时之间，或者 1-2 小时之间提醒
          const remainingHours = (license.expireTime - now) / 3600000;
          if ((remainingHours > 23 && remainingHours < 24) || (remainingHours > 1 && remainingHours < 2)) {
-             await pluginState.sendGroupText(groupId, `🔔 【系统预警】本群授权即将于 ${Math.ceil(remainingHours)} 小时后到期，请及时续费以免影响使用。`);
+             await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: `🔔 【系统预警】本群授权即将于 ${Math.ceil(remainingHours)} 小时后到期，请及时续费以免影响使用。`, force: true, applyTemplate: true });
          }
       }
     }
@@ -65,13 +75,14 @@ export class AuthManager {
    * 获取群授权信息
    */
   public getGroupLicense(groupId: string): GroupLicense | null {
-    if (!pluginState.config.licenses) return null;
-    const license = pluginState.config.licenses[groupId];
+    const config = configStateService.getConfig();
+    if (!config.licenses) return null;
+    const license = config.licenses[groupId];
     if (!license) return null;
     
     // 检查是否过期
     if (license.expireTime > 0 && Date.now() > license.expireTime) {
-      delete pluginState.config.licenses[groupId];
+      delete config.licenses[groupId];
       return null;
     }
     
@@ -105,25 +116,27 @@ export class AuthManager {
    * 授予权限
    */
   public grantLicense(groupId: string, days: number, level: AuthLevel = 'pro') {
-    if (!pluginState.config.licenses) pluginState.config.licenses = {};
+    const config = configStateService.getConfig();
+    if (!config.licenses) config.licenses = {};
     
     const expireTime = days === -1 ? 0 : Date.now() + days * 24 * 60 * 60 * 1000;
     
-    pluginState.config.licenses[groupId] = {
+    config.licenses[groupId] = {
       level,
       expireTime
     };
     
-    pluginState.log('info', `群 ${groupId} 已授权 ${level} 版，有效期 ${days === -1 ? '永久' : days + '天'}`);
+    loggingStateService.info(`群 ${groupId} 已授权 ${level} 版，有效期 ${days === -1 ? '永久' : days + '天'}`);
   }
 
   /**
    * 回收权限
    */
   public revokeLicense(groupId: string) {
-    if (pluginState.config.licenses && pluginState.config.licenses[groupId]) {
-      delete pluginState.config.licenses[groupId];
-      pluginState.log('info', `群 ${groupId} 授权已回收`);
+    const config = configStateService.getConfig();
+    if (config.licenses && config.licenses[groupId]) {
+      delete config.licenses[groupId];
+      loggingStateService.info(`群 ${groupId} 授权已回收`);
     }
   }
 }

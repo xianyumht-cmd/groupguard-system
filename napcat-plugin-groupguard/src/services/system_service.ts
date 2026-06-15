@@ -1,17 +1,50 @@
-import { pluginState } from '../state';
-import { authManager } from '../auth';
-import { storageAdapter } from '../storage_adapter';
-import fs from 'fs';
-import path from 'path';
-import { isAdminOrOwner, saveConfig, sendGroupScene, sendPrivateScene } from '../commands/common';
+import { getLogsText } from '../app/use-cases/system/get_logs';
+import { getQueueStatusText } from '../app/use-cases/system/get_queue_status';
+import { getRuntimeStatusText } from '../app/use-cases/system/get_runtime_status';
+import { getStorageStatusText } from '../app/use-cases/system/get_storage_status';
+import { authStateService } from '../core/state-services/auth_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { identityStateService } from '../core/state-services/identity_state_service';
+import { groupguardRepository } from '../repositories/groupguard_repository';
+import { isAdminOrOwner, sendGroupScene, sendPrivateScene } from '../commands/common';
+import { parseSystemWriteCommand } from '../commands/modules/system/write';
 import type { CommandExecutionContext } from './command_service_types';
-import { getActionQueueRecentLogs, getActionQueueSnapshot, resetActionQueueRuntime } from './action_queue_service';
+import { executeSystemWriteCommand, sendSystemWriteResult } from './system_write_dispatcher';
+import type { AuditEventQuery, AuditEventType } from '../types';
+
+function parseAuditQuery(text: string): AuditEventQuery {
+  const rest = text.replace(/^\/?审计日志/, '').trim();
+  const parts = rest ? rest.split(/\s+/).filter(Boolean) : [];
+  const query: AuditEventQuery = { limit: 10 };
+  for (const part of parts) {
+    if (/^\d+$/.test(part)) {
+      query.limit = Math.max(1, Math.min(50, Number(part)));
+      continue;
+    }
+    const [key, ...valueParts] = part.split('=');
+    const value = valueParts.join('=').trim();
+    if (!value) continue;
+    if (key === '群' || key.toLowerCase() === 'group' || key.toLowerCase() === 'group_id') query.groupId = value;
+    if (key === '用户' || key.toLowerCase() === 'user' || key.toLowerCase() === 'user_id') query.userId = value;
+    if (key === '类型' || key.toLowerCase() === 'type' || key.toLowerCase() === 'event_type') {
+      if (value === 'risk_signal' || value === 'risk_assessment' || value === 'policy_decision' || value === 'manual_policy_action') {
+        query.eventType = value as AuditEventType;
+      }
+    }
+  }
+  return query;
+}
+
+function formatAuditTime(ts: number): string {
+  if (!ts) return '-';
+  return new Date(ts).toLocaleString('zh-CN');
+}
 
 export async function executeSystemCommand(input: CommandExecutionContext): Promise<boolean> {
   const { event, text, userId, groupId, ctx } = input;
   if (event.message_type === 'private') {
     if (text === '帮助' || text === '菜单') {
-      const isOwner = pluginState.isOwner(userId);
+      const isOwner = authStateService.isOwner(userId);
       let menu = `🛡️ GroupGuard 私聊管理面板\n--------------------------\n`;
       if (isOwner) {
         menu += `📝 授权管理 (主人权限):\n` +
@@ -25,77 +58,46 @@ export async function executeSystemCommand(input: CommandExecutionContext): Prom
       } else {
         menu += `您当前仅有普通用户权限，无法执行管理指令。\n如需授权群组，请联系机器人主人。`;
       }
-      menu += `\n--------------------------\n当前版本: ${pluginState.version}`;
+      menu += `\n--------------------------\n当前版本: ${identityStateService.getVersion()}`;
       await sendPrivateScene(userId, 'raw_text', menu);
       return true;
     }
-    if (!pluginState.isOwner(userId)) {
+    if (!authStateService.isOwner(userId)) {
       await sendPrivateScene(userId, 'permission_denied', '权限不足：该指令仅限机器人主人使用。');
       return true;
     }
     if (text === '查看SQLite状态' || text === '查看存储状态') {
-      const status = storageAdapter.getStorageStatus();
-      const tableLines = Object.entries(status.tableCounts).map(([k, v]) => `${k}: ${v}`).join('\n');
-      await sendPrivateScene(
-        userId,
-        'raw_text',
-        `SQLite 状态：\n迁移标记: ${status.migrated ? '已完成' : '未完成'}\n数据库: ${status.dbPath}\n表计数:\n${tableLines}`
-      );
+      await sendPrivateScene(userId, 'raw_text', getStorageStatusText());
       return true;
     }
     if (text === '队列状态' || text === '/队列状态') {
-      const q = getActionQueueSnapshot();
-      const dist = Object.entries(q.typeDistribution || {}).map(([k, v]) => `${k}: ${v}`).join('\n') || '无';
-      const activeDist = Object.entries(q.activeTypeDistribution || {}).map(([k, v]) => `${k}: ${v}`).join('\n') || '无';
-      await sendPrivateScene(
-        userId,
-        'raw_text',
-        `ActionQueue 状态\n\n当前队列长度: ${q.totalPending}\n执行中任务: ${q.activeWorkers}\n\n最近1分钟:\n执行动作: ${q.lastMinute.executed}\n丢弃动作: ${q.lastMinute.dropped}\n速率限制: ${q.lastMinute.rateLimited}\n重试次数: ${q.lastMinute.retried}\n超时次数: ${q.lastMinute.timeout}\n\n累计统计:\n执行动作: ${q.stats.queueExecuted}\n丢弃动作: ${q.stats.queueDropped}\n速率限制: ${q.stats.queueRateLimited}\n重试次数: ${q.stats.queueRetried}\n超时次数: ${q.stats.timeoutCount}\n\n队列类型分布:\n${dist}\n\n执行中类型分布:\n${activeDist}`
-      );
-      return true;
-    }
-    if (text === '队列重置' || text === '/队列重置') {
-      const result = resetActionQueueRuntime();
-      await sendPrivateScene(userId, 'action_success', `队列已重置，清理待执行任务 ${result.cleared} 条，当前执行中 ${result.activeWorkers} 条`);
+      await sendPrivateScene(userId, 'raw_text', getQueueStatusText());
       return true;
     }
     if (text === '队列日志' || text.startsWith('队列日志 ') || text.startsWith('/队列日志')) {
       const match = text.match(/\/?队列日志\s*(\d+)?/);
       const limit = match?.[1] ? Math.max(1, Math.min(100, Number(match[1]))) : 10;
-      const logs = getActionQueueRecentLogs(limit);
-      await sendPrivateScene(
-        userId,
-        'raw_text',
-        `[ActionQueue]\n${logs.length ? logs.join('\n') : '暂无记录'}`
-      );
+      await sendPrivateScene(userId, 'raw_text', getLogsText(limit));
       return true;
     }
-    if (text.startsWith('多群广播 ')) {
-      const content = text.slice(5).trim();
-      if (!content) { await sendPrivateScene(userId, 'command_format_error', '请输入广播内容', { example: '多群广播 今天20:00维护通知' }); return true; }
-      await sendPrivateScene(userId, 'raw_text', '开始广播，请稍候...');
-      let groups: any[] = [];
-      try {
-        groups = await pluginState.callApi('get_group_list', {}) as any[] || [];
-      } catch (e) {
-        await sendPrivateScene(userId, 'raw_text', `获取群列表失败: ${e}`);
+    if (text === '审计日志' || text.startsWith('审计日志 ') || text.startsWith('/审计日志')) {
+      const query = parseAuditQuery(text);
+      const rows = await groupguardRepository.getRecentAuditEvents(query);
+      if (!rows.length) {
+        await sendPrivateScene(userId, 'raw_text', '暂无匹配审计记录');
         return true;
       }
-      let success = 0;
-      let fail = 0;
-      for (const group of groups) {
-        const gid = String(group.group_id);
-        const license = authManager.getGroupLicense(gid);
-        if (!license) continue;
-        try {
-          await sendGroupScene(gid, 'raw_text', `【全员通知】\n${content}`);
-          success++;
-          await new Promise(r => setTimeout(r, 1500));
-        } catch {
-          fail++;
-        }
-      }
-      await sendPrivateScene(userId, 'raw_text', `广播完成。\n成功: ${success}\n失败: ${fail}`);
+      const lines = rows.map((row, index) => {
+        const target = `${row.groupId || '-'} / ${row.userId || '-'}`;
+        const score = row.riskScore ? ` score=${row.riskScore}` : '';
+        return `${index + 1}. [${row.eventType}] ${row.kind} ${target} ${formatAuditTime(row.createdAt)} ${row.reason}${score}`;
+      });
+      await sendPrivateScene(userId, 'raw_text', `审计日志（${rows.length}条）\n${lines.join('\n')}`);
+      return true;
+    }
+    const privateWrite = parseSystemWriteCommand({ channel: 'private', text, groupId, userId, ctx });
+    if (privateWrite) {
+      await sendSystemWriteResult(privateWrite, await executeSystemWriteCommand(privateWrite, ctx));
       return true;
     }
     return false;
@@ -106,89 +108,19 @@ export async function executeSystemCommand(input: CommandExecutionContext): Prom
     return true;
   }
   if (text === '运行状态') {
-    const uptime = Math.floor((Date.now() - pluginState.startTime) / 1000);
-    const h = Math.floor(uptime / 3600);
-    const m = Math.floor((uptime % 3600) / 60);
-    const s = uptime % 60;
-    const mem = process.memoryUsage();
-    const rss = (mem.rss / 1024 / 1024).toFixed(2);
-    const heap = (mem.heapUsed / 1024 / 1024).toFixed(2);
-    const cacheStats = `Msg: ${pluginState.msgCache.size} | Spam: ${pluginState.spamCache.size} | Admin: ${pluginState.adminCache.size}`;
-    const actionQueue = getActionQueueSnapshot();
-    const status = `🤖 运行状态
-⏱️ 运行时长：${h}小时${m}分${s}秒
-📨 处理消息：${pluginState.msgCount} 条
-💾 内存占用：RSS ${rss}MB / Heap ${heap}MB
-📦 缓存对象：${cacheStats}
-⚙️ 动作队列：待执行 ${actionQueue.totalPending} / 工作中 ${actionQueue.activeWorkers}
-📉 队列一分钟：执行${actionQueue.lastMinute.executed} 丢弃${actionQueue.lastMinute.dropped} 限流${actionQueue.lastMinute.rateLimited} 重试${actionQueue.lastMinute.retried} 超时${actionQueue.lastMinute.timeout}
-🛡️ 当前版本：v${pluginState.version}
-👥 授权群数：${Object.keys(pluginState.config.licenses || {}).length}`;
-    await sendGroupScene(groupId, 'raw_text', status);
+    await sendGroupScene(groupId, 'raw_text', getRuntimeStatusText());
     return true;
   }
-  if (text.startsWith('定时任务 ')) {
-    const parts = text.split(/\s+/);
-    if (parts.length < 3) { await sendGroupScene(groupId, 'command_format_error', '格式：定时任务 08:00 内容', { example: '定时任务 08:00 早安' }); return true; }
-    const time = parts[1];
-    if (!/^\d{2}:\d{2}$/.test(time)) { await sendGroupScene(groupId, 'command_format_error', '时间格式错误，应为 HH:mm', { example: '08:00' }); return true; }
-    const content = parts.slice(2).join(' ');
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    const gs = pluginState.config.groups[groupId];
-    if (!gs.scheduledTasks) gs.scheduledTasks = [];
-    const id = Date.now().toString(36);
-    gs.scheduledTasks.push({ id, cron: time, type: 'text', content });
-    saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', `已添加定时任务 (ID:${id})：每天 ${time} 发送 "${content}"`);
-    return true;
-  }
-  if (text.startsWith('设置欢迎词 ')) {
-    if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    const msg = text.slice(6).trim();
-    if (!msg) { await sendGroupScene(groupId, 'command_format_error', '欢迎词不能为空', { example: '设置欢迎词 欢迎{user}加入{group}' }); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    pluginState.config.groups[groupId].welcomeMessage = msg;
-    saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', '欢迎词已更新');
-    return true;
-  }
-  if (text.startsWith('删除定时任务 ')) {
-    const id = text.slice(7).trim();
-    if (!pluginState.config.groups[groupId]?.scheduledTasks) { await sendGroupScene(groupId, 'list_empty', '本群无定时任务'); return true; }
-    const gs = pluginState.config.groups[groupId];
-    const before = gs.scheduledTasks!.length;
-    gs.scheduledTasks = gs.scheduledTasks!.filter(t => t.id !== id);
-    if (gs.scheduledTasks.length === before) await sendGroupScene(groupId, 'not_found', '未找到该ID的任务');
-    else { saveConfig(ctx); await sendGroupScene(groupId, 'action_success', '已删除定时任务'); }
+  const groupWrite = parseSystemWriteCommand({ channel: 'group', text, groupId, userId, ctx });
+  if (groupWrite) {
+    await sendSystemWriteResult(groupWrite, await executeSystemWriteCommand(groupWrite, ctx));
     return true;
   }
   if (text === '定时列表') {
-    const tasks = pluginState.config.groups[groupId]?.scheduledTasks || [];
+    const tasks = configStateService.getConfig().groups[groupId]?.scheduledTasks || [];
     if (!tasks.length) { await sendGroupScene(groupId, 'list_empty', '本群无定时任务'); return true; }
     const list = tasks.map(t => `[${t.id}] ${t.cron} -> ${t.content}`).join('\n');
     await sendGroupScene(groupId, 'raw_text', `定时任务列表：\n${list}`);
-    return true;
-  }
-  if (text === '清空群配置') {
-    if (!pluginState.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '此操作仅限机器人主人执行'); return true; }
-    await sendGroupScene(groupId, 'raw_text', '⚠️ 警告：此操作将清空本群所有配置和数据（包括问答、违禁词、日志等），且不可恢复！\n请发送「确认清空群配置」以执行。');
-    return true;
-  }
-  if (text === '确认清空群配置') {
-    if (!pluginState.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '此操作仅限机器人主人执行'); return true; }
-    try {
-      const groupDir = path.join(pluginState.configDir, 'data', 'groups', groupId);
-      if (fs.existsSync(groupDir)) {
-        fs.rmSync(groupDir, { recursive: true, force: true });
-        fs.mkdirSync(groupDir, { recursive: true });
-      }
-      delete pluginState.config.groups[groupId];
-      saveConfig(ctx);
-      await sendGroupScene(groupId, 'action_success', '✅ 已清空本群所有配置和数据');
-      pluginState.log('warn', `主人 ${userId} 清空了群 ${groupId} 的所有数据`);
-    } catch (e) {
-      await sendGroupScene(groupId, 'raw_text', `清空失败: ${e}`);
-    }
     return true;
   }
   return false;

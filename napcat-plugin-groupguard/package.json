@@ -1,10 +1,10 @@
 {
   "name": "napcat-plugin-groupguard",
   "plugin": "群管插件",
-  "version": "1.2.3",
+  "version": "1.2.9",
   "type": "module",
   "main": "index.mjs",
-  "description": "群管插件：自动通过入群申请，新成员数学验证，超时或答错踢出",
+  "description": "Group Guard plugin for NapCat, comprehensive group management and risk control",
   "author": "冷曦",
   "napcat": {
     "tags": [
@@ -16,7 +16,8 @@
   "dependencies": {
     "jimp": "^1.6.0",
     "jsqr": "^1.4.0",
-    "napcat-types": "0.0.17"
+    "napcat-types": "0.0.17",
+    "undici": "^7.13.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
@@ -25,7 +26,15 @@
     "vite": "^6.0.0"
   },
   "scripts": {
-    "build": "vite build",
+    "arch:check:system-write": "npm run arch:check:system-write:strict",
+    "arch:check:system-write:strict": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=strict",
+    "arch:check:system-write:dev": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=development",
+    "arch:check:system-write:migration": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=migration",
+    "arch:check:system-write:learning": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=learning",
+    "arch:check:risk-policy": "node scripts/arch-check-risk-policy.mjs",
+    "arch:hints:system-write": "node --experimental-strip-types scripts/arch-hints-system-write.ts",
+    "arch:help": "node --experimental-strip-types scripts/arch-help-system-write.ts",
+    "build": "npm run arch:check:system-write:strict && vite build",
     "report:scene": "node scene_coverage_report.mjs",
     "report:commands": "node scripts/command_coverage_report.mjs"
   }

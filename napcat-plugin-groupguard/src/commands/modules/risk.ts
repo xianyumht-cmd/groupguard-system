@@ -74,14 +74,6 @@ export const RISK_EXACT = [
   '安全设置'
 ];
 
-export function matchRiskCommand(text: string): string | null {
-  if (RISK_EXACT.includes(text)) return text;
-  for (const p of RISK_PREFIXES) {
-    if (text.startsWith(p)) return p;
-  }
-  return null;
-}
-
 export async function handleRiskCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
   const raw = event.raw_message || '';
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();

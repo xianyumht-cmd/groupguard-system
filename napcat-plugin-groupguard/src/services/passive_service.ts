@@ -1,28 +1,32 @@
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import { pluginState } from '../state';
+import { authStateService } from '../core/state-services/auth_state_service';
+import { cacheStateService } from '../core/state-services/cache_state_service';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { identityStateService } from '../core/state-services/identity_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
+import { send } from '../dynamic-commands/response_capture_runtime';
 import { detectQrCode } from '../qr';
-import { saveConfig } from '../commands/common';
 import { groupguardRepository } from '../repositories/groupguard_repository';
-import { enqueueBanAction, enqueueKickAction, enqueueMiscAction, enqueueRecallAction } from './action_queue_service';
+import { createRiskSignal } from '../risk/signals';
+import { processRiskSignal } from '../risk/policy_engine';
+import { enqueueMiscAction } from './action_queue_service';
 
 const antiRecallDigest = new Map<string, Map<string, { count: number; lastUserId: string; }>>();
 let antiRecallDigestTimerReady = false;
+let antiRecallDigestTimer: NodeJS.Timeout | null = null;
 
 const activityMem = new Map<string, any>();
 const activityDirty = new Set<string>();
 let activityFlushTimerReady = false;
-
-function randomDelayMs(minMs: number, maxMs: number): number {
-  const min = Math.max(0, Math.floor(minMs));
-  const max = Math.max(min, Math.floor(maxMs));
-  if (max <= min) return min;
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+let activityFlushTimer: NodeJS.Timeout | null = null;
+const MAX_ACTIVITY_MEM = 2000;
+const ACTIVITY_TTL_MS = 24 * 60 * 60 * 1000;
 
 function ensureAntiRecallDigestTimer(): void {
   if (antiRecallDigestTimerReady) return;
   antiRecallDigestTimerReady = true;
-  setInterval(() => {
+  antiRecallDigestTimer = setInterval(() => {
     void flushAntiRecallDigest();
   }, 30000);
 }
@@ -35,9 +39,13 @@ async function flushAntiRecallDigest(): Promise<void> {
     if (!rows.length) continue;
     const total = rows.reduce((acc, [, v]) => acc + v.count, 0);
     const lines = rows.slice(0, 20).map(([gid, v]) => `群${gid}: ${v.count}条（最近QQ:${v.lastUserId || '-'})`);
-    await pluginState.callApi('send_private_msg', {
-      user_id: owner,
-      message: [{ type: 'text', data: { text: `🔔 防撤回聚合通知\n30秒内共 ${total} 条撤回事件\n${lines.join('\n')}` } }]
+    await send({
+      channel: 'private',
+      targetId: owner,
+      scene: 'raw_text',
+      message: `🔔 防撤回聚合通知\n30秒内共 ${total} 条撤回事件\n${lines.join('\n')}`,
+      force: true,
+      applyTemplate: false
     });
   }
 }
@@ -54,7 +62,7 @@ function digestAntiRecall(owner: string, groupId: string, userId: string): void 
 function ensureActivityFlushTimer(): void {
   if (activityFlushTimerReady) return;
   activityFlushTimerReady = true;
-  setInterval(() => {
+  activityFlushTimer = setInterval(() => {
     void flushActivityBatch();
   }, 5000);
 }
@@ -79,28 +87,27 @@ async function flushActivityBatch(): Promise<void> {
 }
 
 export async function executeHandleAntiRecall(groupId: string, messageId: string, operatorId: string): Promise<void> {
-  if (operatorId === pluginState.botId) return;
-  if (!pluginState.config.antiRecallGroups.includes(groupId) && !pluginState.config.globalAntiRecall) return;
+  const config = configStateService.getConfig();
+  if (operatorId === identityStateService.getBotId()) return;
+  if (!config.antiRecallGroups.includes(groupId) && !config.globalAntiRecall) return;
   ensureAntiRecallDigestTimer();
-  const cached = pluginState.msgCache.get(messageId);
+  const cached = cacheStateService.getMessageCacheEntry(messageId);
   const recalledUser = cached?.userId || operatorId;
-  const owners = pluginState.config.ownerQQs.split(',').map(s => s.trim()).filter(Boolean);
+  const owners = config.ownerQQs.split(',').map(s => s.trim()).filter(Boolean);
   for (const owner of owners) {
     digestAntiRecall(owner, groupId, recalledUser);
   }
 }
 
 export function executeCacheMessage(messageId: string, userId: string, groupId: string, raw: string, segments?: any[]): void {
-  if (!pluginState.config.antiRecallGroups.includes(groupId) && !pluginState.config.globalAntiRecall) return;
-  pluginState.msgCache.set(messageId, { userId, groupId, raw, segments: segments || [], time: Date.now() });
-  const now = Date.now();
-  for (const [k, v] of pluginState.msgCache) {
-    if (now - v.time > 600000) pluginState.msgCache.delete(k);
-  }
+  const config = configStateService.getConfig();
+  if (!config.antiRecallGroups.includes(groupId) && !config.globalAntiRecall) return;
+  cacheStateService.setMessageCacheEntry(messageId, { userId, groupId, raw, segments: segments || [], time: Date.now() });
 }
 
 export async function executeHandleEmojiReact(groupId: string, userId: string, messageId: string, selfId: string): Promise<void> {
-  if (pluginState.config.globalEmojiReact) {
+  const config = configStateService.getConfig();
+  if (config.globalEmojiReact) {
     await enqueueMiscAction({
       groupId,
       action: 'set_msg_emoji_like',
@@ -111,7 +118,7 @@ export async function executeHandleEmojiReact(groupId: string, userId: string, m
     });
     return;
   }
-  const targets = pluginState.config.emojiReactGroups[groupId];
+  const targets = config.emojiReactGroups[groupId];
   if (!targets || !targets.length) return;
   const shouldReact = targets.includes(userId) || (targets.includes('self') && userId === selfId);
   if (!shouldReact) return;
@@ -127,9 +134,9 @@ export async function executeHandleEmojiReact(groupId: string, userId: string, m
 
 export async function executeHandleCardLockCheck(groupId: string, userId: string): Promise<void> {
   const key = `${groupId}:${userId}`;
-  const lockedCard = pluginState.config.cardLocks[key];
+  const lockedCard = configStateService.getConfig().cardLocks[key];
   if (lockedCard === undefined) return;
-  const info = await pluginState.callApi('get_group_member_info', { group_id: groupId, user_id: userId, no_cache: true }) as any;
+  const info = await communicationStateService.callApi('get_group_member_info', { group_id: groupId, user_id: userId, no_cache: true }) as any;
   const currentCard = info?.card || '';
   if (currentCard !== lockedCard) {
     await enqueueMiscAction({
@@ -140,17 +147,17 @@ export async function executeHandleCardLockCheck(groupId: string, userId: string
       dedupKey: `${groupId}:card:${userId}`,
       maxRetries: 2
     });
-    pluginState.debug(`名片锁定: ${userId} 在群 ${groupId} 名片被还原为 ${lockedCard}`);
+    loggingStateService.debug(`名片锁定: ${userId} 在群 ${groupId} 名片被还原为 ${lockedCard}`);
   }
 }
 
 export async function executeHandleCardLockOnMessage(groupId: string, userId: string, senderCard: string): Promise<void> {
   const key = `${groupId}:${userId}`;
-  const lockedCard = pluginState.config.cardLocks[key];
+  const lockedCard = configStateService.getConfig().cardLocks[key];
   if (lockedCard === undefined) return;
   const currentCard = senderCard || '';
   if (currentCard !== lockedCard) {
-    pluginState.log('info', `[MsgCheck] 监测到 ${userId} 名片异常(当前: "${currentCard}", 锁定: "${lockedCard}")，正在修正...`);
+    loggingStateService.info(`[MsgCheck] 监测到 ${userId} 名片异常(当前: "${currentCard}", 锁定: "${lockedCard}")，正在修正...`);
     await enqueueMiscAction({
       groupId,
       action: 'set_group_card',
@@ -163,28 +170,49 @@ export async function executeHandleCardLockOnMessage(groupId: string, userId: st
 }
 
 export async function executeHandleAutoRecall(groupId: string, userId: string, messageId: string): Promise<boolean> {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const targets = settings.targetUsers || [];
   if (!targets.includes(userId)) return false;
-  const result = await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'target_user', automatic: true, maxRetries: 1 });
-  pluginState.debug(`针对撤回: 群 ${groupId} 用户 ${userId} 消息 ${messageId} 结果=${result.code}`);
-  return result.ok;
+  const handled = await processRiskSignal(createRiskSignal({
+    kind: 'target_user_message',
+    groupId,
+    userId,
+    messageId,
+    reason: 'target_user',
+    severity: 'medium',
+    evidence: { source: 'targetUsers' }
+  }));
+  loggingStateService.debug(`针对撤回信号: 群 ${groupId} 用户 ${userId} 消息 ${messageId} handled=${handled}`);
+  return handled;
 }
 
 export async function executeSendWelcomeMessage(groupId: string, userId: string): Promise<void> {
-  const settings = pluginState.getGroupSettings(groupId);
-  const tpl = (settings.welcomeMessage !== undefined && settings.welcomeMessage !== '') ? settings.welcomeMessage : (pluginState.config.welcomeMessage || '');
-  if (!tpl) return;
-  const msg = tpl.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
-  await pluginState.sendGroupMsg(groupId, [
-    { type: 'at', data: { qq: userId } },
-    { type: 'text', data: { text: ` ${msg}` } }
-  ]);
+  const settings = configStateService.resolveGroupSettings(groupId);
+  const tpl = (settings.welcomeMessage !== undefined && settings.welcomeMessage !== '') ? settings.welcomeMessage : (configStateService.getConfig().welcomeMessage || '');
+  if (tpl) {
+    const msg = tpl.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
+    await send({
+      channel: 'group',
+      targetId: groupId,
+      scene: 'raw_text',
+      segments: [
+        { type: 'at', data: { qq: userId } },
+        { type: 'text', data: { text: ` ${msg}` } }
+      ],
+      force: true,
+      applyTemplate: true
+    });
+  }
+  if (settings.joinPrivateEnabled === true) {
+    const dmTpl = String(settings.joinPrivateMessage || '欢迎加入，进群后请先阅读群公告与群规。');
+    const dm = dmTpl.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
+    await send({ channel: 'private', targetId: userId, scene: 'raw_text', message: dm, force: true, applyTemplate: false });
+  }
 }
 
 export async function executeHandleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[]): Promise<boolean> {
-  const settings = pluginState.getGroupSettings(groupId);
-  const filter = settings.msgFilter || pluginState.config.msgFilter;
+  const settings = configStateService.resolveGroupSettings(groupId);
+  const filter = settings.msgFilter || configStateService.getConfig().msgFilter;
   if (!filter) return false;
   const types = (messageSegments || []).map((s: any) => s.type);
   let blocked = false;
@@ -217,56 +245,47 @@ export async function executeHandleMsgTypeFilter(groupId: string, userId: string
     }
   }
   if (!blocked) return false;
-  const result = await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: `msg_filter_${reason}`, automatic: true, maxRetries: 1 });
-  pluginState.log('info', `消息类型过滤: 群 ${groupId} 用户 ${userId} 发送${reason}，结果：${result.code}`);
-  return result.ok;
+  const handled = await processRiskSignal(createRiskSignal({
+    kind: 'media_filter',
+    groupId,
+    userId,
+    messageId,
+    reason: `msg_filter_${reason}`,
+    severity: reason === '二维码' || reason === '链接' ? 'high' : 'medium',
+    evidence: { mediaType: reason, actionReason: `msg_filter_${reason}` }
+  }));
+  loggingStateService.info(`消息类型过滤信号: 群 ${groupId} 用户 ${userId} 发送${reason} handled=${handled}`);
+  return handled;
 }
 
 export async function executeHandleBlacklist(groupId: string, userId: string, messageId: string): Promise<boolean> {
-  const settings = pluginState.getGroupSettings(groupId);
-  const isGlobalBlack = pluginState.isBlacklisted(userId);
+  const settings = configStateService.resolveGroupSettings(groupId);
+  const isGlobalBlack = authStateService.isBlacklisted(userId);
   const isGroupBlack = (settings.groupBlacklist || []).includes(userId);
   if (isGlobalBlack || isGroupBlack) {
-    const mode = settings.blacklistAction || 'recall';
-    if (mode === 'ban') {
-      const minutes = Math.max(1, Number(settings.blacklistBanMinutes ?? 30));
-      const result = await enqueueBanAction({ groupId, userId, durationSeconds: minutes * 60, reason: 'blacklist', automatic: true, maxRetries: 1 });
-      pluginState.debug(`黑名单禁言: 群 ${groupId} 用户 ${userId} 结果=${result.code}`);
-      return result.ok;
-    }
-    if (mode === 'kick' || mode === 'kick_and_block') {
-      if (mode === 'kick_and_block') {
-        if (!pluginState.config.blacklist) pluginState.config.blacklist = [];
-        if (!pluginState.config.blacklist.includes(userId)) pluginState.config.blacklist.push(userId);
+    const handled = await processRiskSignal(createRiskSignal({
+      kind: 'blacklist_message',
+      groupId,
+      userId,
+      messageId,
+      reason: 'blacklist',
+      severity: 'critical',
+      evidence: {
+        global: isGlobalBlack,
+        group: isGroupBlack,
+        mode: settings.blacklistAction || 'recall'
       }
-      const minDelay = Math.max(0, Number(settings.blacklistKickDelayMinSeconds ?? settings.kickDelayMinSeconds ?? 5)) * 1000;
-      const maxDelay = Math.max(minDelay, Number(settings.blacklistKickDelayMaxSeconds ?? settings.kickDelayMaxSeconds ?? 20)) * 1000;
-      const wait = randomDelayMs(minDelay, maxDelay);
-      setTimeout(() => {
-        void enqueueKickAction({
-          groupId,
-          userId,
-          reason: mode === 'kick_and_block' ? 'blacklist_kick_and_block' : 'blacklist',
-          rejectAddRequest: settings.blacklistKickRejectAddRequest !== false,
-          automatic: true,
-          maxRetries: 1
-        }).then((result) => {
-          pluginState.debug(`黑名单踢出: 群 ${groupId} 用户 ${userId} 模式=${mode} 结果=${result.code}`);
-        });
-      }, wait);
-      return true;
-    }
-    const result = await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'blacklist', automatic: true, maxRetries: 1 });
-    pluginState.debug(`黑名单撤回: 群 ${groupId} 用户 ${userId} 消息 ${messageId} 结果=${result.code}`);
-    return result.ok;
+    }));
+    loggingStateService.debug(`黑名单信号: 群 ${groupId} 用户 ${userId} handled=${handled}`);
+    return handled;
   }
   return false;
 }
 
 export async function executeHandleFilterKeywords(groupId: string, userId: string, messageId: string, raw: string, ctx: NapCatPluginContext): Promise<boolean> {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   const groupKw = settings.filterKeywords || [];
-  const globalKw = pluginState.config.filterKeywords || [];
+  const globalKw = configStateService.getConfig().filterKeywords || [];
   const allKw = [...new Set([...groupKw, ...globalKw])];
   if (!allKw.length) return false;
 
@@ -275,80 +294,82 @@ export async function executeHandleFilterKeywords(groupId: string, userId: strin
   const matched = allKw.find(k => lowerRaw.includes(k.toLowerCase()));
 
   if (!matched) return false;
-  const masked = matched.length > 1 ? matched[0] + '*'.repeat(matched.length - 1) : '*';
-  const recallResult = await enqueueRecallAction({ groupId, messageId, targetUserId: userId, reason: 'keyword_filter', automatic: true, maxRetries: 1 });
-  pluginState.log('info', `违禁词拦截: 群 ${groupId} 用户 ${userId} 触发「${matched}」`);
-  if (!recallResult.ok) return false;
+  loggingStateService.info(`违禁词拦截: 群 ${groupId} 用户 ${userId} 触发「${matched}」`);
   const level = settings.filterPunishLevel || 1;
-  if (level >= 2) {
-    const banMin = (groupKw && groupKw.length) ? (settings.filterBanMinutes || 10) : (pluginState.config.filterBanMinutes || 10);
-    const banResult = await enqueueBanAction({ groupId, userId, durationSeconds: banMin * 60, reason: 'keyword_filter', automatic: true, maxRetries: 1 });
-    if (!banResult.ok) return true;
-    await pluginState.sendGroupText(groupId, `⚠️ ${userId} 消息已撤回并禁言 ${banMin} 分钟，原因：触发违禁词「${masked}」`);
-  }
-  if (level >= 3) {
-    void enqueueKickAction({ groupId, userId, reason: 'keyword_filter', rejectAddRequest: false, automatic: true, maxRetries: 1 });
-    await pluginState.sendGroupText(groupId, `⚠️ ${userId} 已被移出群聊，原因：触发违禁词「${masked}」`);
-  }
-  if (level >= 4) {
-    if (!pluginState.config.blacklist) pluginState.config.blacklist = [];
-    if (!pluginState.config.blacklist.includes(userId)) {
-      pluginState.config.blacklist.push(userId);
-      saveConfig(ctx);
-    }
-    await pluginState.sendGroupText(groupId, `⚠️ ${userId} 已被加入黑名单，原因：触发违禁词「${masked}」`);
-  }
-  return true;
+  const banMin = (groupKw && groupKw.length) ? (settings.filterBanMinutes || 10) : (configStateService.getConfig().filterBanMinutes || 10);
+  return processRiskSignal(createRiskSignal({
+    kind: 'keyword_filter',
+    groupId,
+    userId,
+    messageId,
+    reason: 'keyword_filter',
+    severity: level >= 4 ? 'critical' : level >= 3 ? 'high' : level >= 2 ? 'medium' : 'low',
+    evidence: { matched, level, banMinutes: banMin }
+  }), ctx);
 }
 
 export async function executeHandleSpamDetect(groupId: string, userId: string, raw: string = ''): Promise<boolean> {
-  const settings = pluginState.getGroupSettings(groupId);
-  const spamOn = settings.spamDetect !== undefined ? settings.spamDetect : pluginState.config.spamDetect;
+  const settings = configStateService.resolveGroupSettings(groupId);
+  const config = configStateService.getConfig();
+  const spamOn = settings.spamDetect !== undefined ? settings.spamDetect : config.spamDetect;
   if (!spamOn) return false;
-  const windowMs = ((settings.spamWindow !== undefined ? settings.spamWindow : pluginState.config.spamWindow) || 10) * 1000;
-  const threshold = (settings.spamThreshold !== undefined ? settings.spamThreshold : pluginState.config.spamThreshold) || 10;
+  const windowMs = ((settings.spamWindow !== undefined ? settings.spamWindow : config.spamWindow) || 10) * 1000;
+  const threshold = (settings.spamThreshold !== undefined ? settings.spamThreshold : config.spamThreshold) || 10;
   const key = `${groupId}:${userId}`;
   const now = Date.now();
-  let timestamps = pluginState.spamCache.get(key) || [];
+  let timestamps = cacheStateService.getSpamCacheEntry(key) || [];
   timestamps.push(now);
   timestamps = timestamps.filter(t => now - t < windowMs);
-  pluginState.spamCache.set(key, timestamps);
+  cacheStateService.setSpamCacheEntry(key, timestamps);
   if (timestamps.length >= threshold) {
-    const banMin = (settings.spamBanMinutes !== undefined ? settings.spamBanMinutes : pluginState.config.spamBanMinutes) || 5;
-    const banResult = await enqueueBanAction({ groupId, userId, durationSeconds: banMin * 60, reason: 'spam_rate', automatic: true, maxRetries: 1 });
-    if (!banResult.ok) return false;
-    await pluginState.sendGroupText(groupId, `⚠️ ${userId} 刷屏检测触发（频率），已禁言 ${banMin} 分钟`);
-    pluginState.spamCache.delete(key);
-    pluginState.repeatCache.delete(key);
-    pluginState.log('info', `刷屏检测: 群 ${groupId} 用户 ${userId} 在 ${windowMs / 1000}s 内发送 ${threshold} 条消息`);
+    const banMin = (settings.spamBanMinutes !== undefined ? settings.spamBanMinutes : config.spamBanMinutes) || 5;
+    const handled = await processRiskSignal(createRiskSignal({
+      kind: 'spam_rate',
+      groupId,
+      userId,
+      reason: 'spam_rate',
+      severity: 'high',
+      evidence: { windowSeconds: windowMs / 1000, threshold, banMinutes: banMin }
+    }));
+    if (!handled) return false;
+    cacheStateService.deleteSpamCacheEntry(key);
+    cacheStateService.deleteRepeatCacheEntry(key);
+    loggingStateService.info(`刷屏检测: 群 ${groupId} 用户 ${userId} 在 ${windowMs / 1000}s 内发送 ${threshold} 条消息`);
     return true;
   }
   const repeatLimit = settings.repeatThreshold || 0;
   if (repeatLimit > 0 && raw) {
     const repeatKey = `${groupId}:${userId}`;
-    const lastMsg = pluginState.repeatCache.get(repeatKey);
+    const lastMsg = cacheStateService.getRepeatCacheEntry(repeatKey);
     if (lastMsg && lastMsg.content === raw) {
       lastMsg.count++;
       if (lastMsg.count >= repeatLimit) {
         const banMin = (settings.spamBanMinutes || 5);
-        const banResult = await enqueueBanAction({ groupId, userId, durationSeconds: banMin * 60, reason: 'spam_repeat', automatic: true, maxRetries: 1 });
-        if (!banResult.ok) return false;
-        await pluginState.sendGroupText(groupId, `⚠️ ${userId} 刷屏检测触发（复读），已禁言 ${banMin} 分钟`);
-        pluginState.repeatCache.delete(repeatKey);
+        const handled = await processRiskSignal(createRiskSignal({
+          kind: 'spam_repeat',
+          groupId,
+          userId,
+          reason: 'spam_repeat',
+          severity: 'medium',
+          evidence: { repeatLimit, banMinutes: banMin }
+        }));
+        if (!handled) return false;
+        cacheStateService.deleteRepeatCacheEntry(repeatKey);
         return true;
       }
     } else {
-      pluginState.repeatCache.set(repeatKey, { content: raw, count: 1 });
+      cacheStateService.setRepeatCacheEntry(repeatKey, { content: raw, count: 1 });
     }
   }
   return false;
 }
 
 export async function executeHandleQA(groupId: string, userId: string, raw: string): Promise<boolean> {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   if (settings.disableQA) return false;
-  const isGroupCustom = pluginState.config.groups[groupId] && !pluginState.config.groups[groupId].useGlobal;
-  const qaList = isGroupCustom ? (settings.qaList || []) : (pluginState.config.qaList || []);
+  const config = configStateService.getConfig();
+  const isGroupCustom = config.groups[groupId] && !config.groups[groupId].useGlobal;
+  const qaList = isGroupCustom ? (settings.qaList || []) : (config.qaList || []);
   if (!qaList.length) return false;
 
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
@@ -369,48 +390,48 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
     if (!matched) continue;
 
     const now = Date.now();
-    const baseCooldown = settings.qaCooldownSeconds ?? pluginState.config.global.qaCooldownSeconds ?? 30;
-    const userCooldown = settings.qaUserCooldownSeconds ?? pluginState.config.global.qaUserCooldownSeconds ?? 12;
-    const highPatterns = settings.qaHighRiskPatterns ?? pluginState.config.global.qaHighRiskPatterns ?? [];
-    const mediumPatterns = settings.qaMediumRiskPatterns ?? pluginState.config.global.qaMediumRiskPatterns ?? [];
+    const baseCooldown = settings.qaCooldownSeconds ?? config.global.qaCooldownSeconds ?? 30;
+    const userCooldown = settings.qaUserCooldownSeconds ?? config.global.qaUserCooldownSeconds ?? 12;
+    const highPatterns = settings.qaHighRiskPatterns ?? config.global.qaHighRiskPatterns ?? [];
+    const mediumPatterns = settings.qaMediumRiskPatterns ?? config.global.qaMediumRiskPatterns ?? [];
 
     // 修改：使用已定义的 lowerText 和 lowerKeyword 进行风险检测
     const hitHigh = highPatterns.some(p => p && (lowerText.includes(String(p).toLowerCase()) || lowerKeyword.includes(String(p).toLowerCase())));
     const hitMedium = !hitHigh && mediumPatterns.some(p => p && (lowerText.includes(String(p).toLowerCase()) || lowerKeyword.includes(String(p).toLowerCase())));
     
     const tierCooldown = hitHigh
-      ? (settings.qaTierCooldownHigh ?? pluginState.config.global.qaTierCooldownHigh ?? 60)
+      ? (settings.qaTierCooldownHigh ?? config.global.qaTierCooldownHigh ?? 60)
       : hitMedium
-        ? (settings.qaTierCooldownMedium ?? pluginState.config.global.qaTierCooldownMedium ?? 30)
-        : (settings.qaTierCooldownLow ?? pluginState.config.global.qaTierCooldownLow ?? 15);
+        ? (settings.qaTierCooldownMedium ?? config.global.qaTierCooldownMedium ?? 30)
+        : (settings.qaTierCooldownLow ?? config.global.qaTierCooldownLow ?? 15);
 
     const groupKeywordKey = `${groupId}:${qa.mode}:${qa.keyword}`;
     const groupUserKey = `${groupId}:user:${userId}`;
     const groupUserKeywordKey = `${groupId}:user:${userId}:${qa.mode}:${qa.keyword}`;
-    const lastGroupKeywordTs = pluginState.qaCooldownMap.get(groupKeywordKey) || 0;
-    const lastGroupUserTs = pluginState.qaCooldownMap.get(groupUserKey) || 0;
-    const lastGroupUserKeywordTs = pluginState.qaCooldownMap.get(groupUserKeywordKey) || 0;
+    const lastGroupKeywordTs = cacheStateService.getQaCooldown(groupKeywordKey) || 0;
+    const lastGroupUserTs = cacheStateService.getQaCooldown(groupUserKey) || 0;
+    const lastGroupUserKeywordTs = cacheStateService.getQaCooldown(groupUserKeywordKey) || 0;
 
     if (baseCooldown > 0 && now - lastGroupKeywordTs < baseCooldown * 1000) return false;
     if (userCooldown > 0 && now - lastGroupUserTs < userCooldown * 1000) return false;
     if (tierCooldown > 0 && now - lastGroupUserKeywordTs < tierCooldown * 1000) return false;
 
-    pluginState.qaCooldownMap.set(groupKeywordKey, now);
-    pluginState.qaCooldownMap.set(groupUserKey, now);
-    pluginState.qaCooldownMap.set(groupUserKeywordKey, now);
+    cacheStateService.setQaCooldown(groupKeywordKey, now);
+    cacheStateService.setQaCooldown(groupUserKey, now);
+    cacheStateService.setQaCooldown(groupUserKeywordKey, now);
 
     const reply = qa.reply.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
-    if (reply.includes('[CQ:')) await pluginState.sendGroupMsg(groupId, [{ type: 'text', data: { text: reply } }], { force: false, applyTemplate: true });
-    else await pluginState.sendGroupText(groupId, reply, { force: false, applyTemplate: true });
+    if (reply.includes('[CQ:')) await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'text', data: { text: reply } }], force: false, applyTemplate: true });
+    else await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: reply, force: false, applyTemplate: true });
     
-    pluginState.debug(`问答触发: 群 ${groupId} 用户 ${userId} 匹配 [${qa.mode}]${qa.keyword}`);
+    loggingStateService.debug(`问答触发: 群 ${groupId} 用户 ${userId} 匹配 [${qa.mode}]${qa.keyword}`);
     return true;
   }
   return false;
 }
 
 export async function executeRecordActivity(groupId: string, userId: string): Promise<void> {
-  const settings = pluginState.getGroupSettings(groupId);
+  const settings = configStateService.resolveGroupSettings(groupId);
   if (settings.disableActivity) return;
   ensureActivityFlushTimer();
   const key = activityKey(groupId, userId);
@@ -433,4 +454,28 @@ export async function executeRecordActivity(groupId: string, userId: string): Pr
   }
   activityMem.set(key, activity);
   activityDirty.add(key);
+  if (activityMem.size > MAX_ACTIVITY_MEM) {
+    const nowTs = Date.now();
+    const keys = Array.from(activityMem.keys());
+    for (let i = 0; i < keys.length - MAX_ACTIVITY_MEM; i += 1) {
+      const k = keys[i];
+      const v = activityMem.get(k);
+      if (!v || (nowTs - (v.lastActive || 0) > ACTIVITY_TTL_MS)) {
+        activityMem.delete(k);
+      }
+    }
+  }
+}
+
+export function stopPassiveServiceTimers(): void {
+  if (antiRecallDigestTimer) {
+    clearInterval(antiRecallDigestTimer);
+    antiRecallDigestTimer = null;
+    antiRecallDigestTimerReady = false;
+  }
+  if (activityFlushTimer) {
+    clearInterval(activityFlushTimer);
+    activityFlushTimer = null;
+    activityFlushTimerReady = false;
+  }
 }

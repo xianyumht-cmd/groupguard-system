@@ -1,12 +1,26 @@
-import { pluginState } from '../state';
 import { authManager } from '../auth';
+import { authStateService } from '../core/state-services/auth_state_service';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
+import { send } from '../dynamic-commands/response_capture_runtime';
 import { groupguardRepository } from '../repositories/groupguard_repository';
 import { getTarget, isAdminOrOwner, saveConfig, sendGroupScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
-import { enqueueBanAction, enqueueMiscAction } from './action_queue_service';
-import { queryInvitedBy, queryInviterOf } from './invite_service';
+import { executeManualPolicyAction } from '../risk/policy_engine';
+import { enqueueMiscAction } from './action_queue_service';
+import { queryInvitedBy, queryInviterOf, resetInviteRelationData } from './invite_service';
 
 const DEFAULT_LOL_BAN_PRIMARY_URL = 'https://yun.4png.com/api/query.html?token=c7739372694acf36&qq={qq}';
+const DEFAULT_LOL_API_BASE_URL = 'http://192.168.3.94:5000';
+
+function getConfig() {
+  return configStateService.getConfig();
+}
+
+function getGroupSettings(groupId: string) {
+  return configStateService.resolveGroupSettings(groupId);
+}
 
 type BanStatus = 'banned' | 'safe' | 'unknown';
 
@@ -18,6 +32,70 @@ interface BanQueryResult {
 interface BanQueryAttempt {
   result: BanQueryResult;
   source: string;
+}
+
+interface LolRecentMatch {
+  match_id?: string;
+  game_time?: string;
+  champion?: string;
+  kills?: number;
+  deaths?: number;
+  assists?: number;
+  kda?: number;
+  win?: boolean;
+}
+
+interface LolQueryData {
+  name?: string;
+  rank?: string;
+  winrate?: string;
+  recent_matches?: LolRecentMatch[];
+}
+
+interface LolHiddenData {
+  found_matches?: number;
+  recent_heroes?: string[];
+  kda_estimate?: number;
+  recent_matches?: LolRecentMatch[];
+}
+
+
+interface CrossPrettyMatch {
+  game_time?: string;
+  champion?: string;
+  kills?: number;
+  deaths?: number;
+  assists?: number;
+  kda?: number;
+  win?: boolean;
+  duration?: number;
+  queue?: string | number;
+}
+
+interface CrossPrettyError {
+  code?: number;
+  message?: string;
+}
+
+interface CrossPrettyData {
+  name?: string;
+  region?: string;
+  level?: number;
+  profile_icon?: number;
+  rank?: string;
+  last_online_time?: string;
+  winrate_recent?: string;
+  avg_kda_recent?: number;
+  recent_matches?: CrossPrettyMatch[];
+  errors?: CrossPrettyError[];
+  raw_ok?: boolean;
+}
+
+type LolCommandKey = 'battleQuery' | 'banQuery' | 'hiddenQuery';
+
+interface RateCounterBucket {
+  windowStart: number;
+  count: number;
 }
 
 const BAN_UNAVAILABLE_PATTERNS = [
@@ -53,10 +131,344 @@ function mergeUniqueDetail(parts: Array<any>): string {
 }
 
 function collectBanQueryEndpoints(): string[] {
-  const primary = (pluginState.config.lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
-  const backups = Array.isArray(pluginState.config.lolBanBackupUrls) ? pluginState.config.lolBanBackupUrls : [];
+  const primary = (getConfig().lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
+  const backups = Array.isArray(getConfig().lolBanBackupUrls) ? getConfig().lolBanBackupUrls : [];
   const list = [primary, ...backups.map(v => String(v || '').trim()).filter(Boolean)];
   return Array.from(new Set(list));
+}
+
+function normalizeUrlBase(url: string): string {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return DEFAULT_LOL_API_BASE_URL;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function resolveLolApiBaseUrl(): string {
+  return normalizeUrlBase(getConfig().lolApiBaseUrl || DEFAULT_LOL_API_BASE_URL);
+}
+
+function resolveLolQueryTimeoutMs(): number {
+  const raw = Number(getConfig().global?.lolQueryRequestTimeoutSeconds ?? 20);
+  const sec = Number.isFinite(raw) ? Math.min(120, Math.max(3, Math.floor(raw))) : 20;
+  return sec * 1000;
+}
+
+function getVideoApiTemplates(): Record<string, string> {
+  const data = getConfig().videoApiTemplates || {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(data)) {
+    const key = String(k || '').trim();
+    const val = String(v || '').trim();
+    if (key && val) out[key] = val;
+  }
+  return out;
+}
+
+function pickVideoApiByCategory(category: string): string | null {
+  const map = getVideoApiTemplates();
+  const exact = map[category];
+  if (exact) return exact;
+  const keys = Object.keys(map);
+  if (!keys.length) return null;
+  return map[keys[0]];
+}
+
+function resolveVideoRequestUrl(template: string, category: string): string {
+  const raw = String(template || '').trim();
+  if (!raw) return '';
+  if (raw.includes('{category}')) return raw.replace(/\{category\}/g, encodeURIComponent(category));
+  if (raw.includes('?')) return `${raw}&category=${encodeURIComponent(category)}`;
+  return `${raw}?category=${encodeURIComponent(category)}`;
+}
+
+function extractVideoUrl(data: any): string {
+  if (!data) return '';
+  if (typeof data === 'string') {
+    const text = data.trim();
+    if (/^https?:\/\//i.test(text)) return text;
+    return '';
+  }
+  const candidates = [
+    data.url, data.video, data.video_url, data.play, data.play_url, data.src, data.link, data.mp4,
+    data.data?.url, data.data?.video, data.data?.play, data.result?.url, data.result?.video, data.result?.play
+  ];
+  for (const item of candidates) {
+    const text = String(item || '').trim();
+    if (/^https?:\/\//i.test(text)) return text;
+  }
+  return '';
+}
+
+function normalizePlayerId(input: string): { ok: true; playerId: string; gameName: string; tagLine: string; } | { ok: false; reason: string; } {
+  const raw = String(input || '').trim();
+  const cleaned = raw.replace(/\s+/g, '');
+  if (!cleaned || !cleaned.includes('#')) return { ok: false, reason: '请输入：查战绩张三#12345' };
+  const idx = cleaned.indexOf('#');
+  const gameName = cleaned.slice(0, idx).trim();
+  const tagLine = cleaned.slice(idx + 1).trim();
+  if (!gameName || !tagLine) return { ok: false, reason: '格式错误，示例：查战绩张三#12345' };
+  if (tagLine.length < 2 || tagLine.length > 12) return { ok: false, reason: '标签长度需在 2-12 个字符之间' };
+  return { ok: true, playerId: `${gameName}#${tagLine}`, gameName, tagLine };
+}
+
+
+function parseLolQueryInput(input: string): { ok: true; playerId: string; region: string; } | { ok: false; reason: string; } {
+  const raw = String(input || '').trim();
+  if (!raw) return { ok: false, reason: '请输入：查战绩张三#12345' };
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const idPart = parts[0] || '';
+  const idParsed = normalizePlayerId(idPart);
+  if (!idParsed.ok) return idParsed;
+  const region = parts.slice(1).join('').trim();
+  return { ok: true, playerId: idParsed.playerId, region: region || '' };
+}
+
+const LOL_RATE_WINDOW_MS = 60_000;
+const lolGlobalRateBucket: RateCounterBucket = { windowStart: 0, count: 0 };
+const lolGroupRateBuckets = new Map<string, RateCounterBucket>();
+let lolGlobalLastQueryAt = 0;
+const lolGroupLastQueryAt = new Map<string, number>();
+const lolGroupDailyBuckets = new Map<string, { day: string; count: number }>();
+const LOL_RATE_MAP_LIMIT = 500;
+
+function toOnOff(value: string): boolean | null {
+  const raw = value.trim();
+  if (['开', '开启', 'on', 'true', '1'].includes(raw)) return true;
+  if (['关', '关闭', 'off', 'false', '0'].includes(raw)) return false;
+  return null;
+}
+
+function normalizePositiveInt(value: number, fallback: number, max: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  const n = Math.floor(value);
+  if (n < 1) return fallback;
+  return Math.min(n, max);
+}
+
+function getLolCommandSwitch(groupId: string): Record<LolCommandKey, boolean> {
+  const settings = getGroupSettings(groupId);
+  const data = settings.lolQueryCommandSwitch || {};
+  return {
+    battleQuery: (data as any).battleQuery !== false,
+    banQuery: (data as any).banQuery !== false,
+    hiddenQuery: (data as any).hiddenQuery !== false
+  };
+}
+
+function ensureRateWindow(bucket: RateCounterBucket, now: number): void {
+  if (!bucket.windowStart || now - bucket.windowStart >= LOL_RATE_WINDOW_MS) {
+    bucket.windowStart = now;
+    bucket.count = 0;
+  }
+}
+
+function checkAndConsumeLolRate(groupId: string): { ok: true } | { ok: false; reason: string } {
+  const settings = getGroupSettings(groupId);
+  if (settings.disableLolQuery) return { ok: false, reason: '本群战绩查询功能已关闭' };
+  const globalLimit = normalizePositiveInt(Number(settings.lolQueryGlobalRateLimitPerMinute), 120, 5000);
+  const groupLimit = normalizePositiveInt(Number(settings.lolQueryGroupRateLimitPerMinute), 20, 1000);
+  const globalMinIntervalSec = Math.max(0, Math.floor(Number(settings.lolQueryGlobalMinIntervalSeconds ?? 1)));
+  const groupMinIntervalSec = Math.max(0, Math.floor(Number(settings.lolQueryGroupMinIntervalSeconds ?? 2)));
+  const groupDailyLimit = normalizePositiveInt(Number(settings.lolQueryDailyLimit), 200, 100000);
+  const now = Date.now();
+  const dayKey = new Date(now).toISOString().slice(0, 10);
+  ensureRateWindow(lolGlobalRateBucket, now);
+  let groupBucket = lolGroupRateBuckets.get(groupId);
+  if (!groupBucket) {
+    groupBucket = { windowStart: now, count: 0 };
+    lolGroupRateBuckets.set(groupId, groupBucket);
+  }
+  ensureRateWindow(groupBucket, now);
+  if (lolGlobalRateBucket.count >= globalLimit) {
+    return { ok: false, reason: `战绩查询过于频繁（全局每分钟上限 ${globalLimit} 次）` };
+  }
+  if (groupBucket.count >= groupLimit) {
+    return { ok: false, reason: `战绩查询过于频繁（本群每分钟上限 ${groupLimit} 次）` };
+  }
+  const dailyBucketRaw = lolGroupDailyBuckets.get(groupId);
+  const dailyBucket = (!dailyBucketRaw || dailyBucketRaw.day !== dayKey) ? { day: dayKey, count: 0 } : dailyBucketRaw;
+  if (dailyBucket.count >= groupDailyLimit) {
+    return { ok: false, reason: `战绩查询已达本群当日上限（${groupDailyLimit} 次）` };
+  }
+  if (globalMinIntervalSec > 0 && lolGlobalLastQueryAt > 0 && now - lolGlobalLastQueryAt < globalMinIntervalSec * 1000) {
+    return { ok: false, reason: `战绩查询过于频繁（全局最小间隔 ${globalMinIntervalSec} 秒）` };
+  }
+  const groupLastAt = lolGroupLastQueryAt.get(groupId) || 0;
+  if (groupMinIntervalSec > 0 && groupLastAt > 0 && now - groupLastAt < groupMinIntervalSec * 1000) {
+    return { ok: false, reason: `战绩查询过于频繁（本群最小间隔 ${groupMinIntervalSec} 秒）` };
+  }
+  lolGlobalRateBucket.count += 1;
+  groupBucket.count += 1;
+  dailyBucket.count += 1;
+  lolGroupDailyBuckets.set(groupId, dailyBucket);
+  lolGlobalLastQueryAt = now;
+  lolGroupLastQueryAt.set(groupId, now);
+  if (lolGroupRateBuckets.size > LOL_RATE_MAP_LIMIT) {
+    const keys = Array.from(lolGroupRateBuckets.keys());
+    for (let i = 0; i < keys.length - LOL_RATE_MAP_LIMIT; i += 1) {
+      const staleKey = keys[i];
+      lolGroupRateBuckets.delete(staleKey);
+      lolGroupLastQueryAt.delete(staleKey);
+      lolGroupDailyBuckets.delete(staleKey);
+    }
+  }
+  return { ok: true };
+}
+
+function ensureGroupSettings(groupId: string): any {
+  if (!getConfig().groups[groupId]) getConfig().groups[groupId] = { ...getGroupSettings(groupId) };
+  return getConfig().groups[groupId];
+}
+
+function setLolCommandSwitch(groupId: string, key: LolCommandKey, enabled: boolean): void {
+  const gs = ensureGroupSettings(groupId);
+  if (!gs.lolQueryCommandSwitch) {
+    gs.lolQueryCommandSwitch = {
+      battleQuery: true,
+      banQuery: true,
+      hiddenQuery: true
+    };
+  }
+  gs.lolQueryCommandSwitch[key] = enabled;
+}
+
+function isLolCommandEnabled(groupId: string, key: LolCommandKey): boolean {
+  const settings = getGroupSettings(groupId);
+  if (settings.disableLolQuery) return false;
+  return getLolCommandSwitch(groupId)[key];
+}
+
+async function fetchJsonWithTimeout(url: string, timeoutMs: number = 10000): Promise<{ ok: true; data: any; } | { ok: false; error: string; }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: 'GET', signal: controller.signal, headers: { Accept: 'application/json,text/plain,*/*' } });
+    const text = await res.text();
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const cleaned = text.replace(/\u0000+$/g, '').trim();
+    const data = cleaned ? JSON.parse(cleaned) : {};
+    return { ok: true, data };
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return { ok: false, error: '请求超时' };
+    return { ok: false, error: String(e?.message || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchAnyWithTimeout(url: string, timeoutMs: number = 10000): Promise<{ ok: true; data: any; raw: string; } | { ok: false; error: string; }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: 'GET', signal: controller.signal, headers: { Accept: 'application/json,text/plain,*/*' } });
+    const text = (await res.text()).replace(/\u0000+$/g, '').trim();
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    let data: any = text;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {}
+    return { ok: true, data, raw: text };
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return { ok: false, error: '请求超时' };
+    return { ok: false, error: String(e?.message || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function summarizeMatch(match: LolRecentMatch): string {
+  const winText = match?.win ? '胜' : '负';
+  const champion = match?.champion || '未知英雄';
+  const kda = typeof match?.kda === 'number'
+    ? match.kda.toFixed(2)
+    : `${match?.kills ?? 0}/${match?.deaths ?? 0}/${match?.assists ?? 0}`;
+  const when = match?.game_time || '-';
+  return `${when} | ${champion} | ${winText} | KDA ${kda}`;
+}
+
+function buildLolForwardPages(playerId: string, queryData: LolQueryData | null, hiddenData: LolHiddenData | null, queryError: string, hiddenError: string): string[] {
+  const pages: string[] = [];
+  pages.push(`🎮 战绩查询\n玩家：${playerId}\n时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`);
+  if (queryData) {
+    const rows = Array.isArray(queryData.recent_matches) ? queryData.recent_matches : [];
+    const winCount = rows.filter(r => !!r.win).length;
+    const rank = (queryData.rank || '').trim() || '未知';
+    const winrate = (queryData.winrate || '').trim() || '未知';
+    const head = [
+      '📈 常规战绩',
+      `召唤师：${queryData.name || playerId}`,
+      `段位：${rank}`,
+      `胜率：${winrate}`,
+      `最近场次：${rows.length}（胜 ${winCount} / 负 ${Math.max(rows.length - winCount, 0)}）`
+    ];
+    if (!rows.length) {
+      head.push('最近战绩：暂无可用数据');
+    } else {
+      head.push('', ...rows.slice(0, 10).map((m, i) => `${i + 1}. ${summarizeMatch(m)}`));
+    }
+    pages.push(head.join('\n'));
+  } else {
+    pages.push(`📈 常规战绩\n查询失败：${queryError || '接口返回异常'}`);
+  }
+  if (hiddenData) {
+    const rows = Array.isArray(hiddenData.recent_matches) ? hiddenData.recent_matches : [];
+    const heroes = Array.isArray(hiddenData.recent_heroes) ? hiddenData.recent_heroes.filter(Boolean) : [];
+    const found = Number(hiddenData.found_matches || 0);
+    const hiddenLines = [
+      '🕵️ 隐藏战绩碎片',
+      `识别场次：${found}`,
+      `估算KDA：${typeof hiddenData.kda_estimate === 'number' ? hiddenData.kda_estimate.toFixed(2) : Number(hiddenData.kda_estimate || 0).toFixed(2)}`,
+      `近期英雄：${heroes.length ? heroes.join('、') : '暂无'}`
+    ];
+    if (!rows.length) hiddenLines.push('最近隐藏场次：暂无可用数据');
+    else hiddenLines.push('', ...rows.slice(0, 10).map((m, i) => `${i + 1}. ${summarizeMatch(m)}`));
+    pages.push(hiddenLines.join('\n'));
+  } else {
+    pages.push(`🕵️ 隐藏战绩碎片\n查询失败：${hiddenError || '接口返回异常'}`);
+  }
+  return pages;
+}
+
+function buildCrossPrettyPages(playerId: string, region: string, data: CrossPrettyData | null, errorText: string): string[] {
+  if (!data) return [`🎮 战绩查询（跨区）\n玩家：${playerId}\n查询失败：${errorText || '接口返回异常'}`];
+  const rows = Array.isArray(data.recent_matches) ? data.recent_matches : [];
+  const header = [
+    '🎮 战绩查询（跨区）',
+    `玩家：${data.name || playerId}`,
+    `大区：${data.region || region || '未指定'}`,
+    `等级：${typeof data.level === 'number' ? data.level : '-'}`,
+    `段位：${(data.rank || '').trim() || '未知'}`,
+    `最后在线：${(data.last_online_time || '').trim() || '未知'}`,
+    `近10场胜率：${(data.winrate_recent || '').trim() || '未知'}`,
+    `近10场平均KDA：${typeof data.avg_kda_recent === 'number' ? data.avg_kda_recent.toFixed(2) : '未知'}`
+  ];
+  const page1 = [header.join('\n')];
+  if (!rows.length) page1.push('最近战绩：暂无可用数据');
+  else page1.push('', ...rows.slice(0, 10).map((m, i) => `${i + 1}. ${summarizeMatch(m as LolRecentMatch)}`));
+  const pages = [page1.join('\n')];
+  const errors = Array.isArray(data.errors) ? data.errors : [];
+  if (errors.length) {
+    const lines = ['⚠️ 接口告警（不一定影响主查询）'];
+    for (const item of errors.slice(0, 5)) {
+      lines.push(`- [${item.code ?? '-'}] ${item.message || '未知异常'}`);
+    }
+    pages.push(lines.join('\n'));
+  }
+  return pages;
+}
+
+
+async function sendForwardTextPages(groupId: string, selfId: string, nickname: string, pages: string[]): Promise<boolean> {
+  const nodes = pages.map(content => ({
+    type: 'node',
+    data: {
+      nickname,
+      user_id: selfId,
+      content: [{ type: 'text', data: { text: content } }]
+    }
+  }));
+  await send({ channel: 'group', targetId: groupId, scene: 'raw_text', forwardNodes: nodes, force: true, applyTemplate: true });
+  return true;
 }
 
 function buildBanQueryUrl(endpoint: string, qq: string): string {
@@ -144,10 +556,10 @@ async function queryBanByEndpoint(endpoint: string, qq: string): Promise<BanQuer
 }
 
 async function canUseInviteQuery(groupId: string, userId: string): Promise<boolean> {
-  const permission = pluginState.getGroupSettings(groupId).inviteQueryPermission || 'all';
+  const permission = getGroupSettings(groupId).inviteQueryPermission || 'all';
   if (permission === 'all') return true;
-  if (permission === 'owner') return pluginState.isOwner(userId);
-  if (pluginState.isOwner(userId)) return true;
+  if (permission === 'owner') return authStateService.isOwner(userId);
+  if (authStateService.isOwner(userId)) return true;
   return isAdminOrOwner(groupId, userId);
 }
 
@@ -157,6 +569,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   if (!authManager.getGroupLicense(groupId)) return false;
   const inviteByMatch = text.match(/^查邀请(\d{5,13})$/);
   if (inviteByMatch) {
+    if (getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }
     if (!await canUseInviteQuery(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '当前仅限管理员或主人查询邀请关系'); return true; }
     const targetQQ = inviteByMatch[1];
     const invitedList = queryInvitedBy(groupId, targetQQ);
@@ -169,6 +582,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   }
   const inviteFromMatch = text.match(/^查来源(\d{5,13})$/);
   if (inviteFromMatch) {
+    if (getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }
     if (!await canUseInviteQuery(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '当前仅限管理员或主人查询邀请关系'); return true; }
     const targetQQ = inviteFromMatch[1];
     const inviterQQ = queryInviterOf(groupId, targetQQ);
@@ -181,22 +595,22 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   }
 
   if (text === '签到') {
-    if (pluginState.getGroupSettings(groupId).disableSignin) { await sendGroupScene(groupId, 'feature_disabled', '本群签到功能已关闭'); return true; }
+    if (getGroupSettings(groupId).disableSignin) { await sendGroupScene(groupId, 'feature_disabled', '本群签到功能已关闭'); return true; }
     let userSignin = await groupguardRepository.getSignin(groupId, userId);
     if (!userSignin) userSignin = { lastSignin: 0, days: 0, points: 0 };
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     if (userSignin.lastSignin >= today) {
-      await pluginState.sendGroupMsg(groupId, [
+      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
         { type: 'at', data: { qq: userId } },
         { type: 'text', data: { text: ' 你今天已经签到过了，明天再来吧！' } }
-      ], { scene: 'raw_text', vars: { user: userId } });
+      ], vars: { user: userId }, force: true, applyTemplate: true });
       return true;
     }
     const yesterday = today - 86400000;
     if (userSignin.lastSignin >= yesterday && userSignin.lastSignin < today) userSignin.days++;
     else userSignin.days = 1;
-    const settings = pluginState.getGroupSettings(groupId);
+    const settings = getGroupSettings(groupId);
     const min = settings.signinMin || 10;
     const max = settings.signinMax || 50;
     const base = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -205,14 +619,14 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     userSignin.points += points;
     userSignin.lastSignin = Date.now();
     await groupguardRepository.updateSignin(groupId, userId, userSignin);
-    await pluginState.sendGroupMsg(groupId, [
+    await send({ channel: 'group', targetId: groupId, scene: 'signin_success', segments: [
       { type: 'at', data: { qq: userId } },
       { type: 'text', data: { text: ` 签到成功！\n获得积分：${points}\n当前积分：${userSignin.points}\n连续签到：${userSignin.days}天` } }
-    ], { scene: 'signin_success', vars: { points, total: userSignin.points, days: userSignin.days } });
+    ], vars: { points, total: userSignin.points, days: userSignin.days }, force: true, applyTemplate: true });
     return true;
   }
   if (text === '签到榜') {
-    if (pluginState.getGroupSettings(groupId).disableSignin) { await sendGroupScene(groupId, 'feature_disabled', '本群签到功能已关闭'); return true; }
+    if (getGroupSettings(groupId).disableSignin) { await sendGroupScene(groupId, 'feature_disabled', '本群签到功能已关闭'); return true; }
     const data = await groupguardRepository.getAllSignin(groupId);
     if (!Object.keys(data).length) { await sendGroupScene(groupId, 'list_empty', '本群暂无签到数据'); return true; }
     const now = new Date();
@@ -224,12 +638,21 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     return true;
   }
   if (text === '我的积分') {
-    if (pluginState.getGroupSettings(groupId).disableSignin) { await sendGroupScene(groupId, 'feature_disabled', '本群积分功能已关闭'); return true; }
+    if (getGroupSettings(groupId).disableSignin) { await sendGroupScene(groupId, 'feature_disabled', '本群积分功能已关闭'); return true; }
     const data = await groupguardRepository.getSignin(groupId, userId);
-    await pluginState.sendGroupMsg(groupId, [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 你的当前积分：${data ? data.points : 0}` } }], { scene: 'raw_text', vars: { user: userId } });
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 你的当前积分：${data ? data.points : 0}` } }], vars: { user: userId }, force: true, applyTemplate: true });
     return true;
   }
   if (text.startsWith('查封号')) {
+    if (!isLolCommandEnabled(groupId, 'banQuery')) {
+      await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查封号指令');
+      return true;
+    }
+    const rateCheck = checkAndConsumeLolRate(groupId);
+    if (!rateCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      return true;
+    }
     const rest = text.slice(3).trim();
     let targetQQ = rest;
     if (!targetQQ || !/^\d+$/.test(targetQQ)) targetQQ = getTarget(raw, rest) || '';
@@ -242,15 +665,15 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       return true;
     }
     const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
-    const pureTextMode = pluginState.config.global?.disableReplyTemplate === true;
+    const pureTextMode = getConfig().global?.disableReplyTemplate === true;
     const banTexts = ['真是活该，直接进小黑屋了~', '这波操作属实离谱，封得明明白白。', '翻车现场，系统都看不下去了。', '号子已经躺平，连申诉都得排队。', '风控一锤定音，这把寄得很彻底。', '这号现在主打一个“只能看不能玩”。'];
     const safeTexts = ['安全着呢，稳得一批~', '状态健康，今天也没翻车。', '干净得很，风控都点了个赞。', '目前稳如老狗，继续保持。', '状态在线，暂时没有危险信号。', '看起来很平安，继续低调上分吧。'];
     const unknownTexts = ['接口今天有点小情绪，稍后再查一次。', '这波网络不太给面子，过会儿再试试。', '数据源在摸鱼，建议晚点重试。', '查询通道有点拥挤，等等会更稳。'];
     const sendResult = async (content: string) => {
-      await pluginState.sendGroupMsg(groupId, [
+      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
         { type: 'at', data: { qq: userId } },
         { type: 'text', data: { text: ` 查询的 QQ:${targetQQ}，${content}` } }
-      ], { scene: 'raw_text', vars: { user: userId, target: targetQQ } });
+      ], vars: { user: userId, target: targetQQ }, force: true, applyTemplate: true });
     };
     try {
       const endpoints = collectBanQueryEndpoints();
@@ -276,14 +699,77 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}${tail}`);
       }
     } catch (e) {
-      pluginState.log('error', `查询封号失败: ${e}`);
+      loggingStateService.error(`查询封号失败: ${e}`);
       const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
       await sendResult(`暂时无法确认是否封号${tail}`);
     }
     return true;
   }
+  if (text.startsWith('查战绩')) {
+    if (!isLolCommandEnabled(groupId, 'battleQuery')) {
+      await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查战绩指令');
+      return true;
+    }
+    const rateCheck = checkAndConsumeLolRate(groupId);
+    if (!rateCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      return true;
+    }
+    const rest = text.replace('查战绩', '').trim();
+    const parsed = parseLolQueryInput(rest);
+    if (!parsed.ok) {
+      await sendGroupScene(groupId, 'command_format_error', parsed.reason, { example: '查战绩张三#12345' });
+      return true;
+    }
+    await sendGroupScene(groupId, 'raw_text', `正在为您查询${parsed.playerId}${parsed.region ? parsed.region : ''}，请耐心等待`);
+    const baseUrl = resolveLolApiBaseUrl();
+    const crossUrl = `${baseUrl}/cross_query?name=${encodeURIComponent(parsed.playerId)}&output=pretty${parsed.region ? `&region=${encodeURIComponent(parsed.region)}` : ''}`;
+    const crossRes = await fetchJsonWithTimeout(crossUrl, resolveLolQueryTimeoutMs());
+    if (!crossRes.ok) {
+      await sendGroupScene(groupId, 'raw_text', `⚠️ 跨区战绩接口不可用：${crossRes.error}`);
+      return true;
+    }
+    const pages = buildCrossPrettyPages(parsed.playerId, parsed.region, crossRes.data as CrossPrettyData, '');
+    const selfId = String((event as any).self_id || userId);
+
+    const outputFormat = getGroupSettings(groupId).lolQueryOutputFormat || 'forward';
+
+    if (outputFormat === 'image') {
+      const imgUrl = `${crossUrl}&output=image`;
+      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
+        { type: 'image', data: { file: imgUrl } }
+      ], force: true, applyTemplate: true });
+    } else if (outputFormat === 'card') {
+      const summaryText = pages.join('\\n').substring(0, 100).replace(/\\n/g, ' ');
+      const jsonCard = {
+        app: "com.tencent.structmsg",
+        config: { autosize: true, forward: true, type: "normal" },
+        view: "layout",
+        meta: {
+          layout: {
+            title: "🎮 战绩查询",
+            desc: summaryText + '...',
+            preview: "https://shp.qpic.cn/collector/10000/3/0"
+          }
+        },
+        prompt: "🎮 战绩查询"
+      };
+      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
+        { type: 'json', data: { data: JSON.stringify(jsonCard) } }
+      ], force: true, applyTemplate: true });
+    } else if (outputFormat === 'text') {
+      await sendGroupScene(groupId, 'raw_text', pages.join('\n\n'));
+    } else {
+      const forwarded = await sendForwardTextPages(groupId, selfId, '🎮 战绩查询', pages);
+      if (!forwarded) {
+        await sendGroupScene(groupId, 'raw_text', pages.join('\n\n'));
+      }
+    }
+    return true;
+  }
+
   if (text.startsWith('设置封号主接口')) {
-    if (!pluginState.isOwner(userId)) return true;
+    if (!authStateService.isOwner(userId)) return true;
     const url = text.replace('设置封号主接口', '').trim();
     if (!url) {
       await sendGroupScene(groupId, 'command_format_error', '请提供接口地址，例如：设置封号主接口 https://example.com/ban/{qq}', { example: '设置封号主接口 https://example.com/ban/{qq}' });
@@ -295,13 +781,13 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'invalid_range', '接口地址格式无效，请提供完整的 http/https 地址');
       return true;
     }
-    pluginState.config.lolBanPrimaryUrl = url;
+    getConfig().lolBanPrimaryUrl = url;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', '封号主接口已更新');
     return true;
   }
   if (text.startsWith('设置封号接口配置')) {
-    if (!pluginState.isOwner(userId)) return true;
+    if (!authStateService.isOwner(userId)) return true;
     const payload = text.replace('设置封号接口配置', '').trim();
     if (!payload) {
       await sendGroupScene(groupId, 'command_format_error', '请提供JSON配置，例如：设置封号接口配置 {"primary":"https://example.com/ban/{qq}","backups":["https://a.com/ban/{qq}"]}', { example: '设置封号接口配置 {"primary":"https://example.com/ban/{qq}","backups":["https://a.com/ban/{qq}"]}' });
@@ -324,23 +810,23 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       for (const u of nextBackups) {
         void new URL(u.includes('{qq}') ? u.replace('{qq}', '123456') : u);
       }
-      pluginState.config.lolBanPrimaryUrl = nextPrimaryRaw;
-      pluginState.config.lolBanBackupUrls = Array.from(new Set(nextBackups));
+      getConfig().lolBanPrimaryUrl = nextPrimaryRaw;
+      getConfig().lolBanBackupUrls = Array.from(new Set(nextBackups));
       saveConfig(ctx);
-      await sendGroupScene(groupId, 'action_success', `封号接口配置已更新（主接口1条，备用${pluginState.config.lolBanBackupUrls.length}条）`);
+      await sendGroupScene(groupId, 'action_success', `封号接口配置已更新（主接口1条，备用${getConfig().lolBanBackupUrls.length}条）`);
     } catch {
       await sendGroupScene(groupId, 'invalid_range', 'JSON格式或接口地址无效，请检查后重试');
     }
     return true;
   }
   if (text.startsWith('删除封号备用接口')) {
-    if (!pluginState.isOwner(userId)) return true;
+    if (!authStateService.isOwner(userId)) return true;
     const arg = text.replace('删除封号备用接口', '').trim();
     if (!arg) {
       await sendGroupScene(groupId, 'command_format_error', '请提供要删除的接口地址或序号，例如：删除封号备用接口 1', { example: '删除封号备用接口 1' });
       return true;
     }
-    const list = Array.isArray(pluginState.config.lolBanBackupUrls) ? pluginState.config.lolBanBackupUrls.map(v => String(v || '').trim()).filter(Boolean) : [];
+    const list = Array.isArray(getConfig().lolBanBackupUrls) ? getConfig().lolBanBackupUrls.map(v => String(v || '').trim()).filter(Boolean) : [];
     if (!list.length) {
       await sendGroupScene(groupId, 'list_empty', '当前没有封号备用接口');
       return true;
@@ -363,58 +849,282 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       removed = list[idx];
       list.splice(idx, 1);
     }
-    pluginState.config.lolBanBackupUrls = list;
+    getConfig().lolBanBackupUrls = list;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', `已删除备用接口：${removed}`);
     return true;
   }
   if (text === '封号接口列表') {
-    if (!pluginState.isOwner(userId)) return true;
-    const primary = (pluginState.config.lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
-    const backups = Array.isArray(pluginState.config.lolBanBackupUrls) ? pluginState.config.lolBanBackupUrls.map(v => String(v || '').trim()).filter(Boolean) : [];
+    if (!authStateService.isOwner(userId)) return true;
+    const primary = (getConfig().lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
+    const backups = Array.isArray(getConfig().lolBanBackupUrls) ? getConfig().lolBanBackupUrls.map(v => String(v || '').trim()).filter(Boolean) : [];
     const lines = [`主接口：${primary}`, '', '备用接口列表：'];
     if (!backups.length) lines.push('（空）');
     else backups.forEach((url, idx) => lines.push(`${idx + 1}. ${url}`));
     await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
     return true;
   }
+  if (text.startsWith('设置战绩接口')) {
+    if (!authStateService.isOwner(userId)) return true;
+    const rawUrl = text.replace('设置战绩接口', '').trim();
+    if (!rawUrl) {
+      await sendGroupScene(groupId, 'command_format_error', '请提供接口根地址，例如：设置战绩接口 http://192.168.3.94:5000', { example: '设置战绩接口 http://192.168.3.94:5000' });
+      return true;
+    }
+    try {
+      const parsedUrl = new URL(rawUrl);
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        await sendGroupScene(groupId, 'invalid_range', '仅支持 http/https 地址');
+        return true;
+      }
+      getConfig().lolApiBaseUrl = normalizeUrlBase(parsedUrl.toString());
+      saveConfig(ctx);
+      await sendGroupScene(groupId, 'action_success', `战绩接口已更新为：${getConfig().lolApiBaseUrl}`);
+    } catch {
+      await sendGroupScene(groupId, 'invalid_range', '接口地址格式无效，请提供完整 URL');
+    }
+    return true;
+  }
+  if (text === '战绩接口状态') {
+    if (!authStateService.isOwner(userId)) return true;
+    const current = resolveLolApiBaseUrl();
+    const lines = [
+      '战绩查询接口状态',
+      `当前接口：${current}`,
+      '',
+      '可用命令：',
+      '1) 设置战绩接口 http://192.168.3.94:5000',
+      '2) 查战绩张三#12345'
+    ];
+    await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
+    return true;
+  }
+  if (text.startsWith('设置战绩全局开关')) {
+    if (!authStateService.isOwner(userId)) return true;
+    const arg = text.replace('设置战绩全局开关', '').trim();
+    const enabled = toOnOff(arg);
+    if (enabled === null) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置战绩全局开关 开/关', { example: '设置战绩全局开关 开' });
+      return true;
+    }
+    getConfig().global.disableLolQuery = !enabled;
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `已${enabled ? '开启' : '关闭'}战绩查询全局开关`);
+    return true;
+  }
+  if (text.startsWith('设置战绩全局限流')) {
+    if (!authStateService.isOwner(userId)) return true;
+    const value = parseInt(text.replace('设置战绩全局限流', '').trim(), 10);
+    if (!Number.isFinite(value) || value < 1 || value > 5000) {
+      await sendGroupScene(groupId, 'invalid_range', '请设置 1-5000 之间的每分钟次数');
+      return true;
+    }
+    getConfig().global.lolQueryGlobalRateLimitPerMinute = Math.floor(value);
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `战绩查询全局限流已设置为每分钟 ${Math.floor(value)} 次`);
+    return true;
+  }
+  if (text.startsWith('设置战绩分群开关')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const arg = text.replace('设置战绩分群开关', '').trim();
+    const enabled = toOnOff(arg);
+    if (enabled === null) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置战绩分群开关 开/关', { example: '设置战绩分群开关 关' });
+      return true;
+    }
+    const gs = ensureGroupSettings(groupId);
+    gs.disableLolQuery = !enabled;
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `本群战绩查询已${enabled ? '开启' : '关闭'}`);
+    return true;
+  }
+  if (text.startsWith('设置战绩分群限流')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const value = parseInt(text.replace('设置战绩分群限流', '').trim(), 10);
+    if (!Number.isFinite(value) || value < 1 || value > 1000) {
+      await sendGroupScene(groupId, 'invalid_range', '请设置 1-1000 之间的每分钟次数');
+      return true;
+    }
+    const gs = ensureGroupSettings(groupId);
+    gs.lolQueryGroupRateLimitPerMinute = Math.floor(value);
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `本群战绩查询限流已设置为每分钟 ${Math.floor(value)} 次`);
+    return true;
+  }
+  if (text.startsWith('设置战绩指令开关')) {
+    if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
+    const rest = text.replace('设置战绩指令开关', '').trim();
+    const parts = rest.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置战绩指令开关 查战绩 开', { example: '设置战绩指令开关 查封号 关' });
+      return true;
+    }
+    const commandName = parts[0];
+    const enabled = toOnOff(parts[1]);
+    if (enabled === null) {
+      await sendGroupScene(groupId, 'invalid_range', '开关值仅支持 开/关');
+      return true;
+    }
+    const map: Record<string, LolCommandKey> = {
+      查战绩: 'battleQuery',
+      查封号: 'banQuery',
+      查隐藏: 'hiddenQuery'
+    };
+    const key = map[commandName];
+    if (!key) {
+      await sendGroupScene(groupId, 'not_found', '仅支持：查战绩、查封号、查隐藏');
+      return true;
+    }
+    setLolCommandSwitch(groupId, key, enabled);
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `本群指令 ${commandName} 已${enabled ? '开启' : '关闭'}`);
+    return true;
+  }
+  if (text === '战绩配置') {
+    if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
+    const globalCfg = getConfig().global;
+    const groupCfg = getConfig().groups[groupId] || {};
+    const effective = getGroupSettings(groupId);
+    const switches = getLolCommandSwitch(groupId);
+    const lines = [
+      `战绩接口：${resolveLolApiBaseUrl()}`,
+      `全局功能开关：${globalCfg.disableLolQuery ? '关' : '开'}`,
+      `分群功能开关：${effective.disableLolQuery ? '关' : '开'}`,
+      `全局限流(次/分钟)：${effective.lolQueryGlobalRateLimitPerMinute ?? 120}`,
+      `分群限流(次/分钟)：${effective.lolQueryGroupRateLimitPerMinute ?? 20}`,
+      `分群每日上限(次)：${effective.lolQueryDailyLimit ?? 200}`,
+      `全局最小间隔(秒)：${effective.lolQueryGlobalMinIntervalSeconds ?? 1}`,
+      `接口等待时长(秒)：${effective.lolQueryRequestTimeoutSeconds ?? 20}`,
+      `分群最小间隔(秒)：${effective.lolQueryGroupMinIntervalSeconds ?? 2}`,
+      `指令开关：查战绩(${switches.battleQuery ? '开' : '关'}) / 查封号(${switches.banQuery ? '开' : '关'}) / 查隐藏(${switches.hiddenQuery ? '开' : '关'})`,
+      '',
+      '配置来源：',
+      `- 本群覆盖开关：${typeof (groupCfg as any).disableLolQuery === 'boolean' ? '已设置' : '未设置'}`,
+      `- 本群覆盖限流：${typeof (groupCfg as any).lolQueryGroupRateLimitPerMinute === 'number' ? '已设置' : '未设置'}`,
+      `- 本群覆盖指令：${(groupCfg as any).lolQueryCommandSwitch ? '已设置' : '未设置'}`
+    ];
+    await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
+    return true;
+  }
+  if (text.startsWith('设置看视频接口')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const rest = text.replace('设置看视频接口', '').trim();
+    const parts = rest.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置看视频接口 <分类> <URL模板>', { example: '设置看视频接口 搞笑 https://api.example.com/video?cat={category}' });
+      return true;
+    }
+    const category = parts[0];
+    const url = parts.slice(1).join(' ').trim();
+    if (!/^https?:\/\//i.test(url)) {
+      await sendGroupScene(groupId, 'invalid_range', '接口地址需为 http/https');
+      return true;
+    }
+    if (!getConfig().videoApiTemplates) getConfig().videoApiTemplates = {};
+    getConfig().videoApiTemplates[category] = url;
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `已设置看视频接口：${category}`);
+    return true;
+  }
+  if (text.startsWith('删除看视频接口')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const category = text.replace('删除看视频接口', '').trim();
+    if (!category) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：删除看视频接口 <分类>', { example: '删除看视频接口 搞笑' });
+      return true;
+    }
+    if (!getConfig().videoApiTemplates || !getConfig().videoApiTemplates[category]) {
+      await sendGroupScene(groupId, 'not_found', `未找到分类：${category}`);
+      return true;
+    }
+    delete getConfig().videoApiTemplates[category];
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `已删除看视频接口：${category}`);
+    return true;
+  }
+  if (text === '看视频接口列表') {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const map = getVideoApiTemplates();
+    const keys = Object.keys(map);
+    if (!keys.length) {
+      await sendGroupScene(groupId, 'list_empty', '暂无看视频接口配置');
+      return true;
+    }
+    const lines = keys.map((k, i) => `${i + 1}. ${k} -> ${map[k]}`);
+    await sendGroupScene(groupId, 'raw_text', `看视频接口列表：\n${lines.join('\n')}`);
+    return true;
+  }
+  if (text.startsWith('我要看')) {
+    const category = text.replace('我要看', '').trim() || '热门';
+    const template = pickVideoApiByCategory(category);
+    if (!template) {
+      await sendGroupScene(groupId, 'not_found', '暂无可用看视频接口，请联系主人配置');
+      return true;
+    }
+    const requestUrl = resolveVideoRequestUrl(template, category);
+    if (!requestUrl) {
+      await sendGroupScene(groupId, 'raw_text', '看视频接口配置无效');
+      return true;
+    }
+    const res = await fetchAnyWithTimeout(requestUrl);
+    if (!res.ok) {
+      await sendGroupScene(groupId, 'raw_text', `视频接口请求失败：${res.error}`);
+      return true;
+    }
+    const directUrl = extractVideoUrl(res.data) || extractVideoUrl(res.raw);
+    if (!directUrl) {
+      await sendGroupScene(groupId, 'raw_text', `未解析到视频链接，接口返回：${String(res.raw || '').slice(0, 200)}`);
+      return true;
+    }
+    await sendGroupScene(groupId, 'raw_text', `🎬 ${category} 视频\n${directUrl}`);
+    return true;
+  }
   if (text.startsWith('设置lolurl')) {
-    if (!pluginState.isOwner(userId)) return true;
+    if (!authStateService.isOwner(userId)) return true;
     const url = text.replace('设置lolurl', '').trim();
     if (!url) {
       await sendGroupScene(groupId, 'command_format_error', '请提供完整的查询接口地址，例如：设置lolurl http://example.com/query.php', { example: '设置lolurl http://example.com/query.php' });
       return true;
     }
-    pluginState.config.lolQueryUrl = url;
+    getConfig().lolQueryUrl = url;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', '自定义战绩查询接口地址已更新');
     return true;
   }
   if (text.startsWith('设置lolkey')) {
-    if (!pluginState.isOwner(userId)) return true;
+    if (!authStateService.isOwner(userId)) return true;
     const key = text.replace('设置lolkey', '').trim();
     if (!key) {
       await sendGroupScene(groupId, 'command_format_error', '请提供授权码(zhanjikey)', { example: '设置lolkey demo-key' });
       return true;
     }
-    pluginState.config.lolAuthKey = key;
+    getConfig().lolAuthKey = key;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', '自定义战绩查询授权码已更新');
     return true;
   }
   if (text.startsWith('设置loltoken')) {
-    if (!pluginState.isOwner(userId)) return true;
+    if (!authStateService.isOwner(userId)) return true;
     const token = text.replace('设置loltoken', '').trim();
     if (!token) {
       await sendGroupScene(groupId, 'command_format_error', '请提供 Token，例如：设置loltoken eyJ...', { example: '设置loltoken eyJ...' });
       return true;
     }
-    pluginState.config.lolToken = token;
+    getConfig().lolToken = token;
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', 'LOL Token 已更新');
     return true;
   }
   if (text.startsWith('查隐藏')) {
+    if (!isLolCommandEnabled(groupId, 'hiddenQuery')) {
+      await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查隐藏指令');
+      return true;
+    }
+    const rateCheck = checkAndConsumeLolRate(groupId);
+    if (!rateCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      return true;
+    }
     const rest = text.replace('查隐藏', '').trim();
     if (!rest) {
       await sendGroupScene(groupId, 'command_format_error', '请指定召唤师名称，例如：查隐藏 TheShy', { example: '查隐藏 TheShy 1' });
@@ -423,8 +1133,8 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     const args = rest.split(/\s+/);
     const name = args[0];
     const region = args[1] || '1';
-    const customUrl = pluginState.config.lolQueryUrl;
-    const customKey = pluginState.config.lolAuthKey;
+    const customUrl = getConfig().lolQueryUrl;
+    const customKey = getConfig().lolAuthKey;
     if (customUrl && customKey) {
       await sendGroupScene(groupId, 'raw_text', `🔍 正在通过自定义接口查询 ${name}...`);
       try {
@@ -464,12 +1174,12 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         await sendGroupScene(groupId, 'raw_text', `接口请求失败: HTTP ${res.status}`);
         return true;
       } catch (e: any) {
-        pluginState.log('error', `自定义查询出错: ${e}`);
+        loggingStateService.error(`自定义查询出错: ${e}`);
         await sendGroupScene(groupId, 'raw_text', `查询出错: ${e.message}`);
         return true;
       }
     }
-    const token = pluginState.config.lolToken;
+    const token = getConfig().lolToken;
     if (!token) {
       await sendGroupScene(groupId, 'not_found', '❌ 未配置 LOL Token，请联系机器人主人配置');
       return true;
@@ -508,19 +1218,26 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'raw_text', line);
       return true;
     } catch (e: any) {
-      pluginState.log('error', `LOL查询失败: ${e}`);
+      loggingStateService.error(`LOL查询失败: ${e}`);
       await sendGroupScene(groupId, 'raw_text', `查询失败：${e.message || e}`);
       return true;
     }
   }
   if (text === '邀请查询') {
-    if (pluginState.getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }
+    if (getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }
     const data = await groupguardRepository.getInvite(groupId, userId);
-    await pluginState.sendGroupMsg(groupId, [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 你已邀请 ${data ? data.inviteCount : 0} 人加入本群` } }], { scene: 'raw_text', vars: { user: userId } });
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 你已邀请 ${data ? data.inviteCount : 0} 人加入本群` } }], vars: { user: userId }, force: true, applyTemplate: true });
+    return true;
+  }
+  if (text === '重置邀请统计' || text === '清空邀请统计') {
+    if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
+    await groupguardRepository.clearInvites(groupId);
+    await resetInviteRelationData(groupId);
+    await sendGroupScene(groupId, 'action_success', '本群邀请统计已重置');
     return true;
   }
   if (text === '邀请榜') {
-    if (pluginState.getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }
+    if (getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }
     const data = await groupguardRepository.getAllInvites(groupId);
     if (!Object.keys(data).length) { await sendGroupScene(groupId, 'list_empty', '本群暂无邀请数据'); return true; }
     const list = Object.entries(data).sort((a, b) => b[1].inviteCount - a[1].inviteCount).slice(0, 10);
@@ -528,13 +1245,13 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     return true;
   }
   if (text === '抽奖') {
-    if (pluginState.getGroupSettings(groupId).disableLottery) { await sendGroupScene(groupId, 'feature_disabled', '本群抽奖功能已关闭'); return true; }
+    if (getGroupSettings(groupId).disableLottery) { await sendGroupScene(groupId, 'feature_disabled', '本群抽奖功能已关闭'); return true; }
     let userSignin = await groupguardRepository.getSignin(groupId, userId);
-    const settings = pluginState.getGroupSettings(groupId);
+    const settings = getGroupSettings(groupId);
     const cost = settings.lotteryCost || 20;
     const maxReward = settings.lotteryReward || 100;
     if (!userSignin || userSignin.points < cost) {
-      await pluginState.sendGroupMsg(groupId, [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 积分不足！抽奖需要${cost}积分，请先签到获取积分。` } }], { scene: 'raw_text', vars: { user: userId } });
+      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 积分不足！抽奖需要${cost}积分，请先签到获取积分。` } }], vars: { user: userId }, force: true, applyTemplate: true });
       return true;
     }
     userSignin.points -= cost;
@@ -548,11 +1265,11 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     else { prize = '谢谢参与'; bonus = 0; }
     userSignin.points += bonus;
     await groupguardRepository.updateSignin(groupId, userId, userSignin);
-    await pluginState.sendGroupMsg(groupId, [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 消耗${cost}积分抽奖...\n🎉 ${prize}\n当前积分：${userSignin.points}` } }], { scene: 'raw_text', vars: { user: userId } });
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'at', data: { qq: userId } }, { type: 'text', data: { text: ` 消耗${cost}积分抽奖...\n🎉 ${prize}\n当前积分：${userSignin.points}` } }], vars: { user: userId }, force: true, applyTemplate: true });
     return true;
   }
   if (text.startsWith('兑换 ')) {
-    if (pluginState.getGroupSettings(groupId).disableLottery) return true;
+    if (getGroupSettings(groupId).disableLottery) return true;
     const args = text.slice(3).trim().split(/\s+/);
     const item = args[0];
     const param = args.slice(1).join(' ');
@@ -572,7 +1289,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       const cost = 500;
       if (userSignin.points < cost) { await sendGroupScene(groupId, 'invalid_range', `积分不足，需要 ${cost} 积分`); return true; }
       if (!param) { await sendGroupScene(groupId, 'command_format_error', '请指定头衔内容：兑换 头衔 <内容>', { example: '兑换 头衔 传奇守护者' }); return true; }
-      if (!await pluginState.isBotAdmin(groupId)) { await sendGroupScene(groupId, 'permission_denied', '兑换失败：机器人非管理员，无法设置头衔'); return true; }
+      if (!await authStateService.isBotAdmin(groupId)) { await sendGroupScene(groupId, 'permission_denied', '兑换失败：机器人非管理员，无法设置头衔'); return true; }
       userSignin.points -= cost;
       await groupguardRepository.updateSignin(groupId, userId, userSignin);
       await enqueueMiscAction({
@@ -590,10 +1307,10 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       const cost = 200;
       const target = getTarget(raw, param) || userId;
       if (userSignin.points < cost) { await sendGroupScene(groupId, 'invalid_range', `积分不足，需要 ${cost} 积分`); return true; }
-      if (!await pluginState.isBotAdmin(groupId)) { await sendGroupScene(groupId, 'permission_denied', '机器人非管理员'); return true; }
+      if (!await authStateService.isBotAdmin(groupId)) { await sendGroupScene(groupId, 'permission_denied', '机器人非管理员'); return true; }
       userSignin.points -= cost;
       await groupguardRepository.updateSignin(groupId, userId, userSignin);
-      const result = await enqueueBanAction({ groupId, userId: target, durationSeconds: 0, reason: 'shop_unban', automatic: false, ignoreTargetProtection: true, maxRetries: 1 });
+      const result = await executeManualPolicyAction({ type: 'ban', groupId, userId: target, durationSeconds: 0, reason: 'shop_unban', ignoreTargetProtection: true, maxRetries: 1 });
       if (!result.ok) { await sendGroupScene(groupId, 'raw_text', `兑换失败：${result.code}`); return true; }
       await sendGroupScene(groupId, 'action_success', `兑换成功！已解除 ${target} 的禁言。\n剩余积分：${userSignin.points}`, { user: userId, target });
       return true;
@@ -602,7 +1319,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     return true;
   }
   if (text === '积分商城' || text === '商城') {
-    if (pluginState.getGroupSettings(groupId).disableLottery) { await sendGroupScene(groupId, 'feature_disabled', '本群积分功能已关闭'); return true; }
+    if (getGroupSettings(groupId).disableLottery) { await sendGroupScene(groupId, 'feature_disabled', '本群积分功能已关闭'); return true; }
     await sendGroupScene(groupId, 'raw_text', `🛒 积分商城
 ----------------
 1. 免死金牌 (清除警告) - 100积分
@@ -617,19 +1334,19 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   }
   if (text.startsWith('开启发言奖励 ') || text === '关闭发言奖励') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    if (!pluginState.config.groups[groupId]) pluginState.config.groups[groupId] = { ...pluginState.getGroupSettings(groupId) };
-    if (text === '关闭发言奖励') pluginState.config.groups[groupId].messageReward = 0;
+    const gs = ensureGroupSettings(groupId);
+    if (text === '关闭发言奖励') gs.messageReward = 0;
     else {
       const points = parseInt(text.slice(7));
       if (isNaN(points) || points <= 0) { await sendGroupScene(groupId, 'command_format_error', '请输入正确的积分数', { example: '开启发言奖励 2' }); return true; }
-      pluginState.config.groups[groupId].messageReward = points;
+      gs.messageReward = points;
     }
     saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', text === '关闭发言奖励' ? '已关闭发言奖励' : `已开启发言奖励，每条消息奖励 ${pluginState.config.groups[groupId].messageReward} 积分`);
+    await sendGroupScene(groupId, 'action_success', text === '关闭发言奖励' ? '已关闭发言奖励' : `已开启发言奖励，每条消息奖励 ${gs.messageReward} 积分`);
     return true;
   }
   if (text.startsWith('活跃统计')) {
-    if (pluginState.getGroupSettings(groupId).disableActivity) { await sendGroupScene(groupId, 'feature_disabled', '本群活跃统计已关闭'); return true; }
+    if (getGroupSettings(groupId).disableActivity) { await sendGroupScene(groupId, 'feature_disabled', '本群活跃统计已关闭'); return true; }
     const stats = await groupguardRepository.getAllActivity(groupId);
     if (!Object.keys(stats).length) { await sendGroupScene(groupId, 'list_empty', '本群暂无活跃统计数据'); return true; }
     const selfId = String((event as any).self_id || '');
@@ -645,7 +1362,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       pages.push(`排行榜（${i + 1}-${i + chunk.length}）\n\n${chunk.map(([uid, r], idx) => `${i + idx + 1}. ${uid}\n   总消息：${r.msgCount} | 今日：${r.lastActiveDay === today ? (r.msgCountToday ?? 0) : 0}\n   最后活跃：${new Date(r.lastActive).toLocaleString('zh-CN', { hour12: false })}`).join('\n\n')}`);
     }
     const nodes = [summary, ...pages].map(content => ({ type: 'node', data: { nickname: '📊 活跃统计', user_id: selfId, content: [{ type: 'text', data: { text: content } }] } }));
-    await pluginState.callApi('send_group_forward_msg', { group_id: groupId, messages: nodes });
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', forwardNodes: nodes, force: true, applyTemplate: true });
     return true;
   }
   return false;
