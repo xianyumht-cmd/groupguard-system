@@ -10,10 +10,11 @@ import type { CommandExecutionContext } from './command_service_types';
 import { executeManualPolicyAction } from '../risk/policy_engine';
 import { enqueueMiscAction } from './action_queue_service';
 import { queryInvitedBy, queryInviterOf, resetInviteRelationData } from './invite_service';
+import { storageAdapter } from '../storage_adapter';
+import type { ContactIdentifierType, ContactRiskCategory, ContactRiskRecord, ScammerRecord } from '../types';
 
 const DEFAULT_LOL_BAN_PRIMARY_URL = 'https://yun.4png.com/api/query.html?token=c7739372694acf36&qq={qq}';
 const DEFAULT_LOL_API_BASE_URL = 'http://192.168.3.94:5000';
-
 function getConfig() {
   return configStateService.getConfig();
 }
@@ -487,6 +488,378 @@ function buildBanQueryUrl(endpoint: string, qq: string): string {
   return parsed.toString();
 }
 
+function replaceScammerUrlPlaceholders(endpoint: string, identifier: ParsedContactIdentifier): string {
+  return endpoint
+    .replaceAll('{qq}', encodeURIComponent(identifier.value))
+    .replaceAll('{wechat}', encodeURIComponent(identifier.type === 'wechat' ? identifier.value : ''))
+    .replaceAll('{wx}', encodeURIComponent(identifier.type === 'wechat' ? identifier.value : ''))
+    .replaceAll('{account}', encodeURIComponent(identifier.value))
+    .replaceAll('{identifier}', encodeURIComponent(identifier.value))
+    .replaceAll('{type}', encodeURIComponent(identifier.type));
+}
+
+function buildScammerQueryUrl(endpoint: string, identifier: ParsedContactIdentifier): string {
+  const trimmed = endpoint.trim();
+  if (!trimmed) throw new Error('空接口地址');
+  if (/\{(?:qq|wechat|wx|account|identifier|type)\}/i.test(trimmed)) {
+    return replaceScammerUrlPlaceholders(trimmed, identifier);
+  }
+  if (trimmed.includes('%s')) return trimmed.replaceAll('%s', encodeURIComponent(identifier.value));
+  const parsed = new URL(trimmed);
+  if (parsed.searchParams.has('qq') || parsed.searchParams.has('wechat') || parsed.searchParams.has('account') || parsed.searchParams.has('identifier')) {
+    if (identifier.type === 'qq') parsed.searchParams.set('qq', identifier.value);
+    else parsed.searchParams.set('wechat', identifier.value);
+    parsed.searchParams.set('type', identifier.type);
+    return parsed.toString();
+  }
+  parsed.searchParams.set(identifier.type === 'qq' ? 'qq' : 'wechat', identifier.value);
+  parsed.searchParams.set('type', identifier.type);
+  return parsed.toString();
+}
+
+function collectScammerQueryEndpoints(): string[] {
+  const configured = Array.isArray(getConfig().scammerQueryUrls) ? getConfig().scammerQueryUrls : [];
+  const list = configured.map(v => String(v || '').trim()).filter(Boolean);
+  return Array.from(new Set(list));
+}
+
+function getScammerReportUrl(): string {
+  return String(getConfig().scammerReportUrl || '').trim();
+}
+
+function getScammerLimits() {
+  return {
+    maxRecords: Math.max(100, Math.min(100000, Number(getConfig().scammerMaxRecords || 5000))),
+    maxEvidenceLength: Math.max(50, Math.min(5000, Number(getConfig().scammerMaxEvidenceLength || 500))),
+    maxRecentReports: Math.max(1, Math.min(50, Number(getConfig().scammerMaxRecentReportsPerQQ || 10)))
+  };
+}
+
+function getRiskRateLimits() {
+  return {
+    queryUserCooldownSeconds: Math.max(0, Math.min(3600, Number(getConfig().scammerQueryUserCooldownSeconds ?? 10))),
+    queryGroupRateLimitPerMinute: Math.max(1, Math.min(1000, Number(getConfig().scammerQueryGroupRateLimitPerMinute ?? 20))),
+    queryCacheSeconds: Math.max(0, Math.min(86400, Number(getConfig().scammerQueryCacheSeconds ?? 300))),
+    reportUserCooldownSeconds: Math.max(0, Math.min(86400, Number(getConfig().scammerReportUserCooldownSeconds ?? 60))),
+    reportGroupRateLimitPerMinute: Math.max(1, Math.min(1000, Number(getConfig().scammerReportGroupRateLimitPerMinute ?? 5))),
+    reportUserDailyLimit: Math.max(1, Math.min(1000, Number(getConfig().scammerReportUserDailyLimit ?? 20))),
+    reportDedupHours: Math.max(0, Math.min(720, Number(getConfig().scammerReportDedupHours ?? 24)))
+  };
+}
+
+const riskCooldowns = new Map<string, number>();
+const riskWindows = new Map<string, number[]>();
+const riskDailyCounters = new Map<string, number[]>();
+const riskReportDedup = new Map<string, number>();
+const riskQueryCache = new Map<string, { expiresAt: number; results: ScammerExternalResult[]; }>();
+
+function riskKey(category: ContactRiskCategory, identifier: ParsedContactIdentifier): string {
+  return `${category}:${identifier.type}:${identifier.value.toLowerCase()}`;
+}
+
+function compactRiskRuntime(now = Date.now()): void {
+  if (riskCooldowns.size > 5000) {
+    for (const [key, until] of riskCooldowns) if (until <= now) riskCooldowns.delete(key);
+  }
+  if (riskWindows.size > 5000) {
+    for (const [key, list] of riskWindows) {
+      const kept = list.filter(t => now - t < 60000);
+      if (kept.length) riskWindows.set(key, kept);
+      else riskWindows.delete(key);
+    }
+  }
+  if (riskDailyCounters.size > 5000) {
+    for (const [key, list] of riskDailyCounters) {
+      const kept = list.filter(t => now - t < 86400000);
+      if (kept.length) riskDailyCounters.set(key, kept);
+      else riskDailyCounters.delete(key);
+    }
+  }
+  if (riskReportDedup.size > 10000) {
+    for (const [key, until] of riskReportDedup) if (until <= now) riskReportDedup.delete(key);
+  }
+  if (riskQueryCache.size > 5000) {
+    for (const [key, item] of riskQueryCache) if (item.expiresAt <= now) riskQueryCache.delete(key);
+  }
+}
+
+function consumeCooldown(key: string, seconds: number): { ok: boolean; retryAfter: number; } {
+  if (seconds <= 0) return { ok: true, retryAfter: 0 };
+  const now = Date.now();
+  compactRiskRuntime(now);
+  const until = riskCooldowns.get(key) || 0;
+  if (until > now) return { ok: false, retryAfter: Math.ceil((until - now) / 1000) };
+  riskCooldowns.set(key, now + seconds * 1000);
+  return { ok: true, retryAfter: 0 };
+}
+
+function consumeMinuteLimit(key: string, limit: number): { ok: boolean; retryAfter: number; } {
+  const now = Date.now();
+  compactRiskRuntime(now);
+  const history = (riskWindows.get(key) || []).filter(t => now - t < 60000);
+  if (history.length >= limit) {
+    const oldest = history[0] || now;
+    return { ok: false, retryAfter: Math.max(1, Math.ceil((60000 - (now - oldest)) / 1000)) };
+  }
+  history.push(now);
+  riskWindows.set(key, history);
+  return { ok: true, retryAfter: 0 };
+}
+
+function consumeDailyLimit(key: string, limit: number): { ok: boolean; retryAfter: number; } {
+  const now = Date.now();
+  compactRiskRuntime(now);
+  const history = (riskDailyCounters.get(key) || []).filter(t => now - t < 86400000);
+  if (history.length >= limit) {
+    const oldest = history[0] || now;
+    return { ok: false, retryAfter: Math.max(1, Math.ceil((86400000 - (now - oldest)) / 1000)) };
+  }
+  history.push(now);
+  riskDailyCounters.set(key, history);
+  return { ok: true, retryAfter: 0 };
+}
+
+function normalizeRiskDedupContent(content: string): string {
+  return String(content || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 200);
+}
+
+function riskReportDedupKey(groupId: string, category: ContactRiskCategory, identifier: ParsedContactIdentifier, content: string): string {
+  return `report-dedup:${groupId}:${riskKey(category, identifier)}:${normalizeRiskDedupContent(content)}`;
+}
+
+function checkRiskReportDedup(groupId: string, category: ContactRiskCategory, identifier: ParsedContactIdentifier, content: string): { ok: boolean; retryAfter: number; key: string; } {
+  const key = riskReportDedupKey(groupId, category, identifier, content);
+  const hours = getRiskRateLimits().reportDedupHours;
+  if (hours <= 0) return { ok: true, retryAfter: 0, key };
+  const now = Date.now();
+  compactRiskRuntime(now);
+  const until = riskReportDedup.get(key) || 0;
+  if (until > now) return { ok: false, retryAfter: Math.ceil((until - now) / 1000), key };
+  return { ok: true, retryAfter: 0, key };
+}
+
+function markRiskReportDedup(key: string): void {
+  const hours = getRiskRateLimits().reportDedupHours;
+  if (hours <= 0 || !key) return;
+  riskReportDedup.set(key, Date.now() + hours * 3600000);
+}
+
+function checkRiskQueryGuard(groupId: string, userId: string, category: ContactRiskCategory, identifier: ParsedContactIdentifier): { ok: boolean; reason?: string; } {
+  const limits = getRiskRateLimits();
+  const user = consumeCooldown(`risk-query-user:${groupId}:${userId}`, limits.queryUserCooldownSeconds);
+  if (!user.ok) return { ok: false, reason: `查询过于频繁，请 ${user.retryAfter} 秒后再试。` };
+  const group = consumeMinuteLimit(`risk-query-group:${groupId}`, limits.queryGroupRateLimitPerMinute);
+  if (!group.ok) return { ok: false, reason: `本群风险查询过于频繁，请稍后再试。` };
+  return { ok: true };
+}
+
+function checkRiskReportGuard(groupId: string, userId: string, category: ContactRiskCategory, identifier: ParsedContactIdentifier, content: string): { ok: boolean; reason?: string; } {
+  const limits = getRiskRateLimits();
+  const dedup = checkRiskReportDedup(groupId, category, identifier, content);
+  if (!dedup.ok) return { ok: false, reason: '相同账号和内容的举报记录已收录，请勿重复提交。' };
+  const user = consumeCooldown(`risk-report-user:${groupId}:${userId}`, limits.reportUserCooldownSeconds);
+  if (!user.ok) return { ok: false, reason: `举报过于频繁，请 ${user.retryAfter} 秒后再试。` };
+  const group = consumeMinuteLimit(`risk-report-group:${groupId}`, limits.reportGroupRateLimitPerMinute);
+  if (!group.ok) return { ok: false, reason: '本群举报提交过于频繁，请稍后再试。' };
+  const daily = consumeDailyLimit(`risk-report-daily:${groupId}:${userId}`, limits.reportUserDailyLimit);
+  if (!daily.ok) return { ok: false, reason: '今日举报次数已达上限，请明天再试。' };
+  markRiskReportDedup(dedup.key);
+  return { ok: true };
+}
+
+function isValidScammerUrl(url: string): boolean {
+  try {
+    const sample = String(url || '')
+      .replaceAll('{qq}', '123456')
+      .replaceAll('{wechat}', 'wxid_test')
+      .replaceAll('{wx}', 'wxid_test')
+      .replaceAll('{account}', '123456')
+      .replaceAll('{identifier}', '123456')
+      .replaceAll('{type}', 'qq');
+    const parsed = new URL(sample);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function normalizeEvidenceText(value: string): string {
+  const maxLength = getScammerLimits().maxEvidenceLength;
+  const text = String(value || '').replace(/\[CQ:[^\]]+\]/g, '').replace(/\s+/g, ' ').trim();
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+interface ParsedContactIdentifier {
+  type: ContactIdentifierType;
+  value: string;
+  display: string;
+}
+
+function contactRiskTitle(category: ContactRiskCategory): string {
+  return category === 'peer' ? '同行' : '骗子';
+}
+
+function contactIdentifierLabel(identifier: ParsedContactIdentifier): string {
+  return identifier.type === 'qq' ? `QQ ${identifier.value}` : `微信 ${identifier.value}`;
+}
+
+function parseContactIdentifier(input: string): ParsedContactIdentifier | null {
+  let raw = String(input || '').trim();
+  if (!raw || /\s/.test(raw)) return null;
+  const qqPrefix = raw.match(/^qq[:：]?(\d+)$/i);
+  if (qqPrefix) raw = qqPrefix[1];
+  const wechatPrefix = raw.match(/^(?:微信|wx|weixin)[:：]?(.+)$/i);
+  if (wechatPrefix) raw = wechatPrefix[1].trim();
+  if (/^\d+$/.test(raw)) {
+    if (!/^\d{5,13}$/.test(raw)) return null;
+    return { type: 'qq', value: raw, display: `QQ ${raw}` };
+  }
+  if (!/^[A-Za-z][A-Za-z0-9._-]{2,63}$/.test(raw)) return null;
+  return { type: 'wechat', value: raw, display: `微信 ${raw}` };
+}
+
+function parseRiskQueryCommand(text: string, command: string): { matched: boolean; identifier?: ParsedContactIdentifier; } {
+  if (!text.startsWith(command)) return { matched: false };
+  const arg = text.slice(command.length).trim();
+  return { matched: true, identifier: parseContactIdentifier(arg) || undefined };
+}
+
+function parseRiskReportCommand(text: string, command: string): { matched: boolean; identifier?: ParsedContactIdentifier; evidence?: string; } {
+  if (!text.startsWith(command)) return { matched: false };
+  const rest = text.slice(command.length).trim();
+  const match = rest.match(/^(\S+)\s+([\s\S]+)$/);
+  if (!match) return { matched: true };
+  return {
+    matched: true,
+    identifier: parseContactIdentifier(match[1]) || undefined,
+    evidence: normalizeEvidenceText(match[2])
+  };
+}
+
+function saveLocalContactRiskReport(category: ContactRiskCategory, identifier: ParsedContactIdentifier, content: string, source: string): ContactRiskRecord {
+  const limits = getScammerLimits();
+  const record = storageAdapter.upsertContactRiskReport({
+    category,
+    identifierType: identifier.type,
+    identifierValue: identifier.value,
+    content,
+    source,
+    maxEvidenceLength: limits.maxEvidenceLength,
+    maxRecentReports: limits.maxRecentReports
+  });
+  storageAdapter.pruneContactRiskRecords(category, limits.maxRecords);
+  return record;
+}
+
+interface ScammerExternalResult {
+  found: boolean;
+  count: number;
+  message: string;
+  reports: string[];
+  source: string;
+}
+
+function extractScammerReportTexts(data: any): string[] {
+  const buckets = [
+    ...(Array.isArray(data?.reports) ? data.reports : []),
+    ...(Array.isArray(data?.anonymous_reports) ? data.anonymous_reports : []),
+    ...(Array.isArray(data?.data?.reports) ? data.data.reports : []),
+    ...(Array.isArray(data?.data?.anonymous_reports) ? data.data.anonymous_reports : [])
+  ];
+  const texts: string[] = [];
+  for (const item of buckets) {
+    const text = typeof item === 'string'
+      ? item
+      : String(item?.report_content || item?.content || item?.message || item?.desc || item?.description || '').trim();
+    const normalized = normalizeEvidenceText(text);
+    if (normalized && !texts.includes(normalized)) texts.push(normalized);
+  }
+  return texts.slice(0, getScammerLimits().maxRecentReports);
+}
+
+function parseScammerExternalResult(data: any, source: string): ScammerExternalResult {
+  const reports = extractScammerReportTexts(data);
+  const count = Number(data?.count ?? data?.data?.count ?? reports.length) || reports.length;
+  const found = data?.found === true || (data?.success === true && (count > 0 || reports.length > 0)) || reports.length > 0;
+  const message = String(data?.message || data?.msg || data?.error || (found ? '查询到相关记录' : '未查询到相关记录')).trim();
+  return { found, count, message, reports, source };
+}
+
+async function queryScammerByEndpoint(endpoint: string, identifier: ParsedContactIdentifier): Promise<ScammerExternalResult> {
+  const url = buildScammerQueryUrl(endpoint, identifier);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        Accept: 'application/json,text/plain,*/*'
+      }
+    });
+    const raw = await res.text();
+    if (!res.ok) return { found: false, count: 0, message: `HTTP ${res.status}`, reports: [], source: endpoint };
+    try {
+      return parseScammerExternalResult(JSON.parse(raw.trim()), endpoint);
+    } catch {
+      return { found: false, count: 0, message: '接口返回非JSON', reports: [], source: endpoint };
+    }
+  } catch (e: any) {
+    return { found: false, count: 0, message: e?.name === 'AbortError' ? '请求超时' : String(e?.message || e), reports: [], source: endpoint };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function submitExternalScammerReport(identifier: ParsedContactIdentifier, content: string): Promise<{ ok: boolean; message: string; skipped?: boolean; }> {
+  const reportUrl = getScammerReportUrl();
+  if (!reportUrl) return { ok: false, skipped: true, message: '未配置第三方举报接口' };
+  const form = new FormData();
+  form.append('scammer_qq', identifier.type === 'qq' ? identifier.value : '');
+  form.append('scammer_name', '');
+  form.append('scammer_wechat', identifier.type === 'wechat' ? identifier.value : '');
+  form.append('scammer_phone', '');
+  form.append('scammer_idcard', '');
+  form.append('report_content', content);
+  form.append('images_base64', '[]');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch(reportUrl, {
+      method: 'POST',
+      body: form,
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    const raw = await res.text();
+    let data: any = null;
+    try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+    if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+    const ok = data ? data.success !== false && data.code !== -1 : true;
+    return { ok, message: String(data?.message || data?.msg || data?.error || raw || (ok ? '第三方已接收' : '第三方提交失败')).slice(0, 200) };
+  } catch (e: any) {
+    return { ok: false, message: e?.name === 'AbortError' ? '请求超时' : String(e?.message || e) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function saveLocalScammerReport(qq: string, content: string, source: string): ScammerRecord {
+  const limits = getScammerLimits();
+  const record = storageAdapter.upsertScammerReport({
+    qq,
+    content,
+    source,
+    maxEvidenceLength: limits.maxEvidenceLength,
+    maxRecentReports: limits.maxRecentReports
+  });
+  storageAdapter.pruneScammerRecords(limits.maxRecords);
+  return record;
+}
+
 function toBanQueryResult(data: any): BanQueryResult {
   const detailText = mergeUniqueDetail([data?.msg, data?.data?.banmsg, data?.data?.rammsg, data?.data?.return, data?.data?.time, data?.data?.ban_time, data?.data?.unban_time, data?.data?.left_time]);
   if (detailText && isUnavailableMessage(detailText)) {
@@ -567,6 +940,240 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   const { event, text, userId, groupId, raw, ctx } = input;
   if (event.message_type !== 'group') return false;
   if (!authManager.getGroupLicense(groupId)) return false;
+  if (text.startsWith('设置骗子查询接口')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const url = text.replace('设置骗子查询接口', '').trim();
+    if (!url || !isValidScammerUrl(url)) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置骗子查询接口 <URL模板>，支持 {qq}/{wechat}/{account}/{identifier}/{type}', { example: '设置骗子查询接口 https://example.com/search?account={account}&type={type}' });
+      return true;
+    }
+    getConfig().scammerQueryUrls = [url];
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', '骗子查询接口已设置');
+    return true;
+  }
+  if (text.startsWith('添加骗子查询接口')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const url = text.replace('添加骗子查询接口', '').trim();
+    if (!url || !isValidScammerUrl(url)) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：添加骗子查询接口 <URL模板>，支持 {qq}/{wechat}/{account}/{identifier}/{type}', { example: '添加骗子查询接口 https://example.com/search?account={account}&type={type}' });
+      return true;
+    }
+    const list = collectScammerQueryEndpoints();
+    if (!list.includes(url)) list.push(url);
+    getConfig().scammerQueryUrls = list;
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `已添加骗子查询接口，当前共 ${list.length} 条`);
+    return true;
+  }
+  if (text.startsWith('删除骗子查询接口')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const arg = text.replace('删除骗子查询接口', '').trim();
+    const list = Array.isArray(getConfig().scammerQueryUrls) ? getConfig().scammerQueryUrls.map(v => String(v || '').trim()).filter(Boolean) : [];
+    if (!arg || !list.length) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：删除骗子查询接口 <序号或URL>', { example: '删除骗子查询接口 1' });
+      return true;
+    }
+    let removed = '';
+    if (/^\d+$/.test(arg)) {
+      const idx = parseInt(arg, 10) - 1;
+      if (idx < 0 || idx >= list.length) {
+        await sendGroupScene(groupId, 'invalid_range', `序号超出范围，当前范围 1-${list.length}`);
+        return true;
+      }
+      removed = list[idx];
+      list.splice(idx, 1);
+    } else {
+      const idx = list.indexOf(arg);
+      if (idx < 0) {
+        await sendGroupScene(groupId, 'not_found', '未找到对应骗子查询接口');
+        return true;
+      }
+      removed = list[idx];
+      list.splice(idx, 1);
+    }
+    getConfig().scammerQueryUrls = list;
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', `已删除骗子查询接口：${removed}`);
+    return true;
+  }
+  if (text.startsWith('设置骗子举报接口')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const url = text.replace('设置骗子举报接口', '').trim();
+    if (!url || !isValidScammerUrl(url)) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置骗子举报接口 <URL>', { example: '设置骗子举报接口 https://example.com/report' });
+      return true;
+    }
+    getConfig().scammerReportUrl = url;
+    saveConfig(ctx);
+    await sendGroupScene(groupId, 'action_success', '骗子举报接口已设置');
+    return true;
+  }
+  if (text.startsWith('设置骗子库限制')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const parts = text.replace('设置骗子库限制', '').trim().split(/\s+/).filter(Boolean);
+    const maxRecords = Number(parts[0]);
+    const maxEvidence = Number(parts[1]);
+    const maxRecent = Number(parts[2]);
+    if (!Number.isFinite(maxRecords) || !Number.isFinite(maxEvidence) || !Number.isFinite(maxRecent)) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置骗子库限制 <最大记录数> <单条证据字数> <每账号最近证据条数>', { example: '设置骗子库限制 5000 500 10' });
+      return true;
+    }
+    getConfig().scammerMaxRecords = Math.max(100, Math.min(100000, Math.floor(maxRecords)));
+    getConfig().scammerMaxEvidenceLength = Math.max(50, Math.min(5000, Math.floor(maxEvidence)));
+    getConfig().scammerMaxRecentReportsPerQQ = Math.max(1, Math.min(50, Math.floor(maxRecent)));
+    saveConfig(ctx);
+    storageAdapter.pruneScammerRecords(getScammerLimits().maxRecords);
+    await sendGroupScene(groupId, 'action_success', `骗子库限制已更新：最大记录 ${getConfig().scammerMaxRecords}，证据 ${getConfig().scammerMaxEvidenceLength} 字，每账号 ${getConfig().scammerMaxRecentReportsPerQQ} 条`);
+    return true;
+  }
+  if (text.startsWith('设置骗子风控')) {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const parts = text.replace('设置骗子风控', '').trim().split(/\s+/).filter(Boolean).map(Number);
+    if (parts.length < 7 || parts.some(v => !Number.isFinite(v))) {
+      await sendGroupScene(groupId, 'command_format_error', '格式：设置骗子风控 <查询同用户冷却秒> <查询群每分钟> <查询缓存秒> <举报同用户冷却秒> <举报群每分钟> <每人每日举报> <重复内容去重小时>', { example: '设置骗子风控 10 20 300 60 5 20 24' });
+      return true;
+    }
+    getConfig().scammerQueryUserCooldownSeconds = Math.max(0, Math.min(3600, Math.floor(parts[0])));
+    getConfig().scammerQueryGroupRateLimitPerMinute = Math.max(1, Math.min(1000, Math.floor(parts[1])));
+    getConfig().scammerQueryCacheSeconds = Math.max(0, Math.min(86400, Math.floor(parts[2])));
+    getConfig().scammerReportUserCooldownSeconds = Math.max(0, Math.min(86400, Math.floor(parts[3])));
+    getConfig().scammerReportGroupRateLimitPerMinute = Math.max(1, Math.min(1000, Math.floor(parts[4])));
+    getConfig().scammerReportUserDailyLimit = Math.max(1, Math.min(1000, Math.floor(parts[5])));
+    getConfig().scammerReportDedupHours = Math.max(0, Math.min(720, Math.floor(parts[6])));
+    saveConfig(ctx);
+    const rateLimits = getRiskRateLimits();
+    await sendGroupScene(groupId, 'action_success', `骗子风控已更新：查询 ${rateLimits.queryUserCooldownSeconds}s/${rateLimits.queryGroupRateLimitPerMinute}次每分钟/缓存${rateLimits.queryCacheSeconds}s；举报 ${rateLimits.reportUserCooldownSeconds}s/${rateLimits.reportGroupRateLimitPerMinute}次每分钟/每日${rateLimits.reportUserDailyLimit}次/去重${rateLimits.reportDedupHours}小时`);
+    return true;
+  }
+  if (text === '骗子接口状态') {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
+    const queryUrls = collectScammerQueryEndpoints();
+    const limits = getScammerLimits();
+    const rateLimits = getRiskRateLimits();
+    const lines = [
+      '骗子接口状态',
+      `查询接口：${queryUrls.length} 条`,
+      ...queryUrls.map((url, idx) => `${idx + 1}. ${url}`),
+      `举报接口：${getScammerReportUrl() || '未配置'}`,
+      `本地库限制：最大记录 ${limits.maxRecords}，证据 ${limits.maxEvidenceLength} 字，每账号最近 ${limits.maxRecentReports} 条`,
+      `查询风控：同用户 ${rateLimits.queryUserCooldownSeconds}s 冷却，本群每分钟 ${rateLimits.queryGroupRateLimitPerMinute} 次，缓存 ${rateLimits.queryCacheSeconds}s`,
+      `举报风控：同用户 ${rateLimits.reportUserCooldownSeconds}s 冷却，本群每分钟 ${rateLimits.reportGroupRateLimitPerMinute} 次，每人每天 ${rateLimits.reportUserDailyLimit} 次，重复内容 ${rateLimits.reportDedupHours} 小时去重`
+    ];
+    await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
+    return true;
+  }
+  for (const queryDef of [
+    { command: '查骗子', category: 'scammer' as ContactRiskCategory },
+    { command: '查同行', category: 'peer' as ContactRiskCategory }
+  ]) {
+    const parsed = parseRiskQueryCommand(text, queryDef.command);
+    if (!parsed.matched) continue;
+    if (!parsed.identifier) {
+      await sendGroupScene(groupId, 'command_format_error', `格式：${queryDef.command}<QQ或微信号>`, { example: `${queryDef.command}123456` });
+      return true;
+    }
+    const identifier = parsed.identifier;
+    const guard = checkRiskQueryGuard(groupId, userId, queryDef.category, identifier);
+    if (!guard.ok) {
+      await sendGroupScene(groupId, 'invalid_range', guard.reason || '风险查询过于频繁，请稍后再试。');
+      return true;
+    }
+    let local = storageAdapter.getContactRiskRecord(queryDef.category, identifier.type, identifier.value);
+    if (!local && queryDef.category === 'scammer' && identifier.type === 'qq') {
+      const legacy = storageAdapter.getScammerRecord(identifier.value);
+      if (legacy) {
+        local = {
+          category: 'scammer',
+          identifierType: 'qq',
+          identifierValue: legacy.qq,
+          reportCount: legacy.reportCount,
+          lastReportContent: legacy.lastReportContent,
+          recentReports: legacy.recentReports,
+          sources: legacy.sources,
+          firstReportedAt: legacy.firstReportedAt,
+          lastReportedAt: legacy.lastReportedAt,
+          lastCheckedAt: legacy.lastCheckedAt,
+          updatedAt: legacy.updatedAt
+        };
+      }
+    }
+    if (local) storageAdapter.touchContactRiskChecked(queryDef.category, identifier.type, identifier.value);
+    const externalResults: ScammerExternalResult[] = [];
+    if (queryDef.category === 'scammer') {
+      const queryCacheSeconds = getRiskRateLimits().queryCacheSeconds;
+      const cacheKey = `external-query:${riskKey('scammer', identifier)}`;
+      const cached = riskQueryCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        externalResults.push(...cached.results);
+      } else {
+        for (const endpoint of collectScammerQueryEndpoints()) {
+          const result = await queryScammerByEndpoint(endpoint, identifier);
+          externalResults.push(result);
+          if (result.found) {
+            for (const content of result.reports.length ? result.reports : [result.message]) {
+              saveLocalContactRiskReport('scammer', identifier, content, result.source);
+            }
+          }
+        }
+        if (queryCacheSeconds > 0 && externalResults.length) {
+          riskQueryCache.set(cacheKey, { expiresAt: Date.now() + queryCacheSeconds * 1000, results: externalResults });
+        }
+      }
+      local = storageAdapter.getContactRiskRecord('scammer', identifier.type, identifier.value) || local;
+    }
+    const externalFound = externalResults.filter(item => item.found);
+    const lines = [`${queryDef.category === 'peer' ? '同行风险查询' : '风险查询'}：${contactIdentifierLabel(identifier)}`];
+    if (local) {
+      lines.push(`本地库：查询到举报记录，累计 ${local.reportCount} 次`);
+      if (local.lastReportContent) lines.push(`最近举报内容：${local.lastReportContent}`);
+    } else {
+      lines.push('本地库：暂无举报记录');
+    }
+    if (queryDef.category === 'scammer') {
+      if (externalResults.length) {
+        lines.push(`第三方：${externalFound.length ? `查询到相关记录，命中 ${externalFound.length} 个接口` : '暂未查询到相关记录'}`);
+        for (const result of externalResults.slice(0, 3)) {
+          lines.push(`- ${result.message}${result.count ? ` (${result.count})` : ''}`);
+        }
+      } else {
+        lines.push('第三方：未配置查询接口，仅使用本地库');
+      }
+    }
+    await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
+    return true;
+  }
+
+  for (const reportDef of [
+    { command: '举报骗子', category: 'scammer' as ContactRiskCategory },
+    { command: '举报同行', category: 'peer' as ContactRiskCategory }
+  ]) {
+    const parsed = parseRiskReportCommand(text, reportDef.command);
+    if (!parsed.matched) continue;
+    if (!parsed.identifier || !parsed.evidence) {
+      await sendGroupScene(groupId, 'command_format_error', `格式：${reportDef.command}<QQ或微信号> 描述`, { example: `${reportDef.command}123456 收款后拉黑，有聊天记录` });
+      return true;
+    }
+    const guard = checkRiskReportGuard(groupId, userId, reportDef.category, parsed.identifier, parsed.evidence);
+    if (!guard.ok) {
+      await sendGroupScene(groupId, 'invalid_range', guard.reason || '举报提交过于频繁，请稍后再试。');
+      return true;
+    }
+    const local = saveLocalContactRiskReport(reportDef.category, parsed.identifier, parsed.evidence, `local:${groupId}`);
+    const lines = [
+      `已记录${reportDef.category === 'peer' ? '同行风险' : '风险'}举报：${contactIdentifierLabel(parsed.identifier)}`,
+      `本地库累计：${local.reportCount} 次举报记录`
+    ];
+    if (reportDef.category === 'scammer') {
+      const external = await submitExternalScammerReport(parsed.identifier, parsed.evidence);
+      lines.push(`第三方提交：${external.ok ? '成功' : '失败'}，${external.message}`);
+      lines.push(external.skipped ? '请主人先配置骗子举报接口；本地库已保存。' : (external.ok ? '后续查询会同时使用本地库和第三方接口。' : '第三方不可用时，本地库仍可继续查询。'));
+    } else {
+      lines.push('同行库完全由本地数据库支持。');
+    }
+    await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
+    return true;
+  }
   const inviteByMatch = text.match(/^查邀请(\d{5,13})$/);
   if (inviteByMatch) {
     if (getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }

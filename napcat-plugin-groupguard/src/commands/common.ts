@@ -54,6 +54,16 @@ export function saveConfig(ctx: NapCatPluginContext): void {
   }
 }
 
+export function saveConfigStrict(ctx: NapCatPluginContext): void {
+  if (!ctx?.configPath) {
+    throw new Error('missing_config_path');
+  }
+  const config = configStateService.getConfig();
+  const mainConfig = { ...config, groups: {} };
+  fs.writeFileSync(ctx.configPath, JSON.stringify(mainConfig, null, 2), 'utf-8');
+  storageAdapter.saveGroupConfigs(config.groups || {});
+}
+
 export async function sendGroupScene(groupId: string, scene: string, fallback: string, vars?: Record<string, string | number | boolean>): Promise<void> {
   await send({ channel: 'group', targetId: groupId, scene, message: fallback, vars, force: true, applyTemplate: true });
 }

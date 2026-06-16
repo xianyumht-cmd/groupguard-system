@@ -1,0 +1,40 @@
+{
+  "name": "napcat-plugin-groupguard",
+  "plugin": "群管插件",
+  "version": "1.2.9",
+  "type": "module",
+  "main": "index.mjs",
+  "description": "Group Guard plugin for NapCat, comprehensive group management and risk control",
+  "author": "冷曦",
+  "napcat": {
+    "tags": [
+      "群管",
+      "工具"
+    ],
+    "minVersion": "4.14.0"
+  },
+  "dependencies": {
+    "jimp": "^1.6.0",
+    "jsqr": "^1.4.0",
+    "napcat-types": "0.0.17",
+    "undici": "^7.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0"
+  },
+  "scripts": {
+    "arch:check:system-write": "npm run arch:check:system-write:strict",
+    "arch:check:system-write:strict": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=strict",
+    "arch:check:system-write:dev": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=development",
+    "arch:check:system-write:migration": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=migration",
+    "arch:check:system-write:learning": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=learning",
+    "arch:hints:system-write": "node --experimental-strip-types scripts/arch-hints-system-write.ts",
+    "arch:help": "node --experimental-strip-types scripts/arch-help-system-write.ts",
+    "build": "npm run arch:check:system-write:strict && vite build",
+    "report:scene": "node scene_coverage_report.mjs",
+    "report:commands": "node scripts/command_coverage_report.mjs"
+  }
+}

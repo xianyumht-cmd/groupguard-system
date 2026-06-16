@@ -83,6 +83,18 @@ export interface PluginConfig {
   /** 本地 LOL 战绩查询服务地址（如 http://192.168.3.94:5000） */
   lolApiBaseUrl?: string;
   videoApiTemplates?: Record<string, string>;
+  scammerQueryUrls?: string[];
+  scammerReportUrl?: string;
+  scammerMaxRecords?: number;
+  scammerMaxEvidenceLength?: number;
+  scammerMaxRecentReportsPerQQ?: number;
+  scammerQueryUserCooldownSeconds?: number;
+  scammerQueryGroupRateLimitPerMinute?: number;
+  scammerQueryCacheSeconds?: number;
+  scammerReportUserCooldownSeconds?: number;
+  scammerReportGroupRateLimitPerMinute?: number;
+  scammerReportUserDailyLimit?: number;
+  scammerReportDedupHours?: number;
   /** 全局消息类型过滤 */
   msgFilter: MsgFilterSettings;
   /** 全局问答列表 */
@@ -91,6 +103,53 @@ export interface PluginConfig {
   rejectKeywords: string[];
   /** 预设配置列表 */
   presets: PresetConfig[];
+}
+
+export interface ScammerRecord {
+  qq: string;
+  reportCount: number;
+  lastReportContent: string;
+  recentReports: string[];
+  sources: string[];
+  firstReportedAt: number;
+  lastReportedAt: number;
+  lastCheckedAt: number;
+  updatedAt: number;
+}
+
+export interface ScammerReportInput {
+  qq: string;
+  content: string;
+  source: string;
+  maxEvidenceLength?: number;
+  maxRecentReports?: number;
+}
+
+export type ContactRiskCategory = 'scammer' | 'peer';
+export type ContactIdentifierType = 'qq' | 'wechat';
+
+export interface ContactRiskRecord {
+  category: ContactRiskCategory;
+  identifierType: ContactIdentifierType;
+  identifierValue: string;
+  reportCount: number;
+  lastReportContent: string;
+  recentReports: string[];
+  sources: string[];
+  firstReportedAt: number;
+  lastReportedAt: number;
+  lastCheckedAt: number;
+  updatedAt: number;
+}
+
+export interface ContactRiskReportInput {
+  category: ContactRiskCategory;
+  identifierType: ContactIdentifierType;
+  identifierValue: string;
+  content: string;
+  source: string;
+  maxEvidenceLength?: number;
+  maxRecentReports?: number;
 }
 
 export interface GroupGuardSettings {

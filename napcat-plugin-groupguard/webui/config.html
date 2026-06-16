@@ -134,6 +134,262 @@
       background: rgba(239, 68, 68, .15)
     }
 
+    button[style*="font-size:10px"],
+    button[style*="padding:3px 8px"],
+    button[style*="padding:2px 8px"] {
+      padding: 4px 9px !important;
+      border-radius: 7px !important;
+      font-size: 11px !important;
+      min-height: 26px
+    }
+
+    .glass > .flex.items-center.justify-between.mb-3,
+    .glass > .flex.items-center.justify-between.gap-3.mb-4,
+    .glass > .flex.flex-wrap.items-center.justify-between.gap-2.mb-3 {
+      align-items: center;
+      gap: 12px
+    }
+
+    .glass > .flex.items-center.justify-between.mb-3 > :last-child,
+    .glass > .flex.items-center.justify-between.gap-3.mb-4 > :last-child,
+    .glass > .flex.flex-wrap.items-center.justify-between.gap-2.mb-3 > :last-child {
+      justify-content: flex-end
+    }
+
+    .btn-mini {
+      padding: 4px 9px;
+      border-radius: 7px;
+      font-size: 11px;
+      gap: 4px
+    }
+
+    .btn-icon::before {
+      display: inline-block;
+      width: 14px;
+      text-align: center;
+      font-size: 12px;
+      line-height: 1
+    }
+
+    .ico-save::before { content: 'S' }
+    .ico-refresh::before { content: 'R' }
+    .ico-export::before { content: 'E' }
+    .ico-import::before { content: 'I' }
+    .ico-search::before { content: '?' }
+    .ico-clear::before { content: 'X' }
+
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap
+    }
+
+    .page-title {
+      font-weight: 700;
+      font-size: 16px;
+      line-height: 1.35
+    }
+
+    .page-sub {
+      margin-top: 3px;
+      font-size: 11px;
+      color: #94a3b8
+    }
+
+    .action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap
+    }
+
+    .danger-zone {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-top: 10px;
+      margin-top: 12px;
+      border-top: 1px solid rgba(239, 68, 68, .14)
+    }
+
+    .toolbar-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      min-height: 34px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.82);
+      border: 1px solid rgba(96, 165, 250, .16);
+      backdrop-filter: blur(10px)
+    }
+
+    .dark .toolbar-status {
+      background: rgba(15,23,42,.68);
+      border-color: rgba(96, 165, 250, .12)
+    }
+
+    .dirty-pill {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #b45309;
+      background: rgba(245, 158, 11, .12);
+      border: 1px solid rgba(245, 158, 11, .22)
+    }
+
+    .dirty .dirty-pill {
+      display: inline-flex
+    }
+
+    .quick-grid {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(320px, 1.1fr);
+      gap: 14px;
+      align-items: start
+    }
+
+    .quick-list {
+      display: grid;
+      gap: 10px
+    }
+
+    .quick-switch {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(96, 165, 250, .14);
+      background: rgba(248, 250, 252, .68)
+    }
+
+    .dark .quick-switch {
+      background: rgba(15, 23, 42, .38);
+      border-color: rgba(96, 165, 250, .1)
+    }
+
+    @media (max-width: 900px) {
+      .quick-grid {
+        grid-template-columns: 1fr
+      }
+    }
+
+    #gt-manage {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      align-items: start
+    }
+
+    #gt-manage .cfg-sec {
+      margin: 0;
+      padding: 14px;
+      min-width: 0;
+      border: 1px solid rgba(96, 165, 250, .14);
+      border-radius: 12px;
+      background: rgba(248, 250, 252, .68)
+    }
+
+    .dark #gt-manage .cfg-sec {
+      background: rgba(15, 23, 42, .38);
+      border-color: rgba(96, 165, 250, .1)
+    }
+
+    #gt-manage .cfg-sec:last-child {
+      padding-bottom: 14px
+    }
+
+    #gt-manage .cfg-sec.manage-wide,
+    #gt-manage #sec-antirisk {
+      grid-column: 1 / -1
+    }
+
+    #gt-manage .cfg-sec.manage-collapsed {
+      max-height: 58px;
+      overflow: hidden
+    }
+
+    #gt-manage .manage-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px
+    }
+
+    #gt-manage .manage-head .sec-t {
+      margin-bottom: 0
+    }
+
+    #gt-manage .manage-collapsed .manage-head {
+      margin-bottom: 0
+    }
+
+    #gt-manage .manage-toggle {
+      border: 1px solid rgba(96, 165, 250, .16);
+      background: rgba(96, 165, 250, .08);
+      color: #3B82F6;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer
+    }
+
+    .dark #gt-manage .manage-toggle {
+      color: #93C5FD;
+      border-color: rgba(96, 165, 250, .12)
+    }
+
+    #gt-manage .cfg-row {
+      padding: 9px 10px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .58);
+      border: 1px solid rgba(96, 165, 250, .08)
+    }
+
+    .dark #gt-manage .cfg-row {
+      background: rgba(15, 23, 42, .26);
+      border-color: rgba(96, 165, 250, .06)
+    }
+
+    #gt-manage .cfg-sec:first-child .grid {
+      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr))
+    }
+
+    #gt-manage .cfg-sec:first-child .cfg-row {
+      min-height: 42px;
+      padding: 7px 9px
+    }
+
+    #gt-manage .cfg-sec:first-child .cfg-row .text-sm {
+      font-size: 12px
+    }
+
+    @media (max-width: 1100px) {
+      #gt-manage {
+        grid-template-columns: 1fr
+      }
+    }
+
     /* inputs */
     .ipt {
       width: 100%;
@@ -480,11 +736,16 @@
     </aside>
     <div class="flex-1 flex flex-col overflow-hidden">
       <header
-        class="sticky top-0 z-20 flex justify-end items-center px-5 py-2.5 bg-[#F0F7FF]/80 dark:bg-[#0B1120]/80 backdrop-blur-md border-b border-blue-100/30 dark:border-blue-900/10 transition-colors duration-300">
-        <div class="flex items-center gap-2.5">
+        class="sticky top-0 z-20 flex justify-between items-center gap-3 px-5 py-2.5 bg-[#F0F7FF]/80 dark:bg-[#0B1120]/80 backdrop-blur-md border-b border-blue-100/30 dark:border-blue-900/10 transition-colors duration-300">
+        <div class="dirty-pill" id="dirtyPill">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+          <span>有未保存更改</span>
+        </div>
+        <div class="action-bar">
+          <button onclick="loadRuntime()" class="btn btn-s btn-icon ico-refresh">刷新运行态</button>
           <button onclick="doSave()" class="btn btn-p">保存配置</button>
           <div
-            class="flex items-center gap-2 px-3 py-1.5 bg-white/80 dark:bg-slate-800/60 rounded-full border border-blue-100/40 dark:border-blue-900/20 backdrop-blur-sm">
+            class="toolbar-status">
             <div id="sDot" class="w-2 h-2 rounded-full bg-red-400"></div>
             <span class="text-xs font-medium" id="sTxt">加载中...</span>
           </div>
@@ -534,6 +795,12 @@
 
         <!-- 群管设置 -->
         <div id="pg-global" class="pg">
+          <div class="page-head">
+            <div>
+              <div class="page-title">群管设置</div>
+              <div class="page-sub">先选择全局或分群范围，再调整下方配置。</div>
+            </div>
+          </div>
           <div class="glass p-5 mb-4">
             <div class="flex items-center gap-3 flex-wrap mb-3">
               <h3 class="font-bold text-base">全局默认配置</h3>
@@ -552,7 +819,7 @@
             <div id="grpPickerWrap" style="display:none" class="mb-3">
               <div class="group-picker-panel scr" id="grpPickerList"></div>
             </div>
-            <div class="flex items-center gap-2 flex-wrap mb-3" data-scope="group">
+            <div class="action-bar mb-3" data-scope="group">
               <button class="btn btn-s" onclick="exportCurrentGroupConfig()">导出当前分群</button>
               <button class="btn btn-s" onclick="triggerImportGroupConfig()">导入到当前分群</button>
               <select id="grpImportMode" class="ipt" style="width:160px">
@@ -1150,6 +1417,64 @@
         </div>
 
         <div id="pg-tools" class="pg">
+          <div class="page-head">
+            <div>
+              <div class="page-title">快捷工具</div>
+              <div class="page-sub">左侧查看状态，右侧处理运行开关和即时操作。</div>
+            </div>
+            <div class="action-bar">
+              <button class="btn btn-s btn-icon ico-refresh" onclick="loadRuntime()">同步运行态</button>
+              <button class="btn btn-p btn-icon ico-refresh" onclick="loadStorageStatus()">数据库状态</button>
+            </div>
+          </div>
+          <div class="quick-grid">
+            <div class="glass p-5 mb-4">
+              <div class="card-head">
+                <div>
+                  <h3 class="font-bold text-base">运行快照</h3>
+                  <p class="page-sub">只读状态与存储摘要。</p>
+                </div>
+              </div>
+              <div id="toolsOut" class="text-xs text-slate-500 whitespace-pre-wrap"></div>
+            </div>
+            <div class="glass p-5 mb-4">
+              <div class="card-head">
+                <div>
+                  <h3 class="font-bold text-base">功能开关</h3>
+                  <p class="page-sub">持续状态使用开关，一次性动作使用按钮。</p>
+                </div>
+              </div>
+              <div class="quick-list">
+                <div class="quick-switch">
+                  <div>
+                    <div class="text-sm font-medium">Fallback 兼容模式</div>
+                    <div class="text-xs text-slate-400">运行时兼容回落开关。</div>
+                  </div>
+                  <div class="tgl" id="qt-fallback" onclick="tg(this);setQuickFallback(this)"></div>
+                </div>
+                <div class="quick-switch">
+                  <div>
+                    <div class="text-sm font-medium">刷屏检测</div>
+                    <div class="text-xs text-slate-400">控制全局刷屏检测能力。</div>
+                  </div>
+                  <div class="tgl" id="qt-spam" onclick="tg(this);setQuickRisk(this,'spamDetect')"></div>
+                </div>
+                <div class="quick-switch">
+                  <div>
+                    <div class="text-sm font-medium">入群验证</div>
+                    <div class="text-xs text-slate-400">控制新成员入群验证能力。</div>
+                  </div>
+                  <div class="tgl" id="qt-verify" onclick="tg(this);setQuickRisk(this,'enableVerify')"></div>
+                </div>
+              </div>
+              <div class="danger-zone">
+                <button class="btn btn-s btn-icon ico-refresh" onclick="loadRuntime()">刷新运行态</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="pg-tools-legacy" class="pg">
           <div class="glass p-5 mb-4">
             <h3 class="font-bold text-base mb-3">快捷操作</h3>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
@@ -1164,7 +1489,7 @@
               <button class="btn btn-p" onclick="loadStorageStatus()">查看数据库状态</button>
               <button class="btn btn-s" onclick="loadRuntime()">同步运行态</button>
             </div>
-            <div id="toolsOut" class="text-xs text-slate-500 whitespace-pre-wrap"></div>
+            <div id="toolsOutLegacy" class="text-xs text-slate-500 whitespace-pre-wrap"></div>
           </div>
         </div>
 
@@ -1496,15 +1821,32 @@
     let auditEvents = [], auditPage = 0, auditPageSize = 20, auditTypeFilter = '', auditSelected = null, auditPinnedEvent = null, auditCurrentTrace = null, auditTraceStageFilter = '', auditTraceQuery = '', auditLoadedLimit = 100, auditTotal = 0, auditHasMore = false;
     const auditTraceCollapsed = { summary: false, snapshot: false, timeline: false, logs: false };
     const auditEventCacheById = new Map();
+    let hasDirtyConfig = false;
     function $ (id) { return document.getElementById(id); }
+    function setDirty (v = true) {
+      hasDirtyConfig = !!v;
+      document.body.classList.toggle('dirty', hasDirtyConfig);
+    }
     function toast (m, t = 'info') { const c = $('tc'), icons = { success: '<svg class="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>', error: '<svg class="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>', info: '<svg class="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' }, d = document.createElement('div'); d.className = 'toast'; d.innerHTML = `<span>${icons[t] || ''}</span><span>${m}</span>`; c.appendChild(d); setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 300); }, 3000); }
-    function tg (el) { el.classList.toggle('on'); }
+    function tg (el) { el.classList.toggle('on'); if (!el.id || !el.id.startsWith('qt-')) setDirty(true); }
     function stg (id, v) { const e = $(id); if (e) { if (v) e.classList.add('on'); else e.classList.remove('on'); } }
     function gtg (id) { return $(id)?.classList.contains('on') || false; }
     function sv (id, v) { const e = $(id); if (e) e.value = v; }
     function gn (id, d) { const v = parseInt($(id)?.value); return isNaN(v) ? d : v; }
     function esc (s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-    async function af (p, m = 'GET', b = null) { const o = { method: m, headers: { 'Content-Type': 'application/json' } }; if (b) o.body = JSON.stringify(b); return (await fetch(API + p, o)).json(); }
+    async function af (p, m = 'GET', b = null) {
+      const o = { method: m, headers: { 'Content-Type': 'application/json' } };
+      if (b) o.body = JSON.stringify(b);
+      const resp = await fetch(API + p, o);
+      const text = await resp.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+      if (data) {
+        if (!resp.ok && !data.message) data.message = `HTTP ${resp.status}`;
+        return data;
+      }
+      return { code: resp.ok ? 0 : -1, message: text || `HTTP ${resp.status}` };
+    }
     function go (pg, el) { document.querySelectorAll('.pg').forEach(p => p.classList.remove('active')); document.querySelectorAll('.sb').forEach(s => s.classList.remove('active')); $('pg-' + pg)?.classList.add('active'); el?.classList.add('active'); if (pg === 'dashboard') updDash(); if (pg === 'sessions') loadSess(); if (pg === 'global') popGrpSel(); if (pg === 'activity') { popActSel(); loadAct(); } if (pg === 'assistant') loadBlMgr(); if (pg === 'help') loadHelpManual(); if (pg === 'persona') loadPersonaView(); if (pg === 'runtime') loadRuntime(); if (pg === 'tools') loadRuntime(); if (pg === 'license') { popLicGrp(); loadLic(); } if (pg === 'audit') { loadAuditQueryMemory(); loadAuditStats(); loadActionQueueEventStats(); loadAuditEvents(0); } if (pg === 'logs') { stg('l-db', C.debug); loadLogs(); startLR(); } else stopLR(); }
     function popLicGrp() {
       const s = $('l-grp');
@@ -1890,6 +2232,34 @@
       C.groups[gid] = payload;
     }
 
+    function compactConfigPatch (obj) {
+      const out = { ...(obj || {}) };
+      if (JSON.stringify(out.replySceneTemplates || {}).length > 50000) delete out.replySceneTemplates;
+      if (JSON.stringify(out.qaList || []).length > 50000) delete out.qaList;
+      return out;
+    }
+
+    async function saveChunkedGlobalField (field, value, groupId = '') {
+      const text = JSON.stringify(value || {});
+      if (text.length <= 50000) return { code: 0 };
+      const size = 35000;
+      const total = Math.ceil(text.length / size);
+      const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      let last = { code: 0 };
+      for (let index = 0; index < total; index++) {
+        last = await af('/config/global-field-chunk', 'POST', {
+          field,
+          token,
+          index,
+          total,
+          groupId,
+          chunk: text.slice(index * size, (index + 1) * size)
+        });
+        if (last.code !== 0) return last;
+      }
+      return last;
+    }
+
     function updDash () {
       $('d-gc').textContent = GL.length; $('d-sc').textContent = '-';
       const g = C.global || {};
@@ -2018,9 +2388,40 @@
       C.lolBanBackupUrls = ($('d-lol-ban-backups')?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
       C.globalAntiRecall = gtg('a-gar'); C.globalEmojiReact = gtg('a-ger');
       if (editMode) { collectGroup(editMode); } else { collectGlobal(); }
+      const patch = {
+        topLevel: {
+          ownerQQs: C.ownerQQs,
+          licenseKey: C.licenseKey,
+          lolBanPrimaryUrl: C.lolBanPrimaryUrl,
+          lolBanBackupUrls: C.lolBanBackupUrls,
+          globalAntiRecall: C.globalAntiRecall,
+          globalEmojiReact: C.globalEmojiReact,
+          blacklist: C.blacklist || [],
+          whitelist: C.whitelist || []
+        }
+      };
+      if (editMode) {
+        const gs = (C.groups || {})[editMode] || {};
+        patch.groupId = editMode;
+        patch.useGlobal = gs.useGlobal === true;
+        if (!patch.useGlobal) patch.group = compactConfigPatch(gs);
+      } else {
+        patch.global = compactConfigPatch(C.global || {});
+      }
       try {
-        const r = await af('/config', 'POST', C);
+        const r = await af('/config/patch', 'POST', patch);
         if (r.code === 0) {
+          const largeQA = await saveChunkedGlobalField('qaList', editMode ? ((C.groups || {})[editMode] || {}).qaList || [] : (C.global || {}).qaList || [], editMode || '');
+          if (largeQA.code !== 0) {
+            toast('淇濆瓨澶辫触: ' + (largeQA.message || 'qaList'), 'error');
+            return;
+          }
+          const largeReplyTemplates = await saveChunkedGlobalField('replySceneTemplates', editMode ? ((C.groups || {})[editMode] || {}).replySceneTemplates || {} : (C.global || {}).replySceneTemplates || {}, editMode || '');
+          if (largeReplyTemplates.code !== 0) {
+            toast('淇濆瓨澶辫触: ' + (largeReplyTemplates.message || 'replySceneTemplates'), 'error');
+            return;
+          }
+          setDirty(false);
           toast('配置已保存', 'success');
           return;
         }
@@ -2741,6 +3142,46 @@
     async function loadRuntimeLegacy(){ try { const r = await af('/runtime'); if (r.code !== 0) throw new Error(r.message || 'error'); runtimeState = r.data || {}; $('rt-fb').textContent = runtimeState.legacyFallback ? '开启' : '关闭'; $('rt-qm').textContent = runtimeState.sendPolicy?.queueMode || '-'; $('rt-gpm').textContent = `${runtimeState.sendPolicy?.globalMaxPerMinute || '-'} /分`; $('rt-rp').textContent = `${runtimeState.sendPolicy?.replyProbability ?? '-'}%`; const dc = runtimeState.dynamicCommands || {}; const dcOverview = dc.overview || {}; const txt = `Fallback: ${runtimeState.legacyFallback ? '开启' : '关闭'}\n发送并发: ${runtimeState.sendPolicy?.queueConcurrency || 1}\n模板池数量: ${runtimeState.sendPolicy?.replyTemplatePoolSize || 0}\n纯文本回复: ${runtimeState.sendPolicy?.disableReplyTemplate ? '开启' : '关闭'}\n随机人格: ${runtimeState.sendPolicy?.autoRandomPersona ? '开启' : '关闭'}\n问答冷却: ${runtimeState.riskPolicy?.qaCooldownSeconds ?? 30}s\n同用户冷却: ${runtimeState.riskPolicy?.qaUserCooldownSeconds ?? 12}s\n群熔断: 窗口${runtimeState.riskPolicy?.groupFuseWindowSeconds ?? 60}s 阈值${runtimeState.riskPolicy?.groupFuseThreshold ?? 45} 冷却${runtimeState.riskPolicy?.groupFuseCooldownSeconds ?? 90}s\n动作策略: 管理员撤回=${runtimeState.riskPolicy?.allowRecallAdminMessage ? '允许' : '禁止'} 群主撤回=${runtimeState.riskPolicy?.allowRecallOwnerMessage ? '允许' : '禁止'} 管理员保护=${runtimeState.riskPolicy?.protectAdminActions ? '开启' : '关闭'} 群主保护=${runtimeState.riskPolicy?.protectOwnerActions ? '开启' : '关闭'}\n风控收敛: ${runtimeState.riskPolicy?.autoRiskControl ? '开启' : '关闭'}\n功能开关: QA=${runtimeState.featureFlags?.disableQA ? '关' : '开'} 签到=${runtimeState.featureFlags?.disableSignin ? '关' : '开'} 抽奖=${runtimeState.featureFlags?.disableLottery ? '关' : '开'} 邀请=${runtimeState.featureFlags?.disableInvite ? '关' : '开'} 活跃=${runtimeState.featureFlags?.disableActivity ? '关' : '开'}\n动态命令: ${dcOverview.activeCommandCount || 0} 个 / 注册表版本 ${dc.registryVersion || 0} / 打开熔断 ${dcOverview.openBreakers || 0}`; $('runtimeText').textContent = txt; $('toolsOut').textContent = `数据库: ${(runtimeState.storage || {}).dbPath || '-'}\n迁移状态: ${(runtimeState.storage || {}).migrated ? '已完成' : '未完成'}\n表计数: ${JSON.stringify((runtimeState.storage || {}).tableCounts || {}, null, 2)}`; } catch { $('runtimeText').textContent = '运行态获取失败'; } }
     async function toggleFallbackQuick(enabled){ try{ const r = await af('/runtime/fallback','POST',{ enabled }); if (r.code === 0) { toast(`Fallback已${enabled ? '开启' : '关闭'}`, 'success'); loadRuntime(); loadLogs(); } else toast('操作失败','error'); }catch{ toast('操作失败','error'); } }
     async function toggleRiskQuick(key, enabled){ try{ const r = await af('/runtime/risk-toggle','POST',{ key, enabled }); if (r.code === 0) { toast(`${key} 已${enabled ? '开启' : '关闭'}`,'success'); loadRuntime(); } else toast('操作失败','error'); }catch{ toast('操作失败','error'); } }
+    function syncQuickToolSwitches () {
+      if (!runtimeState) return;
+      stg('qt-fallback', !!runtimeState.legacyFallback);
+      stg('qt-spam', !runtimeState.featureFlags?.spamDetectDisabled && !!runtimeState.riskPolicy?.spamDetect);
+      stg('qt-verify', !runtimeState.featureFlags?.enableVerifyDisabled && !!runtimeState.riskPolicy?.enableVerify);
+    }
+    async function setQuickFallback (el) {
+      const enabled = el.classList.contains('on');
+      await toggleFallbackQuick(enabled);
+    }
+    async function setQuickRisk (el, key) {
+      const enabled = el.classList.contains('on');
+      await toggleRiskQuick(key, enabled);
+    }
+    function enhanceManageLayout () {
+      const manage = $('gt-manage');
+      if (!manage || manage.dataset.enhanced === '1') return;
+      const sections = Array.from(manage.querySelectorAll(':scope > .cfg-sec'));
+      sections.forEach((sec, index) => {
+        const title = sec.querySelector(':scope > .sec-t');
+        if (!title) return;
+        const head = document.createElement('div');
+        head.className = 'manage-head';
+        title.parentNode.insertBefore(head, title);
+        head.appendChild(title);
+        if (index === 0 || sec.id === 'sec-antirisk') sec.classList.add('manage-wide');
+        const shouldCollapse = index === 0 || index === 1 || sec.id === 'sec-antirisk' || index >= 4;
+        if (shouldCollapse) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'manage-toggle';
+          const sync = () => { btn.textContent = sec.classList.contains('manage-collapsed') ? '展开' : '收起'; };
+          btn.onclick = () => { sec.classList.toggle('manage-collapsed'); sync(); };
+          head.appendChild(btn);
+          sec.classList.add('manage-collapsed');
+          sync();
+        }
+      });
+      manage.dataset.enhanced = '1';
+    }
     async function loadStorageStatus(){ try { const r = await af('/runtime'); if (r.code !== 0) throw new Error('error'); const s = r.data?.storage || {}; $('toolsOut').textContent = `数据库: ${s.dbPath || '-'}\n迁移状态: ${s.migrated ? '已完成' : '未完成'}\n表计数:\n${Object.entries(s.tableCounts || {}).map(([k,v]) => `${k}: ${v}`).join('\n')}`; } catch { $('toolsOut').textContent = '数据库状态获取失败'; } }
     let _qaData = [];
     function renderQA (list) { _qaData = list || []; const c = $('qaList'); if (!c) return; const modeMap = { exact: '精确', contains: '模糊', regex: '正则' }; if (!_qaData.length) { c.innerHTML = '<p class="text-xs text-slate-400">暂无问答条目</p>'; return; } c.innerHTML = _qaData.map((q, i) => `<div class="flex items-center justify-between p-2.5 mb-1.5 rounded-lg bg-slate-50/80 dark:bg-slate-800/30 border border-blue-100/20 dark:border-blue-900/10"><div class="flex-1 text-xs"><span class="px-1.5 py-0.5 rounded-md bg-blue-100/80 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] mr-1.5 font-medium">${modeMap[q.mode] || q.mode}</span><span class="font-mono font-medium">${esc(q.keyword)}</span> <span class="text-slate-300 dark:text-slate-600 mx-1">→</span> <span>${esc(q.reply)}</span></div><button onclick="rmQA(${i})" class="btn btn-d" style="font-size:10px;padding:2px 8px">删除</button></div>`).join(''); }
@@ -2861,6 +3302,7 @@
         const r = await af('/runtime');
         if (r.code !== 0) throw new Error(r.message || 'error');
         runtimeState = r.data || {};
+        syncQuickToolSwitches();
         $('rt-fb').textContent = runtimeState.legacyFallback ? '开启' : '关闭';
         $('rt-qm').textContent = runtimeState.sendPolicy?.queueMode || '-';
         $('rt-gpm').textContent = `${runtimeState.sendPolicy?.globalMaxPerMinute || '-'} /分`;
@@ -2879,6 +3321,21 @@
       }
     }
     async function init () { await Promise.all([loadCfg(), loadGrps(), loadHelpManual(), loadPersonaSource()]); popGrpSel(); applyScopeView(false); updDash(); loadPersonaView(); loadRuntime(); $('d-owner')?.addEventListener('input', function () { C.ownerQQs = this.value; const ow = this.value.split(',').map(s => s.trim()).filter(Boolean); $('ownerPv').textContent = ow.length ? `当前主人：${ow.join('、')}（共${ow.length}人）` : '尚未设置主人'; }); }
+    function bindDirtyTracking () {
+      document.addEventListener('input', (event) => {
+        const el = event.target;
+        if (!el || !el.closest || el.closest('#pg-tools')) return;
+        if (el.matches('input, textarea, select')) setDirty(true);
+      });
+      document.addEventListener('change', (event) => {
+        const el = event.target;
+        if (!el || !el.closest || el.closest('#pg-tools')) return;
+        if (el.matches('input, textarea, select')) setDirty(true);
+      });
+    }
+    bindDirtyTracking();
+    enhanceManageLayout();
+    setTimeout(() => setDirty(false), 500);
     init();
   </script>
 </body>

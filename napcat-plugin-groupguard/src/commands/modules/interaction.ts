@@ -26,6 +26,17 @@ export const INTERACTION_PREFIXES = [
   '设置封号主接口',
   '设置封号接口配置',
   '删除封号备用接口'
+  ,
+  '设置骗子查询接口',
+  '添加骗子查询接口',
+  '删除骗子查询接口',
+  '设置骗子举报接口',
+  '设置骗子库限制',
+  '设置骗子风控',
+  '查骗子',
+  '举报骗子',
+  '查同行',
+  '举报同行'
 ];
 
 export const INTERACTION_EXACT = [
@@ -44,6 +55,8 @@ export const INTERACTION_EXACT = [
   '战绩接口状态',
   '战绩配置',
   '看视频接口列表'
+  ,
+  '骗子接口状态'
 ];
 
 export async function handleInteractionCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {

@@ -24,7 +24,7 @@
 <body>
   <div class="wrap">
     <h1>GroupGuard 用户手册</h1>
-    <p>本手册仅包含“用户可执行指令”，即成员可用与管理员可用指令；不包含任何主人专属操作指令。</p>
+    <p>本手册仅包含“用户可执行指令”，即成员可用与管理员可用指令；不包含高权限运维操作指令。</p>
     <div class="tip">
       <span class="tag">成员可用</span>
       <span class="tag">管理员可用</span>
@@ -137,6 +137,19 @@
       <tbody>
         <tr><td><code>定时任务 HH:mm 内容</code> / <code>删除定时任务 ID</code> / <code>定时列表</code></td><td>成员</td><td>管理本群定时消息</td><td><code>定时任务 08:00 大家早上好</code></td></tr>
         <tr><td><code>开启功能 名称</code> / <code>关闭功能 名称</code></td><td>管理员</td><td>支持：问答、签到、抽奖、邀请统计、活跃统计、自动同意、入群验证、刷屏检测、退群拉黑、暗号回落、管理员保护、群主保护、自动风控收敛</td><td><code>关闭功能 抽奖</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>8. 骗子/同行库</h2>
+    <table>
+      <thead>
+        <tr><th>指令</th><th>权限</th><th>说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>查骗子QQ或微信号</code></td><td>成员</td><td>查询风险举报记录；QQ 和微信都会查询本地库，已配置外部数据源时会同步多方查询</td><td><code>查骗子123456</code></td></tr>
+        <tr><td><code>举报骗子QQ或微信号 描述</code></td><td>成员</td><td>提交风险举报记录；描述必须和账号之间有空格，短时间重复提交会被限制</td><td><code>举报骗子123456 收款后拉黑</code></td></tr>
+        <tr><td><code>查同行QQ或微信号</code></td><td>成员</td><td>查询本地同行风险举报记录</td><td><code>查同行123456</code></td></tr>
+        <tr><td><code>举报同行QQ或微信号 描述</code></td><td>成员</td><td>提交同行风险举报记录；描述必须和账号之间有空格</td><td><code>举报同行123456 偷客户</code></td></tr>
       </tbody>
     </table>
 

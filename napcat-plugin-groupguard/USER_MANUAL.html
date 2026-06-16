@@ -69,6 +69,7 @@
       <a href="#qa">自动问答</a>
       <a href="#points">积分签到/抽奖/排行榜</a>
       <a href="#invite">邀请与活跃统计</a>
+      <a href="#riskdb">骗子/同行库</a>
       <a href="#curfew">宵禁模式</a>
       <a href="#groupmanage">常规群管指令</a>
       <a href="#auto">自动触发功能总表</a>
@@ -274,6 +275,37 @@
       </div>
     </section>
 
+    <section id="riskdb" class="sec" data-key="骗子 同行 本地库 举报 查询 QQ 微信">
+      <h2>骗子/同行库</h2>
+      <p class="desc">骗子库支持本地库 + 外部数据源多方查询；同行库完全由本地数据库支持。QQ 格式为 5-13 位数字；微信号格式为 3-64 位，必须字母开头，只允许字母、数字、下划线、横杠、点号，不允许空格。查询和举报带有冷却与限流，请勿重复刷屏提交。</p>
+      <div class="grid">
+        <article class="card" data-key="查骗子 QQ 微信 第三方 本地库">
+          <h3>查询骗子 <span class="tag">成员可用</span></h3>
+          <div class="meta">格式：查骗子QQ或微信号<br>作用：QQ 和微信都会查询风险举报记录；已配置外部数据源时会同步多方查询。</div>
+          <div class="cmd"><code>查骗子123456</code><button class="copy" data-copy="查骗子123456">复制</button></div>
+        </article>
+        <article class="card" data-key="举报骗子 QQ 微信 描述 第三方 本地库">
+          <h3>举报骗子 <span class="tag">成员可用</span></h3>
+          <div class="meta">格式：举报骗子QQ或微信号 描述<br>作用：记录风险举报内容；已配置外部举报接口时会继续尝试同步提交。</div>
+          <div class="cmd"><code>举报骗子123456 收款后拉黑，有聊天记录</code><button class="copy" data-copy="举报骗子123456 收款后拉黑，有聊天记录">复制</button></div>
+        </article>
+        <article class="card" data-key="查同行 QQ 微信 本地库">
+          <h3>查询同行 <span class="tag">成员可用</span></h3>
+          <div class="meta">格式：查同行QQ或微信号<br>作用：查询本地同行风险举报记录，用于排查同行偷客户等风险。</div>
+          <div class="cmd"><code>查同行123456</code><button class="copy" data-copy="查同行123456">复制</button></div>
+        </article>
+        <article class="card" data-key="举报同行 QQ 微信 描述 本地库">
+          <h3>举报同行 <span class="tag">成员可用</span></h3>
+          <div class="meta">格式：举报同行QQ或微信号 描述<br>作用：保存到本地同行风险库。描述必须和账号之间有空格。</div>
+          <div class="cmd"><code>举报同行123456 偷客户并私聊拉人</code><button class="copy" data-copy="举报同行123456 偷客户并私聊拉人">复制</button></div>
+        </article>
+      </div>
+      <div class="notice" style="margin-top:12px">
+        <div>示例：<code>查骗子微信wxid_abcd-01</code>、<code>举报同行微信abc_def 偷客户</code>。</div>
+        <div>为了避免误拆指令，举报格式必须写成“账号 + 空格 + 描述”，例如 <code>举报同行123456 描述</code>。</div>
+      </div>
+    </section>
+
     <section id="curfew" class="sec" data-key="宵禁">
       <h2>宵禁模式</h2>
       <div class="grid">
@@ -342,7 +374,7 @@
           <tr><td>违禁词处罚链</td><td>命中违禁词</td><td>撤回，并按等级禁言/踢出/拉黑</td></tr>
           <tr><td>消息类型过滤</td><td>命中过滤规则</td><td>自动撤回（图/视频/语音/链接/二维码等）</td></tr>
           <tr><td>刷屏/复读检测</td><td>超过频率阈值或复读阈值</td><td>自动禁言并提示</td></tr>
-          <tr><td>防撤回恢复</td><td>收到撤回事件且防撤回开启</td><td>恢复消息并向主人发送撤回通知</td></tr>
+          <tr><td>防撤回恢复</td><td>收到撤回事件且防撤回开启</td><td>恢复消息并发送撤回通知</td></tr>
           <tr><td>名片锁恢复</td><td>名片变更事件或消息检测到异常</td><td>自动还原锁定名片</td></tr>
           <tr><td>退群拉黑</td><td>group_decrease.leave 且开关开启</td><td>自动加入黑名单</td></tr>
           <tr><td>邀请统计与奖励</td><td>邀请入群成功</td><td>更新邀请计数并可发放邀请积分</td></tr>

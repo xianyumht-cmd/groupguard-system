@@ -39,6 +39,7 @@ import {
 } from '../dynamic-commands/command_plugin_store';
 import { refreshDynamicCommandRegistry } from '../dynamic-commands/command_registry';
 import { getRuntimeSchemaCatalog } from './command_schema_catalog';
+import { saveConfigStrict } from '../commands/common';
 
 function validatePluginRuntimeConfig(input: unknown): { ok: true; value: Record<string, unknown>; } | { ok: false; message: string; } {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -145,6 +146,27 @@ export function registerRuntimeRoutes(
     loggingStateService.info('插件页面已注册: 群管配置');
   }
 
+  const chunkedGlobalFields = new Map<string, { field: string; total: number; chunks: string[]; createdAt: number }>();
+  const saveNormalizedConfig = (config: PluginConfig): { ok: true } | { ok: false; blocked: true; audit: any } => {
+    const newConfig = normalizePluginConfig(config);
+    const audit = collectPersonaAuditForConfig(newConfig);
+    const strictMode = newConfig?.global?.personaAuditStrictMode === true;
+    if (strictMode && audit.summary.high > 0) {
+      return { ok: false, blocked: true, audit };
+    }
+
+    configStateService.setConfig(newConfig);
+    syncAuditRetentionPolicyFromConfig(newConfig);
+    if (audit.summary.total > 0) {
+      loggingStateService.warn(`浜烘牸妯℃澘瀹¤鎻愮ず: high=${audit.summary.high} medium=${audit.summary.medium} low=${audit.summary.low}`);
+    }
+
+    if (ctx?.configPath) {
+      saveConfigStrict(ctx);
+    }
+    return { ok: true };
+  };
+
   router.getNoAuth('/config', (_req: any, res: any) => {
     res.json({ code: 0, data: configStateService.getConfig(), version: identityStateService.getVersion() });
   });
@@ -171,9 +193,135 @@ export function registerRuntimeRoutes(
       }
 
       if (ctx?.configPath) {
-        saveConfig(ctx);
+        saveConfigStrict(ctx);
       }
       res.json({ code: 0, message: '配置已保存' });
+    } catch (e) { res.status(500).json({ code: -1, message: String(e) }); }
+  });
+
+  router.postNoAuth('/config/patch', (req: any, res: any) => {
+    try {
+      const body = req.body || {};
+      const current = configStateService.getConfig();
+      const draft: PluginConfig = {
+        ...current,
+        global: { ...(current.global || {}) },
+        groups: { ...(current.groups || {}) }
+      };
+
+      if (body.topLevel && typeof body.topLevel === 'object' && !Array.isArray(body.topLevel)) {
+        Object.assign(draft, body.topLevel);
+      }
+
+      if (body.global && typeof body.global === 'object' && !Array.isArray(body.global)) {
+        draft.global = { ...(draft.global || {}), ...body.global };
+      }
+
+      const groupId = String(body.groupId || '').trim();
+      if (groupId) {
+        draft.groups = { ...(draft.groups || {}) };
+        if (body.useGlobal === true) {
+          draft.groups[groupId] = { useGlobal: true } as GroupGuardSettings;
+        } else if (body.group && typeof body.group === 'object' && !Array.isArray(body.group)) {
+          draft.groups[groupId] = {
+            ...((draft.groups || {})[groupId] || {}),
+            ...body.group,
+            useGlobal: false
+          } as GroupGuardSettings;
+        }
+      }
+
+      const newConfig = normalizePluginConfig(draft);
+      const audit = collectPersonaAuditForConfig(newConfig);
+      const strictMode = newConfig?.global?.personaAuditStrictMode === true;
+      if (strictMode && audit.summary.high > 0) {
+        res.json({
+          code: -2,
+          message: `宸查樆鏂繚瀛橈細妫€娴嬪埌 ${audit.summary.high} 鏉￠珮椋庨櫓浜烘牸妯℃澘闂`,
+          data: { audit }
+        });
+        return;
+      }
+
+      configStateService.setConfig(newConfig);
+      syncAuditRetentionPolicyFromConfig(newConfig);
+      if (audit.summary.total > 0) {
+        loggingStateService.warn(`浜烘牸妯℃澘瀹¤鎻愮ず: high=${audit.summary.high} medium=${audit.summary.medium} low=${audit.summary.low}`);
+      }
+
+      if (ctx?.configPath) {
+        saveConfigStrict(ctx);
+      }
+      res.json({ code: 0, message: '閰嶇疆宸蹭繚瀛?' });
+    } catch (e) { res.status(500).json({ code: -1, message: String(e) }); }
+  });
+
+  router.postNoAuth('/config/global-field-chunk', (req: any, res: any) => {
+    try {
+      const body = req.body || {};
+      const field = String(body.field || '').trim();
+      if (!['replySceneTemplates', 'qaList'].includes(field)) {
+        res.status(400).json({ code: -1, message: 'invalid_field' });
+        return;
+      }
+
+      const token = String(body.token || '').trim();
+      const total = Number(body.total);
+      const index = Number(body.index);
+      const chunk = String(body.chunk || '');
+      if (!token || !Number.isInteger(total) || !Number.isInteger(index) || total < 1 || total > 200 || index < 0 || index >= total) {
+        res.status(400).json({ code: -1, message: 'invalid_chunk' });
+        return;
+      }
+
+      for (const [key, entry] of chunkedGlobalFields.entries()) {
+        if (Date.now() - entry.createdAt > 10 * 60 * 1000) chunkedGlobalFields.delete(key);
+      }
+
+      const groupId = String(body.groupId || '').trim();
+      const key = `${groupId || 'global'}:${field}:${token}`;
+      const entry = chunkedGlobalFields.get(key) || { field, total, chunks: new Array(total).fill(''), createdAt: Date.now() };
+      if (entry.field !== field || entry.total !== total) {
+        res.status(400).json({ code: -1, message: 'chunk_session_mismatch' });
+        return;
+      }
+
+      entry.chunks[index] = chunk;
+      chunkedGlobalFields.set(key, entry);
+      if (entry.chunks.some((part) => !part)) {
+        res.json({ code: 0, message: 'chunk_received', data: { received: entry.chunks.filter(Boolean).length, total } });
+        return;
+      }
+
+      const raw = entry.chunks.join('');
+      chunkedGlobalFields.delete(key);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const current = configStateService.getConfig();
+      const draft: PluginConfig = {
+        ...current,
+        global: { ...(current.global || {}) },
+        groups: { ...(current.groups || {}) }
+      };
+      if (groupId) {
+        draft.groups[groupId] = {
+          ...((draft.groups || {})[groupId] || {}),
+          [field]: parsed,
+          useGlobal: false
+        } as GroupGuardSettings;
+      } else {
+        draft.global = { ...(draft.global || {}), [field]: parsed };
+      }
+      const saved = saveNormalizedConfig(draft);
+      if (!saved.ok) {
+        res.json({
+          code: -2,
+          message: `宸查樆鏂繚瀛橈細妫€娴嬪埌 ${saved.audit.summary.high} 鏉￠珮椋庨櫓浜烘牸妯℃澘闂`,
+          data: { audit: saved.audit }
+        });
+        return;
+      }
+
+      res.json({ code: 0, message: 'field_saved' });
     } catch (e) { res.status(500).json({ code: -1, message: String(e) }); }
   });
 

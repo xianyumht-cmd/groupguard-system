@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GroupGuard 老板控制台</title>
+    <style>
+        :root {
+            --bg: #1e293b;
+            --surface: #334155;
+            --text: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #475569;
+            --primary: #60a5fa;
+            --accent: #c084fc;
+            --danger: #f87171;
+            --success: #4ade80;
+        }
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            flex-shrink: 0;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.2);
+            padding: 15px 25px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        h1 { margin: 0; font-size: 20px; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+        .tag { font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--primary); color: #0f172a; font-weight: bold; }
+
+        .grid-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .column {
+            background: var(--surface);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .col-header {
+            padding: 15px 20px;
+            font-weight: bold;
+            font-size: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0,0,0,0.1);
+        }
+        .col-header.license { color: #fcd34d; }
+        .col-header.global { color: var(--danger); }
+        .col-header.system { color: var(--success); }
+
+        .col-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .cmd-item {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .cmd-item:last-child { border-bottom: none; }
+        
+        .cmd {
+            font-family: 'Consolas', monospace;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 10px;
+            border-radius: 6px;
+            color: #e2e8f0;
+            font-weight: bold;
+            font-size: 14px;
+            display: block;
+            margin-bottom: 6px;
+            border-left: 3px solid var(--primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cmd:hover { background: rgba(255,255,255,0.1); border-left-color: var(--accent); }
+        .desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+        
+        .warn { color: #f87171; font-size: 12px; margin-top: 4px; display: block; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>💼 GroupGuard <span class="tag">老板控制台</span></h1>
+    <div style="font-size: 13px; opacity: 0.8;">⚠️ 以下指令仅限拥有最高权限的主人QQ私聊机器人发送</div>
+</header>
+
+<div class="grid-container">
+    
+    <!-- 1. 商业授权管理 -->
+    <div class="column">
+        <div class="col-header license">🔑 商业授权管理</div>
+        <div class="col-content">
+            <div class="cmd-item">
+                <div class="cmd">授权 [群号] [天数]</div>
+                <div class="desc">核心指令。给客户充值时长。<br>例：<code>授权 123456 30</code> (30天)<br>例：<code>授权 123456 永久</code> (无限期)</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">回收授权 [群号]</div>
+                <div class="desc">立即终止某群的服务，通常用于退款或违规处理。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">查询授权 [群号]</div>
+                <div class="desc">查看指定群的到期时间、当前等级。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">菜单 / 帮助</div>
+                <div class="desc">获取私聊管理菜单，查看当前版本号。</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 全局风控 & 运维 -->
+    <div class="column">
+        <div class="col-header global">🌐 全局风控 & 运维</div>
+        <div class="col-content">
+            <div class="cmd-item">
+                <div class="cmd">多群广播 [内容]</div>
+                <div class="desc">向所有已授权的群发送通知消息。</div>
+                <span class="warn">⚠️ 慎用！频率过高可能导致机器人风控。</span>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">添加全局违禁词 [词]</div>
+                <div class="desc">设置所有群通用的违禁词。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">删除全局违禁词 [词]</div>
+                <div class="desc">移除全局违禁词。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">添加全局拒绝词 [词]</div>
+                <div class="desc">设置所有群通用的入群拒绝词。</div>
+            </div>
+             <div class="cmd-item">
+                <div class="cmd">删除全局拒绝词 [词]</div>
+                <div class="desc">移除全局拒绝词。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">开启/关闭随机后缀</div>
+                <div class="desc">在消息末尾添加随机字符，用于绕过腾讯的文本检测风控。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">设置随机延迟 [最小] [最大]</div>
+                <div class="desc">设置发消息的随机等待时间(ms)，模拟真人操作。</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 系统 & 接口配置 -->
+    <div class="column">
+        <div class="col-header system">🔌 系统 & 接口配置</div>
+        <div class="col-content">
+            <div class="cmd-item">
+                <div class="cmd">开启/关闭全局自身撤回</div>
+                <div class="desc">机器人发出的消息在一段时间后自动撤回，减少历史记录留存。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">开启/关闭调试</div>
+                <div class="desc">在控制台输出详细日志，用于排查问题。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">设置loltoken [Token]</div>
+                <div class="desc">设置官方查询接口的 Authorization Token。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">设置lolurl [URL]</div>
+                <div class="desc">配置自定义的战绩查询接口地址 (POST)。</div>
+            </div>
+            <div class="cmd-item">
+                <div class="cmd">设置lolkey [Key]</div>
+                <div class="desc">配置自定义接口的授权密钥 (zhanjikey)。</div>
+            </div>
+            <div style="margin-top: 20px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 12px; color: #94a3b8;">
+                📝 <strong>提示：</strong><br>
+                所有配置修改后会自动保存到 <code>data/config.json</code>。<br>
+                无需重启插件即可生效。
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    document.querySelectorAll('.cmd').forEach(el => {
+        el.addEventListener('click', () => {
+            const text = el.innerText.split(' [')[0]; 
+            navigator.clipboard.writeText(text).then(() => {
+                const original = el.style.borderLeftColor;
+                el.style.borderLeftColor = '#4ade80';
+                setTimeout(() => el.style.borderLeftColor = original, 200);
+            });
+        });
+    });
+</script>
+
+</body>
+</html>

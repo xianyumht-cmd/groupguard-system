@@ -1,0 +1,23 @@
+{
+  "quote.daily": {
+    "commandId": "quote.daily",
+    "state": "closed",
+    "consecutiveFailures": 0,
+    "openedAt": 0,
+    "lastFailureAt": 1774707449303
+  },
+  "music.search": {
+    "commandId": "music.search",
+    "state": "closed",
+    "consecutiveFailures": 0,
+    "openedAt": 0,
+    "lastFailureAt": 0
+  },
+  "video.info": {
+    "commandId": "video.info",
+    "state": "closed",
+    "consecutiveFailures": 0,
+    "openedAt": 0,
+    "lastFailureAt": 0
+  }
+}

@@ -123,6 +123,11 @@
         <tr><td><code>设置战绩分群开关 开/关</code></td><td>按群控制战绩查询开关（仅主人）</td><td><code>设置战绩分群开关 关</code></td></tr>
         <tr><td><code>设置战绩分群限流 次数</code></td><td>按群设置战绩查询每分钟上限（仅主人）</td><td><code>设置战绩分群限流 30</code></td></tr>
         <tr><td><code>设置lolurl URL</code> / <code>设置lolkey KEY</code> / <code>设置loltoken TOKEN</code></td><td>配置 LOL 查询接口参数</td><td><code>设置loltoken eyJ...</code></td></tr>
+        <tr><td><code>设置骗子查询接口 URL</code> / <code>添加骗子查询接口 URL</code></td><td>维护第三方骗子查询接口；插件无默认接口，URL 支持 <code>{qq}</code>、<code>{wechat}</code>、<code>{account}</code>、<code>{identifier}</code>、<code>{type}</code> 占位</td><td><code>设置骗子查询接口 http://www.pianzi.lol/api/public/search?qq={qq}</code></td></tr>
+        <tr><td><code>删除骗子查询接口 序号或URL</code> / <code>骗子接口状态</code></td><td>删除第三方查询接口，或查看当前查询/举报接口、本地库限制与频率保护</td><td><code>删除骗子查询接口 1</code></td></tr>
+        <tr><td><code>设置骗子举报接口 URL</code></td><td>设置匿名举报提交接口；插件无默认举报接口，第三方不可用时仍会保存本地库</td><td><code>设置骗子举报接口 http://www.pianzi.lol/api/anonymous/report</code></td></tr>
+        <tr><td><code>设置骗子库限制 最大记录数 单条证据字数 每账号最近证据条数</code></td><td>控制骗子/同行本地风险库体积，防止数据库过大</td><td><code>设置骗子库限制 5000 500 10</code></td></tr>
+        <tr><td><code>设置骗子风控 查询冷却 查询群限流 查询缓存 举报冷却 举报群限流 每日举报 去重小时</code></td><td>控制骗子/同行查询与举报频率，防止刷屏和第三方接口压力过大</td><td><code>设置骗子风控 10 20 300 60 5 20 24</code></td></tr>
         <tr><td><code>清空群配置</code> / <code>确认清空群配置</code></td><td>清空当前群配置与数据</td><td><code>确认清空群配置</code></td></tr>
       </tbody>
     </table>

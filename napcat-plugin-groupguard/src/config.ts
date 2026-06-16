@@ -270,6 +270,18 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   lolBanPrimaryUrl: '',
   lolBanBackupUrls: [],
   lolApiBaseUrl: 'http://192.168.3.94:5000',
+  scammerQueryUrls: [],
+  scammerReportUrl: '',
+  scammerMaxRecords: 5000,
+  scammerMaxEvidenceLength: 500,
+  scammerMaxRecentReportsPerQQ: 10,
+  scammerQueryUserCooldownSeconds: 10,
+  scammerQueryGroupRateLimitPerMinute: 20,
+  scammerQueryCacheSeconds: 300,
+  scammerReportUserCooldownSeconds: 60,
+  scammerReportGroupRateLimitPerMinute: 5,
+  scammerReportUserDailyLimit: 20,
+  scammerReportDedupHours: 24,
   videoApiTemplates: {
     搞笑: 'https://api.pearktrue.cn/api/random_video/?name=搞笑',
     热门: 'https://api.pearktrue.cn/api/random_video/?name=热门'
@@ -344,6 +356,37 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
     if (key && val) acc[key] = val;
     return acc;
   }, {} as Record<string, string>);
+  const validUrl = (value: string): boolean => {
+    try {
+      const sample = String(value || '')
+        .replaceAll('{qq}', '123456')
+        .replaceAll('{wechat}', 'wxid_test')
+        .replaceAll('{wx}', 'wxid_test')
+        .replaceAll('{account}', '123456')
+        .replaceAll('{identifier}', '123456')
+        .replaceAll('{type}', 'qq');
+      const parsed = new URL(sample);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+  const queryUrls = Array.isArray(merged.scammerQueryUrls) ? merged.scammerQueryUrls : [];
+  merged.scammerQueryUrls = Array.from(new Set(queryUrls
+    .map((value: any) => String(value || '').trim())
+    .filter((value: string) => value && validUrl(value))));
+  const reportUrl = String(merged.scammerReportUrl || '').trim();
+  merged.scammerReportUrl = reportUrl && validUrl(reportUrl) ? reportUrl : '';
+  merged.scammerMaxRecords = Math.max(100, Math.min(100000, Number(merged.scammerMaxRecords || 5000)));
+  merged.scammerMaxEvidenceLength = Math.max(50, Math.min(5000, Number(merged.scammerMaxEvidenceLength || 500)));
+  merged.scammerMaxRecentReportsPerQQ = Math.max(1, Math.min(50, Number(merged.scammerMaxRecentReportsPerQQ || 10)));
+  merged.scammerQueryUserCooldownSeconds = Math.max(0, Math.min(3600, Number(merged.scammerQueryUserCooldownSeconds ?? 10)));
+  merged.scammerQueryGroupRateLimitPerMinute = Math.max(1, Math.min(1000, Number(merged.scammerQueryGroupRateLimitPerMinute ?? 20)));
+  merged.scammerQueryCacheSeconds = Math.max(0, Math.min(86400, Number(merged.scammerQueryCacheSeconds ?? 300)));
+  merged.scammerReportUserCooldownSeconds = Math.max(0, Math.min(86400, Number(merged.scammerReportUserCooldownSeconds ?? 60)));
+  merged.scammerReportGroupRateLimitPerMinute = Math.max(1, Math.min(1000, Number(merged.scammerReportGroupRateLimitPerMinute ?? 5)));
+  merged.scammerReportUserDailyLimit = Math.max(1, Math.min(1000, Number(merged.scammerReportUserDailyLimit ?? 20)));
+  merged.scammerReportDedupHours = Math.max(0, Math.min(720, Number(merged.scammerReportDedupHours ?? 24)));
   return merged;
 }
 

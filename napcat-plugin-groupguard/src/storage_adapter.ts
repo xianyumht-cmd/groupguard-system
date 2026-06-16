@@ -15,6 +15,12 @@ import type {
   BotSendEventRecord,
   BotSendStatsQuery,
   BotSendStatsView,
+  ContactIdentifierType,
+  ContactRiskCategory,
+  ContactRiskRecord,
+  ContactRiskReportInput,
+  ScammerRecord,
+  ScammerReportInput,
   AuditStatsQuery,
   AuditStatsView,
   AuditUserProfileQuery,
@@ -129,6 +135,31 @@ CREATE TABLE IF NOT EXISTS bot_send_events (
   payload_json TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS scammer_records (
+  qq TEXT PRIMARY KEY,
+  report_count INTEGER NOT NULL DEFAULT 0,
+  last_report_content TEXT NOT NULL DEFAULT '',
+  recent_reports_json TEXT NOT NULL DEFAULT '[]',
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  first_reported_at INTEGER NOT NULL DEFAULT 0,
+  last_reported_at INTEGER NOT NULL DEFAULT 0,
+  last_checked_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS contact_risk_records (
+  category TEXT NOT NULL,
+  identifier_type TEXT NOT NULL,
+  identifier_value TEXT NOT NULL,
+  report_count INTEGER NOT NULL DEFAULT 0,
+  last_report_content TEXT NOT NULL DEFAULT '',
+  recent_reports_json TEXT NOT NULL DEFAULT '[]',
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  first_reported_at INTEGER NOT NULL DEFAULT 0,
+  last_reported_at INTEGER NOT NULL DEFAULT 0,
+  last_checked_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (category, identifier_type, identifier_value)
+);
 CREATE INDEX IF NOT EXISTS idx_activity_group_last_active ON activity(group_id, last_active DESC);
 CREATE INDEX IF NOT EXISTS idx_signin_group_points ON signin(group_id, points DESC);
 CREATE INDEX IF NOT EXISTS idx_join_logs_group_timestamp ON join_logs(group_id, timestamp DESC);
@@ -145,6 +176,11 @@ CREATE INDEX IF NOT EXISTS idx_action_queue_events_group ON action_queue_events(
 CREATE INDEX IF NOT EXISTS idx_bot_send_events_created ON bot_send_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bot_send_events_group_created ON bot_send_events(group_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bot_send_events_message ON bot_send_events(group_id, message_id);
+CREATE INDEX IF NOT EXISTS idx_scammer_records_updated ON scammer_records(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scammer_records_last_reported ON scammer_records(last_reported_at DESC);
+CREATE INDEX IF NOT EXISTS idx_contact_risk_records_category_updated ON contact_risk_records(category, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_contact_risk_records_identifier ON contact_risk_records(identifier_type, identifier_value);
+CREATE INDEX IF NOT EXISTS idx_contact_risk_records_last_reported ON contact_risk_records(category, last_reported_at DESC);
 `;
 
 type SqliteDb = any;
@@ -171,6 +207,59 @@ function parseJson(value: string): any {
   } catch {
     return null;
   }
+}
+
+function parseJsonArray(value: string): string[] {
+  const parsed = parseJson(value);
+  return Array.isArray(parsed) ? parsed.map(item => String(item || '').trim()).filter(Boolean) : [];
+}
+
+function normalizeLimitedText(value: string, maxLength: number): string {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function normalizeRiskCategory(value: string): ContactRiskCategory {
+  return value === 'peer' ? 'peer' : 'scammer';
+}
+
+function normalizeIdentifierType(value: string): ContactIdentifierType {
+  return value === 'wechat' ? 'wechat' : 'qq';
+}
+
+function isValidRiskIdentifier(type: ContactIdentifierType, value: string): boolean {
+  if (type === 'qq') return /^\d{5,13}$/.test(value);
+  return /^[A-Za-z][A-Za-z0-9._-]{2,63}$/.test(value);
+}
+
+function toContactRiskRecord(row: any): ContactRiskRecord {
+  return {
+    category: normalizeRiskCategory(String(row.category || 'scammer')),
+    identifierType: normalizeIdentifierType(String(row.identifier_type || 'qq')),
+    identifierValue: String(row.identifier_value || ''),
+    reportCount: toNumber(row.report_count, 0),
+    lastReportContent: String(row.last_report_content || ''),
+    recentReports: parseJsonArray(String(row.recent_reports_json || '[]')),
+    sources: parseJsonArray(String(row.sources_json || '[]')),
+    firstReportedAt: toNumber(row.first_reported_at, 0),
+    lastReportedAt: toNumber(row.last_reported_at, 0),
+    lastCheckedAt: toNumber(row.last_checked_at, 0),
+    updatedAt: toNumber(row.updated_at, 0)
+  };
+}
+
+function toScammerRecord(record: ContactRiskRecord): ScammerRecord {
+  return {
+    qq: record.identifierValue,
+    reportCount: record.reportCount,
+    lastReportContent: record.lastReportContent,
+    recentReports: record.recentReports,
+    sources: record.sources,
+    firstReportedAt: record.firstReportedAt,
+    lastReportedAt: record.lastReportedAt,
+    lastCheckedAt: record.lastCheckedAt,
+    updatedAt: record.updatedAt
+  };
 }
 
 function collectAuditLinks(payloadText: string): Array<{ type: string; value: string; }> {
@@ -242,6 +331,157 @@ export class StorageAdapter {
   markMigrated(): void {
     const db = this.assertReady();
     db.prepare('INSERT OR REPLACE INTO storage_meta(k, v) VALUES (?, ?)').run('json_migrated', '1');
+  }
+
+  getContactRiskRecord(category: ContactRiskCategory, identifierType: ContactIdentifierType, identifierValue: string): ContactRiskRecord | undefined {
+    const db = this.assertReady();
+    const normalizedCategory = normalizeRiskCategory(category);
+    const normalizedType = normalizeIdentifierType(identifierType);
+    const normalizedValue = String(identifierValue || '').trim();
+    if (!isValidRiskIdentifier(normalizedType, normalizedValue)) return undefined;
+    const row = db.prepare(`SELECT category, identifier_type, identifier_value, report_count, last_report_content, recent_reports_json, sources_json,
+      first_reported_at, last_reported_at, last_checked_at, updated_at
+      FROM contact_risk_records
+      WHERE category = ? AND identifier_type = ? AND identifier_value = ?`).get(normalizedCategory, normalizedType, normalizedValue);
+    return row ? toContactRiskRecord(row) : undefined;
+  }
+
+  upsertContactRiskReport(input: ContactRiskReportInput): ContactRiskRecord {
+    const db = this.assertReady();
+    const category = normalizeRiskCategory(input.category);
+    const identifierType = normalizeIdentifierType(input.identifierType);
+    const identifierValue = String(input.identifierValue || '').trim();
+    if (!isValidRiskIdentifier(identifierType, identifierValue)) throw new Error('invalid_contact_identifier');
+    const maxEvidenceLength = Math.max(50, Math.min(5000, toNumber(input.maxEvidenceLength, 500)));
+    const maxRecentReports = Math.max(1, Math.min(50, toNumber(input.maxRecentReports, 10)));
+    const content = normalizeLimitedText(input.content, maxEvidenceLength);
+    const source = String(input.source || 'local').trim() || 'local';
+    const now = Date.now();
+    const current = this.getContactRiskRecord(category, identifierType, identifierValue);
+    const recentReports = current?.recentReports ? [...current.recentReports] : [];
+    if (content && !recentReports.includes(content)) recentReports.unshift(content);
+    const trimmedReports = recentReports.slice(0, maxRecentReports);
+    const sources = current?.sources ? [...current.sources] : [];
+    if (!sources.includes(source)) sources.unshift(source);
+    const firstReportedAt = current?.firstReportedAt || now;
+    const next: ContactRiskRecord = {
+      category,
+      identifierType,
+      identifierValue,
+      reportCount: (current?.reportCount || 0) + 1,
+      lastReportContent: content || current?.lastReportContent || '',
+      recentReports: trimmedReports,
+      sources: sources.slice(0, 20),
+      firstReportedAt,
+      lastReportedAt: now,
+      lastCheckedAt: current?.lastCheckedAt || 0,
+      updatedAt: now
+    };
+    db.prepare(`INSERT OR REPLACE INTO contact_risk_records(
+      category, identifier_type, identifier_value, report_count, last_report_content, recent_reports_json, sources_json,
+      first_reported_at, last_reported_at, last_checked_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      next.category,
+      next.identifierType,
+      next.identifierValue,
+      next.reportCount,
+      next.lastReportContent,
+      JSON.stringify(next.recentReports),
+      JSON.stringify(next.sources),
+      next.firstReportedAt,
+      next.lastReportedAt,
+      next.lastCheckedAt,
+      next.updatedAt
+    );
+    return next;
+  }
+
+  touchContactRiskChecked(category: ContactRiskCategory, identifierType: ContactIdentifierType, identifierValue: string): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    db.prepare(`UPDATE contact_risk_records SET last_checked_at = ?, updated_at = ?
+      WHERE category = ? AND identifier_type = ? AND identifier_value = ?`).run(
+      now,
+      now,
+      normalizeRiskCategory(category),
+      normalizeIdentifierType(identifierType),
+      String(identifierValue || '').trim()
+    );
+  }
+
+  pruneContactRiskRecords(category: ContactRiskCategory, maxRows: number): number {
+    const db = this.assertReady();
+    const normalizedCategory = normalizeRiskCategory(category);
+    const limit = Math.max(100, Math.min(100000, toNumber(maxRows, 5000)));
+    const countRow = db.prepare('SELECT COUNT(1) AS c FROM contact_risk_records WHERE category = ?').get(normalizedCategory);
+    const overflow = toNumber(countRow?.c, 0) - limit;
+    if (overflow <= 0) return 0;
+    const result = db.prepare(`DELETE FROM contact_risk_records
+      WHERE rowid IN (
+        SELECT rowid FROM contact_risk_records
+        WHERE category = ?
+        ORDER BY updated_at ASC, identifier_type ASC, identifier_value ASC
+        LIMIT ?
+      )`).run(normalizedCategory, overflow);
+    return toNumber(result?.changes, 0);
+  }
+
+  getScammerRecord(qq: string): ScammerRecord | undefined {
+    const normalizedQQ = String(qq || '').trim();
+    const migrated = this.getContactRiskRecord('scammer', 'qq', normalizedQQ);
+    if (migrated) return toScammerRecord(migrated);
+    const db = this.assertReady();
+    const row = db.prepare(`SELECT qq, report_count, last_report_content, recent_reports_json, sources_json,
+      first_reported_at, last_reported_at, last_checked_at, updated_at
+      FROM scammer_records WHERE qq = ?`).get(normalizedQQ);
+    if (!row) return undefined;
+    return {
+      qq: String(row.qq || ''),
+      reportCount: toNumber(row.report_count, 0),
+      lastReportContent: String(row.last_report_content || ''),
+      recentReports: parseJsonArray(String(row.recent_reports_json || '[]')),
+      sources: parseJsonArray(String(row.sources_json || '[]')),
+      firstReportedAt: toNumber(row.first_reported_at, 0),
+      lastReportedAt: toNumber(row.last_reported_at, 0),
+      lastCheckedAt: toNumber(row.last_checked_at, 0),
+      updatedAt: toNumber(row.updated_at, 0)
+    };
+  }
+
+  upsertScammerReport(input: ScammerReportInput): ScammerRecord {
+    const record = this.upsertContactRiskReport({
+      category: 'scammer',
+      identifierType: 'qq',
+      identifierValue: input.qq,
+      content: input.content,
+      source: input.source,
+      maxEvidenceLength: input.maxEvidenceLength,
+      maxRecentReports: input.maxRecentReports
+    });
+    return toScammerRecord(record);
+  }
+
+  touchScammerChecked(qq: string): void {
+    this.touchContactRiskChecked('scammer', 'qq', qq);
+    const db = this.assertReady();
+    const now = Date.now();
+    db.prepare('UPDATE scammer_records SET last_checked_at = ?, updated_at = ? WHERE qq = ?').run(now, now, String(qq || '').trim());
+  }
+
+  pruneScammerRecords(maxRows: number): number {
+    const db = this.assertReady();
+    const limit = Math.max(100, Math.min(100000, toNumber(maxRows, 5000)));
+    const countRow = db.prepare('SELECT COUNT(1) AS c FROM scammer_records').get();
+    const overflow = toNumber(countRow?.c, 0) - limit;
+    const genericDeleted = this.pruneContactRiskRecords('scammer', limit);
+    if (overflow <= 0) return genericDeleted;
+    const result = db.prepare(`DELETE FROM scammer_records
+      WHERE qq IN (
+        SELECT qq FROM scammer_records
+        ORDER BY updated_at ASC, qq ASC
+        LIMIT ?
+      )`).run(overflow);
+    return genericDeleted + toNumber(result?.changes, 0);
   }
 
   saveGroupConfig(groupId: string, cfg: GroupGuardSettings): void {
