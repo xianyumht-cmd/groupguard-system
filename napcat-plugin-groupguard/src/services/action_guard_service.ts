@@ -4,6 +4,7 @@ import { communicationStateService } from '../core/state-services/communication_
 import { configStateService } from '../core/state-services/config_state_service';
 import { identityStateService } from '../core/state-services/identity_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
+import { pluginState } from '../state';
 import type { GroupGuardSettings } from '../types';
 
 type GuardAction = 'recall' | 'ban' | 'kick';
@@ -11,7 +12,7 @@ type RiskLevel = 'normal' | 'warn' | 'protect';
 
 export interface GuardResult {
   ok: boolean;
-  code: 'ok' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'action_failed_timeout' | 'fail_api' | 'backpressure_reject';
+  code: 'ok' | 'unknown_timeout' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'action_failed_timeout' | 'fail_api' | 'backpressure_reject';
   role?: 'member' | 'admin' | 'owner' | 'unknown';
 }
 
@@ -208,6 +209,31 @@ function logAction(groupId: string, action: GuardAction, result: GuardResult, de
   else loggingStateService.warn(text);
 }
 
+function isDeleteMsgCallbackTimeout(error: unknown): boolean {
+  const text = String(error || '');
+  return text.includes('Timeout')
+    || text.includes('No data returned')
+    || text.includes('decode failed')
+    || text.includes('NodeIKernelMsgService/recallMsg');
+}
+
+async function callDeleteMsgOnce(messageId: string): Promise<'ok' | 'unknown_timeout' | 'fail_api'> {
+  if (!pluginState.actions || !pluginState.networkConfig) return 'fail_api';
+  try {
+    const res = await pluginState.actions.call('delete_msg', {
+      message_id: String(messageId)
+    } as never, pluginState.adapterName, pluginState.networkConfig);
+    return res === null ? 'fail_api' : 'ok';
+  } catch (error) {
+    if (isDeleteMsgCallbackTimeout(error)) {
+      loggingStateService.debug(`[Recall] delete_msg callback timeout treated as unknown_timeout messageId=${messageId}`);
+      return 'unknown_timeout';
+    }
+    loggingStateService.debug(`[Recall] delete_msg failed messageId=${messageId} error=${String(error)}`);
+    return 'fail_api';
+  }
+}
+
 export async function safeRecall(opts: { groupId: string; messageId: string; targetUserId?: string; reason: string; automatic?: boolean; allowSelfTarget?: boolean; }): Promise<GuardResult> {
   const groupId = opts.groupId;
   const s = getSettings(groupId);
@@ -244,15 +270,15 @@ export async function safeRecall(opts: { groupId: string; messageId: string; tar
       return r;
     }
   }
-  const res = await communicationStateService.callApi('delete_msg', { message_id: String(opts.messageId) });
-  if (res === null) {
+  const deleteResult = await callDeleteMsgOnce(String(opts.messageId));
+  if (deleteResult === 'fail_api') {
     const r: GuardResult = { ok: false, code: 'fail_api', role };
     logAction(groupId, 'recall', r, { reason: opts.reason, targetUserId });
     recordRisk(groupId, false, automatic);
     return r;
   }
   markRecall(String(opts.messageId));
-  const r: GuardResult = { ok: true, code: 'ok', role };
+  const r: GuardResult = { ok: true, code: deleteResult === 'unknown_timeout' ? 'unknown_timeout' : 'ok', role };
   logAction(groupId, 'recall', r, { reason: opts.reason, targetUserId });
   recordRisk(groupId, true, automatic);
   return r;
