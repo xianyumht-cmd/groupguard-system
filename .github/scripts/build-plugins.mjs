@@ -117,24 +117,25 @@ for (const dirName of pluginDirs) {
     } else {
       execSync('npm install', { cwd: pluginPath, stdio: 'inherit' });
     }
-  } catch {
-    console.log(`⚠️  依赖安装警告: ${pkg.name}`);
+  } catch (error) {
+    console.error(`❌ 依赖安装失败: ${pkg.name}`);
+    console.error(error);
+    process.exit(1);
   }
 
   // 构建
   try {
     execSync('npm run build', { cwd: pluginPath, stdio: 'inherit' });
-  } catch {
-    console.log(`❌ 构建失败: ${pkg.name}`);
-    allPluginInfos.push(pluginInfo); // 构建失败也保留信息（版本不变）
-    continue;
+  } catch (error) {
+    console.error(`❌ 构建失败: ${pkg.name}`);
+    console.error(error);
+    process.exit(1);
   }
 
   const distDir = join(pluginPath, 'dist');
   if (!existsSync(distDir)) {
-    console.log(`❌ 无 dist 目录: ${pkg.name}`);
-    allPluginInfos.push(pluginInfo);
-    continue;
+    console.error(`❌ 无 dist 目录: ${pkg.name}`);
+    process.exit(1);
   }
 
   // 打包
