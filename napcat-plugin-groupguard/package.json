@@ -1,7 +1,7 @@
 {
   "name": "napcat-plugin-groupguard",
   "plugin": "群管插件",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "type": "module",
   "main": "index.mjs",
   "description": "Group Guard plugin for NapCat, comprehensive group management and risk control",
