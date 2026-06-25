@@ -301,11 +301,6 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   presets: [],
 };
 
-const FIXED_QA_ENTRY: QAEntry = {
-  keyword: 'dy',
-  reply: 'https://wwbls.lanzouq.com/b0raxb2ed',
-  mode: 'exact'
-};
 
 export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   const merged: PluginConfig = {
@@ -350,9 +345,7 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
         mode: qa.mode === 'contains' || qa.mode === 'regex' ? qa.mode : 'exact'
       }))
     : [];
-  if (!normalizedQaList.some((qa) => qa.mode === 'exact' && qa.keyword.trim().toLowerCase() === FIXED_QA_ENTRY.keyword)) {
-    normalizedQaList.push({ ...FIXED_QA_ENTRY });
-  }
+
   merged.qaList = normalizedQaList;
   merged.global = normalizeGroupSettings(merged.global || ({} as GroupGuardSettings));
   merged.global.auditRetentionMaxAgeDays = Math.max(1, Math.min(3650, Number(merged.global.auditRetentionMaxAgeDays || 30)));

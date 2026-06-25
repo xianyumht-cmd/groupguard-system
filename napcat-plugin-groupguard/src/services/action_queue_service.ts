@@ -556,23 +556,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
-        const nextRetries = task.retries + 1;
-        const retryAfter = nextRetries <= task.maxRetries ? computeRecallRetryDelayMs(nextRetries) : 0;
-        await groupguardRepository.resolveRecallTask(task.payload.taskId, 'action_failed_timeout', false, retryAfter);
-        if (task.retries < task.maxRetries) {
-          task.retries += 1;
-          stats.queueRetried += 1;
-          recordMinuteMetric('retried');
-          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
-          if (!consumeRetryBudget()) {
-            task.resolve({ ok: false, code: 'backpressure_reject' });
-            return;
-          }
-          insertTaskSorted(task);
-          incGroupPending(task.groupId);
-          return;
-        }
+        await groupguardRepository.resolveRecallTask(task.payload.taskId, 'action_failed_timeout', false, 0);
         task.resolve({ ok: false, code: 'action_failed_timeout' });
         return;
       }
@@ -625,17 +609,7 @@ async function executeTask(task: QueueTask): Promise<void> {
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
-        task.retries += 1;
-        const retryAfter = task.retries < task.maxRetries ? computeSelfRecallRetryDelayMs(task.retries) : 0;
-        await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, 'action_failed_timeout', false, retryAfter);
-        if (retryAfter > 0) {
-          stats.queueRetried += 1;
-          recordMinuteMetric('retried');
-          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries} after=${retryAfter}`);
-          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
-          task.resolve({ ok: false, code: 'action_failed_timeout' });
-          return;
-        }
+        await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, 'action_failed_timeout', false, 0);
         task.resolve({ ok: false, code: 'action_failed_timeout' });
         return;
       }
@@ -682,20 +656,6 @@ async function executeTask(task: QueueTask): Promise<void> {
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
-        if (task.retries < task.maxRetries) {
-          task.retries += 1;
-          stats.queueRetried += 1;
-          recordMinuteMetric('retried');
-          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
-          if (!consumeRetryBudget()) {
-            task.resolve({ ok: false, code: 'backpressure_reject' });
-            return;
-          }
-          insertTaskSorted(task);
-          incGroupPending(task.groupId);
-          return;
-        }
         task.resolve({ ok: false, code: 'action_failed_timeout' });
         return;
       }
@@ -740,20 +700,6 @@ async function executeTask(task: QueueTask): Promise<void> {
         recordMinuteMetric('timeout');
         appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
         recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
-        if (task.retries < task.maxRetries) {
-          task.retries += 1;
-          stats.queueRetried += 1;
-          recordMinuteMetric('retried');
-          appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-          recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
-          if (!consumeRetryBudget()) {
-            task.resolve({ ok: false, code: 'backpressure_reject' });
-            return;
-          }
-          insertTaskSorted(task);
-          incGroupPending(task.groupId);
-          return;
-        }
         task.resolve({ ok: false, code: 'action_failed_timeout' });
         return;
       }
@@ -790,20 +736,6 @@ async function executeTask(task: QueueTask): Promise<void> {
       recordMinuteMetric('timeout');
       appendQueueLog(`${task.type} ${taskSubject(task)} timeout`);
       recordActionQueueEvent(task, 'timeout', { code: 'action_failed_timeout', ok: false });
-      if (task.retries < task.maxRetries) {
-        task.retries += 1;
-        stats.queueRetried += 1;
-        recordMinuteMetric('retried');
-        appendQueueLog(`${task.type} ${taskSubject(task)} retry_${task.retries}`);
-        recordActionQueueEvent(task, 'retry', { code: 'action_failed_timeout', ok: false, attemptCount: task.retries });
-        if (!consumeRetryBudget()) {
-          task.resolve({ ok: false, code: 'backpressure_reject' });
-          return;
-        }
-        insertTaskSorted(task);
-        incGroupPending(task.groupId);
-        return;
-      }
       task.resolve({ ok: false, code: 'action_failed_timeout' });
       return;
     }
