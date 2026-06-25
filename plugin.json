@@ -1,11 +1,11 @@
 {
   "version": "1.0.0",
-  "updateTime": "2026-06-25T21:17:58Z",
+  "updateTime": "2026-06-25T22:10:03Z",
   "plugins": [
     {
       "id": "napcat-plugin-groupguard",
       "name": "群管插件",
-      "version": "1.2.9",
+      "version": "1.2.10",
       "description": "Group Guard plugin for NapCat, comprehensive group management and risk control",
       "author": "冷曦",
       "homepage": "",
