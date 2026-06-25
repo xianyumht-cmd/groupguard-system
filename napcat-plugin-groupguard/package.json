@@ -1,7 +1,7 @@
 {
   "name": "napcat-plugin-groupguard",
   "plugin": "群管插件",
-  "version": "1.2.12",
+  "version": "1.2.13",
   "type": "module",
   "main": "index.mjs",
   "description": "Group Guard plugin for NapCat, comprehensive group management and risk control",
@@ -34,7 +34,9 @@
     "arch:check:risk-policy": "node scripts/arch-check-risk-policy.mjs",
     "arch:hints:system-write": "node --experimental-strip-types scripts/arch-hints-system-write.ts",
     "arch:help": "node --experimental-strip-types scripts/arch-help-system-write.ts",
-    "build": "npm run arch:check:system-write:strict && vite build",
+    "build": "npm run build:release",
+    "build:release": "npm run arch:check:system-write:strict && vite build --mode release",
+    "build:debug": "npm run arch:check:system-write:strict && vite build --mode debug",
     "report:scene": "node scene_coverage_report.mjs",
     "report:commands": "node scripts/command_coverage_report.mjs"
   }
