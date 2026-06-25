@@ -9,6 +9,8 @@ export const INTERACTION_PREFIXES = [
   '查来源',
   '查封号',
   '查隐藏',
+  '查合集',
+  '海符榜',
   '我要看',
   '查战绩',
   '活跃统计',

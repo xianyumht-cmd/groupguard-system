@@ -1,5 +1,5 @@
 // 群管插件配置
-import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode } from './types';
+import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode, BotAntiRiskLimitFallbackMode } from './types';
 
 export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockVideo: false,
@@ -48,9 +48,10 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
     maxDelay: 90,
     jitter: 0,
   },
-  randomSuffix: true,
-  botAntiRiskSuffixMode: 'mixed',
+  randomSuffix: false,
+  botAntiRiskSuffixMode: 'punctuation',
   botAntiRiskScenePolicies: {},
+  botAntiRiskLimitFallbackMode: 'drop',
   randomDelayMin: 500,
   randomDelayMax: 1500,
   queueMode: 'group',
@@ -174,9 +175,12 @@ function normalizeActionPriority(settings: GroupGuardSettings): ActionPrioritySe
 }
 
 function normalizeSuffixMode(value: any, fallback: BotAntiRiskSuffixMode = 'global'): BotAntiRiskSuffixMode {
-  return value === 'mixed' || value === 'invisible' || value === 'punctuation' || value === 'none' || value === 'global'
-    ? value
-    : fallback;
+  if (value === 'invisible') return 'none';
+  return value === 'mixed' || value === 'punctuation' || value === 'none' || value === 'global' ? value : fallback;
+}
+
+function normalizeLimitFallbackMode(value: any, fallback: BotAntiRiskLimitFallbackMode = 'drop'): BotAntiRiskLimitFallbackMode {
+  return value === 'forward' || value === 'drop' ? value : fallback;
 }
 
 function normalizeBotAntiRiskScenePolicies(input: any): Record<string, BotAntiRiskScenePolicy> {
@@ -202,8 +206,9 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
     ...(input || {}),
   };
   merged.selfRecall = normalizeSelfRecall(merged);
-  merged.botAntiRiskSuffixMode = normalizeSuffixMode(merged.botAntiRiskSuffixMode, 'mixed');
+  merged.botAntiRiskSuffixMode = normalizeSuffixMode(merged.botAntiRiskSuffixMode, 'punctuation');
   merged.botAntiRiskScenePolicies = normalizeBotAntiRiskScenePolicies(merged.botAntiRiskScenePolicies);
+  merged.botAntiRiskLimitFallbackMode = normalizeLimitFallbackMode(merged.botAntiRiskLimitFallbackMode, 'drop');
   merged.autoRecallSelf = merged.selfRecall.enabled;
   merged.autoRecallSelfDelay = merged.selfRecall.mode === 'fixed'
     ? merged.selfRecall.fixedDelay
@@ -270,6 +275,10 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   lolBanPrimaryUrl: '',
   lolBanBackupUrls: [],
   lolApiBaseUrl: 'http://192.168.3.94:5000',
+  shardDataUrl: 'https://raw.githubusercontent.com/badspacebar/release/master/files/shards.json',
+  shardHeroListUrl: 'https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js',
+  shardImageUrlTemplate: '',
+  shardQueryOutputFormat: 'image',
   scammerQueryUrls: [],
   scammerReportUrl: '',
   scammerMaxRecords: 5000,
@@ -321,11 +330,17 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   if (inputVersion < 4) {
     merged.global = {
       ...(merged.global || {}),
-      botAntiRiskSuffixMode: (merged.global as any)?.botAntiRiskSuffixMode || 'mixed',
+      botAntiRiskSuffixMode: normalizeSuffixMode((merged.global as any)?.botAntiRiskSuffixMode, 'punctuation'),
       botAntiRiskScenePolicies: (merged.global as any)?.botAntiRiskScenePolicies || {}
     };
   }
-  merged.configVersion = 4;
+  if (inputVersion < 5) {
+    merged.global = {
+      ...(merged.global || {}),
+      botAntiRiskLimitFallbackMode: (merged.global as any)?.botAntiRiskLimitFallbackMode || 'drop'
+    };
+  }
+  merged.configVersion = 5;
   const normalizedQaList: QAEntry[] = Array.isArray(merged.qaList)
     ? merged.qaList
       .filter((qa: any) => qa && typeof qa.keyword === 'string' && typeof qa.reply === 'string')
@@ -344,6 +359,12 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   merged.global.auditRetentionMaxRows = Math.max(100, Math.min(1000000, Number(merged.global.auditRetentionMaxRows || 20000)));
   merged.global.actionQueueEventRetentionMaxAgeDays = Math.max(1, Math.min(3650, Number(merged.global.actionQueueEventRetentionMaxAgeDays || 7)));
   merged.global.actionQueueEventRetentionMaxRows = Math.max(100, Math.min(1000000, Number(merged.global.actionQueueEventRetentionMaxRows || 50000)));
+  merged.shardDataUrl = String(merged.shardDataUrl || '').trim();
+  merged.shardHeroListUrl = String(merged.shardHeroListUrl || '').trim();
+  merged.shardImageUrlTemplate = String(merged.shardImageUrlTemplate || '').trim();
+  merged.shardQueryOutputFormat = merged.shardQueryOutputFormat === 'text' || merged.shardQueryOutputFormat === 'image'
+    ? merged.shardQueryOutputFormat
+    : 'image';
   const groups: Record<string, GroupGuardSettings> = {};
   for (const [gid, gs] of Object.entries(merged.groups || {})) {
     groups[gid] = normalizeGroupSettings(gs as GroupGuardSettings);

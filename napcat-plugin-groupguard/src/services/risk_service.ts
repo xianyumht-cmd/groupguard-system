@@ -23,8 +23,8 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!authStateService.isOwner(userId)) return true;
     if (text === '开启调试') { getConfig().debug = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '调试模式已开启'); return true; }
     if (text === '关闭调试') { getConfig().debug = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '调试模式已关闭'); return true; }
-    if (text === '开启随机后缀') { getConfig().global.randomSuffix = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局随机后缀已开启'); return true; }
-    if (text === '关闭随机后缀') { getConfig().global.randomSuffix = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '全局随机后缀已关闭'); return true; }
+    if (text === '开启随机后缀') { getConfig().global.randomSuffix = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '低风险提示类消息的普通标点后缀已开启'); return true; }
+    if (text === '关闭随机后缀') { getConfig().global.randomSuffix = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '普通标点后缀已关闭'); return true; }
     if (text === '开启纯文本回复') { getConfig().global.disableReplyTemplate = true; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已开启（关闭人格与模板包装）'); return true; }
     if (text === '关闭纯文本回复') { getConfig().global.disableReplyTemplate = false; saveConfig(ctx); await sendPrivateScene(userId, 'action_success', '纯文本回复模式已关闭（恢复人格与模板包装）'); return true; }
     if (text === '开启全局自身撤回') {
@@ -270,6 +270,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
 
   if (!authManager.getGroupLicense(groupId)) return false;
   if (text === '风控设置' || text === '安全设置') {
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '需要主人权限'); return true; }
     const selfId = String((event as any).self_id || '');
     const nodes = [
       { type: 'node', data: { nickname: '🛡️ 风控配置', user_id: selfId, content: [{ type: 'text', data: { text: RISK_CONTROL_MENU } }] } }
@@ -278,7 +279,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     return true;
   }
   if (text.startsWith('设置权限缓存 ')) {
-    if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
+    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '需要主人权限'); return true; }
     const seconds = parseInt(text.slice(7));
     if (isNaN(seconds) || seconds < 0) { await sendGroupScene(groupId, 'invalid_range', '请输入有效的秒数 (0=关闭)', { example: '设置权限缓存 60' }); return true; }
     ensureGroupSettings(groupId).adminCacheSeconds = seconds;
@@ -370,6 +371,11 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
     const isEnable = text.startsWith('开启功能 ');
     const feature = text.slice(5).trim();
+    const ownerOnlyFeatures = ['战绩查询', '封号查询', '骗子查询', '合集查询', '管理员保护', '群主保护', '自动风控收敛'];
+    if (ownerOnlyFeatures.includes(feature) && !authStateService.isOwner(userId)) {
+      await sendGroupScene(groupId, 'permission_denied', '该功能涉及机器人接口或风控保护，需要主人权限');
+      return true;
+    }
     const gs = ensureGroupSettings(groupId);
     switch (feature) {
       case '问答': gs.disableQA = !isEnable; break;
@@ -388,7 +394,7 @@ export async function executeRiskCommand(input: CommandExecutionContext): Promis
       case '群主保护': gs.protectOwnerActions = isEnable; break;
       case '自动风控收敛': gs.autoRiskControl = isEnable; break;
       default:
-        await sendGroupScene(groupId, 'not_found', '未知功能。支持：问答、签到、抽奖、邀请统计、入群欢迎、活跃统计、战绩查询、自动同意、入群验证、刷屏检测、退群拉黑、暗号回落、管理员保护、群主保护、自动风控收敛');
+        await sendGroupScene(groupId, 'not_found', '未知功能。支持：问答、签到、抽奖、邀请统计、入群欢迎、活跃统计、自动同意、入群验证、刷屏检测、退群拉黑、暗号回落');
         return true;
     }
     saveConfig(ctx);

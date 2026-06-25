@@ -80,6 +80,16 @@ function analyzeMap(
       const normMap = new Map<string, number>();
       for (const raw of list) {
         const text = String(raw ?? '');
+        if (!text.includes('{raw}')) {
+          pushIssue(issues, {
+            severity: 'high',
+            type: 'template_missing_raw_placeholder',
+            scope,
+            scene,
+            persona,
+            message: '人格模板必须包含 {raw}，禁止脱离原始业务内容另造回复'
+          });
+        }
         exactMap.set(text, (exactMap.get(text) || 0) + 1);
         const norm = normalizeTemplateText(text);
         if (norm) normMap.set(norm, (normMap.get(norm) || 0) + 1);

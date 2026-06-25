@@ -17,6 +17,18 @@ export interface ReplyGenerateOutput {
 
 const BUILTIN_SCENE_TEMPLATES = BUILTIN_REPLY_SCENE_TEMPLATES;
 const lastTemplateIndex = new Map<string, number>();
+const TEMPLATE_ALLOWED_SCENES = new Set([
+  'permission_denied',
+  'command_format_error',
+  'list_empty',
+  'not_found',
+  'feature_disabled',
+  'invalid_range'
+]);
+
+export function isReplyTemplateSceneAllowed(scene: string | undefined): boolean {
+  return TEMPLATE_ALLOWED_SCENES.has(String(scene || 'raw_text'));
+}
 
 function normalizePersona(value: string | undefined): ReplyPersona {
   if (value === 'friendly' || value === 'strict' || value === 'humor' || value === 'professional' || value === 'gentle') return value;
@@ -78,6 +90,9 @@ function pickPersona(input: ReplyGenerateInput): ReplyPersona {
 
 export function generateReply(input: ReplyGenerateInput): ReplyGenerateOutput {
   const { scene, raw = '', settings } = input;
+  if (!isReplyTemplateSceneAllowed(scene)) {
+    return { text: raw, scene, persona: normalizePersona(input.persona || settings.replyPersonaDefault || 'formal') };
+  }
   const merged = mergeTemplates(settings);
   const persona = pickPersona(input);
   const vars = { raw, ...(input.vars || {}) };
@@ -86,6 +101,9 @@ export function generateReply(input: ReplyGenerateInput): ReplyGenerateOutput {
     || sceneEntry?.personaTemplates?.formal
     || ['{raw}'];
   const selected = pickRandom(list, `${scene}:${persona}`) || '{raw}';
+  if (!selected.includes('{raw}')) {
+    return { text: raw, scene, persona };
+  }
   const text = renderVars(selected, vars);
   return { text, scene, persona };
 }

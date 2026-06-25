@@ -29,7 +29,8 @@ export interface SelfRecallPolicy {
   jitter: number;
 }
 
-export type BotAntiRiskSuffixMode = 'global' | 'mixed' | 'invisible' | 'punctuation' | 'none';
+export type BotAntiRiskSuffixMode = 'global' | 'mixed' | 'punctuation' | 'none';
+export type BotAntiRiskLimitFallbackMode = 'drop' | 'forward';
 
 export interface BotAntiRiskScenePolicy {
   delayMinMs?: number;
@@ -82,6 +83,10 @@ export interface PluginConfig {
   lolBanBackupUrls?: string[];
   /** 本地 LOL 战绩查询服务地址（如 http://192.168.3.94:5000） */
   lolApiBaseUrl?: string;
+  shardDataUrl?: string;
+  shardHeroListUrl?: string;
+  shardImageUrlTemplate?: string;
+  shardQueryOutputFormat?: 'forward' | 'text' | 'image';
   videoApiTemplates?: Record<string, string>;
   scammerQueryUrls?: string[];
   scammerReportUrl?: string;
@@ -232,6 +237,8 @@ export interface GroupGuardSettings {
   botAntiRiskSuffixMode?: BotAntiRiskSuffixMode;
   /** 机器人发送场景化免风控策略 */
   botAntiRiskScenePolicies?: Record<string, BotAntiRiskScenePolicy>;
+  /** 触发发送限流/熔断时的处理：drop=丢弃，forward=合并转发兜底 */
+  botAntiRiskLimitFallbackMode?: BotAntiRiskLimitFallbackMode;
   /** 随机延迟发送（毫秒） */
   randomDelayMin?: number;
   randomDelayMax?: number;

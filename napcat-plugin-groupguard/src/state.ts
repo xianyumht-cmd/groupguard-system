@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 import type { ReplyPersona } from './types';
-import { generateReply } from './reply_generator';
+import { generateReply, isReplyTemplateSceneAllowed } from './reply_generator';
 
 // 运行时从 package.json 读取版本号
 function getPluginVersion (): string {
@@ -194,22 +194,16 @@ class PluginState {
     // 强制使用全局配置，防风控策略统一管理
     const settings = this.config.global;
     if (!settings.randomSuffix) return { suffix: '', mode: 'disabled' };
+    if (!isReplyTemplateSceneAllowed(scene)) return { suffix: '', mode: 'scene_disabled' };
     const scenePolicy = this.getScenePolicy(scene);
-    const globalMode = settings.botAntiRiskSuffixMode || 'mixed';
+    const globalMode = settings.botAntiRiskSuffixMode || 'punctuation';
     const mode = scenePolicy.suffixMode && scenePolicy.suffixMode !== 'global'
       ? scenePolicy.suffixMode
       : globalMode;
     if (mode === 'none') return { suffix: '', mode };
-    
-    // 生成一个不可见字符或随机短字符串
-    // 为了更好的防风控效果，使用随机的零宽字符组合或常见的末尾标点变体
-    const invisible = ['\u200b', '\u200c', '\u200d', '\u2060'];
+
     const punctuation = [' ', '.', '..', '~'];
-    const chars = mode === 'invisible'
-      ? invisible
-      : mode === 'punctuation'
-        ? punctuation
-        : [...invisible, ...punctuation];
+    const chars = punctuation;
     const len = Math.floor(Math.random() * 3) + 1;
     let suffix = '';
     for (let i = 0; i < len; i++) {
@@ -581,6 +575,10 @@ class PluginState {
   private async processTask(task: GroupSendTask): Promise<void> {
     try {
       if (!task.force && this.isGroupFused(task.groupId)) {
+        if (await this.sendGroupForwardFallback(task, 'group_send_fused')) {
+          task.resolve();
+          return;
+        }
         this.recordBotSendEvent({
           groupId: task.groupId,
           scene: task.scene,
@@ -604,6 +602,10 @@ class PluginState {
       const randomDelayMs = await this.randomSleep(task.groupId, task.scene);
       const canSend = await this.acquireToken();
       if (!canSend) {
+        if (await this.sendGroupForwardFallback(task, 'send_rate_limited', randomDelayMs)) {
+          task.resolve();
+          return;
+        }
         this.recordBotSendEvent({
           groupId: task.groupId,
           scene: task.scene,
@@ -682,14 +684,59 @@ class PluginState {
   }
 
   /** 发送群消息 (Text) */
+  private async sendGroupForwardFallback(task: GroupSendTask, reason: string, randomDelayMs = 0): Promise<boolean> {
+    if (!this.actions || !this.networkConfig) return false;
+    const settings = this.getGlobalSettings();
+    if (settings.botAntiRiskLimitFallbackMode !== 'forward') return false;
+    try {
+      const res = await this.actions.call('send_group_forward_msg', {
+        group_id: task.groupId,
+        messages: [{
+          type: 'node',
+          data: {
+            nickname: 'GroupGuard',
+            user_id: this.botId || '0',
+            content: task.message
+          }
+        }]
+      } as never, this.adapterName, this.networkConfig) as { message_id?: number | string };
+      const messageId = this.extractSendMessageId(res);
+      this.recordBotSendEvent({
+        groupId: task.groupId,
+        scene: task.scene,
+        messageType: 'forward',
+        messageId,
+        contentLength: task.contentLength,
+        hasMedia: task.hasMedia,
+        force: task.force,
+        applyTemplate: task.applyTemplate,
+        templateApplied: task.templateApplied,
+        suffixApplied: task.suffixApplied,
+        suffixMode: task.suffixMode,
+        randomDelayMs,
+        queuedAt: task.queuedAt,
+        sentAt: Date.now(),
+        status: 'sent',
+        reason: `forward_fallback_${reason}`,
+        createdAt: Date.now()
+      });
+      return true;
+    } catch (e) {
+      this.log('warn', `合并转发兜底发送失败: ${String(e)}`);
+      return false;
+    }
+  }
+
   async sendGroupText (groupId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; }): Promise<void> {
     if (!this.actions || !this.networkConfig) return;
     const templateDisabled = this.isReplyTemplateDisabled();
+    const scene = options?.scene || 'raw_text';
+    const allowSemanticTemplate = isReplyTemplateSceneAllowed(scene);
     const settings = this.getGroupSettings(groupId);
-    const renderedText = templateDisabled
+    const renderedText = templateDisabled || !allowSemanticTemplate
       ? content
       : generateReply({
-        scene: options?.scene || 'raw_text',
+        scene,
         raw: content,
         vars: options?.vars,
         persona: options?.persona,
@@ -697,9 +744,8 @@ class PluginState {
       }).text;
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
-    const scene = options?.scene || 'raw_text';
     if (!force && !this.shouldSendByProbability(scene)) return;
-    const templated = (!templateDisabled && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
+    const templated = (!templateDisabled && allowSemanticTemplate && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
     const suffixInfo = this.getRandomSuffixInfo(groupId, scene);
     const suffix = suffixInfo.suffix;
     const finalContent = templated + suffix;
@@ -720,11 +766,13 @@ class PluginState {
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
     const scene = options?.scene || 'raw_text';
+    const allowSemanticTemplate = isReplyTemplateSceneAllowed(scene);
     if (!force && !this.shouldSendByProbability(scene)) return;
     const cloned = this.cloneMessage(message);
     const firstText = cloned.find(seg => seg && seg.type === 'text' && seg.data && typeof seg.data.text === 'string');
     if (firstText) {
       const renderedText = templateDisabled
+        || !allowSemanticTemplate
         ? String(firstText.data.text || '')
         : generateReply({
           scene,
@@ -733,7 +781,7 @@ class PluginState {
           persona: options?.persona,
           settings: this.getGroupSettings(groupId)
         }).text;
-      firstText.data.text = (!templateDisabled && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
+      firstText.data.text = (!templateDisabled && allowSemanticTemplate && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
     }
     const suffixInfo = this.getRandomSuffixInfo(groupId, scene);
     const suffix = suffixInfo.suffix;
@@ -762,8 +810,9 @@ class PluginState {
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
     const scene = options?.scene || 'raw_text';
+    const allowSemanticTemplate = isReplyTemplateSceneAllowed(scene);
     if (!force && !this.shouldSendByProbability(scene)) return;
-    const renderedText = templateDisabled
+    const renderedText = templateDisabled || !allowSemanticTemplate
       ? content
       : generateReply({
         scene,
@@ -776,7 +825,7 @@ class PluginState {
     await this.randomSleep(undefined, scene);
 
     const suffix = this.getRandomSuffix(undefined, scene);
-    const templated = (!templateDisabled && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
+    const templated = (!templateDisabled && allowSemanticTemplate && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
     const finalContent = templated + suffix;
 
     try {

@@ -15,6 +15,8 @@ import type { ContactIdentifierType, ContactRiskCategory, ContactRiskRecord, Sca
 
 const DEFAULT_LOL_BAN_PRIMARY_URL = 'https://yun.4png.com/api/query.html?token=c7739372694acf36&qq={qq}';
 const DEFAULT_LOL_API_BASE_URL = 'http://192.168.3.94:5000';
+const DEFAULT_SHARD_DATA_URL = 'https://raw.githubusercontent.com/badspacebar/release/master/files/shards.json';
+const DEFAULT_SHARD_HERO_LIST_URL = 'https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js';
 function getConfig() {
   return configStateService.getConfig();
 }
@@ -77,6 +79,34 @@ interface CrossPrettyError {
   code?: number;
   message?: string;
 }
+
+interface ShardStatItem {
+  name?: string;
+  id?: string;
+  pick_rate?: number;
+  win_rate?: number;
+}
+
+interface ChampionMeta {
+  alias: string;
+  name?: string;
+  title?: string;
+  keywords?: string;
+}
+
+interface ChampionShardStat {
+  pick_rate?: number;
+  win_rate?: number;
+  shards?: ShardStatItem[];
+}
+
+let shardCache: {
+  expiresAt: number;
+  dataUrl: string;
+  heroUrl: string;
+  shards: Record<string, ChampionShardStat>;
+  champions: ChampionMeta[];
+} | null = null;
 
 interface CrossPrettyData {
   name?: string;
@@ -357,6 +387,34 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number = 10000): Pro
   }
 }
 
+function buildCrossQueryUrl(baseUrl: string, playerId: string, region: string | undefined, output: 'pretty' | 'raw' | 'image'): string {
+  const params = new URLSearchParams();
+  params.set('name', playerId);
+  params.set('output', output);
+  if (region) params.set('region', region);
+  return `${baseUrl.replace(/\/+$/g, '')}/cross_query?${params.toString()}`;
+}
+
+async function probeImageUrlWithTimeout(url: string, timeoutMs: number = 10000): Promise<{ ok: true; contentType: string; } | { ok: false; error: string; }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: 'GET', signal: controller.signal, headers: { Accept: 'image/*,*/*' } });
+    await res.body?.cancel();
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.startsWith('image/')) {
+      return { ok: false, error: `接口未返回图片 (${contentType || 'unknown content-type'})` };
+    }
+    return { ok: true, contentType };
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return { ok: false, error: '请求超时' };
+    return { ok: false, error: String(e?.message || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchAnyWithTimeout(url: string, timeoutMs: number = 10000): Promise<{ ok: true; data: any; raw: string; } | { ok: false; error: string; }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -375,6 +433,180 @@ async function fetchAnyWithTimeout(url: string, timeoutMs: number = 10000): Prom
   } finally {
     clearTimeout(timer);
   }
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function resolveShardDataUrls(): { ok: true; dataUrl: string; heroUrl: string; imageTemplate: string; outputFormat: 'forward' | 'text' | 'image' } | { ok: false; reason: string } {
+  const cfg = getConfig() as any;
+  const dataUrl = String(cfg.shardDataUrl || DEFAULT_SHARD_DATA_URL).trim();
+  const heroUrl = String(cfg.shardHeroListUrl || DEFAULT_SHARD_HERO_LIST_URL).trim();
+  const configuredImageTemplate = String(cfg.shardImageUrlTemplate || '').trim();
+  const imageTemplate = configuredImageTemplate || `${resolveLolApiBaseUrl()}/shard_query?hero={name}&output=image`;
+  const outputFormat = cfg.shardQueryOutputFormat === 'text' || cfg.shardQueryOutputFormat === 'image' ? cfg.shardQueryOutputFormat : 'forward';
+  if (!isHttpUrl(dataUrl) || !isHttpUrl(heroUrl)) return { ok: false, reason: '合集接口地址格式无效，仅支持 http/https' };
+  if (imageTemplate && !isHttpUrl(imageTemplate.replaceAll('{alias}', 'Yasuo').replaceAll('{hero}', 'Yasuo').replaceAll('{name}', 'Yasuo'))) {
+    return { ok: false, reason: '合集图片接口模板格式无效' };
+  }
+  return { ok: true, dataUrl, heroUrl, imageTemplate, outputFormat };
+}
+
+async function loadShardData(dataUrl: string, heroUrl: string): Promise<{ ok: true; shards: Record<string, ChampionShardStat>; champions: ChampionMeta[] } | { ok: false; error: string }> {
+  const now = Date.now();
+  if (shardCache && shardCache.expiresAt > now && shardCache.dataUrl === dataUrl && shardCache.heroUrl === heroUrl) {
+    return { ok: true, shards: shardCache.shards, champions: shardCache.champions };
+  }
+  const [shardRes, heroRes] = await Promise.all([
+    fetchJsonWithTimeout(dataUrl, resolveLolQueryTimeoutMs()),
+    fetchJsonWithTimeout(heroUrl, resolveLolQueryTimeoutMs())
+  ]);
+  if (!shardRes.ok) return { ok: false, error: `合集数据加载失败：${shardRes.error}` };
+  if (!heroRes.ok) return { ok: false, error: `英雄列表加载失败：${heroRes.error}` };
+  const shards = shardRes.data && typeof shardRes.data === 'object' && !Array.isArray(shardRes.data)
+    ? shardRes.data as Record<string, ChampionShardStat>
+    : {};
+  const heroList = Array.isArray(heroRes.data?.hero) ? heroRes.data.hero : [];
+  const champions = heroList
+    .map((hero: any): ChampionMeta => ({
+      alias: String(hero?.alias || '').trim(),
+      name: String(hero?.name || '').trim(),
+      title: String(hero?.title || '').trim(),
+      keywords: String(hero?.keywords || '').trim()
+    }))
+    .filter((hero: ChampionMeta) => hero.alias);
+  shardCache = { expiresAt: now + 10 * 60 * 1000, dataUrl, heroUrl, shards, champions };
+  return { ok: true, shards, champions };
+}
+
+function normalizeSearchText(value: string): string {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function findChampionByQuery(query: string, champions: ChampionMeta[], shards: Record<string, ChampionShardStat>): ChampionMeta | null {
+  const needle = normalizeSearchText(query);
+  if (!needle) return null;
+  const withData = champions.filter(hero => !!shards[hero.alias]);
+  return withData.find(hero => normalizeSearchText(hero.alias) === needle
+    || normalizeSearchText(hero.title || '') === needle
+    || normalizeSearchText(hero.name || '') === needle) || withData.find(hero => {
+      const hay = normalizeSearchText([hero.alias, hero.title, hero.name, hero.keywords].filter(Boolean).join(','));
+      return hay.includes(needle);
+    }) || null;
+}
+
+function pct(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  return `${(n * 100).toFixed(2)}%`;
+}
+
+function buildShardQueryPages(hero: ChampionMeta, stat: ChampionShardStat): string[] {
+  const shards = Array.isArray(stat.shards) ? [...stat.shards] : [];
+  shards.sort((a, b) => Number(b.pick_rate || 0) - Number(a.pick_rate || 0));
+  const title = `${hero.title || hero.alias}${hero.name ? `（${hero.name}）` : ''}`;
+  const pages: string[] = [];
+  const head = [
+    `📦 合集查询：${title}`,
+    `英文：${hero.alias}`,
+    `英雄选率：${pct(stat.pick_rate)} / 胜率：${pct(stat.win_rate)}`,
+    `合集数量：${shards.length}`
+  ];
+  const chunkSize = 12;
+  for (let i = 0; i < Math.max(1, shards.length); i += chunkSize) {
+    const chunk = shards.slice(i, i + chunkSize);
+    const lines = i === 0 ? [...head, ''] : [`📦 ${title} 合集列表（续）`, ''];
+    if (!chunk.length) {
+      lines.push('暂无可用合集数据');
+    } else {
+      chunk.forEach((item, idx) => {
+        lines.push(`${i + idx + 1}. ${String(item.name || item.id || '未知合集').trim()}  选率 ${pct(item.pick_rate)}  胜率 ${pct(item.win_rate)}`);
+      });
+    }
+    pages.push(lines.join('\n'));
+  }
+  return pages;
+}
+
+function buildShardImageUrl(template: string, hero: ChampionMeta, query: string): string {
+  return template
+    .replaceAll('{alias}', encodeURIComponent(hero.alias))
+    .replaceAll('{hero}', encodeURIComponent(hero.alias))
+    .replaceAll('{name}', encodeURIComponent(query || hero.title || hero.alias));
+}
+
+function buildAramAugmentImageUrl(baseUrl: string, hero: string): string {
+  const params = new URLSearchParams();
+  params.set('hero', hero);
+  params.set('output', 'image');
+  return `${baseUrl.replace(/\/+$/g, '')}/aram_augments?${params.toString()}`;
+}
+
+function buildAramAugmentJsonUrl(baseUrl: string, hero: string): string {
+  const params = new URLSearchParams();
+  params.set('hero', hero);
+  params.set('output', 'json');
+  return `${baseUrl.replace(/\/+$/g, '')}/aram_augments?${params.toString()}`;
+}
+
+function rarityText(value: unknown): string {
+  const n = Number(value);
+  if (n === 1) return '银';
+  if (n === 2 || n === 3 || n === 8) return '金';
+  if (n === 4) return '棱镜';
+  return '-';
+}
+
+function buildAramAugmentPages(data: any, query: string): string[] {
+  const hero = data && typeof data.hero === 'object' ? data.hero : {};
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const title = `${hero.title || query}${hero.name ? `（${hero.name}）` : ''}`;
+  const lines = [
+    `🧬 海符榜：${title}`,
+    `模式：海克斯大乱斗`,
+    `数据：GGK整理`,
+    ''
+  ];
+  if (!rows.length) {
+    lines.push('暂无可用强化符文推荐数据');
+  } else {
+    rows.slice(0, 10).forEach((row: any, idx: number) => {
+      const score = Number(row?.performance);
+      const scoreText = Number.isFinite(score) ? score.toFixed(2) : '-';
+      lines.push(`${idx + 1}. ${String(row?.name || '未知强化符文').trim()}  品质 ${rarityText(row?.rarity)}  推荐 ${scoreText}`);
+    });
+  }
+  const itemBuilds = Array.isArray(data?.item_builds) ? data.item_builds : [];
+  if (itemBuilds.length) {
+    lines.push('', '核心出装 Top 3');
+    itemBuilds.slice(0, 3).forEach((build: any, idx: number) => {
+      const items = Array.isArray(build?.items) ? build.items : [];
+      const names = items.map((item: any) => String(item?.name || '').trim()).filter(Boolean);
+      lines.push(`${idx + 1}. ${names.join(' > ') || '-'}`);
+    });
+  }
+  const starter = Array.isArray(data?.starter_items) ? data.starter_items : [];
+  const boots = Array.isArray(data?.boots) ? data.boots : [];
+  const summonerSpells = Array.isArray(data?.summoner_spells) ? data.summoner_spells : [];
+  const skillOrder = Array.isArray(data?.skill_order) ? data.skill_order : [];
+  const spellNames = summonerSpells.map((item: any) => String(item?.name || '').trim()).filter(Boolean);
+  const skillKeys = skillOrder.map((item: any) => String(item?.key || '').trim()).filter(Boolean);
+  const firstStarter = Array.isArray(starter[0]?.items) ? starter[0].items.map((item: any) => String(item?.name || '').trim()).filter(Boolean) : [];
+  const firstBoots = Array.isArray(boots[0]?.items) ? boots[0].items.map((item: any) => String(item?.name || '').trim()).filter(Boolean) : [];
+  if (spellNames.length || skillKeys.length || firstStarter.length || firstBoots.length) {
+    lines.push('');
+    if (spellNames.length) lines.push(`召唤师技能：${spellNames.join(' + ')}`);
+    if (skillKeys.length) lines.push(`技能顺序：${skillKeys.join(' > ')}`);
+    lines.push('', `出门装：${firstStarter.join(' + ') || '-'}`);
+    lines.push(`鞋子：${firstBoots.join(' + ') || '-'}`);
+  }
+  return [lines.join('\n')];
 }
 
 function summarizeMatch(match: LolRecentMatch): string {
@@ -468,8 +700,76 @@ async function sendForwardTextPages(groupId: string, selfId: string, nickname: s
       content: [{ type: 'text', data: { text: content } }]
     }
   }));
-  await send({ channel: 'group', targetId: groupId, scene: 'raw_text', forwardNodes: nodes, force: true, applyTemplate: true });
-  return true;
+  try {
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', forwardNodes: nodes, force: true, applyTemplate: true });
+    return true;
+  } catch (e: any) {
+    loggingStateService.warn(`战绩查询合并转发发送失败: ${String(e?.message || e)}`);
+    return false;
+  }
+}
+
+async function sendForwardTextPagesDirect(groupId: string, selfId: string, nickname: string, pages: string[]): Promise<boolean> {
+  const nodes = pages.map(content => ({
+    type: 'node',
+    data: {
+      nickname,
+      user_id: selfId,
+      content: [{ type: 'text', data: { text: content } }]
+    }
+  }));
+  try {
+    await communicationStateService.callApi('send_group_forward_msg', {
+      group_id: groupId,
+      messages: nodes
+    });
+    return true;
+  } catch (e: any) {
+    loggingStateService.warn(`后台合并转发发送失败: ${String(e?.message || e)}`);
+    return false;
+  }
+}
+
+async function sendGroupSceneDirect(groupId: string, scene: string, message: string, vars?: Record<string, string | number | boolean>): Promise<void> {
+  await communicationStateService.sendGroupText(groupId, message, {
+    scene,
+    vars,
+    force: true,
+    applyTemplate: true
+  });
+}
+
+async function sendGroupSegmentsDirect(groupId: string, segments: Array<Record<string, unknown>>): Promise<void> {
+  await communicationStateService.sendGroupMsg(groupId, segments as any, {
+    scene: 'raw_text',
+    force: true,
+    applyTemplate: true
+  });
+}
+
+async function sendLolQueryImage(groupId: string, imageUrl: string): Promise<boolean> {
+  const probe = await probeImageUrlWithTimeout(imageUrl, resolveLolQueryTimeoutMs());
+  if (probe.ok) {
+    try {
+      await sendGroupSegmentsDirect(groupId, [
+        { type: 'image', data: { file: imageUrl } }
+      ]);
+      return true;
+    } catch (e: any) {
+      loggingStateService.warn(`战绩查询图片发送失败，降级合并转发: ${String(e?.message || e)}`);
+    }
+  } else {
+    loggingStateService.warn(`战绩查询图片接口不可用，降级合并转发: ${probe.error}`);
+  }
+  return false;
+}
+
+function runDetachedQuery(label: string, task: () => Promise<void>): void {
+  setTimeout(() => {
+    void task().catch((e: any) => {
+      loggingStateService.error(`${label}后台查询失败: ${String(e?.message || e)}`);
+    });
+  }, 0);
 }
 
 function buildBanQueryUrl(endpoint: string, qq: string): string {
@@ -1329,49 +1629,164 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       return true;
     }
     await sendGroupScene(groupId, 'raw_text', `正在为您查询${parsed.playerId}${parsed.region ? parsed.region : ''}，请耐心等待`);
-    const baseUrl = resolveLolApiBaseUrl();
-    const crossUrl = `${baseUrl}/cross_query?name=${encodeURIComponent(parsed.playerId)}&output=pretty${parsed.region ? `&region=${encodeURIComponent(parsed.region)}` : ''}`;
-    const crossRes = await fetchJsonWithTimeout(crossUrl, resolveLolQueryTimeoutMs());
-    if (!crossRes.ok) {
-      await sendGroupScene(groupId, 'raw_text', `⚠️ 跨区战绩接口不可用：${crossRes.error}`);
+    runDetachedQuery('查战绩', async () => {
+      const baseUrl = resolveLolApiBaseUrl();
+      const outputFormat = getGroupSettings(groupId).lolQueryOutputFormat || 'forward';
+      const selfId = String((event as any).self_id || userId);
+
+      if (outputFormat === 'image') {
+        const imgUrl = buildCrossQueryUrl(baseUrl, parsed.playerId, parsed.region, 'image');
+        if (await sendLolQueryImage(groupId, imgUrl)) {
+          return;
+        }
+      }
+
+      const crossUrl = buildCrossQueryUrl(baseUrl, parsed.playerId, parsed.region, 'pretty');
+      const crossRes = await fetchJsonWithTimeout(crossUrl, resolveLolQueryTimeoutMs());
+      if (!crossRes.ok) {
+        await sendGroupSceneDirect(groupId, 'raw_text', `⚠️ 跨区战绩接口不可用：${crossRes.error}`);
+        return;
+      }
+      const pages = buildCrossPrettyPages(parsed.playerId, parsed.region, crossRes.data as CrossPrettyData, '');
+
+      if (outputFormat === 'image') {
+        const forwarded = await sendForwardTextPagesDirect(groupId, selfId, '🎮 战绩查询', pages);
+        if (!forwarded) {
+          await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+        }
+      } else if (outputFormat === 'card') {
+        const summaryText = pages.join('\\n').substring(0, 100).replace(/\\n/g, ' ');
+        const jsonCard = {
+          app: "com.tencent.structmsg",
+          config: { autosize: true, forward: true, type: "normal" },
+          view: "layout",
+          meta: {
+            layout: {
+              title: "🎮 战绩查询",
+              desc: summaryText + '...',
+              preview: "https://shp.qpic.cn/collector/10000/3/0"
+            }
+          },
+          prompt: "🎮 战绩查询"
+        };
+        await sendGroupSegmentsDirect(groupId, [
+          { type: 'json', data: { data: JSON.stringify(jsonCard) } }
+        ]);
+      } else if (outputFormat === 'text') {
+        await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+      } else {
+        const forwarded = await sendForwardTextPagesDirect(groupId, selfId, '🎮 战绩查询', pages);
+        if (!forwarded) {
+          await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+        }
+      }
+    });
+    return true;
+  }
+
+  if (text.startsWith('查合集')) {
+    const rest = text.replace('查合集', '').trim();
+    if (!rest) {
+      await sendGroupScene(groupId, 'command_format_error', '请输入：查合集 亚索', { example: '查合集 亚索' });
       return true;
     }
-    const pages = buildCrossPrettyPages(parsed.playerId, parsed.region, crossRes.data as CrossPrettyData, '');
-    const selfId = String((event as any).self_id || userId);
-
-    const outputFormat = getGroupSettings(groupId).lolQueryOutputFormat || 'forward';
-
-    if (outputFormat === 'image') {
-      const imgUrl = `${crossUrl}&output=image`;
-      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
-        { type: 'image', data: { file: imgUrl } }
-      ], force: true, applyTemplate: true });
-    } else if (outputFormat === 'card') {
-      const summaryText = pages.join('\\n').substring(0, 100).replace(/\\n/g, ' ');
-      const jsonCard = {
-        app: "com.tencent.structmsg",
-        config: { autosize: true, forward: true, type: "normal" },
-        view: "layout",
-        meta: {
-          layout: {
-            title: "🎮 战绩查询",
-            desc: summaryText + '...',
-            preview: "https://shp.qpic.cn/collector/10000/3/0"
-          }
-        },
-        prompt: "🎮 战绩查询"
-      };
-      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
-        { type: 'json', data: { data: JSON.stringify(jsonCard) } }
-      ], force: true, applyTemplate: true });
-    } else if (outputFormat === 'text') {
-      await sendGroupScene(groupId, 'raw_text', pages.join('\n\n'));
-    } else {
-      const forwarded = await sendForwardTextPages(groupId, selfId, '🎮 战绩查询', pages);
-      if (!forwarded) {
-        await sendGroupScene(groupId, 'raw_text', pages.join('\n\n'));
-      }
+    const rateCheck = checkAndConsumeLolRate(groupId);
+    if (!rateCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      return true;
     }
+    const urls = resolveShardDataUrls();
+    if (!urls.ok) {
+      await sendGroupScene(groupId, 'raw_text', urls.reason);
+      return true;
+    }
+    await sendGroupScene(groupId, 'raw_text', `正在查询 ${rest} 的合集数据，请稍等`);
+    runDetachedQuery('查合集', async () => {
+      const loaded = await loadShardData(urls.dataUrl, urls.heroUrl);
+      if (!loaded.ok) {
+        await sendGroupSceneDirect(groupId, 'raw_text', loaded.error);
+        return;
+      }
+      const hero = findChampionByQuery(rest, loaded.champions, loaded.shards);
+      if (!hero) {
+        await sendGroupSceneDirect(groupId, 'not_found', `未找到英雄：${rest}`);
+        return;
+      }
+      const stat = loaded.shards[hero.alias];
+      if (!stat) {
+        await sendGroupSceneDirect(groupId, 'not_found', `暂无 ${hero.title || hero.alias} 的合集数据`);
+        return;
+      }
+      if (urls.outputFormat === 'image' && urls.imageTemplate) {
+        const imageUrl = buildShardImageUrl(urls.imageTemplate, hero, rest);
+        const probe = await probeImageUrlWithTimeout(imageUrl, resolveLolQueryTimeoutMs());
+        if (probe.ok) {
+          try {
+            await sendGroupSegmentsDirect(groupId, [
+              { type: 'image', data: { file: imageUrl } }
+            ]);
+            return;
+          } catch (e: any) {
+            loggingStateService.warn(`合集图片发送失败，降级合并转发: ${String(e?.message || e)}`);
+          }
+        } else {
+          loggingStateService.warn(`合集图片接口不可用，降级合并转发: ${probe.error}`);
+        }
+      }
+      const pages = buildShardQueryPages(hero, stat);
+      if (urls.outputFormat === 'text') {
+        await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+      } else {
+        const selfId = String((event as any).self_id || userId);
+        const forwarded = await sendForwardTextPagesDirect(groupId, selfId, '📦 合集查询', pages);
+        if (!forwarded) {
+          await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+        }
+      }
+    });
+    return true;
+  }
+
+  if (text.startsWith('海符榜')) {
+    const rest = text.replace('海符榜', '').trim();
+    if (!rest) {
+      await sendGroupScene(groupId, 'command_format_error', '请输入：海符榜 亚索', { example: '海符榜 亚索' });
+      return true;
+    }
+    const rateCheck = checkAndConsumeLolRate(groupId);
+    if (!rateCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      return true;
+    }
+    const baseUrl = resolveLolApiBaseUrl();
+    await sendGroupScene(groupId, 'raw_text', `正在查询 ${rest} 的海克斯大乱斗强化符文，请稍等`);
+    runDetachedQuery('海符榜', async () => {
+      const imageUrl = buildAramAugmentImageUrl(baseUrl, rest);
+      const probe = await probeImageUrlWithTimeout(imageUrl, resolveLolQueryTimeoutMs());
+      if (probe.ok) {
+        try {
+          await sendGroupSegmentsDirect(groupId, [
+            { type: 'image', data: { file: imageUrl } }
+          ]);
+          return;
+        } catch (e: any) {
+          loggingStateService.warn(`海符榜图片发送失败，降级合并转发: ${String(e?.message || e)}`);
+        }
+      } else {
+        loggingStateService.warn(`海符榜图片接口不可用，降级合并转发: ${probe.error}`);
+      }
+      const jsonRes = await fetchJsonWithTimeout(buildAramAugmentJsonUrl(baseUrl, rest), resolveLolQueryTimeoutMs());
+      if (!jsonRes.ok) {
+        await sendGroupSceneDirect(groupId, 'raw_text', `海符榜查询失败：${jsonRes.error}`);
+        return;
+      }
+      const pages = buildAramAugmentPages(jsonRes.data, rest);
+      const selfId = String((event as any).self_id || userId);
+      const forwarded = await sendForwardTextPagesDirect(groupId, selfId, '🧬 海符榜', pages);
+      if (!forwarded) {
+        await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+      }
+    });
     return true;
   }
 

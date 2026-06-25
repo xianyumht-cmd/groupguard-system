@@ -790,6 +790,32 @@
               <label class="text-xs text-slate-500">封号备用接口地址（每行一条）</label>
               <textarea id="d-lol-ban-backups" class="ipt" rows="3" placeholder="例如：http://117.72.159.85:3580/ban/{qq}"></textarea>
             </div>
+            <div class="mt-3">
+              <label class="text-xs text-slate-500">LOL 接口基础地址</label>
+              <input type="text" id="d-lol-api-base" class="ipt" placeholder="例如：http://127.0.0.1:5001">
+            </div>
+            <div class="mt-3">
+              <label class="text-xs text-slate-500">合集数据 URL</label>
+              <input type="text" id="d-shard-data-url" class="ipt" placeholder="https://raw.githubusercontent.com/badspacebar/release/master/files/shards.json">
+            </div>
+            <div class="mt-3">
+              <label class="text-xs text-slate-500">英雄列表 URL</label>
+              <input type="text" id="d-shard-hero-url" class="ipt" placeholder="https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js">
+            </div>
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-3">
+              <div>
+                <label class="text-xs text-slate-500">查合集输出</label>
+                <select id="d-shard-output" class="ipt">
+                  <option value="image">图片优先，失败转发</option>
+                  <option value="forward">合并转发</option>
+                  <option value="text">纯文本</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-slate-500">合集图片 URL 模板</label>
+                <input type="text" id="d-shard-image-url" class="ipt" placeholder="留空自动使用 LOL 接口基础地址 /shard_query?hero={name}&output=image">
+              </div>
+            </div>
           </div>
         </div>
 
@@ -992,7 +1018,7 @@
                 <div class="cfg-row">
                   <div>
                     <div class="text-sm font-medium">消息随机后缀</div>
-                    <div class="text-xs text-slate-400">在消息末尾添加随机不可见字符 (全局生效)</div>
+                    <div class="text-xs text-slate-400">仅对低风险提示类消息添加普通标点扰动；事实查询结果不会追加后缀</div>
                   </div>
                   <div class="tgl" id="c-rs" onclick="tg(this)"></div>
                 </div>
@@ -1000,8 +1026,7 @@
                   <div>
                     <label class="text-xs text-slate-500">后缀模式</label>
                     <select id="c-basm" class="ipt">
-                      <option value="mixed">混合</option>
-                      <option value="invisible">仅不可见字符</option>
+                      <option value="mixed">普通标点混合</option>
                       <option value="punctuation">仅标点/空格</option>
                       <option value="none">不加后缀</option>
                     </select>
@@ -1012,10 +1037,18 @@
                     <div class="text-[10px] text-slate-400 mt-1">可按 scene 覆盖 delayMinMs/delayMaxMs/replyProbability/suffixMode</div>
                   </div>
                 </div>
+                <div class="mt-2">
+                  <label class="text-xs text-slate-500">限流/熔断时处理方式</label>
+                  <select id="c-bar-lfm" class="ipt">
+                    <option value="drop">丢弃（默认）</option>
+                    <option value="forward">合并转发兜底</option>
+                  </select>
+                  <div class="text-[10px] text-slate-400 mt-1">开启后，高风险发送场景不直接丢弃，改用合并转发发送</div>
+                </div>
                 <div class="cfg-row">
                   <div>
                     <div class="text-sm font-medium">纯文本回复模式</div>
-                    <div class="text-xs text-slate-400">开启后不再使用人格与回复模板包装，仅保留原始文本+随机后缀</div>
+                    <div class="text-xs text-slate-400">开启后不再使用人格与回复模板包装，仅保留原始文本</div>
                   </div>
                   <div class="tgl" id="c-drt" onclick="tg(this)"></div>
                 </div>
@@ -2009,8 +2042,9 @@
       sv('c-srmax', sr.maxDelay !== undefined ? sr.maxDelay : 90);
       sv('c-srj', sr.jitter !== undefined ? sr.jitter : 0);
       stg('c-rs', g.randomSuffix);
-      if ($('c-basm')) $('c-basm').value = g.botAntiRiskSuffixMode || 'mixed';
+      if ($('c-basm')) $('c-basm').value = g.botAntiRiskSuffixMode === 'invisible' ? 'none' : (g.botAntiRiskSuffixMode || 'punctuation');
       sv('c-basp', JSON.stringify(g.botAntiRiskScenePolicies || {}, null, 2));
+      if ($('c-bar-lfm')) $('c-bar-lfm').value = g.botAntiRiskLimitFallbackMode || 'drop';
       stg('c-drt', !!g.disableReplyTemplate);
       sv('c-rdn', g.randomDelayMin || 0);
       sv('c-rdx', g.randomDelayMax || 0);
@@ -2090,6 +2124,11 @@
       sv('d-key', C.licenseKey || '');
       sv('d-lol-ban-primary', C.lolBanPrimaryUrl || '');
       sv('d-lol-ban-backups', (C.lolBanBackupUrls || []).join('\n'));
+      sv('d-lol-api-base', C.lolApiBaseUrl || '');
+      sv('d-shard-data-url', C.shardDataUrl || '');
+      sv('d-shard-hero-url', C.shardHeroListUrl || '');
+      sv('d-shard-image-url', C.shardImageUrlTemplate || '');
+      if ($('d-shard-output')) $('d-shard-output').value = C.shardQueryOutputFormat || 'image';
       stg('a-gar', C.globalAntiRecall); stg('a-ger', C.globalEmojiReact);
       updDash(); loadBlMgr();
     }
@@ -2144,8 +2183,9 @@
           jitter: Math.min(300, gn('c-srj', 0))
         },
         randomSuffix: gtg('c-rs'),
-        botAntiRiskSuffixMode: $('c-basm')?.value || 'mixed',
+        botAntiRiskSuffixMode: $('c-basm')?.value || 'punctuation',
         botAntiRiskScenePolicies: (() => { try { return JSON.parse(($('c-basp')?.value || '{}')); } catch { return {}; } })(),
+        botAntiRiskLimitFallbackMode: $('c-bar-lfm')?.value || 'drop',
         disableReplyTemplate: gtg('c-drt'), randomDelayMin: gn('c-rdn', 0), randomDelayMax: gn('c-rdx', 0),
         queueMode: $('c-qm')?.value === 'global' ? 'global' : 'group',
         queueConcurrency: gn('c-qc', 2),
@@ -2386,6 +2426,11 @@
       C.licenseKey = $('d-key')?.value || '';
       C.lolBanPrimaryUrl = $('d-lol-ban-primary')?.value?.trim() || '';
       C.lolBanBackupUrls = ($('d-lol-ban-backups')?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+      C.lolApiBaseUrl = $('d-lol-api-base')?.value?.trim() || '';
+      C.shardDataUrl = $('d-shard-data-url')?.value?.trim() || '';
+      C.shardHeroListUrl = $('d-shard-hero-url')?.value?.trim() || '';
+      C.shardImageUrlTemplate = $('d-shard-image-url')?.value?.trim() || '';
+      C.shardQueryOutputFormat = $('d-shard-output')?.value || 'image';
       C.globalAntiRecall = gtg('a-gar'); C.globalEmojiReact = gtg('a-ger');
       if (editMode) { collectGroup(editMode); } else { collectGlobal(); }
       const patch = {
@@ -2394,6 +2439,11 @@
           licenseKey: C.licenseKey,
           lolBanPrimaryUrl: C.lolBanPrimaryUrl,
           lolBanBackupUrls: C.lolBanBackupUrls,
+          lolApiBaseUrl: C.lolApiBaseUrl,
+          shardDataUrl: C.shardDataUrl,
+          shardHeroListUrl: C.shardHeroListUrl,
+          shardImageUrlTemplate: C.shardImageUrlTemplate,
+          shardQueryOutputFormat: C.shardQueryOutputFormat,
           globalAntiRecall: C.globalAntiRecall,
           globalEmojiReact: C.globalEmojiReact,
           blacklist: C.blacklist || [],
