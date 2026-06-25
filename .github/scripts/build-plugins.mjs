@@ -46,6 +46,79 @@ function getChangedPlugins () {
   }
 }
 
+function installDependencies(pluginPath, pkgName) {
+  try {
+    if (existsSync(join(pluginPath, 'pnpm-lock.yaml'))) {
+      execSync('pnpm install', { cwd: pluginPath, stdio: 'inherit' });
+    } else if (existsSync(join(pluginPath, 'package-lock.json'))) {
+      execSync('npm install', { cwd: pluginPath, stdio: 'inherit' });
+    } else {
+      execSync('npm install', { cwd: pluginPath, stdio: 'inherit' });
+    }
+  } catch (error) {
+    console.error(`❌ 依赖安装失败: ${pkgName}`);
+    console.error(error);
+    process.exit(1);
+  }
+}
+
+function runBuild(pluginPath, pkg, scriptName, label) {
+  try {
+    console.log(`🛠️  ${pkg.name} ${label}: npm run ${scriptName}`);
+    execSync(`npm run ${scriptName}`, { cwd: pluginPath, stdio: 'inherit' });
+  } catch (error) {
+    console.error(`❌ ${label} 构建失败: ${pkg.name}`);
+    console.error(error);
+    process.exit(1);
+  }
+}
+
+function packageDist(pluginPath, pkg, zipName, label) {
+  const distDir = join(pluginPath, 'dist');
+  if (!existsSync(distDir)) {
+    console.error(`❌ ${label} 构建后无 dist 目录: ${pkg.name}`);
+    process.exit(1);
+  }
+
+  const stagingDir = join(OUT_DIR, `staging-${zipName}`, pkg.name);
+  mkdirSync(stagingDir, { recursive: true });
+  cpSync(distDir, stagingDir, { recursive: true });
+
+  // 生成干净的 package.json（如果 dist 里没有）
+  if (!existsSync(join(stagingDir, 'package.json'))) {
+    const cleanPkg = {
+      name: pkg.name,
+      plugin: pkg.plugin,
+      version: pkg.version,
+      type: pkg.type || 'module',
+      main: (pkg.main || 'index.mjs').replace(/^dist\//, ''),
+      description: pkg.description,
+      author: pkg.author,
+      napcat: pkg.napcat,
+      dependencies: pkg.dependencies,
+    };
+    writeFileSync(join(stagingDir, 'package.json'), JSON.stringify(cleanPkg, null, 2));
+  }
+
+  // 复制 webui（如果存在且 dist 中没有）
+  const webuiSrc = join(pluginPath, 'webui');
+  if (existsSync(webuiSrc) && !existsSync(join(stagingDir, 'webui'))) {
+    cpSync(webuiSrc, join(stagingDir, 'webui'), { recursive: true });
+  }
+
+  // 复制 resources（如果存在且 dist 中没有）
+  const resSrc = join(pluginPath, 'resources');
+  if (existsSync(resSrc) && !existsSync(join(stagingDir, 'resources'))) {
+    cpSync(resSrc, join(stagingDir, 'resources'), { recursive: true });
+  }
+
+  const zipPath = join(OUT_DIR, zipName);
+  const stagingParent = join(OUT_DIR, `staging-${zipName}`);
+  execSync(`zip -r "${zipPath}" "${pkg.name}"`, { cwd: stagingParent, stdio: 'inherit' });
+  rmSync(stagingParent, { recursive: true });
+  console.log(`✅ ${label} 打包完成: ${zipName}\n`);
+}
+
 // 扫描所有插件目录
 const pluginDirs = readdirSync(ROOT, { withFileTypes: true })
   .filter(d => d.isDirectory() && d.name.startsWith('napcat-plugin-'))
@@ -82,6 +155,7 @@ for (const dirName of pluginDirs) {
   }
 
   const zipName = `${pkg.name}.zip`;
+  const debugZipName = `${pkg.name}-debug.zip`;
   const downloadUrl = `${REPO_URL}/releases/download/${RELEASE_TAG}/${zipName}`;
   const pluginInfo = {
     id: pkg.name,
@@ -108,77 +182,19 @@ for (const dirName of pluginDirs) {
   console.log(`🔨 构建: ${pkg.name} v${pkg.version}`);
   console.log(`==========================================`);
 
-  // 安装依赖
-  try {
-    if (existsSync(join(pluginPath, 'pnpm-lock.yaml'))) {
-      execSync('pnpm install', { cwd: pluginPath, stdio: 'inherit' });
-    } else if (existsSync(join(pluginPath, 'package-lock.json'))) {
-      execSync('npm install', { cwd: pluginPath, stdio: 'inherit' });
-    } else {
-      execSync('npm install', { cwd: pluginPath, stdio: 'inherit' });
-    }
-  } catch (error) {
-    console.error(`❌ 依赖安装失败: ${pkg.name}`);
-    console.error(error);
-    process.exit(1);
-  }
+  installDependencies(pluginPath, pkg.name);
 
-  // 构建
-  try {
-    execSync('npm run build', { cwd: pluginPath, stdio: 'inherit' });
-  } catch (error) {
-    console.error(`❌ 构建失败: ${pkg.name}`);
-    console.error(error);
-    process.exit(1);
-  }
-
-  const distDir = join(pluginPath, 'dist');
-  if (!existsSync(distDir)) {
-    console.error(`❌ 无 dist 目录: ${pkg.name}`);
-    process.exit(1);
-  }
-
-  // 打包
-  const stagingDir = join(OUT_DIR, `staging-${pkg.name}`, pkg.name);
-  mkdirSync(stagingDir, { recursive: true });
-  cpSync(distDir, stagingDir, { recursive: true });
-
-  // 生成干净的 package.json（如果 dist 里没有）
-  if (!existsSync(join(stagingDir, 'package.json'))) {
-    const cleanPkg = {
-      name: pkg.name,
-      plugin: pkg.plugin,
-      version: pkg.version,
-      type: pkg.type || 'module',
-      main: (pkg.main || 'index.mjs').replace(/^dist\//, ''),
-      description: pkg.description,
-      author: pkg.author,
-      napcat: pkg.napcat,
-      dependencies: pkg.dependencies,
-    };
-    writeFileSync(join(stagingDir, 'package.json'), JSON.stringify(cleanPkg, null, 2));
-  }
-
-  // 复制 webui（如果存在且 dist 中没有）
-  const webuiSrc = join(pluginPath, 'webui');
-  if (existsSync(webuiSrc) && !existsSync(join(stagingDir, 'webui'))) {
-    cpSync(webuiSrc, join(stagingDir, 'webui'), { recursive: true });
-  }
-
-  // 复制 resources（如果存在且 dist 中没有）
-  const resSrc = join(pluginPath, 'resources');
-  if (existsSync(resSrc) && !existsSync(join(stagingDir, 'resources'))) {
-    cpSync(resSrc, join(stagingDir, 'resources'), { recursive: true });
-  }
-
-  // 创建 zip
-  const zipPath = join(OUT_DIR, zipName);
-  const stagingParent = join(OUT_DIR, `staging-${pkg.name}`);
-  execSync(`zip -r "${zipPath}" "${pkg.name}"`, { cwd: stagingParent, stdio: 'inherit' });
-  rmSync(stagingParent, { recursive: true });
-
-  console.log(`✅ 打包完成: ${zipName}\n`);
+  const releaseScript = pkg.scripts?.['build:release'] ? 'build:release' : 'build';
+  runBuild(pluginPath, pkg, releaseScript, 'release');
+  packageDist(pluginPath, pkg, zipName, 'release');
   builtNames.push(pkg.name);
+
+  if (pkg.scripts?.['build:debug']) {
+    runBuild(pluginPath, pkg, 'build:debug', 'debug');
+    packageDist(pluginPath, pkg, debugZipName, 'debug');
+    builtNames.push(`${pkg.name}-debug`);
+  }
+
   allPluginInfos.push(pluginInfo);
 }
 
@@ -193,7 +209,7 @@ const result = {
 writeFileSync(pluginJsonPath, JSON.stringify(result, null, 2) + '\n');
 
 if (builtNames.length > 0) {
-  console.log(`\n✅ 本次构建了 ${builtNames.length} 个插件: ${builtNames.join(', ')}`);
+  console.log(`\n✅ 本次构建了 ${builtNames.length} 个插件包: ${builtNames.join(', ')}`);
 } else {
   console.log(`\n✅ 无需构建`);
 }
