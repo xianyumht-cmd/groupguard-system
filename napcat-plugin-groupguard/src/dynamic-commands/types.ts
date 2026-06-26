@@ -40,6 +40,11 @@ export type DynamicCommandProviderDefinition =
 export interface DynamicCommandResponseDefinition {
   type: 'text';
   textPath?: string;
+  /**
+   * Template syntax: "QQ：{name|未知}\n状态：{data.return|未知}\n详情：{data.banmsg|data.rammsg|msg|无详细信息}"
+   * Each placeholder tries dot-path alternatives from left to right and then literal fallbacks.
+   */
+  template?: string;
 }
 
 export interface DynamicCommandParameterSchema {
