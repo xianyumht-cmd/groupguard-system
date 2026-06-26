@@ -1170,20 +1170,21 @@ function toBanQueryResult(data: any): BanQueryResult {
       return { status: 'unknown', detail: detailText || `接口返回状态码 ${data.code}` };
     }
     if (data.code >= 500) return { status: 'unknown', detail: detailText || `接口返回状态码 ${data.code}` };
-    if (data.code === 404) return { status: 'safe', detail: detailText || '暂未查到封禁记录' };
+    if (data.code === 404) return { status: 'safe', detail: '账号状态正常' };
     if (data.code === 200) {
       const statusText = `${data?.msg || ''} ${data?.data?.banmsg || ''} ${data?.data?.rammsg || ''} ${data?.data?.return || ''}`.replace(/\s+/g, '');
       const unbanned = SAFE_CONFIRMED_PATTERNS.test(statusText);
       const banned = BAN_CONFIRMED_PATTERNS.test(statusText) && !unbanned;
       if (banned) return { status: 'banned', detail: detailText || '接口未返回更多时间信息' };
-      if (unbanned) return { status: 'safe', detail: detailText || '接口未返回更多时间信息' };
+      if (unbanned) return { status: 'safe', detail: '账号状态正常' };
       return { status: 'unknown', detail: detailText || '接口返回状态不明确' };
     }
     return { status: 'unknown', detail: detailText || `接口返回状态码 ${data.code}` };
   }
   if (typeof data?.ban === 'boolean') {
     if (detailText && isUnavailableMessage(detailText)) return { status: 'unknown', detail: detailText };
-    return { status: data.ban ? 'banned' : 'safe', detail: detailText || (typeof data?.msg === 'string' ? data.msg : '接口未返回更多时间信息') };
+    if (data.ban) return { status: 'banned', detail: detailText || (typeof data?.msg === 'string' ? data.msg : '接口未返回更多时间信息') };
+    return { status: 'safe', detail: '账号状态正常' };
   }
   const msg = typeof data?.msg === 'string' ? data.msg : '';
   if (msg) {
@@ -1192,7 +1193,7 @@ function toBanQueryResult(data: any): BanQueryResult {
     const unbanned = SAFE_CONFIRMED_PATTERNS.test(normalized);
     const banned = BAN_CONFIRMED_PATTERNS.test(normalized) && !unbanned;
     if (banned) return { status: 'banned', detail: detailText || msg };
-    if (unbanned) return { status: 'safe', detail: detailText || msg };
+    if (unbanned) return { status: 'safe', detail: '账号状态正常' };
     return { status: 'unknown', detail: detailText || msg };
   }
   return { status: 'unknown', detail: '接口返回数据结构无法识别' };
@@ -1574,7 +1575,6 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
     const pureTextMode = getConfig().global?.disableReplyTemplate === true;
     const banTexts = ['真是活该，直接进小黑屋了~', '这波操作属实离谱，封得明明白白。', '翻车现场，系统都看不下去了。', '号子已经躺平，连申诉都得排队。', '风控一锤定音，这把寄得很彻底。', '这号现在主打一个“只能看不能玩”。'];
-    const safeTexts = ['安全着呢，稳得一批~', '状态健康，今天也没翻车。', '干净得很，风控都点了个赞。', '目前稳如老狗，继续保持。', '状态在线，暂时没有危险信号。', '看起来很平安，继续低调上分吧。'];
     const unknownTexts = ['接口今天有点小情绪，稍后再查一次。', '这波网络不太给面子，过会儿再试试。', '数据源在摸鱼，建议晚点重试。', '查询通道有点拥挤，等等会更稳。'];
     const sendResult = async (content: string) => {
       await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
@@ -1599,8 +1599,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         const tail = pureTextMode ? '' : `，${pick(banTexts)}`;
         await sendResult(`这号被封了，详情：${attempt.result.detail || '接口未返回更多时间信息'}${tail}`);
       } else if (attempt.result.status === 'safe') {
-        const tail = pureTextMode ? '' : `，${pick(safeTexts)}`;
-        await sendResult(`这号未封，详情：${attempt.result.detail || '接口未返回更多时间信息'}${tail}`);
+        await sendResult(`这号未封，${attempt.result.detail || '账号状态正常'}`);
       } else {
         const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
         await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}${tail}`);
