@@ -4,20 +4,27 @@ import { saveConfig } from '../commands/common';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
 
-type SendWrapperCommandAction = 'enable_forward' | 'disable_forward' | 'status';
+type SendWrapperCommandAction = 'enable_all' | 'disable_all' | 'enable_qa' | 'disable_qa' | 'enable_query' | 'disable_query' | 'status';
 
-const TRIGGER_ENABLE = '\u5f00\u542f\u5168\u5c40\u5408\u5e76\u8f6c\u53d1';
-const TRIGGER_DISABLE = '\u5173\u95ed\u5168\u5c40\u5408\u5e76\u8f6c\u53d1';
+const TRIGGER_ENABLE_ALL = '\u5f00\u542f\u5168\u5c40\u5408\u5e76\u8f6c\u53d1';
+const TRIGGER_DISABLE_ALL = '\u5173\u95ed\u5168\u5c40\u5408\u5e76\u8f6c\u53d1';
+const TRIGGER_ENABLE_QA = '\u5f00\u542f\u5168\u5c40\u95ee\u7b54\u5408\u5e76\u8f6c\u53d1';
+const TRIGGER_DISABLE_QA = '\u5173\u95ed\u5168\u5c40\u95ee\u7b54\u5408\u5e76\u8f6c\u53d1';
+const TRIGGER_ENABLE_QUERY = '\u5f00\u542f\u5168\u5c40\u67e5\u8be2\u5408\u5e76\u8f6c\u53d1';
+const TRIGGER_DISABLE_QUERY = '\u5173\u95ed\u5168\u5c40\u67e5\u8be2\u5408\u5e76\u8f6c\u53d1';
 const TRIGGER_STATUS = '\u67e5\u770b\u53d1\u9001\u5305\u88c5';
 const DEFAULT_NICKNAME = 'GroupGuard';
 
 function getStatusText(): string {
   const global = (configStateService.getConfig().global || {}) as any;
-  const enabled = global.botSendWrapperEnabled === true && global.botSendWrapperMode === 'forward';
+  const allEnabled = global.botSendWrapperEnabled === true && global.botSendWrapperMode === 'forward';
+  const qaEnabled = global.botSendWrapperQaEnabled === true;
+  const queryEnabled = global.botSendWrapperQueryEnabled === true;
   const nickname = String(global.botSendForwardNickname || DEFAULT_NICKNAME).trim() || DEFAULT_NICKNAME;
   return [
-    `wrapper: ${enabled ? 'on' : 'off'}`,
-    `mode: ${enabled ? 'forward' : 'normal'}`,
+    `all: ${allEnabled ? 'on' : 'off'}`,
+    `qa: ${qaEnabled ? 'on' : 'off'}`,
+    `query: ${queryEnabled ? 'on' : 'off'}`,
     `nickname: ${nickname}`
   ].join('\n');
 }
@@ -88,18 +95,24 @@ function createPlugin(triggerValue: string, action: SendWrapperCommandAction): C
       }
       const config = configStateService.getConfig() as any;
       config.global = config.global || {};
-      if (action === 'enable_forward') {
+      if (action === 'enable_all') {
         config.global.botSendWrapperEnabled = true;
         config.global.botSendWrapperMode = 'forward';
-        config.global.botSendForwardNickname = String(config.global.botSendForwardNickname || DEFAULT_NICKNAME).trim() || DEFAULT_NICKNAME;
-        saveConfig(executionContext.pluginContext);
-        return { ok: true, response: { type: 'text', text: `enabled\n${getStatusText()}` } };
-      }
-      if (action === 'disable_forward') {
+      } else if (action === 'disable_all') {
         config.global.botSendWrapperEnabled = false;
         config.global.botSendWrapperMode = 'normal';
+      } else if (action === 'enable_qa') {
+        config.global.botSendWrapperQaEnabled = true;
+      } else if (action === 'disable_qa') {
+        config.global.botSendWrapperQaEnabled = false;
+      } else if (action === 'enable_query') {
+        config.global.botSendWrapperQueryEnabled = true;
+      } else if (action === 'disable_query') {
+        config.global.botSendWrapperQueryEnabled = false;
+      }
+      if (action !== 'status') {
+        config.global.botSendForwardNickname = String(config.global.botSendForwardNickname || DEFAULT_NICKNAME).trim() || DEFAULT_NICKNAME;
         saveConfig(executionContext.pluginContext);
-        return { ok: true, response: { type: 'text', text: `disabled\n${getStatusText()}` } };
       }
       return { ok: true, response: { type: 'text', text: getStatusText() } };
     },
@@ -118,8 +131,12 @@ let registered = false;
 export function registerSendWrapperCommandPlugins(): void {
   if (registered) return;
   registerCommandPluginBatch([
-    createPlugin(TRIGGER_ENABLE, 'enable_forward'),
-    createPlugin(TRIGGER_DISABLE, 'disable_forward'),
+    createPlugin(TRIGGER_ENABLE_ALL, 'enable_all'),
+    createPlugin(TRIGGER_DISABLE_ALL, 'disable_all'),
+    createPlugin(TRIGGER_ENABLE_QA, 'enable_qa'),
+    createPlugin(TRIGGER_DISABLE_QA, 'disable_qa'),
+    createPlugin(TRIGGER_ENABLE_QUERY, 'enable_query'),
+    createPlugin(TRIGGER_DISABLE_QUERY, 'disable_query'),
     createPlugin(TRIGGER_STATUS, 'status')
   ]);
   registered = true;
