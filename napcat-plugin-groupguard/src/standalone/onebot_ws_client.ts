@@ -9,6 +9,8 @@ type PendingCall = {
   reject: (reason?: any) => void;
 };
 
+const WS_OPEN = 1;
+
 export interface OneBotWsClientOptions {
   url: string;
   accessToken?: string;
@@ -65,7 +67,7 @@ export class OneBotWsClient {
 
   async call(action: string, params: unknown = {}): Promise<any> {
     const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!ws || ws.readyState !== WS_OPEN) {
       throw new Error(`onebot_ws_not_connected:${action}`);
     }
 
