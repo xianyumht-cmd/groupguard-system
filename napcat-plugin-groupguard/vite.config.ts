@@ -23,6 +23,7 @@ function manualChunks(id: string): string | undefined {
 
   if (normalized.includes('/src/commands/')) return 'commands';
   if (normalized.includes('/src/runtime/')) return 'runtime';
+  if (normalized.includes('/src/standalone/')) return 'standalone';
   if (normalized.includes('/src/repositories/')) return 'repositories';
   if (normalized.includes('/src/risk/')) return 'risk';
   if (normalized.includes('/src/services/')) return 'services';
@@ -35,6 +36,8 @@ function manualChunks(id: string): string | undefined {
 
 export default defineConfig(({ mode }) => {
   const isDebug = mode === 'debug';
+  const isSnowLuma = mode === 'snowluma';
+  const entryName = isSnowLuma ? 'snowluma-service.mjs' : 'index.mjs';
 
   return {
     resolve: { conditions: ['node', 'default'] },
@@ -43,15 +46,15 @@ export default defineConfig(({ mode }) => {
       target: 'esnext',
       minify: false,
       lib: {
-        entry: resolve(__dirname, 'src/index.ts'),
+        entry: resolve(__dirname, isSnowLuma ? 'src/standalone/snowluma_service.ts' : 'src/index.ts'),
         formats: ['es'],
-        fileName: () => 'index.mjs',
+        fileName: () => entryName,
       },
       rollupOptions: {
         external: [...nodeModules],
         output: {
           manualChunks,
-          entryFileNames: 'index.mjs',
+          entryFileNames: entryName,
           chunkFileNames: 'chunks/[name]-[hash].js',
           assetFileNames: 'assets/[name]-[hash][extname]',
         },
