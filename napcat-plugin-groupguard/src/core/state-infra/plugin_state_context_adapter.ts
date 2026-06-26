@@ -1,9 +1,32 @@
 import { pluginState } from '../../state';
 
+const WRAPPER_SCENE_KEY = '__groupGuardScene';
+
 function normalizeForwardContent(message: unknown): any[] {
   if (Array.isArray(message)) return message as any[];
   if (message === undefined || message === null) return [];
   return [{ type: 'text', data: { text: String(message) } }];
+}
+
+function stripWrapperMeta(params: unknown): unknown {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
+  if (!(WRAPPER_SCENE_KEY in (params as any))) return params;
+  const next = { ...(params as any) };
+  delete next[WRAPPER_SCENE_KEY];
+  return next;
+}
+
+function isQaScene(scene: string): boolean {
+  return scene === 'qa' || scene === 'qa_reply';
+}
+
+function isQueryScene(scene: string): boolean {
+  return scene === 'query'
+    || scene.startsWith('query_')
+    || scene.startsWith('lol_query')
+    || scene.startsWith('risk_query')
+    || scene === 'scammer_query'
+    || scene === 'peer_query';
 }
 
 export class PluginStateContextAdapter {
@@ -15,10 +38,15 @@ export class PluginStateContextAdapter {
     if (actionName !== 'send_group_msg') return false;
     if (!params || typeof params !== 'object') return false;
     const global = (pluginState.config?.global || {}) as any;
-    const enabled = global.botSendWrapperEnabled === true;
-    const mode = String(global.botSendWrapperMode || 'normal');
     const groupId = (params as any).group_id ?? (params as any).groupId;
-    return enabled && mode === 'forward' && groupId !== undefined && groupId !== null && String(groupId) !== '';
+    if (groupId === undefined || groupId === null || String(groupId) === '') return false;
+
+    const scene = String((params as any)[WRAPPER_SCENE_KEY] || 'raw_text');
+    const mode = String(global.botSendWrapperMode || 'normal');
+    if (global.botSendWrapperEnabled === true && mode === 'forward') return true;
+    if (global.botSendWrapperQaEnabled === true && isQaScene(scene)) return true;
+    if (global.botSendWrapperQueryEnabled === true && isQueryScene(scene)) return true;
+    return false;
   }
 
   private buildForwardGroupMessageParams(params: any): any {
@@ -57,7 +85,7 @@ export class PluginStateContextAdapter {
           const wrappedParams = this.buildForwardGroupMessageParams(params as any);
           return rawCall('send_group_forward_msg', wrappedParams, adapter, config);
         }
-        return rawCall(actionName, params, adapter, config);
+        return rawCall(actionName, stripWrapperMeta(params), adapter, config);
       }
     };
   }
