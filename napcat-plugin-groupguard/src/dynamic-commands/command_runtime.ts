@@ -75,7 +75,7 @@ function parseDotPath(dotPath: string): PathSegment[] | null {
   return segments;
 }
 
-export function safeExtractByDotPath(input: unknown, dotPath: string | undefined): unknown {
+function extractByDotPath(input: unknown, dotPath: string | undefined): unknown {
   if (!dotPath) return input;
   const segments = parseDotPath(dotPath);
   if (!segments) return undefined;
@@ -92,4 +92,48 @@ export function safeExtractByDotPath(input: unknown, dotPath: string | undefined
     current = (current as Record<string, unknown>)[segment.value];
   }
   return current;
+}
+
+function normalizeTemplateValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value === null || value === undefined) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function looksLikeDotPath(candidate: string): boolean {
+  return /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*|\[\d+\])*$/.test(candidate.trim());
+}
+
+function resolveTemplatePlaceholder(input: unknown, expression: string): string {
+  const choices = expression.split('|').map((item) => item.trim()).filter(Boolean);
+  for (const choice of choices) {
+    if (looksLikeDotPath(choice)) {
+      const value = normalizeTemplateValue(extractByDotPath(input, choice));
+      if (value) return value;
+      continue;
+    }
+    return choice;
+  }
+  return '';
+}
+
+function renderResponseTemplate(input: unknown, template: string): string {
+  return template.replace(/\{([^{}]+)\}/g, (_match, expression: string) => resolveTemplatePlaceholder(input, expression)).trim();
+}
+
+function isResponseTemplate(selector: string): boolean {
+  return /\{[^{}]+\}/.test(selector);
+}
+
+export function safeExtractByDotPath(input: unknown, dotPath: string | undefined): unknown {
+  if (!dotPath) return input;
+  if (isResponseTemplate(dotPath)) {
+    return renderResponseTemplate(input, dotPath);
+  }
+  return extractByDotPath(input, dotPath);
 }
