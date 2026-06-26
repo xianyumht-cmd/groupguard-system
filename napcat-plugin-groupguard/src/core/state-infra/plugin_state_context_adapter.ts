@@ -1,18 +1,51 @@
+import { GROUPGUARD_SEND_SCENE_KEY } from '../send_wrapper_constants';
 import { pluginState } from '../../state';
 
-const WRAPPER_SCENE_KEY = '__groupGuardScene';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isMessageSegment(value: unknown): value is Record<string, any> {
+  return isRecord(value) && typeof value.type === 'string';
+}
+
+function getSceneFromMessage(message: unknown): string {
+  if (!Array.isArray(message)) return '';
+  for (const segment of message) {
+    if (!isMessageSegment(segment)) continue;
+    const data = isRecord(segment.data) ? segment.data : null;
+    const scene = data?.[GROUPGUARD_SEND_SCENE_KEY];
+    if (typeof scene === 'string' && scene.trim()) return scene.trim();
+  }
+  return '';
+}
+
+function stripSceneMetaFromSegment(segment: unknown): unknown {
+  if (!isMessageSegment(segment)) return segment;
+  const data = isRecord(segment.data) ? { ...segment.data } : segment.data;
+  if (isRecord(data) && GROUPGUARD_SEND_SCENE_KEY in data) {
+    delete data[GROUPGUARD_SEND_SCENE_KEY];
+    return { ...segment, data };
+  }
+  return segment;
+}
+
+function stripSceneMetaFromMessage(message: unknown): unknown {
+  if (!Array.isArray(message)) return message;
+  return message.map(stripSceneMetaFromSegment);
+}
 
 function normalizeForwardContent(message: unknown): any[] {
-  if (Array.isArray(message)) return message as any[];
+  if (Array.isArray(message)) return stripSceneMetaFromMessage(message) as any[];
   if (message === undefined || message === null) return [];
   return [{ type: 'text', data: { text: String(message) } }];
 }
 
 function stripWrapperMeta(params: unknown): unknown {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
-  if (!(WRAPPER_SCENE_KEY in (params as any))) return params;
   const next = { ...(params as any) };
-  delete next[WRAPPER_SCENE_KEY];
+  if (GROUPGUARD_SEND_SCENE_KEY in next) delete next[GROUPGUARD_SEND_SCENE_KEY];
+  if (Array.isArray(next.message)) next.message = stripSceneMetaFromMessage(next.message);
   return next;
 }
 
@@ -49,7 +82,7 @@ export class PluginStateContextAdapter {
     const groupId = (params as any).group_id ?? (params as any).groupId;
     if (groupId === undefined || groupId === null || String(groupId) === '') return false;
 
-    const scene = String((params as any)[WRAPPER_SCENE_KEY] || 'raw_text');
+    const scene = String((params as any)[GROUPGUARD_SEND_SCENE_KEY] || getSceneFromMessage((params as any).message) || 'raw_text');
     const masterEnabled = global.botSendWrapperEnabled === true;
     const mode = String(global.botSendWrapperMode || 'normal');
     if (!masterEnabled || mode !== 'forward') return false;
