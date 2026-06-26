@@ -1,5 +1,6 @@
 import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import { executeExternalAdapterCommand } from '../../services/external_adapter_service';
 import { executeInteractionCommand } from '../../services/interaction_service';
 
 export const INTERACTION_PREFIXES = [
@@ -27,8 +28,11 @@ export const INTERACTION_PREFIXES = [
   '设置loltoken',
   '设置封号主接口',
   '设置封号接口配置',
-  '删除封号备用接口'
-  ,
+  '删除封号备用接口',
+  '设置外部适配器',
+  '删除外部适配器',
+  '设置主适配器',
+  '测试外部适配器',
   '设置骗子查询接口',
   '添加骗子查询接口',
   '删除骗子查询接口',
@@ -56,8 +60,8 @@ export const INTERACTION_EXACT = [
   '封号接口列表',
   '战绩接口状态',
   '战绩配置',
-  '看视频接口列表'
-  ,
+  '看视频接口列表',
+  '外部适配器列表',
   '骗子接口状态'
 ];
 
@@ -66,5 +70,9 @@ export async function handleInteractionCommand(event: OB11Message, ctx: NapCatPl
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
   const userId = String(event.user_id);
   const groupId = String(event.group_id || '');
+
+  const adapterHandled = await executeExternalAdapterCommand(event, ctx);
+  if (adapterHandled) return true;
+
   return executeInteractionCommand({ event, ctx, raw, text, userId, groupId });
 }
