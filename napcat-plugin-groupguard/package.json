@@ -35,8 +35,12 @@
     "arch:hints:system-write": "node --experimental-strip-types scripts/arch-hints-system-write.ts",
     "arch:help": "node --experimental-strip-types scripts/arch-help-system-write.ts",
     "build": "npm run build:release",
+    "build:napcat": "npm run build:release",
     "build:release": "npm run arch:check:system-write:strict && vite build --mode release",
     "build:debug": "npm run arch:check:system-write:strict && vite build --mode debug",
+    "build:snowluma": "vite build --mode snowluma",
+    "build:all": "npm run build:release && npm run build:snowluma",
+    "start:snowluma": "node dist/snowluma-service.mjs",
     "report:scene": "node scene_coverage_report.mjs",
     "report:commands": "node scripts/command_coverage_report.mjs"
   }
