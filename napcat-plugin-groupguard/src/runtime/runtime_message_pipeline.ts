@@ -12,6 +12,27 @@ import {
 } from '../commands';
 import { handleVerifyAnswer } from '../verify';
 
+const COMMAND_QA_SUPPRESS_MS = 5000;
+const groupCommandReplyUntil = new Map<string, number>();
+
+function markCommandReplyWindow(groupId: string): void {
+  const now = Date.now();
+  groupCommandReplyUntil.set(groupId, now + COMMAND_QA_SUPPRESS_MS);
+  for (const [gid, until] of groupCommandReplyUntil.entries()) {
+    if (now - until > 60_000) groupCommandReplyUntil.delete(gid);
+  }
+}
+
+function shouldSuppressQaAfterCommand(groupId: string): boolean {
+  const until = groupCommandReplyUntil.get(groupId) || 0;
+  if (!until) return false;
+  if (Date.now() >= until) {
+    groupCommandReplyUntil.delete(groupId);
+    return false;
+  }
+  return true;
+}
+
 export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11Message): Promise<void> {
   if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
 
@@ -48,18 +69,23 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
     }
 
     const handled = await handleCommand(event, ctx);
-    if (handled) return;
+    if (handled) {
+      markCommandReplyWindow(groupId);
+      return;
+    }
 
     if (!isWhite && !precheck && !authStateService.isOwner(userId)) {
       const blacklisted = await handleBlacklist(groupId, userId, messageId);
       if (blacklisted) return;
     }
 
-    const qaHandled = await handleQA(groupId, userId, raw);
-    if (qaHandled) {
-      await recordActivity(groupId, userId);
-      cacheMessage(messageId, userId, groupId, raw, messageSegments);
-      return;
+    if (!shouldSuppressQaAfterCommand(groupId)) {
+      const qaHandled = await handleQA(groupId, userId, raw);
+      if (qaHandled) {
+        await recordActivity(groupId, userId);
+        cacheMessage(messageId, userId, groupId, raw, messageSegments);
+        return;
+      }
     }
 
     if (!isWhite) {
