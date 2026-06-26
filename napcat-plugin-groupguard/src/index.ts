@@ -95,8 +95,9 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
             <p style="margin:2px 0 0;font-size:12px;color:#9ca3af;">napcat-plugin-groupguard</p>
           </div>
         </div>
-        <p style="margin:0;font-size:13px;color:#6b7280;">
-          请前往 <a href="#" onclick="window.open(window.location.origin+'/plugin/napcat-plugin-groupguard/page/config','_blank');return false;" style="color:#3B82F6;font-weight:600;">WebUI 控制台</a> 进行详细配置。
+        <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.7;">
+          请前往 <a href="#" onclick="window.open(window.location.origin+'/plugin/napcat-plugin-groupguard/page/config','_blank');return false;" style="color:#3B82F6;font-weight:600;">WebUI 控制台</a> 进行详细配置；
+          <a href="#" onclick="window.open(window.location.origin+'/plugin/napcat-plugin-groupguard/webui/send-wrapper.html','_blank');return false;" style="color:#3B82F6;font-weight:600;">全局消息包装</a> 可切换合并转发发送。
         </p>
       </div>
     `),
