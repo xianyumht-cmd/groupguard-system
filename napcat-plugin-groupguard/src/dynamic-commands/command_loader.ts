@@ -111,7 +111,8 @@ function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | 
   const providerMethod = provider && (provider.method === 'GET' || provider.method === 'POST') ? provider.method : null;
   const providerUrl = provider && typeof provider.url === 'string' ? provider.url.trim() : '';
   const responseType = response?.type === 'text' ? response.type : null;
-  const textPath = response && typeof response.textPath === 'string' ? response.textPath.trim() : undefined;
+  const template = response && typeof response.template === 'string' ? response.template.trim() : undefined;
+  const textPath = template || (response && typeof response.textPath === 'string' ? response.textPath.trim() : undefined);
   const normalizedParameters = normalizeParameters(value.parameters);
 
   if (!id || !triggerType || !triggerValue || !providerType || !providerMethod || !providerUrl || !responseType) {
@@ -140,7 +141,8 @@ function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | 
     },
     response: {
       type: responseType,
-      textPath
+      textPath,
+      template
     },
     fallbackText
   };
