@@ -6,25 +6,27 @@ import type { CommandPlugin } from './command_runtime_plugin';
 
 type SendWrapperCommandAction = 'enable_all' | 'disable_all' | 'enable_qa' | 'disable_qa' | 'enable_query' | 'disable_query' | 'status';
 
-const TRIGGER_ENABLE_ALL = '\u5f00\u542f\u5168\u5c40\u5408\u5e76\u8f6c\u53d1';
-const TRIGGER_DISABLE_ALL = '\u5173\u95ed\u5168\u5c40\u5408\u5e76\u8f6c\u53d1';
-const TRIGGER_ENABLE_QA = '\u5f00\u542f\u5168\u5c40\u95ee\u7b54\u5408\u5e76\u8f6c\u53d1';
-const TRIGGER_DISABLE_QA = '\u5173\u95ed\u5168\u5c40\u95ee\u7b54\u5408\u5e76\u8f6c\u53d1';
-const TRIGGER_ENABLE_QUERY = '\u5f00\u542f\u5168\u5c40\u67e5\u8be2\u5408\u5e76\u8f6c\u53d1';
-const TRIGGER_DISABLE_QUERY = '\u5173\u95ed\u5168\u5c40\u67e5\u8be2\u5408\u5e76\u8f6c\u53d1';
-const TRIGGER_STATUS = '\u67e5\u770b\u53d1\u9001\u5305\u88c5';
+const TRIGGER_ENABLE_ALL = '开启全局合并转发';
+const TRIGGER_DISABLE_ALL = '关闭全局合并转发';
+const TRIGGER_ENABLE_QA = '开启全局问答合并转发';
+const TRIGGER_DISABLE_QA = '关闭全局问答合并转发';
+const TRIGGER_ENABLE_QUERY = '开启全局查询合并转发';
+const TRIGGER_DISABLE_QUERY = '关闭全局查询合并转发';
+const TRIGGER_STATUS = '查看发送包装';
 const DEFAULT_NICKNAME = 'GroupGuard';
 
 function getStatusText(): string {
   const global = (configStateService.getConfig().global || {}) as any;
-  const allEnabled = global.botSendWrapperEnabled === true && global.botSendWrapperMode === 'forward';
+  const masterEnabled = global.botSendWrapperEnabled === true && global.botSendWrapperMode === 'forward';
   const qaEnabled = global.botSendWrapperQaEnabled === true;
   const queryEnabled = global.botSendWrapperQueryEnabled === true;
+  const allEnabled = global.botSendWrapperAllEnabled === true;
   const nickname = String(global.botSendForwardNickname || DEFAULT_NICKNAME).trim() || DEFAULT_NICKNAME;
   return [
-    `all: ${allEnabled ? 'on' : 'off'}`,
-    `qa: ${qaEnabled ? 'on' : 'off'}`,
-    `query: ${queryEnabled ? 'on' : 'off'}`,
+    `master: ${masterEnabled ? 'on' : 'off'}（总闸门）`,
+    `qa: ${qaEnabled ? 'on' : 'off'}（自动问答，需 master=on 才生效）`,
+    `query: ${queryEnabled ? 'on' : 'off'}（查询/外部接口回复，需 master=on 才生效）`,
+    `all: ${allEnabled ? 'on' : 'off'}（兼容项：所有群消息都包装，默认建议 off）`,
     `nickname: ${nickname}`
   ].join('\n');
 }
@@ -98,14 +100,19 @@ function createPlugin(triggerValue: string, action: SendWrapperCommandAction): C
       if (action === 'enable_all') {
         config.global.botSendWrapperEnabled = true;
         config.global.botSendWrapperMode = 'forward';
+        config.global.botSendWrapperAllEnabled = false;
       } else if (action === 'disable_all') {
         config.global.botSendWrapperEnabled = false;
         config.global.botSendWrapperMode = 'normal';
       } else if (action === 'enable_qa') {
+        config.global.botSendWrapperEnabled = true;
+        config.global.botSendWrapperMode = 'forward';
         config.global.botSendWrapperQaEnabled = true;
       } else if (action === 'disable_qa') {
         config.global.botSendWrapperQaEnabled = false;
       } else if (action === 'enable_query') {
+        config.global.botSendWrapperEnabled = true;
+        config.global.botSendWrapperMode = 'forward';
         config.global.botSendWrapperQueryEnabled = true;
       } else if (action === 'disable_query') {
         config.global.botSendWrapperQueryEnabled = false;
