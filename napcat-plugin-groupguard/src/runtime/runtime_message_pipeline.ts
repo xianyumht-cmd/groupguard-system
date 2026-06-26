@@ -11,6 +11,7 @@ import {
   handleMsgTypeFilter, handleQA, recordActivity
 } from '../commands';
 import { handleVerifyAnswer } from '../verify';
+import { runWithForcedResponseScene } from '../dynamic-commands/response_capture_runtime';
 
 export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11Message): Promise<void> {
   if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
@@ -55,7 +56,7 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
       if (blacklisted) return;
     }
 
-    const qaHandled = await handleQA(groupId, userId, raw);
+    const qaHandled = await runWithForcedResponseScene('qa_reply', () => handleQA(groupId, userId, raw));
     if (qaHandled) {
       await recordActivity(groupId, userId);
       cacheMessage(messageId, userId, groupId, raw, messageSegments);
