@@ -18,6 +18,17 @@ export interface CapturedCommandDelivery {
 }
 
 const responseCaptureStorage = new AsyncLocalStorage<CapturedCommandDelivery[]>();
+const forcedResponseSceneStorage = new AsyncLocalStorage<string>();
+
+function resolveScene(scene: string): string {
+  const forced = forcedResponseSceneStorage.getStore();
+  if (forced && (!scene || scene === 'raw_text')) return forced;
+  return scene || forced || 'raw_text';
+}
+
+export function runWithForcedResponseScene<T>(scene: string, operation: () => Promise<T>): Promise<T> {
+  return forcedResponseSceneStorage.run(scene, operation);
+}
 
 export function captureCommandResponseDeliveries<T>(operation: () => Promise<T>): Promise<{ result: T; deliveries: CapturedCommandDelivery[]; }> {
   const deliveries: CapturedCommandDelivery[] = [];
@@ -30,57 +41,60 @@ export function captureCommandResponseDeliveries<T>(operation: () => Promise<T>)
 export function pushCapturedCommandDelivery(delivery: CapturedCommandDelivery): boolean {
   const store = responseCaptureStorage.getStore();
   if (!store) return false;
+  const resolvedDelivery = { ...delivery, scene: resolveScene(delivery.scene) };
   assertPluginRuntimeCaptureAllowed({
-    channel: delivery.channel,
-    targetId: delivery.targetId,
-    scene: delivery.scene
+    channel: resolvedDelivery.channel,
+    targetId: resolvedDelivery.targetId,
+    scene: resolvedDelivery.scene
   });
-  store.push(delivery);
+  store.push(resolvedDelivery);
   return true;
 }
 
 export async function send(delivery: CapturedCommandDelivery): Promise<void> {
-  if (pushCapturedCommandDelivery(delivery)) return;
+  const resolvedDelivery = { ...delivery, scene: resolveScene(delivery.scene) };
+  if (pushCapturedCommandDelivery(resolvedDelivery)) return;
   assertResponseCaptureAllowed({
-    channel: delivery.channel,
-    targetId: delivery.targetId,
-    scene: delivery.scene
+    channel: resolvedDelivery.channel,
+    targetId: resolvedDelivery.targetId,
+    scene: resolvedDelivery.scene
   });
-  if (delivery.channel === 'private') {
-    if (delivery.segments?.length) {
-      await communicationStateService.sendPrivateMsg(delivery.targetId, delivery.segments as any, {
-        scene: delivery.scene,
-        force: delivery.force ?? true,
-        applyTemplate: delivery.applyTemplate ?? true
+  if (resolvedDelivery.channel === 'private') {
+    if (resolvedDelivery.segments?.length) {
+      await communicationStateService.sendPrivateMsg(resolvedDelivery.targetId, resolvedDelivery.segments as any, {
+        scene: resolvedDelivery.scene,
+        force: resolvedDelivery.force ?? true,
+        applyTemplate: resolvedDelivery.applyTemplate ?? true
       } as any);
       return;
     }
-    await communicationStateService.sendPrivateMsg(delivery.targetId, delivery.message || '', {
-      scene: delivery.scene,
-      vars: delivery.vars,
-      force: delivery.force ?? true,
-      applyTemplate: delivery.applyTemplate ?? true
+    await communicationStateService.sendPrivateMsg(resolvedDelivery.targetId, resolvedDelivery.message || '', {
+      scene: resolvedDelivery.scene,
+      vars: resolvedDelivery.vars,
+      force: resolvedDelivery.force ?? true,
+      applyTemplate: resolvedDelivery.applyTemplate ?? true
     });
     return;
   }
-  if (delivery.forwardNodes?.length) {
+  if (resolvedDelivery.forwardNodes?.length) {
     await communicationStateService.callApi('send_group_forward_msg', {
-      group_id: delivery.targetId,
-      messages: delivery.forwardNodes
+      group_id: resolvedDelivery.targetId,
+      messages: resolvedDelivery.forwardNodes
     });
     return;
   }
-  if (delivery.segments?.length) {
-    await communicationStateService.sendGroupMsg(delivery.targetId, delivery.segments as any, {
-      force: delivery.force ?? true,
-      applyTemplate: delivery.applyTemplate ?? true
+  if (resolvedDelivery.segments?.length) {
+    await communicationStateService.sendGroupMsg(resolvedDelivery.targetId, resolvedDelivery.segments as any, {
+      scene: resolvedDelivery.scene,
+      force: resolvedDelivery.force ?? true,
+      applyTemplate: resolvedDelivery.applyTemplate ?? true
     } as any);
     return;
   }
-  await communicationStateService.sendGroupText(delivery.targetId, delivery.message || '', {
-    scene: delivery.scene,
-    vars: delivery.vars,
-    force: delivery.force ?? true,
-    applyTemplate: delivery.applyTemplate ?? true
+  await communicationStateService.sendGroupText(resolvedDelivery.targetId, resolvedDelivery.message || '', {
+    scene: resolvedDelivery.scene,
+    vars: resolvedDelivery.vars,
+    force: resolvedDelivery.force ?? true,
+    applyTemplate: resolvedDelivery.applyTemplate ?? true
   });
 }
