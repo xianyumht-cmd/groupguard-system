@@ -1,12 +1,65 @@
 import { pluginState } from '../../state';
 
+function normalizeForwardContent(message: unknown): any[] {
+  if (Array.isArray(message)) return message as any[];
+  if (message === undefined || message === null) return [];
+  return [{ type: 'text', data: { text: String(message) } }];
+}
+
 export class PluginStateContextAdapter {
   getActions() {
     return pluginState.actions;
   }
 
+  private shouldWrapGroupSend(actionName: string, params: unknown): boolean {
+    if (actionName !== 'send_group_msg') return false;
+    if (!params || typeof params !== 'object') return false;
+    const global = (pluginState.config?.global || {}) as any;
+    const enabled = global.botSendWrapperEnabled === true;
+    const mode = String(global.botSendWrapperMode || 'normal');
+    const groupId = (params as any).group_id ?? (params as any).groupId;
+    return enabled && mode === 'forward' && groupId !== undefined && groupId !== null && String(groupId) !== '';
+  }
+
+  private buildForwardGroupMessageParams(params: any): any {
+    const global = (pluginState.config?.global || {}) as any;
+    const nickname = String(global.botSendForwardNickname || 'GroupGuard').trim() || 'GroupGuard';
+    const userId = String(global.botSendForwardUserId || pluginState.botId || '0');
+    const groupId = params?.group_id ?? params?.groupId;
+    return {
+      group_id: groupId,
+      messages: [{
+        type: 'node',
+        data: {
+          nickname,
+          user_id: userId,
+          content: normalizeForwardContent(params?.message)
+        }
+      }]
+    };
+  }
+
   setActions(actions: any): void {
-    pluginState.actions = actions;
+    if (!actions || typeof actions.call !== 'function') {
+      pluginState.actions = actions;
+      return;
+    }
+    if ((actions as any).__groupGuardSendWrapper === true) {
+      pluginState.actions = actions;
+      return;
+    }
+    const rawCall = actions.call.bind(actions);
+    pluginState.actions = {
+      ...actions,
+      __groupGuardSendWrapper: true,
+      call: async (actionName: string, params: unknown, adapter: string, config: any): Promise<any> => {
+        if (this.shouldWrapGroupSend(actionName, params)) {
+          const wrappedParams = this.buildForwardGroupMessageParams(params as any);
+          return rawCall('send_group_forward_msg', wrappedParams, adapter, config);
+        }
+        return rawCall(actionName, params, adapter, config);
+      }
+    };
   }
 
   getLogger() {
