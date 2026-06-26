@@ -1,0 +1,91 @@
+name: Build SnowLuma Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'napcat-plugin-groupguard/**'
+      - '.github/workflows/build-snowluma-service.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-snowluma:
+    name: Build groupguard-snowluma
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: napcat-plugin-groupguard
+        run: npm install
+
+      - name: Build SnowLuma service
+        working-directory: napcat-plugin-groupguard
+        run: npm run build:snowluma
+
+      - name: Prepare package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="napcat-plugin-groupguard"
+          OUT="groupguard-snowluma-service"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          cp -r "$ROOT/dist" "$OUT/dist"
+          cp "$ROOT/package.json" "$OUT/package.json"
+          if [ -f "$ROOT/package-lock.json" ]; then cp "$ROOT/package-lock.json" "$OUT/package-lock.json"; fi
+          if [ -f "$ROOT/README.md" ]; then cp "$ROOT/README.md" "$OUT/README.md"; fi
+          cat > "$OUT/start-snowluma.cmd" <<'EOF'
+          @echo off
+          setlocal
+          if "%SNOWLUMA_WS_URL%"=="" set SNOWLUMA_WS_URL=ws://127.0.0.1:3001
+          if "%GROUPGUARD_DATA_DIR%"=="" set GROUPGUARD_DATA_DIR=%~dp0data
+          if not exist node_modules npm install --omit=dev
+          node dist\snowluma-service.mjs
+          pause
+          EOF
+          cat > "$OUT/start-snowluma.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export SNOWLUMA_WS_URL="${SNOWLUMA_WS_URL:-ws://127.0.0.1:3001}"
+          export GROUPGUARD_DATA_DIR="${GROUPGUARD_DATA_DIR:-$(pwd)/data}"
+          if [ ! -d node_modules ]; then npm install --omit=dev; fi
+          node dist/snowluma-service.mjs
+          EOF
+          chmod +x "$OUT/start-snowluma.sh"
+          cat > "$OUT/使用说明.txt" <<'EOF'
+          GroupGuard SnowLuma 外部服务版
+
+          1. 先启动并登录 SnowLuma，确认 OneBot WebSocket 地址为 ws://127.0.0.1:3001。
+          2. Windows 双击 start-snowluma.cmd。
+          3. Linux/macOS 执行 ./start-snowluma.sh。
+          4. 首次启动会自动执行 npm install --omit=dev 安装运行依赖。
+          5. 数据默认保存在当前目录 data 文件夹。
+
+          可选环境变量：
+          SNOWLUMA_WS_URL=ws://127.0.0.1:3001
+          SNOWLUMA_ACCESS_TOKEN=你的token
+          GROUPGUARD_DATA_DIR=数据目录
+          GROUPGUARD_CONFIG_PATH=配置文件路径
+          ONEBOT_ACTION_TIMEOUT_MS=10000
+          ONEBOT_RECONNECT_DELAY_MS=3000
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-snowluma-service
+          path: groupguard-snowluma-service
+          if-no-files-found: error
+          retention-days: 14
