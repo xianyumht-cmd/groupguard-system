@@ -6,6 +6,7 @@ import { assertCommandPluginRegistryReady, refreshCommandPluginRegistry } from '
 import { refreshDynamicCommandRegistry } from './dynamic-commands/command_registry';
 import { initializeDynamicCommandMetrics } from './dynamic-commands/command_engine';
 import { registerLegacyRuntimePlugins } from './dynamic-commands/legacy_runtime_plugins';
+import { registerSendWrapperCommandPlugins } from './dynamic-commands/send_wrapper_runtime_plugins';
 import { commandDispatcher } from './commands/dispatcher';
 export { saveConfig } from './commands/common';
 export {
@@ -29,6 +30,7 @@ export function initCommandValidation(): void {
   if (commandValidationRan) return;
   commandValidationRan = true;
   registerLegacyRuntimePlugins();
+  registerSendWrapperCommandPlugins();
   void initializeDynamicCommands().then(() => {
     refreshCommandPluginRegistry();
     assertCommandPluginRegistryReady();
