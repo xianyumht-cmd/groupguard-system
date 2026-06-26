@@ -60,7 +60,7 @@ export default defineConfig(({ mode }) => {
         },
       },
       outDir: 'dist',
-      emptyDirBeforeWrite: true,
+      emptyDirBeforeWrite: !isSnowLuma,
     },
     plugins: [nodeResolve()],
   };
