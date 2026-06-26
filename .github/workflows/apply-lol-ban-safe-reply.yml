@@ -1,0 +1,97 @@
+name: Apply LOL Ban Safe Reply Fix
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.maintenance/apply-lol-ban-safe-reply.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Patch plugin source
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'napcat-plugin-groupguard/src/services/interaction_service.ts';
+          let text = fs.readFileSync(path, 'utf8');
+
+          function replaceOnce(name, oldText, newText) {
+            if (!text.includes(oldText)) {
+              throw new Error(`target not found: ${name}`);
+            }
+            text = text.replace(oldText, newText);
+            console.log(`patched: ${name}`);
+          }
+
+          replaceOnce(
+            'safe code 404 detail',
+            `    if (data.code === 404) return { status: 'safe', detail: detailText || '暂未查到封禁记录' };`,
+            `    if (data.code === 404) return { status: 'safe', detail: '账号状态正常' };`
+          );
+
+          replaceOnce(
+            'safe code 200 detail',
+            `      if (unbanned) return { status: 'safe', detail: detailText || '接口未返回更多时间信息' };`,
+            `      if (unbanned) return { status: 'safe', detail: '账号状态正常' };`
+          );
+
+          replaceOnce(
+            'safe boolean ban detail',
+            `    return { status: data.ban ? 'banned' : 'safe', detail: detailText || (typeof data?.msg === 'string' ? data.msg : '接口未返回更多时间信息') };`,
+            `    if (data.ban) return { status: 'banned', detail: detailText || (typeof data?.msg === 'string' ? data.msg : '接口未返回更多时间信息') };\n    return { status: 'safe', detail: '账号状态正常' };`
+          );
+
+          replaceOnce(
+            'safe msg detail',
+            `    if (unbanned) return { status: 'safe', detail: detailText || msg };`,
+            `    if (unbanned) return { status: 'safe', detail: '账号状态正常' };`
+          );
+
+          replaceOnce(
+            'remove safeTexts',
+            `    const safeTexts = ['安全着呢，稳得一批~', '状态健康，今天也没翻车。', '干净得很，风控都点了个赞。', '目前稳如老狗，继续保持。', '状态在线，暂时没有危险信号。', '看起来很平安，继续低调上分吧。'];\n`,
+            ``
+          );
+
+          replaceOnce(
+            'safe reply output',
+            `      } else if (attempt.result.status === 'safe') {\n        const tail = pureTextMode ? '' : ` + "`，${pick(safeTexts)}`" + `;\n        await sendResult(` + "`这号未封，详情：${attempt.result.detail || '接口未返回更多时间信息'}${tail}`" + `);\n      } else {`,
+            `      } else if (attempt.result.status === 'safe') {\n        await sendResult(` + "`这号未封，${attempt.result.detail || '账号状态正常'}`" + `);\n      } else {`
+          );
+
+          fs.writeFileSync(path, text, 'utf8');
+          NODE
+
+      - name: Install dependencies and build
+        working-directory: napcat-plugin-groupguard
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add napcat-plugin-groupguard/src/services/interaction_service.ts
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "fix: simplify lol ban safe reply"
+          git push origin HEAD:main
