@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>外部接口适配器 · GroupGuard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <main class="max-w-6xl mx-auto p-5">
+    <div class="flex items-center justify-between gap-3 mb-5 flex-wrap">
+      <div>
+        <h1 class="text-xl font-bold">外部接口适配器</h1>
+        <p class="text-sm text-slate-400 mt-1">用于配置封号查询、骗子/同行查询举报、视频接口。保存后不需要改插件代码。</p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="loadCfg()" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700">刷新</button>
+        <button onclick="saveCfg()" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500">保存配置</button>
+      </div>
+    </div>
+
+    <div id="status" class="mb-4 text-sm text-slate-400">加载中...</div>
+
+    <section class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">适配器 JSON</h2>
+          <button onclick="formatJson()" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sm">格式化</button>
+        </div>
+        <textarea id="adapters" class="w-full h-[520px] rounded-lg bg-slate-950 border border-slate-800 p-3 font-mono text-sm outline-none focus:border-blue-500" spellcheck="false"></textarea>
+      </div>
+
+      <aside class="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+        <h2 class="font-semibold mb-3">主适配器</h2>
+        <div class="space-y-3 text-sm">
+          <label class="block">封号查询 ban_query<input id="p-ban" class="mt-1 w-full rounded bg-slate-950 border border-slate-800 p-2" placeholder="例如 lolmap-ban"></label>
+          <label class="block">风险查询 risk_query<input id="p-risk-query" class="mt-1 w-full rounded bg-slate-950 border border-slate-800 p-2" placeholder="例如 risk-query"></label>
+          <label class="block">风险举报 risk_report<input id="p-risk-report" class="mt-1 w-full rounded bg-slate-950 border border-slate-800 p-2" placeholder="例如 risk-report"></label>
+          <label class="block">视频接口 media_video<input id="p-video" class="mt-1 w-full rounded bg-slate-950 border border-slate-800 p-2" placeholder="例如 funny-video"></label>
+        </div>
+
+        <h2 class="font-semibold mt-6 mb-3">快速插入示例</h2>
+        <div class="grid gap-2 text-sm">
+          <button onclick="insertExample('ban')" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-left">封号接口示例</button>
+          <button onclick="insertExample('riskQuery')" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-left">骗子/同行查询示例</button>
+          <button onclick="insertExample('riskReport')" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-left">骗子/同行举报示例</button>
+          <button onclick="insertExample('video')" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-left">视频接口示例</button>
+        </div>
+
+        <div class="mt-6 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-200 leading-6">
+          不要把 token 发到群里；建议只在这个 WebUI 页面保存。字段路径使用简易 JSONPath，例如 $.data.status、$.data.ban_reason。
+        </div>
+      </aside>
+    </section>
+  </main>
+
+<script>
+const API = '/plugin/napcat-plugin-groupguard/api';
+let C = {};
+function $(id){ return document.getElementById(id); }
+function setStatus(text, ok=true){ $('status').textContent = text; $('status').className = 'mb-4 text-sm ' + (ok ? 'text-emerald-400' : 'text-red-400'); }
+async function api(path, method='GET', body=null){
+  const opt = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opt.body = JSON.stringify(body);
+  const r = await fetch(API + path, opt);
+  const t = await r.text();
+  try { return JSON.parse(t); } catch { return { code: r.ok ? 0 : -1, message: t }; }
+}
+async function loadCfg(){
+  const r = await api('/config');
+  if (r.code !== 0) { setStatus('加载失败：' + (r.message || 'unknown'), false); return; }
+  C = r.data || {};
+  $('adapters').value = JSON.stringify(C.externalAdapters || [], null, 2);
+  const p = C.externalAdapterPrimary || {};
+  $('p-ban').value = p.ban_query || '';
+  $('p-risk-query').value = p.risk_query || '';
+  $('p-risk-report').value = p.risk_report || '';
+  $('p-video').value = p.media_video || '';
+  setStatus('已加载配置');
+}
+function parseAdapters(){
+  const parsed = JSON.parse($('adapters').value || '[]');
+  if (!Array.isArray(parsed)) throw new Error('externalAdapters 必须是数组');
+  return parsed;
+}
+function formatJson(){
+  try { $('adapters').value = JSON.stringify(parseAdapters(), null, 2); setStatus('JSON 格式正常'); }
+  catch(e){ setStatus('JSON 错误：' + e.message, false); }
+}
+async function saveCfg(){
+  let adapters;
+  try { adapters = parseAdapters(); } catch(e){ setStatus('JSON 错误：' + e.message, false); return; }
+  const primary = {
+    ban_query: $('p-ban').value.trim(),
+    risk_query: $('p-risk-query').value.trim(),
+    risk_report: $('p-risk-report').value.trim(),
+    media_video: $('p-video').value.trim()
+  };
+  const patch = { topLevel: { externalAdapters: adapters, externalAdapterPrimary: primary } };
+  const r = await api('/config/patch', 'POST', patch);
+  if (r.code === 0) { setStatus('保存成功'); await loadCfg(); }
+  else setStatus('保存失败：' + (r.message || 'unknown'), false);
+}
+function appendAdapter(adapter){
+  let list = [];
+  try { list = parseAdapters(); } catch { list = []; }
+  list = list.filter(x => x && x.id !== adapter.id);
+  list.push(adapter);
+  $('adapters').value = JSON.stringify(list, null, 2);
+  setStatus('已插入示例，记得修改 URL/token 后保存');
+}
+function insertExample(type){
+  const examples = {
+    ban: {
+      id: 'lolmap-ban', name: 'LOLMap封号接口', kind: 'ban_query', enabled: true,
+      request: { method: 'GET', url: 'http://q.lolmap.cn/api/query.html?qq={qq}&token=你的token', responseType: 'json', timeoutMs: 10000 },
+      parse: { fields: { qq: '$.data.qq', status: '$.data.status', message: '$.msg', banUntil: '$.data.ban_time', remaining: '$.data.end_time', reason: '$.data.ban_reason' }, statusRules: { banned: ['封禁','已被封禁'], safe: ['正常','未封','未被封禁'] } },
+      template: { banned: '查询的 QQ:{qq}，这号被封了。\n封禁至：{banUntil}\n距离解封：{remaining}\n封禁原因：{reason}', safe: '查询的 QQ:{qq}，这号未封，账号状态正常。', unknown: '查询的 QQ:{qq}，暂时无法确认是否封号，详情：{message}' }
+    },
+    riskQuery: {
+      id: 'risk-query', name: '骗子/同行查询接口', kind: 'risk_query', enabled: true,
+      request: { method: 'GET', url: 'https://example.com/search?account={identifier}&type={type}&category={category}', responseType: 'json' },
+      parse: { fields: { found: '$.found', count: '$.count', message: '$.message', reports: '$.data.reports' }, statusRules: { found: ['命中','存在','found'] } },
+      template: { found: '查询到风险记录：{count}\n{reports}', safe: '暂未查询到风险记录。' }
+    },
+    riskReport: {
+      id: 'risk-report', name: '骗子/同行举报接口', kind: 'risk_report', enabled: true,
+      request: { method: 'POST', url: 'https://example.com/report', responseType: 'json', bodyType: 'form', body: { account: '{identifier}', type: '{type}', category: '{category}', content: '{content}', reporter: '{reporter}' } },
+      parse: { fields: { ok: '$.success', message: '$.message' }, successRules: ['成功','已接收','ok','success'] },
+      template: { ok: '举报已提交：{message}', unknown: '举报结果不明确：{message}' }
+    },
+    video: {
+      id: 'funny-video', name: '搞笑视频接口', kind: 'media_video', category: '搞笑', enabled: true,
+      request: { method: 'GET', url: 'https://api.example.com/video?cat={category}', responseType: 'json' },
+      parse: { fields: { url: '$.data.download_url', title: '$.data.title', cover: '$.data.cover' } },
+      template: '🎬 {category} 视频\n{url}'
+    }
+  };
+  appendAdapter(examples[type]);
+}
+loadCfg();
+</script>
+</body>
+</html>
