@@ -2,6 +2,35 @@ import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import { send } from './response_capture_runtime';
 import type { UnifiedCommandResponse } from './types';
 
+function inferResponseScene(event: OB11Message): string {
+  const text = String(event.raw_message || '').replace(/\[CQ:[^\]]+\]/g, '').trim();
+  if (!text) return 'raw_text';
+  const queryPrefixes = [
+    '查战绩', '查封号', '查隐藏', '查合集', '海符榜', '我要看',
+    '查骗子', '举报骗子', '查同行', '举报同行',
+    '查邀请', '查来源', '邀请查询', '邀请榜',
+    '封号接口列表', '战绩接口状态', '战绩配置', '看视频接口列表', '骗子接口状态'
+  ];
+  if (queryPrefixes.some(prefix => text.startsWith(prefix))) return 'external_query';
+  if (text.startsWith('查') || text.includes('查询')) return 'query';
+  return 'raw_text';
+}
+
+function normalizeDeliveryScene(delivery: {
+  channel: 'group' | 'private';
+  targetId: string;
+  scene: string;
+  message?: string;
+  vars?: Record<string, string | number | boolean>;
+  segments?: Array<Record<string, unknown>>;
+  forwardNodes?: Array<Record<string, unknown>>;
+}, fallbackScene: string) {
+  return {
+    ...delivery,
+    scene: delivery.scene && delivery.scene !== 'raw_text' ? delivery.scene : fallbackScene
+  };
+}
+
 function getStructuredDeliveries(payload: unknown): Array<{
   channel: 'group' | 'private';
   targetId: string;
@@ -56,19 +85,20 @@ export function formatUnifiedCommandResponse(response: UnifiedCommandResponse): 
 }
 
 export async function sendUnifiedCommandResponse(event: OB11Message, response: UnifiedCommandResponse): Promise<void> {
+  const inferredScene = inferResponseScene(event);
   if (response.type === 'structured') {
     const deliveries = getStructuredDeliveries(response.payload);
     if (deliveries.length) {
       for (const delivery of deliveries) {
-        await send(delivery);
+        await send(normalizeDeliveryScene(delivery, inferredScene));
       }
       return;
     }
   }
   const text = formatUnifiedCommandResponse(response);
   if (event.message_type === 'private') {
-    await send({ channel: 'private', targetId: String(event.user_id), scene: 'raw_text', message: text, force: true, applyTemplate: true });
+    await send({ channel: 'private', targetId: String(event.user_id), scene: inferredScene, message: text, force: true, applyTemplate: true });
     return;
   }
-  await send({ channel: 'group', targetId: String(event.group_id || ''), scene: 'raw_text', message: text, force: true, applyTemplate: true });
+  await send({ channel: 'group', targetId: String(event.group_id || ''), scene: inferredScene, message: text, force: true, applyTemplate: true });
 }
