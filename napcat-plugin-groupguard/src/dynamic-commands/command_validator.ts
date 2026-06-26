@@ -8,9 +8,35 @@ export interface DynamicCommandValidationError {
 function isSafeDotPath(dotPath: string | undefined): boolean {
   if (!dotPath) return true;
   if (/[()]/.test(dotPath)) return false;
-  if (!/^[a-zA-Z0-9_.\[\]]+$/.test(dotPath)) return false;
+  if (!/^[a-zA-Z0-9_.$\[\]]+$/.test(dotPath)) return false;
   if (/\[[^\d\]]/.test(dotPath)) return false;
+  if (/(^|\.)(?:__proto__|constructor|prototype)(\.|\[|$)/.test(dotPath)) return false;
   return true;
+}
+
+function looksLikeDotPath(candidate: string): boolean {
+  return /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*|\[\d+\])*$/.test(candidate.trim());
+}
+
+function isSafeResponseSelector(selector: string | undefined): boolean {
+  if (!selector) return true;
+  if (selector.length > 2000) return false;
+  if (!/[{}]/.test(selector)) return isSafeDotPath(selector);
+
+  const matches = selector.matchAll(/\{([^{}]+)\}/g);
+  let foundPlaceholder = false;
+  for (const match of matches) {
+    foundPlaceholder = true;
+    const expression = String(match[1] || '').trim();
+    if (!expression || expression.length > 300) return false;
+    const choices = expression.split('|').map((item) => item.trim()).filter(Boolean);
+    if (!choices.length) return false;
+    for (const choice of choices) {
+      if (/[(){}]/.test(choice)) return false;
+      if (looksLikeDotPath(choice) && !isSafeDotPath(choice)) return false;
+    }
+  }
+  return foundPlaceholder;
 }
 
 function hasValidHttpUrl(url: string): boolean {
@@ -44,10 +70,11 @@ export function validateDynamicCommandDefinition(command: DynamicCommandDefiniti
     }
   }
 
-  if (!isSafeDotPath(command.response.textPath)) {
+  const responseSelector = command.response.template || command.response.textPath;
+  if (!isSafeResponseSelector(responseSelector)) {
     errors.push({
       code: 'validation_error',
-      message: `invalid_dot_path:${command.id}`
+      message: `invalid_response_selector:${command.id}`
     });
   }
 
