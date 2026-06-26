@@ -16,17 +16,25 @@ function stripWrapperMeta(params: unknown): unknown {
   return next;
 }
 
+function normalizeScene(scene: string): string {
+  return String(scene || 'raw_text').trim().toLowerCase();
+}
+
 function isQaScene(scene: string): boolean {
-  return scene === 'qa' || scene === 'qa_reply';
+  const key = normalizeScene(scene);
+  return key === 'qa' || key === 'qa_reply' || key.startsWith('qa_');
 }
 
 function isQueryScene(scene: string): boolean {
-  return scene === 'query'
-    || scene.startsWith('query_')
-    || scene.startsWith('lol_query')
-    || scene.startsWith('risk_query')
-    || scene === 'scammer_query'
-    || scene === 'peer_query';
+  const key = normalizeScene(scene);
+  return key === 'query'
+    || key.startsWith('query_')
+    || key.startsWith('lol_query')
+    || key.startsWith('risk_query')
+    || key === 'scammer_query'
+    || key === 'peer_query'
+    || key === 'video_query'
+    || key === 'external_query';
 }
 
 export class PluginStateContextAdapter {
@@ -42,8 +50,11 @@ export class PluginStateContextAdapter {
     if (groupId === undefined || groupId === null || String(groupId) === '') return false;
 
     const scene = String((params as any)[WRAPPER_SCENE_KEY] || 'raw_text');
+    const masterEnabled = global.botSendWrapperEnabled === true;
     const mode = String(global.botSendWrapperMode || 'normal');
-    if (global.botSendWrapperEnabled === true && mode === 'forward') return true;
+    if (!masterEnabled || mode !== 'forward') return false;
+
+    if (global.botSendWrapperAllEnabled === true) return true;
     if (global.botSendWrapperQaEnabled === true && isQaScene(scene)) return true;
     if (global.botSendWrapperQueryEnabled === true && isQueryScene(scene)) return true;
     return false;
