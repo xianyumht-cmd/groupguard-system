@@ -7,6 +7,23 @@ const MAX_BODY_PREVIEW = 12000;
 
 type QueryType = 'lol_ban' | 'lol_battle' | 'lol_hidden' | 'lol_shard' | 'scammer' | 'peer' | 'video' | 'custom';
 
+type QueryCommandProfile = {
+  outputFormat?: string;
+  wrapperMode?: 'global' | 'none' | 'forward';
+  enabled?: boolean;
+  note?: string;
+};
+
+const QUERY_TYPES: Array<{ type: QueryType; name: string; trigger: string; featureKey?: string; }> = [
+  { type: 'lol_ban', name: '查封号', trigger: '查封号', featureKey: 'query.lol_ban' },
+  { type: 'lol_battle', name: '查战绩', trigger: '查战绩', featureKey: 'query.lol_battle' },
+  { type: 'lol_hidden', name: '查隐藏', trigger: '查隐藏', featureKey: 'query.lol_hidden' },
+  { type: 'lol_shard', name: '查合集', trigger: '查合集', featureKey: 'query.lol_shard' },
+  { type: 'scammer', name: '骗子查询', trigger: '查骗子', featureKey: 'query.scammer' },
+  { type: 'peer', name: '同行查询', trigger: '查同行', featureKey: 'query.peer' },
+  { type: 'video', name: '视频接口', trigger: '查视频/视频', featureKey: 'query.video' }
+];
+
 function getConfigAny(): any {
   return configStateService.getConfig() as any;
 }
@@ -26,9 +43,97 @@ function maskSecret(text: any): string {
   return `${s.slice(0, 4)}***${s.slice(-4)}`;
 }
 
-function outputFormatFor(config: any, global: any, type: QueryType): string {
+function getProfiles(config: any): Record<string, QueryCommandProfile> {
+  return config.queryCommandProfiles && typeof config.queryCommandProfiles === 'object' && !Array.isArray(config.queryCommandProfiles)
+    ? config.queryCommandProfiles
+    : {};
+}
+
+function getProfile(config: any, type: QueryType): QueryCommandProfile {
+  return getProfiles(config)[type] || {};
+}
+
+function defaultOutputFor(config: any, global: any, type: QueryType): string {
   if (type === 'lol_shard') return config.shardQueryOutputFormat || 'image';
+  if (type === 'lol_ban' || type === 'scammer' || type === 'peer' || type === 'video') return 'text';
   return global.lolQueryOutputFormat || 'forward';
+}
+
+function outputFormatFor(config: any, global: any, type: QueryType): string {
+  return getProfile(config, type).outputFormat || defaultOutputFor(config, global, type);
+}
+
+function wrapperModeFor(config: any, type: QueryType): string {
+  return getProfile(config, type).wrapperMode || 'global';
+}
+
+function rowUrl(config: any, type: QueryType): string {
+  if (type === 'lol_ban') return config.lolBanPrimaryUrl || '';
+  if (type === 'lol_battle') return config.lolQueryUrl || config.lolApiBaseUrl || '';
+  if (type === 'lol_hidden') return config.lolApiBaseUrl || config.lolQueryUrl || '';
+  if (type === 'lol_shard') return config.shardDataUrl || '';
+  if (type === 'scammer' || type === 'peer') return Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls[0] || '' : '';
+  if (type === 'video') {
+    const templates = config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? config.videoApiTemplates : {};
+    return Object.values(templates)[0] ? String(Object.values(templates)[0]) : '';
+  }
+  return '';
+}
+
+function isQueryEnabled(config: any, global: any, type: QueryType): boolean {
+  const featureSwitches = global.featureSwitches || {};
+  const commandSwitch = global.lolQueryCommandSwitch || {};
+  const profile = getProfile(config, type);
+  if (profile.enabled === false) return false;
+  const baseEnabled = global.masterEnabled !== false && global.queryEnabled !== false && global.disableLolQuery !== true;
+  if (type === 'lol_ban') return baseEnabled && enabledSwitch(featureSwitches, 'query.lol_ban') && commandSwitch.banQuery !== false;
+  if (type === 'lol_battle') return baseEnabled && enabledSwitch(featureSwitches, 'query.lol_battle') && commandSwitch.battleQuery !== false;
+  if (type === 'lol_hidden') return baseEnabled && enabledSwitch(featureSwitches, 'query.lol_hidden') && commandSwitch.hiddenQuery !== false;
+  if (type === 'lol_shard') return baseEnabled && enabledSwitch(featureSwitches, 'query.lol_shard');
+  if (type === 'scammer') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.scammer');
+  if (type === 'peer') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.peer');
+  if (type === 'video') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.video');
+  return false;
+}
+
+function validateUrlValue(label: string, value: any, required = false): string[] {
+  const warnings: string[] = [];
+  const text = String(value || '').trim();
+  if (!text) {
+    if (required) warnings.push(`${label} 为空`);
+    return warnings;
+  }
+  if (!/^https?:\/\//i.test(text)) warnings.push(`${label} 不是 http/https 地址`);
+  if (/\s/.test(text)) warnings.push(`${label} 包含空白字符`);
+  try {
+    new URL(text.replaceAll('{qq}', '10000').replaceAll('{query}', 'test').replaceAll('{keyword}', 'test').replaceAll('$qq', '10000'));
+  } catch {
+    warnings.push(`${label} URL 格式可能不正确`);
+  }
+  return warnings;
+}
+
+function validateConfig(config: any): { warnings: string[]; errors: string[]; } {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  warnings.push(...validateUrlValue('查封号主 URL', config.lolBanPrimaryUrl, true));
+  warnings.push(...validateUrlValue('LOL API Base', config.lolApiBaseUrl, false));
+  warnings.push(...validateUrlValue('战绩查询 URL', config.lolQueryUrl, false));
+  warnings.push(...validateUrlValue('合集数据 URL', config.shardDataUrl, true));
+  warnings.push(...validateUrlValue('英雄列表 URL', config.shardHeroListUrl, false));
+  warnings.push(...validateUrlValue('风险举报 URL', config.scammerReportUrl, false));
+  const riskUrls = Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls : [];
+  riskUrls.forEach((url: string, index: number) => warnings.push(...validateUrlValue(`风险查询 URL #${index + 1}`, url, false)));
+  const templates = config.videoApiTemplates;
+  if (templates && (typeof templates !== 'object' || Array.isArray(templates))) {
+    errors.push('videoApiTemplates 必须是 JSON 对象');
+  } else if (templates) {
+    for (const [key, value] of Object.entries(templates)) {
+      if (!String(key).trim()) warnings.push('视频模板存在空名称');
+      warnings.push(...validateUrlValue(`视频模板 ${key}`, value, false));
+    }
+  }
+  return { warnings, errors };
 }
 
 export function getQueryOverview() {
@@ -36,76 +141,23 @@ export function getQueryOverview() {
   const global = getGlobalAny();
   const featureSwitches = global.featureSwitches || {};
   const commandSwitch = global.lolQueryCommandSwitch || {};
-  const baseEnabled = global.masterEnabled !== false && global.queryEnabled !== false && global.disableLolQuery !== true;
-  const rows = [
-    {
-      type: 'lol_ban',
-      name: '查封号',
-      enabled: baseEnabled && enabledSwitch(featureSwitches, 'query.lol_ban') && commandSwitch.banQuery !== false,
-      featureKey: 'query.lol_ban',
-      trigger: '查封号',
-      url: config.lolBanPrimaryUrl || '',
-      backupUrls: Array.isArray(config.lolBanBackupUrls) ? config.lolBanBackupUrls.length : 0,
-      outputFormat: 'text'
-    },
-    {
-      type: 'lol_battle',
-      name: '查战绩',
-      enabled: baseEnabled && enabledSwitch(featureSwitches, 'query.lol_battle') && commandSwitch.battleQuery !== false,
-      featureKey: 'query.lol_battle',
-      trigger: '查战绩',
-      url: config.lolQueryUrl || config.lolApiBaseUrl || '',
-      outputFormat: outputFormatFor(config, global, 'lol_battle')
-    },
-    {
-      type: 'lol_hidden',
-      name: '查隐藏',
-      enabled: baseEnabled && enabledSwitch(featureSwitches, 'query.lol_hidden') && commandSwitch.hiddenQuery !== false,
-      featureKey: 'query.lol_hidden',
-      trigger: '查隐藏',
-      url: config.lolApiBaseUrl || config.lolQueryUrl || '',
-      outputFormat: outputFormatFor(config, global, 'lol_hidden')
-    },
-    {
-      type: 'lol_shard',
-      name: '查合集',
-      enabled: baseEnabled && enabledSwitch(featureSwitches, 'query.lol_shard'),
-      featureKey: 'query.lol_shard',
-      trigger: '查合集',
-      url: config.shardDataUrl || '',
-      heroListUrl: config.shardHeroListUrl || '',
-      outputFormat: outputFormatFor(config, global, 'lol_shard')
-    },
-    {
-      type: 'scammer',
-      name: '骗子查询',
-      enabled: global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.scammer'),
-      featureKey: 'query.scammer',
-      trigger: '查骗子',
-      url: Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls[0] || '' : '',
-      urlCount: Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls.length : 0,
-      outputFormat: 'text'
-    },
-    {
-      type: 'peer',
-      name: '同行查询',
-      enabled: global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.peer'),
-      featureKey: 'query.peer',
-      trigger: '查同行',
-      url: '',
-      outputFormat: 'text'
-    },
-    {
-      type: 'video',
-      name: '视频接口',
-      enabled: global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.video'),
-      featureKey: 'query.video',
-      trigger: '查视频/视频',
-      url: '',
-      templateCount: config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? Object.keys(config.videoApiTemplates).length : 0,
-      outputFormat: 'text'
-    }
-  ];
+  const profiles = getProfiles(config);
+  const rows = QUERY_TYPES.map(item => ({
+    type: item.type,
+    name: item.name,
+    enabled: isQueryEnabled(config, global, item.type),
+    featureKey: item.featureKey || '',
+    trigger: item.trigger,
+    url: rowUrl(config, item.type),
+    heroListUrl: item.type === 'lol_shard' ? config.shardHeroListUrl || '' : '',
+    backupUrls: item.type === 'lol_ban' && Array.isArray(config.lolBanBackupUrls) ? config.lolBanBackupUrls.length : undefined,
+    urlCount: (item.type === 'scammer' || item.type === 'peer') && Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls.length : undefined,
+    templateCount: item.type === 'video' && config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? Object.keys(config.videoApiTemplates).length : undefined,
+    outputFormat: outputFormatFor(config, global, item.type),
+    defaultOutputFormat: defaultOutputFor(config, global, item.type),
+    wrapperMode: wrapperModeFor(config, item.type),
+    profile: getProfile(config, item.type)
+  }));
 
   return {
     ok: true,
@@ -125,6 +177,7 @@ export function getQueryOverview() {
       wrapperAllEnabled: global.botSendWrapperAllEnabled === true
     },
     rows,
+    profiles,
     config: {
       lolApiBaseUrl: config.lolApiBaseUrl || '',
       lolQueryUrl: config.lolQueryUrl || '',
@@ -139,6 +192,7 @@ export function getQueryOverview() {
       scammerReportUrl: config.scammerReportUrl || '',
       videoApiTemplates: config.videoApiTemplates || {}
     },
+    validation: validateConfig(config),
     featureSwitches,
     commandSwitch
   };
@@ -239,9 +293,11 @@ export async function testQueryEndpoint(payload: any) {
     let parsed: any = null;
     try { parsed = JSON.parse(body); } catch {}
     const preview = body.length > MAX_BODY_PREVIEW ? `${body.slice(0, MAX_BODY_PREVIEW)}\n...<truncated ${body.length - MAX_BODY_PREVIEW} chars>` : body;
+    const parsedPreview = summarizeParsedResult(type, parsed, body);
     return {
       ok: true,
       type,
+      commandProfile: getProfile(getConfigAny(), type),
       request: { url, timeoutMs },
       response: {
         ok: response.ok,
@@ -252,7 +308,8 @@ export async function testQueryEndpoint(payload: any) {
         bodyPreview: preview,
         json: parsed
       },
-      parsedPreview: summarizeParsedResult(type, parsed, body)
+      parsedPreview,
+      finalReplyPreview: buildFinalReplyPreview(type, param, parsedPreview, parsed, body)
     };
   } catch (error: any) {
     return {
@@ -275,7 +332,8 @@ function summarizeParsedResult(type: QueryType, parsed: any, body: string): any 
         code: parsed.code ?? parsed.result ?? '',
         msg: parsed.msg ?? parsed.message ?? '',
         status: data.return ?? data.status ?? data.ban_status ?? '',
-        detail: data.banmsg ?? data.rammsg ?? parsed.err_msg ?? ''
+        detail: data.banmsg ?? data.rammsg ?? parsed.err_msg ?? '',
+        extra: data.rammsg && data.banmsg ? `${data.banmsg}\n${data.rammsg}` : ''
       };
     }
     return {
@@ -285,4 +343,32 @@ function summarizeParsedResult(type: QueryType, parsed: any, body: string): any 
     };
   }
   return { textPreview: String(body || '').slice(0, 300) };
+}
+
+function buildFinalReplyPreview(type: QueryType, param: string, parsedPreview: any, parsed: any, body: string): string {
+  if (type === 'lol_ban') {
+    const status = parsedPreview?.status || parsedPreview?.msg || '未知';
+    const detail = parsedPreview?.detail || parsedPreview?.extra || '无详情';
+    return `QQ：${param}\n状态：${status}\n详情：${detail}`;
+  }
+  if (type === 'lol_battle') {
+    const msg = parsedPreview?.msg || parsed?.message || parsed?.msg || '接口已返回结果';
+    return `查战绩预览：${msg}\n输出格式：${outputFormatFor(getConfigAny(), getGlobalAny(), 'lol_battle')}`;
+  }
+  if (type === 'lol_hidden') {
+    const msg = parsedPreview?.msg || parsed?.message || parsed?.msg || '接口已返回结果';
+    return `查隐藏预览：${msg}\n输出格式：${outputFormatFor(getConfigAny(), getGlobalAny(), 'lol_hidden')}`;
+  }
+  if (type === 'lol_shard') {
+    return `查合集预览：接口已返回。\n输出格式：${outputFormatFor(getConfigAny(), getGlobalAny(), 'lol_shard')}`;
+  }
+  if (type === 'video') {
+    const text = parsedPreview?.msg || parsed?.title || parsed?.url || String(body || '').slice(0, 120) || '接口已返回视频内容';
+    return `视频接口预览：${text}`;
+  }
+  if (type === 'scammer' || type === 'peer') {
+    const msg = parsedPreview?.msg || parsed?.message || parsed?.msg || String(body || '').slice(0, 160) || '接口已返回结果';
+    return `风险查询预览：${msg}`;
+  }
+  return parsedPreview?.textPreview || parsedPreview?.msg || String(body || '').slice(0, 300);
 }
