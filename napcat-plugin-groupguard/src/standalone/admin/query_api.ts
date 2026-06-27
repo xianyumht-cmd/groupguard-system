@@ -14,14 +14,14 @@ type QueryCommandProfile = {
   note?: string;
 };
 
-const QUERY_TYPES: Array<{ type: QueryType; name: string; trigger: string; featureKey?: string; }> = [
-  { type: 'lol_ban', name: '查封号', trigger: '查封号', featureKey: 'query.lol_ban' },
-  { type: 'lol_battle', name: '查战绩', trigger: '查战绩', featureKey: 'query.lol_battle' },
-  { type: 'lol_hidden', name: '查隐藏', trigger: '查隐藏', featureKey: 'query.lol_hidden' },
-  { type: 'lol_shard', name: '查合集', trigger: '查合集', featureKey: 'query.lol_shard' },
-  { type: 'scammer', name: '骗子查询', trigger: '查骗子', featureKey: 'query.scammer' },
-  { type: 'peer', name: '同行查询', trigger: '查同行', featureKey: 'query.peer' },
-  { type: 'video', name: '视频接口', trigger: '查视频/视频', featureKey: 'query.video' }
+const QUERY_TYPES: Array<{ type: QueryType; name: string; trigger: string; featureKey?: string; dataSource: string; }> = [
+  { type: 'lol_ban', name: '查封号', trigger: '查封号', featureKey: 'query.lol_ban', dataSource: 'external' },
+  { type: 'lol_battle', name: '查战绩', trigger: '查战绩', featureKey: 'query.lol_battle', dataSource: 'local-api' },
+  { type: 'lol_hidden', name: '查隐藏', trigger: '查隐藏', featureKey: 'query.lol_hidden', dataSource: 'local-api' },
+  { type: 'lol_shard', name: '查合集', trigger: '查合集', featureKey: 'query.lol_shard', dataSource: 'remote-json' },
+  { type: 'scammer', name: '骗子查询', trigger: '查骗子', featureKey: 'query.scammer', dataSource: 'external' },
+  { type: 'peer', name: '同行查询', trigger: '查同行', featureKey: 'query.peer', dataSource: 'local-db' },
+  { type: 'video', name: '视频接口', trigger: '查视频/视频', featureKey: 'query.video', dataSource: 'external' }
 ];
 
 function getConfigAny(): any {
@@ -72,7 +72,8 @@ function rowUrl(config: any, type: QueryType): string {
   if (type === 'lol_battle') return config.lolQueryUrl || config.lolApiBaseUrl || '';
   if (type === 'lol_hidden') return config.lolApiBaseUrl || config.lolQueryUrl || '';
   if (type === 'lol_shard') return config.shardDataUrl || '';
-  if (type === 'scammer' || type === 'peer') return Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls[0] || '' : '';
+  if (type === 'scammer') return Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls[0] || '' : '';
+  if (type === 'peer') return '本地数据库';
   if (type === 'video') {
     const templates = config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? config.videoApiTemplates : {};
     return Object.values(templates)[0] ? String(Object.values(templates)[0]) : '';
@@ -106,7 +107,13 @@ function validateUrlValue(label: string, value: any, required = false): string[]
   if (!/^https?:\/\//i.test(text)) warnings.push(`${label} 不是 http/https 地址`);
   if (/\s/.test(text)) warnings.push(`${label} 包含空白字符`);
   try {
-    new URL(text.replaceAll('{qq}', '10000').replaceAll('{query}', 'test').replaceAll('{keyword}', 'test').replaceAll('$qq', '10000'));
+    const u = new URL(text.replaceAll('{qq}', '10000').replaceAll('{query}', 'test').replaceAll('{keyword}', 'test').replaceAll('$qq', '10000'));
+    const host = u.hostname.toLowerCase();
+    const parts = host.split('.').filter(Boolean);
+    const tld = parts[parts.length - 1] || '';
+    if (parts.length < 2) warnings.push(`${label} 域名看起来不完整`);
+    if (tld.length > 6 && !['localhost'].includes(host)) warnings.push(`${label} 顶级域名 ${tld} 较可疑，请确认是否写完整`);
+    if (host.startsWith('m.') && !u.pathname.includes('/')) warnings.push(`${label} 像移动端短域名但缺少路径，请确认是否完整`);
   } catch {
     warnings.push(`${label} URL 格式可能不正确`);
   }
@@ -121,9 +128,9 @@ function validateConfig(config: any): { warnings: string[]; errors: string[]; } 
   warnings.push(...validateUrlValue('战绩查询 URL', config.lolQueryUrl, false));
   warnings.push(...validateUrlValue('合集数据 URL', config.shardDataUrl, true));
   warnings.push(...validateUrlValue('英雄列表 URL', config.shardHeroListUrl, false));
-  warnings.push(...validateUrlValue('风险举报 URL', config.scammerReportUrl, false));
-  const riskUrls = Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls : [];
-  riskUrls.forEach((url: string, index: number) => warnings.push(...validateUrlValue(`风险查询 URL #${index + 1}`, url, false)));
+  warnings.push(...validateUrlValue('骗子举报 URL', config.scammerReportUrl, false));
+  const scammerUrls = Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls : [];
+  scammerUrls.forEach((url: string, index: number) => warnings.push(...validateUrlValue(`骗子查询 URL #${index + 1}`, url, false)));
   const templates = config.videoApiTemplates;
   if (templates && (typeof templates !== 'object' || Array.isArray(templates))) {
     errors.push('videoApiTemplates 必须是 JSON 对象');
@@ -148,10 +155,11 @@ export function getQueryOverview() {
     enabled: isQueryEnabled(config, global, item.type),
     featureKey: item.featureKey || '',
     trigger: item.trigger,
+    dataSource: item.dataSource,
     url: rowUrl(config, item.type),
     heroListUrl: item.type === 'lol_shard' ? config.shardHeroListUrl || '' : '',
     backupUrls: item.type === 'lol_ban' && Array.isArray(config.lolBanBackupUrls) ? config.lolBanBackupUrls.length : undefined,
-    urlCount: (item.type === 'scammer' || item.type === 'peer') && Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls.length : undefined,
+    urlCount: item.type === 'scammer' && Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls.length : undefined,
     templateCount: item.type === 'video' && config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? Object.keys(config.videoApiTemplates).length : undefined,
     outputFormat: outputFormatFor(config, global, item.type),
     defaultOutputFormat: defaultOutputFor(config, global, item.type),
@@ -257,12 +265,15 @@ function buildTestUrl(type: QueryType, param: string, payload: any): string {
     if (!url) throw new Error(which === 'hero' ? '未配置 shardHeroListUrl' : '未配置 shardDataUrl');
     return replaceTemplate(url, param, payload || {});
   }
-  if (type === 'scammer' || type === 'peer') {
+  if (type === 'scammer') {
     const urls = Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls : [];
     let url = replaceTemplate(String(payload?.url || urls[0] || ''), param);
     if (!url) throw new Error('未配置 scammerQueryUrls，也未填写测试 URL');
     if (!/[?&](qq|uin|account|keyword)=/.test(url) && !url.includes('{') && !url.includes('$')) url = addQueryParam(url, 'qq', param);
     return url;
+  }
+  if (type === 'peer') {
+    throw new Error('同行查询走本地数据库，不使用外部 URL');
   }
   if (type === 'video') {
     const templates = config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? config.videoApiTemplates : {};
@@ -278,6 +289,7 @@ export async function testQueryEndpoint(payload: any) {
   const type = (payload?.type || 'custom') as QueryType;
   const param = String(payload?.param || '').trim();
   if (!param && type !== 'lol_shard') throw new Error('测试参数不能为空');
+  if (type === 'peer') return testPeerLocalQuery(param);
   const url = buildTestUrl(type, param, payload);
   const timeoutMs = Math.max(3000, Math.min(Number(payload?.timeoutMs || (getGlobalAny().lolQueryRequestTimeoutSeconds || 20) * 1000), 120000));
   const startedAt = Date.now();
@@ -324,6 +336,23 @@ export async function testQueryEndpoint(payload: any) {
   }
 }
 
+function testPeerLocalQuery(param: string) {
+  const startedAt = Date.now();
+  return {
+    ok: true,
+    type: 'peer',
+    commandProfile: getProfile(getConfigAny(), 'peer'),
+    request: { dataSource: 'local-db', keyword: param },
+    response: {
+      ok: true,
+      elapsedMs: Date.now() - startedAt,
+      note: '同行查询走本地数据库；当前 WebUI 测试器已禁止请求外部接口。下一步需要接入现有本地同行查询函数后显示真实匹配结果。'
+    },
+    parsedPreview: { dataSource: 'local-db', keyword: param },
+    finalReplyPreview: `同行查询：${param}\n数据源：本地数据库\n说明：WebUI 已按本地库处理，不会请求 pianzi.lol。真实匹配结果待接入本地查询函数。`
+  };
+}
+
 function summarizeParsedResult(type: QueryType, parsed: any, body: string): any {
   if (parsed && typeof parsed === 'object') {
     const data = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
@@ -331,9 +360,12 @@ function summarizeParsedResult(type: QueryType, parsed: any, body: string): any 
       return {
         code: parsed.code ?? parsed.result ?? '',
         msg: parsed.msg ?? parsed.message ?? '',
+        qq: data.qq ?? '',
         status: data.return ?? data.status ?? data.ban_status ?? '',
-        detail: data.banmsg ?? data.rammsg ?? parsed.err_msg ?? '',
-        extra: data.rammsg && data.banmsg ? `${data.banmsg}\n${data.rammsg}` : ''
+        detail: data.ban_reason ?? data.banmsg ?? data.rammsg ?? parsed.err_msg ?? parsed.msg ?? '',
+        banTime: data.ban_time ?? data.banTime ?? '',
+        endTime: data.end_time ?? data.endTime ?? '',
+        reason: data.ban_reason ?? data.reason ?? ''
       };
     }
     return {
@@ -347,9 +379,14 @@ function summarizeParsedResult(type: QueryType, parsed: any, body: string): any 
 
 function buildFinalReplyPreview(type: QueryType, param: string, parsedPreview: any, parsed: any, body: string): string {
   if (type === 'lol_ban') {
+    const qq = parsedPreview?.qq || param;
     const status = parsedPreview?.status || parsedPreview?.msg || '未知';
-    const detail = parsedPreview?.detail || parsedPreview?.extra || '无详情';
-    return `QQ：${param}\n状态：${status}\n详情：${detail}`;
+    const lines = [`QQ：${qq}`, `状态：${status}`];
+    if (parsedPreview?.endTime) lines.push(`剩余：${parsedPreview.endTime}`);
+    if (parsedPreview?.reason) lines.push(`原因：${parsedPreview.reason}`);
+    if (parsedPreview?.banTime) lines.push(`封禁时间：${parsedPreview.banTime}`);
+    if (!parsedPreview?.endTime && !parsedPreview?.reason && !parsedPreview?.banTime) lines.push(`详情：${parsedPreview?.detail || '无详情'}`);
+    return lines.join('\n');
   }
   if (type === 'lol_battle') {
     const msg = parsedPreview?.msg || parsed?.message || parsed?.msg || '接口已返回结果';
@@ -366,9 +403,9 @@ function buildFinalReplyPreview(type: QueryType, param: string, parsedPreview: a
     const text = parsedPreview?.msg || parsed?.title || parsed?.url || String(body || '').slice(0, 120) || '接口已返回视频内容';
     return `视频接口预览：${text}`;
   }
-  if (type === 'scammer' || type === 'peer') {
+  if (type === 'scammer') {
     const msg = parsedPreview?.msg || parsed?.message || parsed?.msg || String(body || '').slice(0, 160) || '接口已返回结果';
-    return `风险查询预览：${msg}`;
+    return `骗子查询预览：${msg}`;
   }
   return parsedPreview?.textPreview || parsedPreview?.msg || String(body || '').slice(0, 300);
 }
