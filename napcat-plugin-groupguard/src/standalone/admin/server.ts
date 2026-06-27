@@ -9,7 +9,7 @@ import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
 import { deleteLicense, getLicense, listLicenses, saveLicense } from './license_api';
 import { createSnapshot, listBackups } from './backup_api';
-import { addQaEntry, deleteQaEntry, listQaEntries, updateQaEntry } from './qa_api';
+import { addQaEntry, deleteQaEntry, listQaEntries, setQaEntryEnabled, updateQaEntry } from './qa_api';
 import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_commands_api';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 
@@ -140,6 +140,13 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       }
 
       const qaIndex = parseQaPath(url.pathname);
+      if (qaIndex && req.method === 'PATCH') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        const message = payload.enabled === false ? '问答已禁用。' : '问答已启用。';
+        sendJson(res, 200, { ok: true, message, ...setQaEntryEnabled(options, payload.scope, payload.groupId, qaIndex, payload.enabled) });
+        return;
+      }
+
       if (qaIndex && req.method === 'PUT') {
         const payload = JSON.parse(await readBody(req) || '{}');
         sendJson(res, 200, { ok: true, message: '问答已更新。', ...updateQaEntry(options, payload.scope, payload.groupId, qaIndex, payload) });
