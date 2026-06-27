@@ -4,12 +4,14 @@ import { createToken, requireAuth } from './auth';
 import { readBody, send, sendJson } from './http';
 import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
+import { renderQueryPage } from './query_page';
 import { getStatus } from './status_api';
 import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
 import { deleteLicense, getLicense, listLicenses, saveLicense } from './license_api';
 import { createSnapshot, listBackups } from './backup_api';
 import { addQaEntry, deleteQaEntry, listQaEntries, setQaEntryEnabled, updateQaEntry } from './qa_api';
+import { getQueryOverview, patchQueryConfig, testQueryEndpoint } from './query_api';
 import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_commands_api';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 
@@ -51,6 +53,11 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       if (req.method === 'GET' && url.pathname === '/qa.html') {
         send(res, 200, renderQaPage(), 'text/html; charset=utf-8');
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/query.html') {
+        send(res, 200, renderQueryPage(), 'text/html; charset=utf-8');
         return;
       }
 
@@ -155,6 +162,23 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       if (qaIndex && req.method === 'DELETE') {
         sendJson(res, 200, { ok: true, message: '问答已删除。', ...deleteQaEntry(options, url.searchParams.get('scope'), url.searchParams.get('groupId'), qaIndex) });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/query/overview') {
+        sendJson(res, 200, getQueryOverview());
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/query/patch') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, patchQueryConfig(options, payload.patch || {}));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/query/test') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, await testQueryEndpoint(payload));
         return;
       }
 
