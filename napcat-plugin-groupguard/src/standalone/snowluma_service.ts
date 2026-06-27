@@ -3,11 +3,13 @@ import { fileURLToPath } from 'node:url';
 import { OneBotWsClient } from './onebot_ws_client';
 import { OneBotActionCaller } from './onebot_action_caller';
 import { createStandaloneContext } from './standalone_context';
+import { startSnowLumaAdminServer, type SnowLumaAdminServerRuntime } from './snowluma_admin_server';
 import { plugin_init, plugin_onmessage, plugin_onevent, plugin_cleanup } from '../index';
 
 type RuntimeState = {
   ctx: any;
   client: OneBotWsClient;
+  adminServer?: SnowLumaAdminServerRuntime;
 };
 
 function env(name: string, fallback = ''): string {
@@ -82,9 +84,20 @@ async function start(): Promise<RuntimeState> {
   await client.start();
   await plugin_init(ctx);
 
+  const adminServer = startSnowLumaAdminServer({
+    ctx,
+    workDir,
+    dataDir,
+    configPath,
+    backupDir,
+    dynamicCommandsConfigPath,
+    wsUrl,
+    logger: console
+  });
+
   logger.info(`service started workDir=${workDir} config=${configPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
   logger.info('SnowLuma reminder: enable reportSelfMessage if you need message_sent events from host side. GroupGuard also schedules self-recall from send_group_msg responses.');
-  return { ctx, client };
+  return { ctx, client, adminServer };
 }
 
 let runtime: RuntimeState | null = null;
@@ -97,6 +110,11 @@ async function stop(signal: string): Promise<void> {
   try {
     runtime?.client.close();
   } catch { /* noop */ }
+  try {
+    await runtime?.adminServer?.close();
+  } catch (error) {
+    console.error(`[GroupGuard:SnowLuma] admin webui close failed: ${String(error)}`);
+  }
   try {
     await plugin_cleanup();
   } catch (error) {
