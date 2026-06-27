@@ -1,21 +1,24 @@
-import { promises as fs } from 'fs';
+import fsSync, { promises as fs } from 'fs';
 import path from 'path';
+import { contextStateService } from '../core/state-services/context_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { getRegisteredCommandPluginDefinitions } from './command_plugin_store';
 import { validateDynamicCommandDefinition } from './command_validator';
 import type { DynamicCommandDefinition, DynamicCommandsConfigFile } from './types';
 
-const DYNAMIC_COMMANDS_CONFIG_PATH = path.resolve(process.cwd(), 'config', 'dynamic-commands', 'commands.json');
+const LEGACY_DYNAMIC_COMMANDS_CONFIG_PATH = path.resolve(process.cwd(), 'config', 'dynamic-commands', 'commands.json');
 const DYNAMIC_COMMAND_DEBUG = process.env.DYNAMIC_COMMAND_DEBUG === '1';
 const DYNAMIC_COMMAND_RELOAD_DEBOUNCE_MS = 500;
 
 let initialized = false;
 let cachedMtimeMs = -1;
+let cachedConfigPath = '';
 let cachedCommands: DynamicCommandDefinition[] = [];
 let loadPromise: Promise<DynamicCommandDefinition[]> | null = null;
 let reloadDebouncePromise: Promise<DynamicCommandDefinition[]> | null = null;
 let reloadDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let resolveReloadDebouncePromise: ((value: DynamicCommandDefinition[]) => void) | null = null;
+let fallbackWarningAccountPath = '';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -32,6 +35,59 @@ function normalizeStringMap(value: unknown): Record<string, string> | undefined 
     output[normalizedKey] = normalizedValue;
   }
   return Object.keys(output).length ? output : undefined;
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
+}
+
+function normalizeFeatureType(value: unknown): DynamicCommandDefinition['featureType'] {
+  return value === 'query'
+    || value === 'qa'
+    || value === 'dynamic'
+    || value === 'system'
+    || value === 'risk'
+    || value === 'activity'
+    || value === 'moderation'
+    ? value
+    : 'dynamic';
+}
+
+function normalizeScope(value: unknown): DynamicCommandDefinition['scope'] {
+  return value === 'global' || value === 'private' || value === 'both' || value === 'group' ? value : 'group';
+}
+
+function normalizePermission(value: unknown): DynamicCommandDefinition['permission'] {
+  return value === 'admin' || value === 'owner' || value === 'all' ? value : 'all';
+}
+
+export function getDynamicCommandsConfigPath(): string {
+  const explicitPath = process.env.DYNAMIC_COMMANDS_CONFIG_PATH || contextStateService.getDynamicCommandsConfigPath();
+  if (explicitPath) return path.resolve(explicitPath);
+
+  const configDir = contextStateService.getConfigDir();
+  const accountPath = configDir ? path.resolve(configDir, 'dynamic-commands', 'commands.json') : '';
+  try {
+    if (accountPath) {
+      fsSync.accessSync(accountPath);
+      return accountPath;
+    }
+  } catch {
+    // Fall back to legacy shared commands.json for compatibility.
+  }
+  if (accountPath && fallbackWarningAccountPath !== accountPath) {
+    fallbackWarningAccountPath = accountPath;
+    loggingStateService.warn(`[DynamicCommandLoader] 当前账号未找到账号级 dynamic-commands，已回退旧路径，建议迁移。 accountPath=${accountPath} legacyPath=${LEGACY_DYNAMIC_COMMANDS_CONFIG_PATH}`);
+  }
+  return LEGACY_DYNAMIC_COMMANDS_CONFIG_PATH;
+}
+
+export function getAccountDynamicCommandsConfigPath(): string {
+  const explicitPath = process.env.DYNAMIC_COMMANDS_CONFIG_PATH || contextStateService.getDynamicCommandsConfigPath();
+  if (explicitPath) return path.resolve(explicitPath);
+  const configDir = contextStateService.getConfigDir();
+  return configDir ? path.resolve(configDir, 'dynamic-commands', 'commands.json') : '';
 }
 
 function normalizeParameters(value: unknown): Record<string, string> | undefined {
@@ -124,6 +180,15 @@ function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | 
     id,
     enabled,
     priority: getCommandPriority(value.priority),
+    featureType: normalizeFeatureType(value.featureType),
+    featureKey: typeof value.featureKey === 'string' && value.featureKey.trim()
+      ? value.featureKey.trim()
+      : `dynamic.${id}`,
+    scope: normalizeScope(value.scope),
+    allowedGroups: normalizeStringList(value.allowedGroups),
+    blockedGroups: normalizeStringList(value.blockedGroups),
+    requiresLicense: value.requiresLicense !== false,
+    permission: normalizePermission(value.permission),
     trigger: {
       type: triggerType,
       value: triggerValue
@@ -158,7 +223,11 @@ function normalizeConfigFile(value: unknown): DynamicCommandsConfigFile {
 }
 
 async function readCommandsFromDisk(): Promise<DynamicCommandDefinition[]> {
-  const raw = await fs.readFile(DYNAMIC_COMMANDS_CONFIG_PATH, 'utf8');
+  const configPath = getDynamicCommandsConfigPath();
+  if (configPath !== cachedConfigPath) {
+    loggingStateService.info(`[DynamicCommandLoader] using commands path: ${configPath}`);
+  }
+  const raw = await fs.readFile(configPath, 'utf8');
   const parsed = JSON.parse(raw);
   const config = normalizeConfigFile(parsed);
   const mergedCommands = [
@@ -182,11 +251,13 @@ async function readCommandsFromDisk(): Promise<DynamicCommandDefinition[]> {
 
 async function performLoad(forceReload: boolean): Promise<DynamicCommandDefinition[]> {
   try {
-    const stats = await fs.stat(DYNAMIC_COMMANDS_CONFIG_PATH);
-    if (!forceReload && initialized && stats.mtimeMs === cachedMtimeMs) {
+    const configPath = getDynamicCommandsConfigPath();
+    const stats = await fs.stat(configPath);
+    if (!forceReload && initialized && configPath === cachedConfigPath && stats.mtimeMs === cachedMtimeMs) {
       return cachedCommands;
     }
     cachedCommands = await readCommandsFromDisk();
+    cachedConfigPath = configPath;
     cachedMtimeMs = stats.mtimeMs;
     initialized = true;
     return cachedCommands;
@@ -254,8 +325,9 @@ export async function initializeDynamicCommands(): Promise<DynamicCommandDefinit
 
 export async function reloadDynamicCommandsIfChanged(): Promise<DynamicCommandDefinition[]> {
   try {
-    const stats = await fs.stat(DYNAMIC_COMMANDS_CONFIG_PATH);
-    if (initialized && stats.mtimeMs === cachedMtimeMs) {
+    const configPath = getDynamicCommandsConfigPath();
+    const stats = await fs.stat(configPath);
+    if (initialized && configPath === cachedConfigPath && stats.mtimeMs === cachedMtimeMs) {
       return cachedCommands;
     }
     return scheduleDebouncedReload();

@@ -48,6 +48,37 @@ function bindAuditRetentionLogger(): void {
   });
 }
 
+function getContextPathValue(ctx: NapCatPluginContext, key: string): string {
+  const value = (ctx as any)?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function resolveRuntimePaths(ctx: NapCatPluginContext) {
+  const configPath = path.resolve(
+    process.env.GROUPGUARD_CONFIG_PATH
+    || getContextPathValue(ctx, 'configPath')
+    || path.join(process.cwd(), 'config.json')
+  );
+  const configDir = path.dirname(configPath);
+  const workDir = path.resolve(getContextPathValue(ctx, 'workDir') || configDir);
+  const dataDir = path.resolve(
+    process.env.GROUPGUARD_DATA_DIR
+    || getContextPathValue(ctx, 'dataDir')
+    || path.join(configDir, 'data')
+  );
+  const backupDir = path.resolve(
+    process.env.GROUPGUARD_BACKUP_DIR
+    || getContextPathValue(ctx, 'backupDir')
+    || path.join(workDir, 'backups')
+  );
+  const dynamicCommandsConfigPath = path.resolve(
+    process.env.DYNAMIC_COMMANDS_CONFIG_PATH
+    || getContextPathValue(ctx, 'dynamicCommandsConfigPath')
+    || path.join(configDir, 'dynamic-commands', 'commands.json')
+  );
+  return { workDir, configPath, configDir, dataDir, backupDir, dynamicCommandsConfigPath };
+}
+
 function collectPersonaAuditForConfig(config: PluginConfig) {
   const globalAudit = auditReplyTemplates(BUILTIN_REPLY_SCENE_TEMPLATES, config.global);
   const groups = Object.entries(config.groups || {}).map(([groupId, settings]) => {
@@ -82,6 +113,14 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
   contextStateService.setActions(ctx.actions);
   contextStateService.setAdapterName(ctx.adapterName);
   contextStateService.setNetworkConfig(ctx.pluginManager.config);
+  const runtimePaths = resolveRuntimePaths(ctx);
+  (ctx as any).configPath = runtimePaths.configPath;
+  contextStateService.setWorkDir(runtimePaths.workDir);
+  contextStateService.setConfigPath(runtimePaths.configPath);
+  contextStateService.setConfigDir(runtimePaths.configDir);
+  contextStateService.setDataDir(runtimePaths.dataDir);
+  contextStateService.setBackupDir(runtimePaths.backupDir);
+  contextStateService.setDynamicCommandsConfigPath(runtimePaths.dynamicCommandsConfigPath);
   loggingStateService.info('群管插件正在初始化...');
   initCommandValidation();
 
@@ -106,48 +145,12 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
     ctx.NapCatConfig.boolean('debug', '调试模式', false, '显示详细日志'),
   );
 
-  // 设置配置目录
-  if (ctx.configPath) {
-    contextStateService.setConfigDir(path.dirname(ctx.configPath));
-  }
-
   // 加载主配置
   if (fs.existsSync(ctx.configPath)) {
     try {
       const raw = JSON.parse(fs.readFileSync(ctx.configPath, 'utf-8'));
       configStateService.setConfig(normalizePluginConfig(raw as PluginConfig));
       syncAuditRetentionPolicy(configStateService.getConfig());
-      
-      // 确保 data 目录存在
-      const dataDir = path.join(contextStateService.getConfigDir(), 'data');
-      const groupsDataDir = path.join(dataDir, 'groups');
-      if (!fs.existsSync(groupsDataDir)) fs.mkdirSync(groupsDataDir, { recursive: true });
-
-      // 迁移旧的分群配置 (groups/*.json -> data/groups/*/config.json)
-      const oldGroupsDir = path.join(contextStateService.getConfigDir(), 'groups');
-      if (fs.existsSync(oldGroupsDir)) {
-        const files = fs.readdirSync(oldGroupsDir);
-        for (const file of files) {
-          if (file.endsWith('.json')) {
-            const gid = file.replace('.json', '');
-            const oldPath = path.join(oldGroupsDir, file);
-            const newGroupDir = path.join(groupsDataDir, gid);
-            if (!fs.existsSync(newGroupDir)) fs.mkdirSync(newGroupDir, { recursive: true });
-            
-            // 移动并重命名为 config.json
-            const newPath = path.join(newGroupDir, 'config.json');
-            if (!fs.existsSync(newPath)) {
-                fs.renameSync(oldPath, newPath);
-                loggingStateService.info(`已迁移群配置: ${gid}`);
-            } else {
-                // 如果新位置已有配置，保留新位置，删除旧文件
-                fs.unlinkSync(oldPath);
-            }
-          }
-        }
-        // 尝试删除空的旧目录
-        try { fs.rmdirSync(oldGroupsDir); } catch {}
-      }
 
       storageAdapter.init(contextStateService.getConfigDir());
       bindAuditRetentionLogger();

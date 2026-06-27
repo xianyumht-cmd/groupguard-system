@@ -33,12 +33,52 @@ export class ContextStateService {
     pluginStateContextAdapter.setNetworkConfig(networkConfig);
   }
 
+  getWorkDir(): string {
+    return pluginStateContextAdapter.getWorkDir();
+  }
+
+  setWorkDir(workDir: string): void {
+    pluginStateContextAdapter.setWorkDir(workDir);
+  }
+
+  getConfigPath(): string {
+    return pluginStateContextAdapter.getConfigPath();
+  }
+
+  setConfigPath(configPath: string): void {
+    pluginStateContextAdapter.setConfigPath(configPath);
+  }
+
   getConfigDir(): string {
     return pluginStateContextAdapter.getConfigDir();
   }
 
   setConfigDir(configDir: string): void {
     pluginStateContextAdapter.setConfigDir(configDir);
+  }
+
+  getDataDir(): string {
+    return pluginStateContextAdapter.getDataDir();
+  }
+
+  setDataDir(dataDir: string): void {
+    pluginStateContextAdapter.setDataDir(dataDir);
+  }
+
+  getBackupDir(): string {
+    return pluginStateContextAdapter.getBackupDir();
+  }
+
+  setBackupDir(backupDir: string): void {
+    pluginStateContextAdapter.setBackupDir(backupDir);
+  }
+
+  getDynamicCommandsConfigPath(): string {
+    return pluginStateContextAdapter.getDynamicCommandsConfigPath();
+  }
+
+  setDynamicCommandsConfigPath(configPath: string): void {
+    pluginStateContextAdapter.setDynamicCommandsConfigPath(configPath);
   }
 
   getConfigSchemaHtml(): string {

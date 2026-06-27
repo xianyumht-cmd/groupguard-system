@@ -40,6 +40,7 @@
     "build:debug": "npm run arch:check:system-write:strict && vite build --mode debug",
     "build:snowluma": "vite build --mode snowluma",
     "build:all": "npm run build:release && npm run build:snowluma",
+    "config:migrate:snowluma": "node scripts/migrate-snowluma-config.mjs",
     "start:snowluma": "node dist/snowluma-service.mjs",
     "report:scene": "node scene_coverage_report.mjs",
     "report:commands": "node scripts/command_coverage_report.mjs"

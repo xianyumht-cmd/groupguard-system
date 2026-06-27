@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { contextStateService } from '../core/state-services/context_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { assertCommandPluginContract } from './command_runtime_plugin';
 import type { CommandPlugin } from './command_runtime_plugin';
@@ -7,7 +8,12 @@ import type { CommandPluginMetadata, CommandPluginRuntimeState, DynamicCommandDe
 
 const registeredCommandPlugins = new Map<string, CommandPlugin>();
 const pluginRuntimeStates = new Map<string, CommandPluginRuntimeState>();
-const PLUGIN_RUNTIME_STORE_PATH = path.resolve(process.cwd(), 'data', 'command-plugin-state.json');
+function getPluginRuntimeStorePath(): string {
+  const configDir = contextStateService.getConfigDir();
+  return configDir
+    ? path.resolve(configDir, 'command-plugin-state.json')
+    : path.resolve(process.cwd(), 'data', 'command-plugin-state.json');
+}
 let pluginRuntimeStoreInitialized = false;
 let commandPluginStoreVersion = 0;
 
@@ -28,8 +34,9 @@ function ensurePluginRuntimeStoreLoaded(): void {
   if (pluginRuntimeStoreInitialized) return;
   pluginRuntimeStoreInitialized = true;
   try {
-    if (!fs.existsSync(PLUGIN_RUNTIME_STORE_PATH)) return;
-    const raw = fs.readFileSync(PLUGIN_RUNTIME_STORE_PATH, 'utf8');
+    const storePath = getPluginRuntimeStorePath();
+    if (!fs.existsSync(storePath)) return;
+    const raw = fs.readFileSync(storePath, 'utf8');
     const parsed = JSON.parse(raw) as { plugins?: Record<string, unknown>; };
     for (const [pluginId, state] of Object.entries(parsed.plugins || {})) {
       pluginRuntimeStates.set(pluginId, normalizeRuntimeState(state));
@@ -42,8 +49,9 @@ function ensurePluginRuntimeStoreLoaded(): void {
 function savePluginRuntimeStore(): void {
   ensurePluginRuntimeStoreLoaded();
   try {
-    fs.mkdirSync(path.dirname(PLUGIN_RUNTIME_STORE_PATH), { recursive: true });
-    fs.writeFileSync(PLUGIN_RUNTIME_STORE_PATH, JSON.stringify({
+    const storePath = getPluginRuntimeStorePath();
+    fs.mkdirSync(path.dirname(storePath), { recursive: true });
+    fs.writeFileSync(storePath, JSON.stringify({
       version: 1,
       plugins: Object.fromEntries(pluginRuntimeStates.entries())
     }, null, 2), 'utf8');

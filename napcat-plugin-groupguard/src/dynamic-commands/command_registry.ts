@@ -7,7 +7,7 @@ const DYNAMIC_COMMAND_DEBUG = process.env.DYNAMIC_COMMAND_DEBUG === '1';
 
 interface DynamicCommandRegistrySnapshot {
   commandsRef: DynamicCommandDefinition[];
-  exactMatchMap: Map<string, DynamicCommandDefinition>;
+  exactMatchMap: Map<string, DynamicCommandDefinition[]>;
   prefixMatchMap: Map<string, DynamicCommandDefinition[]>;
   version: number;
 }
@@ -16,19 +16,19 @@ let registryRefreshVersion = 0;
 
 let registrySnapshot: DynamicCommandRegistrySnapshot = {
   commandsRef: [],
-  exactMatchMap: new Map<string, DynamicCommandDefinition>(),
+  exactMatchMap: new Map<string, DynamicCommandDefinition[]>(),
   prefixMatchMap: new Map<string, DynamicCommandDefinition[]>(),
   version: 0
 };
 
 function buildSnapshot(commands: DynamicCommandDefinition[], previousVersion: number): DynamicCommandRegistrySnapshot {
-  const nextExactMatchMap = new Map<string, DynamicCommandDefinition>();
+  const nextExactMatchMap = new Map<string, DynamicCommandDefinition[]>();
   const nextPrefixMatchMap = new Map<string, DynamicCommandDefinition[]>();
   for (const command of commands) {
     if (command.trigger.type === 'exact') {
-      if (!nextExactMatchMap.has(command.trigger.value)) {
-        nextExactMatchMap.set(command.trigger.value, command);
-      }
+      const list = nextExactMatchMap.get(command.trigger.value) || [];
+      list.push(command);
+      nextExactMatchMap.set(command.trigger.value, list);
       continue;
     }
     const bucketKey = command.trigger.value.charAt(0);
@@ -89,20 +89,25 @@ function matchCommand(command: DynamicCommandDefinition, text: string): DynamicC
 }
 
 export function resolveDynamicCommand(text: string): DynamicCommandMatchResult | null {
+  return resolveDynamicCommandCandidates(text)[0] || null;
+}
+
+export function resolveDynamicCommandCandidates(text: string): DynamicCommandMatchResult[] {
   const commands = listCommandPluginDefinitions();
   if (registrySnapshot.commandsRef !== commands) {
     registrySnapshot = buildSnapshot(commands, registrySnapshot.version);
   }
   const snapshot = registrySnapshot;
+  const matches: DynamicCommandMatchResult[] = [];
 
-  const exactCommand = snapshot.exactMatchMap.get(text);
-  if (exactCommand) {
+  const exactCommands = snapshot.exactMatchMap.get(text) || [];
+  for (const exactCommand of exactCommands) {
     const matched = matchCommand(exactCommand, text);
     if (matched) {
       if (DYNAMIC_COMMAND_DEBUG) {
         loggingStateService.debug(`[DynamicCommandRegistry] exact match found: ${matched.command.id} snapshot=${snapshot.version}`);
       }
-      return matched;
+      matches.push(matched);
     }
   }
 
@@ -113,8 +118,8 @@ export function resolveDynamicCommand(text: string): DynamicCommandMatchResult |
       if (DYNAMIC_COMMAND_DEBUG) {
         loggingStateService.debug(`[DynamicCommandRegistry] prefix match found: ${matched.command.id} snapshot=${snapshot.version}`);
       }
-      return matched;
+      matches.push(matched);
     }
   }
-  return null;
+  return matches;
 }

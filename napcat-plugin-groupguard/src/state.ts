@@ -56,7 +56,12 @@ class PluginState {
   actions: ActionCaller | undefined;
   adapterName = '';
   networkConfig: NetworkAdapterConfig | null = null;
+  workDir = '';
+  configPath = '';
   configDir = '';
+  dataDir = '';
+  backupDir = '';
+  dynamicCommandsConfigPath = '';
   config: PluginConfig = JSON.parse(JSON.stringify(DEFAULT_PLUGIN_CONFIG));
   sessions: Map<string, VerifySession> = new Map();
   pendingComments: Map<string, string> = new Map();
@@ -700,6 +705,7 @@ class PluginState {
           }
         }]
       } as never, this.adapterName, this.networkConfig) as { message_id?: number | string };
+      this.log('warn', `forward_send_direct source=send_queue_fallback group=${task.groupId} reason=${reason}`);
       const messageId = this.extractSendMessageId(res);
       this.recordBotSendEvent({
         groupId: task.groupId,

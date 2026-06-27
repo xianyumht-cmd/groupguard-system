@@ -51,6 +51,27 @@ function hasValidHttpUrl(url: string): boolean {
 export function validateDynamicCommandDefinition(command: DynamicCommandDefinition): DynamicCommandValidationError[] {
   const errors: DynamicCommandValidationError[] = [];
 
+  if (command.featureKey && !/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/i.test(command.featureKey)) {
+    errors.push({
+      code: 'validation_error',
+      message: `invalid_feature_key:${command.id}`
+    });
+  }
+
+  if (command.scope && !['global', 'group', 'private', 'both'].includes(command.scope)) {
+    errors.push({
+      code: 'validation_error',
+      message: `invalid_scope:${command.id}`
+    });
+  }
+
+  if (command.permission && !['all', 'admin', 'owner'].includes(command.permission)) {
+    errors.push({
+      code: 'validation_error',
+      message: `invalid_permission:${command.id}`
+    });
+  }
+
   if (command.provider.type === 'http') {
     if (!hasValidHttpUrl(command.provider.url)) {
       errors.push({

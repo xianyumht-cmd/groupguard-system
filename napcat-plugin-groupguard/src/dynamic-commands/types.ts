@@ -1,5 +1,6 @@
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
+import type { FeaturePermission, FeatureScope, FeatureType } from '../types';
 
 export type DynamicCommandTriggerType = 'exact' | 'prefix';
 
@@ -56,6 +57,13 @@ export interface DynamicCommandDefinition {
   id: string;
   enabled: boolean;
   priority?: number;
+  featureType?: FeatureType;
+  featureKey?: string;
+  scope?: FeatureScope;
+  allowedGroups?: string[];
+  blockedGroups?: string[];
+  requiresLicense?: boolean;
+  permission?: FeaturePermission;
   trigger: DynamicCommandTriggerDefinition;
   parameters?: Record<string, string>;
   parameterSchema: DynamicCommandParameterSchema;

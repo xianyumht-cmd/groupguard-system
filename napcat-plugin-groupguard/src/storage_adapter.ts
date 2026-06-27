@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
+import { contextStateService } from './core/state-services/context_state_service';
 import type {
   GroupGuardSettings,
   AuditEventQuery,
@@ -295,7 +296,7 @@ export class StorageAdapter {
 
   init(configDir: string): void {
     if (this.inited) return;
-    this.dataDir = path.join(configDir, 'data');
+    this.dataDir = path.resolve(contextStateService.getDataDir() || path.join(configDir, 'data'));
     if (!fs.existsSync(this.dataDir)) fs.mkdirSync(this.dataDir, { recursive: true });
     this.dbPath = path.join(this.dataDir, 'groupguard.db');
     const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
@@ -535,29 +536,46 @@ export class StorageAdapter {
 
   migrateFromJson(configDir: string, groupsFromConfig: Record<string, GroupGuardSettings>): void {
     if (this.isMigrated()) return;
-    const groupsDir = path.join(configDir, 'data', 'groups');
     const runChunk = (fn: () => void) => this.runInTransaction(fn);
     if (groupsFromConfig && Object.keys(groupsFromConfig).length) {
       this.saveGroupConfigs(groupsFromConfig);
     }
-    if (fs.existsSync(groupsDir)) {
-      const groupIds = fs.readdirSync(groupsDir).filter(n => fs.statSync(path.join(groupsDir, n)).isDirectory());
+    const groupsDirs = Array.from(new Set([
+      path.join(configDir, 'data', 'groups'),
+      path.join(contextStateService.getDataDir() || path.join(configDir, 'data'), 'groups'),
+      path.join(contextStateService.getDataDir() || path.join(configDir, 'data'), 'data', 'groups'),
+      path.join(configDir, 'groups')
+    ].map(p => path.resolve(p))));
+
+    const importGroupDir = (gid: string, groupPath: string) => {
+      const cfg = readJsonFile(path.join(groupPath, 'config.json')) || {};
+      const qa = readJsonFile(path.join(groupPath, 'qa.json')) || [];
+      cfg.qaList = qa;
+      this.saveGroupConfig(gid, cfg);
+      const activity = readJsonFile(path.join(groupPath, 'activity.json')) || {};
+      const signin = readJsonFile(path.join(groupPath, 'signin.json')) || {};
+      const invites = readJsonFile(path.join(groupPath, 'invites.json')) || {};
+      const warnings = readJsonFile(path.join(groupPath, 'warnings.json')) || {};
+      const joinLogs = readJsonFile(path.join(groupPath, 'join_logs.json')) || [];
+      this.importActivity(gid, activity, runChunk);
+      this.importSignin(gid, signin, runChunk);
+      this.importInvites(gid, invites, runChunk);
+      this.importWarnings(gid, warnings, runChunk);
+      this.importJoinLogs(gid, joinLogs, runChunk);
+    };
+
+    for (const groupsDir of groupsDirs) {
+      if (!fs.existsSync(groupsDir)) continue;
+      const entries = fs.readdirSync(groupsDir);
+      const fileGroupIds = entries.filter(n => n.endsWith('.json'));
+      for (const file of fileGroupIds) {
+        const gid = file.replace(/\.json$/i, '');
+        const cfg = readJsonFile(path.join(groupsDir, file));
+        if (cfg) this.saveGroupConfig(gid, cfg);
+      }
+      const groupIds = entries.filter(n => fs.statSync(path.join(groupsDir, n)).isDirectory());
       for (const gid of groupIds) {
-        const groupPath = path.join(groupsDir, gid);
-        const cfg = readJsonFile(path.join(groupPath, 'config.json')) || {};
-        const qa = readJsonFile(path.join(groupPath, 'qa.json')) || [];
-        cfg.qaList = qa;
-        this.saveGroupConfig(gid, cfg);
-        const activity = readJsonFile(path.join(groupPath, 'activity.json')) || {};
-        const signin = readJsonFile(path.join(groupPath, 'signin.json')) || {};
-        const invites = readJsonFile(path.join(groupPath, 'invites.json')) || {};
-        const warnings = readJsonFile(path.join(groupPath, 'warnings.json')) || {};
-        const joinLogs = readJsonFile(path.join(groupPath, 'join_logs.json')) || [];
-        this.importActivity(gid, activity, runChunk);
-        this.importSignin(gid, signin, runChunk);
-        this.importInvites(gid, invites, runChunk);
-        this.importWarnings(gid, warnings, runChunk);
-        this.importJoinLogs(gid, joinLogs, runChunk);
+        importGroupDir(gid, path.join(groupsDir, gid));
       }
     }
     this.markMigrated();

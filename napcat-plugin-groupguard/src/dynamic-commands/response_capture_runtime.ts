@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { GROUPGUARD_SEND_SCENE_KEY } from '../core/send_wrapper_constants';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 import { communicationStateService } from '../core/state-services/communication_state_service';
 import {
   assertPluginRuntimeCaptureAllowed,
@@ -99,6 +100,7 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
     return;
   }
   if (resolvedDelivery.forwardNodes?.length) {
+    loggingStateService.warn(`forward_send_direct source=response_capture_runtime group=${resolvedDelivery.targetId} scene=${resolvedDelivery.scene}`);
     await communicationStateService.callApi('send_group_forward_msg', {
       group_id: resolvedDelivery.targetId,
       messages: resolvedDelivery.forwardNodes

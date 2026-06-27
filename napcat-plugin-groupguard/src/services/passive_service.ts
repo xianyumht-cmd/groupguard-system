@@ -2,6 +2,7 @@ import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plu
 import { authStateService } from '../core/state-services/auth_state_service';
 import { cacheStateService } from '../core/state-services/cache_state_service';
 import { communicationStateService } from '../core/state-services/communication_state_service';
+import { checkFeatureGate } from '../core/feature_gate';
 import { configStateService } from '../core/state-services/config_state_service';
 import { identityStateService } from '../core/state-services/identity_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
@@ -367,6 +368,20 @@ export async function executeHandleSpamDetect(groupId: string, userId: string, r
 export async function executeHandleQA(groupId: string, userId: string, raw: string): Promise<boolean> {
   const settings = configStateService.resolveGroupSettings(groupId);
   if (settings.disableQA) return false;
+  const gate = await checkFeatureGate({
+    featureType: 'qa',
+    featureKey: 'qa.auto_reply',
+    groupId,
+    userId,
+    messageType: 'group',
+    source: 'passive',
+    scope: 'group',
+    requiresLicense: true,
+    permission: 'all',
+    passiveReply: true,
+    botSend: true
+  });
+  if (!gate.allowed) return false;
   const config = configStateService.getConfig();
   const isGroupCustom = config.groups[groupId] && !config.groups[groupId].useGlobal;
   const qaList = isGroupCustom ? (settings.qaList || []) : (config.qaList || []);

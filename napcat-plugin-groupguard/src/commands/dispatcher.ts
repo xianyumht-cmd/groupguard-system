@@ -1,9 +1,10 @@
 import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { loggingStateService } from '../core/state-services/logging_state_service';
+import { checkFeatureGate } from '../core/feature_gate';
 import { initializeDynamicCommands, loadDynamicCommands, reloadDynamicCommandsIfChanged } from '../dynamic-commands/command_loader';
-import { assertCommandPluginRegistryReady, refreshCommandPluginRegistry } from '../dynamic-commands/command_plugin_registry';
-import { getDynamicCommandRegistrySnapshotVersion, refreshDynamicCommandRegistry, resolveDynamicCommand } from '../dynamic-commands/command_registry';
+import { assertCommandPluginRegistryReady, getCommandPluginRecord, refreshCommandPluginRegistry } from '../dynamic-commands/command_plugin_registry';
+import { getDynamicCommandRegistrySnapshotVersion, refreshDynamicCommandRegistry, resolveDynamicCommandCandidates } from '../dynamic-commands/command_registry';
 import { executeDynamicCommand, getDynamicCommandMetric, initializeDynamicCommandMetrics } from '../dynamic-commands/command_engine';
 import { runWithDispatcherExecutionScope } from '../dynamic-commands/execution_guard';
 import { runBeforeMatchHooks } from '../dynamic-commands/command_plugin_interface';
@@ -34,7 +35,9 @@ interface CommandMatchResult {
 interface CommandCandidate {
   source: CommandContext['source'];
   commandId: string;
+  pluginSource: 'json' | 'plugin';
   priority: number;
+  match: DynamicCommandMatchResult;
   matchResult: CommandMatchResult;
   execute: (event: OB11Message, ctx: NapCatPluginContext, commandContext: CommandContext) => Promise<boolean>;
 }
@@ -69,7 +72,9 @@ function buildDynamicCandidate(match: DynamicCommandMatchResult): CommandCandida
   return {
     source: 'dynamic',
     commandId: match.command.id,
+    pluginSource: getCommandPluginRecord(match.command.id)?.plugin.source || 'json',
     priority: configuredPriority,
+    match,
     matchResult: {
       matchedAt: match.matchedTrigger,
       matchType: match.command.trigger.type,
@@ -82,11 +87,42 @@ function buildDynamicCandidate(match: DynamicCommandMatchResult): CommandCandida
 
 function collectCandidates(cleanedText: string): CommandCandidate[] {
   const candidates: CommandCandidate[] = [];
-  const dynamicMatch = resolveDynamicCommand(cleanedText);
-  if (dynamicMatch) {
+  const dynamicMatches = resolveDynamicCommandCandidates(cleanedText);
+  for (const dynamicMatch of dynamicMatches) {
     candidates.push(buildDynamicCandidate(dynamicMatch));
   }
   return candidates;
+}
+
+async function isCandidateAllowed(candidate: CommandCandidate, event: OB11Message): Promise<boolean> {
+  const command = candidate.match.command;
+  const record = getCommandPluginRecord(command.id);
+  if (record && !record.enabled) {
+    loggingStateService.debug(`[CommandDispatcher] filtered=${candidate.commandId} reason=plugin_runtime_disabled`);
+    return false;
+  }
+  const groupId = event.group_id ? String(event.group_id) : undefined;
+  const userId = String(event.user_id || '');
+  const gate = await checkFeatureGate({
+    featureType: command.featureType || 'dynamic',
+    featureKey: command.featureKey || `dynamic.${command.id}`,
+    groupId,
+    userId,
+    messageType: event.message_type === 'private' ? 'private' : 'group',
+    source: candidate.pluginSource,
+    scope: command.scope || 'group',
+    allowedGroups: command.allowedGroups || [],
+    blockedGroups: command.blockedGroups || [],
+    requiresLicense: command.requiresLicense !== false,
+    permission: command.permission || 'all',
+    passiveReply: false,
+    botSend: true,
+    ownerBypass: command.featureType === 'system' || candidate.pluginSource === 'plugin'
+  });
+  if (!gate.allowed) {
+    loggingStateService.debug(`[CommandDispatcher] filtered=${candidate.commandId} reason=${gate.reason}`);
+  }
+  return gate.allowed;
 }
 
 function compareCandidates(left: CommandCandidate, right: CommandCandidate): number {
@@ -151,7 +187,11 @@ export class CommandDispatcher {
     if (!preprocessed.cleanedText) return false;
     await runBeforeMatchHooks(preprocessed.cleanedText);
 
-    const candidates = collectCandidates(preprocessed.cleanedText);
+    const collectedCandidates = collectCandidates(preprocessed.cleanedText);
+    const candidates: CommandCandidate[] = [];
+    for (const candidate of collectedCandidates) {
+      if (await isCandidateAllowed(candidate, event)) candidates.push(candidate);
+    }
     if (!candidates.length) return false;
 
     const rankedCandidates = [...candidates]

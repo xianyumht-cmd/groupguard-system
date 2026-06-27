@@ -48,6 +48,10 @@ interface LegacyModuleDescriptor {
   handler: LegacyHandler;
 }
 
+function toFeatureType(domain: LegacyModuleDescriptor['domain']) {
+  return 'system';
+}
+
 const LEGACY_MODULES: LegacyModuleDescriptor[] = [
   {
     domain: 'auth',
@@ -133,6 +137,13 @@ function createLegacyPlugin(descriptor: LegacyModuleDescriptor, triggerType: 'ex
       id: commandId,
       enabled: true,
       priority: descriptor.priority,
+      featureType: toFeatureType(descriptor.domain),
+      featureKey: `builtin.${descriptor.domain}`,
+      scope: descriptor.scope === 'group/private' ? 'both' : descriptor.scope === 'group' ? 'group' : 'private',
+      allowedGroups: [],
+      blockedGroups: [],
+      requiresLicense: descriptor.scope !== 'private',
+      permission: descriptor.permission === 'admin' ? 'admin' : descriptor.permission === 'owner' ? 'owner' : 'all',
       trigger: {
         type: triggerType,
         value: triggerValue

@@ -5,8 +5,11 @@ import { DEFAULT_PLUGIN_CONFIG } from '../config';
 
 export interface StandaloneContextOptions {
   actions: any;
+  workDir: string;
   dataDir: string;
   configPath?: string;
+  backupDir?: string;
+  dynamicCommandsConfigPath?: string;
   adapterName?: string;
   logger?: Console;
 }
@@ -54,11 +57,16 @@ function createRouterShim() {
 }
 
 export function createStandaloneContext(options: StandaloneContextOptions): NapCatPluginContext {
+  const workDir = path.resolve(options.workDir);
   const dataDir = path.resolve(options.dataDir);
-  const configPath = path.resolve(options.configPath || path.join(dataDir, 'config.json'));
+  const configPath = path.resolve(options.configPath || path.join(workDir, 'config.json'));
+  const backupDir = path.resolve(options.backupDir || path.join(workDir, 'backups'));
+  const dynamicCommandsConfigPath = path.resolve(options.dynamicCommandsConfigPath || path.join(workDir, 'config', 'dynamic-commands', 'commands.json'));
+  ensureDir(workDir);
   ensureDir(dataDir);
+  ensureDir(backupDir);
+  ensureDir(path.dirname(dynamicCommandsConfigPath));
   ensureDir(path.dirname(configPath));
-  ensureDir(path.join(dataDir, 'groups'));
   ensureConfigFile(configPath);
 
   const ctx = {
@@ -67,6 +75,10 @@ export function createStandaloneContext(options: StandaloneContextOptions): NapC
     adapterName: options.adapterName || 'snowluma-onebot',
     pluginManager: { config: {} },
     NapCatConfig: createNapCatConfigShim(),
+    workDir,
+    dataDir,
+    backupDir,
+    dynamicCommandsConfigPath,
     configPath,
     router: createRouterShim()
   };

@@ -39,6 +39,23 @@ export interface BotAntiRiskScenePolicy {
   suffixMode?: BotAntiRiskSuffixMode;
 }
 
+export type FeatureType =
+  | 'query'
+  | 'qa'
+  | 'dynamic'
+  | 'system'
+  | 'risk'
+  | 'activity'
+  | 'moderation'
+  | 'welcome'
+  | 'passive';
+
+export type SilentMode = 'off' | 'noPassiveReply' | 'noBotSend';
+
+export type FeatureScope = 'global' | 'group' | 'private' | 'both';
+
+export type FeaturePermission = 'all' | 'admin' | 'owner';
+
 export interface ActionPrioritySettings {
   ban: number;
   kick: number;
@@ -159,6 +176,13 @@ export interface ContactRiskReportInput {
 
 export interface GroupGuardSettings {
   useGlobal?: boolean;
+  masterEnabled?: boolean;
+  silentMode?: SilentMode;
+  activeReplyEnabled?: boolean;
+  queryEnabled?: boolean;
+  qaEnabled?: boolean;
+  dynamicCommandEnabled?: boolean;
+  featureSwitches?: Record<string, boolean>;
   autoApprove: boolean;
   enableVerify: boolean;
   verifyTimeout: number;

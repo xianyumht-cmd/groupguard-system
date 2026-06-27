@@ -1,4 +1,5 @@
 import { GROUPGUARD_SEND_SCENE_KEY } from '../send_wrapper_constants';
+import { loggingStateService } from '../state-services/logging_state_service';
 import { pluginState } from '../../state';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -127,6 +128,7 @@ export class PluginStateContextAdapter {
       call: async (actionName: string, params: unknown, adapter: string, config: any): Promise<any> => {
         if (this.shouldWrapGroupSend(actionName, params)) {
           const wrappedParams = this.buildForwardGroupMessageParams(params as any);
+          loggingStateService.warn(`forward_send_direct source=send_wrapper group=${String((wrappedParams as any).group_id || '')}`);
           return rawCall('send_group_forward_msg', wrappedParams, adapter, config);
         }
         return rawCall(actionName, stripWrapperMeta(params), adapter, config);
@@ -158,12 +160,52 @@ export class PluginStateContextAdapter {
     pluginState.networkConfig = networkConfig;
   }
 
+  getWorkDir(): string {
+    return pluginState.workDir;
+  }
+
+  setWorkDir(workDir: string): void {
+    pluginState.workDir = workDir;
+  }
+
+  getConfigPath(): string {
+    return pluginState.configPath;
+  }
+
+  setConfigPath(configPath: string): void {
+    pluginState.configPath = configPath;
+  }
+
   getConfigDir(): string {
     return pluginState.configDir;
   }
 
   setConfigDir(configDir: string): void {
     pluginState.configDir = configDir;
+  }
+
+  getDataDir(): string {
+    return pluginState.dataDir;
+  }
+
+  setDataDir(dataDir: string): void {
+    pluginState.dataDir = dataDir;
+  }
+
+  getBackupDir(): string {
+    return pluginState.backupDir;
+  }
+
+  setBackupDir(backupDir: string): void {
+    pluginState.backupDir = backupDir;
+  }
+
+  getDynamicCommandsConfigPath(): string {
+    return pluginState.dynamicCommandsConfigPath;
+  }
+
+  setDynamicCommandsConfigPath(configPath: string): void {
+    pluginState.dynamicCommandsConfigPath = configPath;
   }
 
   getConfigSchemaHtml(): string {

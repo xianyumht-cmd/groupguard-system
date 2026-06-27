@@ -20,11 +20,6 @@ function numberEnv(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-function defaultDataDir(): string {
-  const cwd = process.cwd();
-  return path.resolve(cwd, 'data');
-}
-
 function isMessageEvent(event: any): boolean {
   return event?.post_type === 'message' || event?.post_type === 'message_sent';
 }
@@ -45,10 +40,13 @@ function createLogger() {
 
 async function start(): Promise<RuntimeState> {
   const logger = createLogger();
+  const workDir = path.resolve(process.cwd());
   const wsUrl = env('SNOWLUMA_WS_URL', env('ONEBOT_WS_URL', 'ws://127.0.0.1:3001'));
   const accessToken = env('SNOWLUMA_ACCESS_TOKEN', env('ONEBOT_ACCESS_TOKEN', ''));
-  const dataDir = env('GROUPGUARD_DATA_DIR', defaultDataDir());
-  const configPath = env('GROUPGUARD_CONFIG_PATH', path.join(dataDir, 'config.json'));
+  const dataDir = path.resolve(env('GROUPGUARD_DATA_DIR', path.join(workDir, 'data')));
+  const configPath = path.resolve(env('GROUPGUARD_CONFIG_PATH', path.join(workDir, 'config.json')));
+  const backupDir = path.resolve(env('GROUPGUARD_BACKUP_DIR', path.join(workDir, 'backups')));
+  const dynamicCommandsConfigPath = path.resolve(env('DYNAMIC_COMMANDS_CONFIG_PATH', path.join(workDir, 'config', 'dynamic-commands', 'commands.json')));
   const timeoutMs = numberEnv('ONEBOT_ACTION_TIMEOUT_MS', 10000);
   const reconnectDelayMs = numberEnv('ONEBOT_RECONNECT_DELAY_MS', 3000);
 
@@ -63,8 +61,11 @@ async function start(): Promise<RuntimeState> {
   const actions = new OneBotActionCaller(client);
   const ctx = createStandaloneContext({
     actions,
+    workDir,
     dataDir,
     configPath,
+    backupDir,
+    dynamicCommandsConfigPath,
     adapterName: 'snowluma-onebot',
     logger: console
   });
@@ -81,7 +82,7 @@ async function start(): Promise<RuntimeState> {
   await client.start();
   await plugin_init(ctx);
 
-  logger.info(`service started dataDir=${dataDir} config=${configPath}`);
+  logger.info(`service started workDir=${workDir} config=${configPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
   logger.info('SnowLuma reminder: enable reportSelfMessage if you need message_sent events from host side. GroupGuard also schedules self-recall from send_group_msg responses.');
   return { ctx, client };
 }

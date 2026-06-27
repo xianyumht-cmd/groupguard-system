@@ -1,5 +1,6 @@
 import { authManager } from '../auth';
 import { authStateService } from '../core/state-services/auth_state_service';
+import { checkFeatureGate } from '../core/feature_gate';
 import { communicationStateService } from '../core/state-services/communication_state_service';
 import { configStateService } from '../core/state-services/config_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
@@ -719,6 +720,7 @@ async function sendForwardTextPagesDirect(groupId: string, selfId: string, nickn
     }
   }));
   try {
+    loggingStateService.warn(`forward_send_direct source=interaction_service group=${groupId} nodes=${nodes.length}`);
     await communicationStateService.callApi('send_group_forward_msg', {
       group_id: groupId,
       messages: nodes
@@ -1237,6 +1239,26 @@ async function canUseInviteQuery(groupId: string, userId: string): Promise<boole
   return isAdminOrOwner(groupId, userId);
 }
 
+async function allowGroupFeature(input: CommandExecutionContext, featureKey: string, disabledMessage: string): Promise<boolean> {
+  const gate = await checkFeatureGate({
+    featureType: 'query',
+    featureKey,
+    groupId: input.groupId,
+    userId: input.userId,
+    messageType: 'group',
+    source: 'builtin',
+    scope: 'group',
+    requiresLicense: true,
+    permission: 'all',
+    passiveReply: false,
+    botSend: true
+  });
+  if (gate.allowed) return true;
+  if (gate.reason === 'master_disabled' || gate.reason === 'silent_no_bot_send' || gate.reason === 'active_reply_disabled') return false;
+  await sendGroupScene(input.groupId, 'feature_disabled', disabledMessage);
+  return false;
+}
+
 export async function executeInteractionCommand(input: CommandExecutionContext): Promise<boolean> {
   const { event, text, userId, groupId, raw, ctx } = input;
   if (event.message_type !== 'group') return false;
@@ -1370,6 +1392,8 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   ]) {
     const parsed = parseRiskQueryCommand(text, queryDef.command);
     if (!parsed.matched) continue;
+    const featureKey = queryDef.category === 'peer' ? 'query.peer' : 'query.scammer';
+    if (!await allowGroupFeature(input, featureKey, '本群风险查询功能已关闭')) return true;
     if (!parsed.identifier) {
       await sendGroupScene(groupId, 'command_format_error', `格式：${queryDef.command}<QQ或微信号>`, { example: `${queryDef.command}123456` });
       return true;
@@ -1552,6 +1576,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     return true;
   }
   if (text.startsWith('查封号')) {
+    if (!await allowGroupFeature(input, 'query.lol_ban', '本群已关闭查封号指令')) return true;
     if (!isLolCommandEnabled(groupId, 'banQuery')) {
       await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查封号指令');
       return true;
@@ -1612,6 +1637,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     return true;
   }
   if (text.startsWith('查战绩')) {
+    if (!await allowGroupFeature(input, 'query.lol_battle', '本群已关闭查战绩指令')) return true;
     if (!isLolCommandEnabled(groupId, 'battleQuery')) {
       await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查战绩指令');
       return true;
@@ -1684,6 +1710,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   }
 
   if (text.startsWith('查合集')) {
+    if (!await allowGroupFeature(input, 'query.lol_shard', '本群已关闭查合集指令')) return true;
     const rest = text.replace('查合集', '').trim();
     if (!rest) {
       await sendGroupScene(groupId, 'command_format_error', '请输入：查合集 亚索', { example: '查合集 亚索' });
@@ -1747,6 +1774,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   }
 
   if (text.startsWith('海符榜')) {
+    if (!await allowGroupFeature(input, 'query.lol_aram_augments', '本群已关闭海符榜指令')) return true;
     const rest = text.replace('海符榜', '').trim();
     if (!rest) {
       await sendGroupScene(groupId, 'command_format_error', '请输入：海符榜 亚索', { example: '海符榜 亚索' });
@@ -2076,6 +2104,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     return true;
   }
   if (text.startsWith('我要看')) {
+    if (!await allowGroupFeature(input, 'query.video', '本群视频查询功能已关闭')) return true;
     const category = text.replace('我要看', '').trim() || '热门';
     const template = pickVideoApiByCategory(category);
     if (!template) {
@@ -2137,6 +2166,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     return true;
   }
   if (text.startsWith('查隐藏')) {
+    if (!await allowGroupFeature(input, 'query.lol_hidden', '本群已关闭查隐藏指令')) return true;
     if (!isLolCommandEnabled(groupId, 'hiddenQuery')) {
       await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查隐藏指令');
       return true;

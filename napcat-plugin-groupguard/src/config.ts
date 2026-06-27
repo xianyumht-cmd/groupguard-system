@@ -14,6 +14,13 @@ export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
 
 export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   useGlobal: true,
+  masterEnabled: true,
+  silentMode: 'off',
+  activeReplyEnabled: true,
+  queryEnabled: true,
+  qaEnabled: true,
+  dynamicCommandEnabled: true,
+  featureSwitches: {},
   autoApprove: true,
   enableVerify: true,
   verifyTimeout: 300,
@@ -206,6 +213,19 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
     ...(input || {}),
   };
   merged.selfRecall = normalizeSelfRecall(merged);
+  merged.masterEnabled = merged.masterEnabled !== false;
+  merged.silentMode = merged.silentMode === 'noPassiveReply' || merged.silentMode === 'noBotSend' ? merged.silentMode : 'off';
+  merged.activeReplyEnabled = merged.activeReplyEnabled !== false;
+  merged.queryEnabled = merged.queryEnabled !== false;
+  merged.qaEnabled = merged.disableQA === true ? false : merged.qaEnabled !== false;
+  merged.dynamicCommandEnabled = merged.dynamicCommandEnabled !== false;
+  merged.featureSwitches = merged.featureSwitches && typeof merged.featureSwitches === 'object' && !Array.isArray(merged.featureSwitches)
+    ? Object.entries(merged.featureSwitches).reduce((acc, [key, value]) => {
+      const normalizedKey = String(key || '').trim();
+      if (normalizedKey) acc[normalizedKey] = value !== false;
+      return acc;
+    }, {} as Record<string, boolean>)
+    : {};
   merged.botAntiRiskSuffixMode = normalizeSuffixMode(merged.botAntiRiskSuffixMode, 'punctuation');
   merged.botAntiRiskScenePolicies = normalizeBotAntiRiskScenePolicies(merged.botAntiRiskScenePolicies);
   merged.botAntiRiskLimitFallbackMode = normalizeLimitFallbackMode(merged.botAntiRiskLimitFallbackMode, 'drop');

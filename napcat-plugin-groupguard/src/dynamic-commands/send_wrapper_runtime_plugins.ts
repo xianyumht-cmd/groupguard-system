@@ -47,6 +47,13 @@ function createPlugin(triggerValue: string, action: SendWrapperCommandAction): C
       id: commandId,
       enabled: true,
       priority: 70,
+      featureType: 'system',
+      featureKey: 'system.send_wrapper',
+      scope: 'private',
+      allowedGroups: [],
+      blockedGroups: [],
+      requiresLicense: false,
+      permission: 'owner',
       trigger: {
         type: 'exact',
         value: triggerValue
