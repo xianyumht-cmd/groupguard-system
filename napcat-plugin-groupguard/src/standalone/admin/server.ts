@@ -38,10 +38,11 @@ function parseQaPath(pathname: string): string | null {
 }
 
 function renderMainPage(): string {
-  return renderHomePage().replace(
-    '<button class="tab" data-tab="groups">分群开关</button>',
-    '<button class="tab" data-tab="groups">分群开关</button><a class="tab" href="/qa.html">问答管理</a>'
-  );
+  return renderHomePage()
+    .replace('.tab{background:#1f2937}.tab.active{background:#2563eb}', '.tab{background:#1f2937}.tablink{display:inline-block;background:#1f2937;color:white;border:0;border-radius:10px;padding:9px 13px;cursor:pointer;font-weight:600;text-decoration:none}.tab.active{background:#2563eb}')
+    .replace('<button class="tab" data-tab="groups">分群开关</button>', '<button class="tab" data-tab="groups">分群开关</button><a class="tablink" href="/qa.html">问答管理</a>')
+    .replace("document.querySelectorAll('.tab').forEach", "document.querySelectorAll('.tab[data-tab]').forEach")
+    .replace("localStorage.setItem('GROUPGUARD_WEBUI_TOKEN', token);", "localStorage.setItem('GROUPGUARD_WEBUI_TOKEN', token); document.querySelectorAll('a.tablink').forEach(function(a){ a.href = a.getAttribute('href') + '?token=' + encodeURIComponent(token); });");
 }
 
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
