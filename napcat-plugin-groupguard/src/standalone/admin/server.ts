@@ -3,11 +3,13 @@ import { URL } from 'node:url';
 import { createToken, requireAuth } from './auth';
 import { readBody, send, sendJson } from './http';
 import { renderHomePage } from './static_page';
+import { renderQaPage } from './qa_page';
 import { getStatus } from './status_api';
 import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
 import { deleteLicense, getLicense, listLicenses, saveLicense } from './license_api';
 import { createSnapshot, listBackups } from './backup_api';
+import { addQaEntry, deleteQaEntry, listQaEntries, updateQaEntry } from './qa_api';
 import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_commands_api';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 
@@ -30,6 +32,11 @@ function parseLicensePath(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function parseQaPath(pathname: string): string | null {
+  const match = pathname.match(/^\/api\/qa\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
   const logger = options.logger || console;
   const { host, port, token, tokenFromEnv } = resolveServerConfig(options);
@@ -39,6 +46,11 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
     try {
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
         send(res, 200, renderHomePage(), 'text/html; charset=utf-8');
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/qa.html') {
+        send(res, 200, renderQaPage(), 'text/html; charset=utf-8');
         return;
       }
 
@@ -113,6 +125,29 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       if (licenseGroupId && req.method === 'DELETE') {
         sendJson(res, 200, { ok: true, message: '授权已取消。', license: deleteLicense(options, licenseGroupId) });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/qa') {
+        sendJson(res, 200, { ok: true, ...listQaEntries(url.searchParams.get('scope'), url.searchParams.get('groupId'), url.searchParams.get('q') || '') });
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/qa') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, { ok: true, message: '问答已新增。', ...addQaEntry(options, payload.scope, payload.groupId, payload) });
+        return;
+      }
+
+      const qaIndex = parseQaPath(url.pathname);
+      if (qaIndex && req.method === 'PUT') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, { ok: true, message: '问答已更新。', ...updateQaEntry(options, payload.scope, payload.groupId, qaIndex, payload) });
+        return;
+      }
+
+      if (qaIndex && req.method === 'DELETE') {
+        sendJson(res, 200, { ok: true, message: '问答已删除。', ...deleteQaEntry(options, url.searchParams.get('scope'), url.searchParams.get('groupId'), qaIndex) });
         return;
       }
 
