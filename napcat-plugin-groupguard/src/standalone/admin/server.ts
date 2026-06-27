@@ -6,6 +6,8 @@ import { renderHomePage } from './static_page';
 import { getStatus } from './status_api';
 import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
+import { deleteLicense, getLicense, listLicenses, saveLicense } from './license_api';
+import { createSnapshot, listBackups } from './backup_api';
 import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_commands_api';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 
@@ -20,6 +22,11 @@ function resolveServerConfig(options: SnowLumaAdminServerOptions) {
 
 function parseGroupPath(pathname: string): string | null {
   const match = pathname.match(/^\/api\/groups\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function parseLicensePath(pathname: string): string | null {
+  const match = pathname.match(/^\/api\/licenses\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
 }
 
@@ -84,6 +91,38 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       if (groupId && req.method === 'DELETE') {
         const result = deleteGroupConfig(options, groupId);
         sendJson(res, 200, { ok: true, message: '本群专属配置已删除，该群恢复走全局配置。', ...result });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/licenses') {
+        sendJson(res, 200, { ok: true, licenses: listLicenses() });
+        return;
+      }
+
+      const licenseGroupId = parseLicensePath(url.pathname);
+      if (licenseGroupId && req.method === 'GET') {
+        sendJson(res, 200, { ok: true, license: getLicense(licenseGroupId) });
+        return;
+      }
+
+      if (licenseGroupId && req.method === 'POST') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, { ok: true, message: '授权已保存。', license: saveLicense(options, licenseGroupId, payload) });
+        return;
+      }
+
+      if (licenseGroupId && req.method === 'DELETE') {
+        sendJson(res, 200, { ok: true, message: '授权已取消。', license: deleteLicense(options, licenseGroupId) });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/backups') {
+        sendJson(res, 200, { ok: true, backups: listBackups(options) });
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/backups/snapshot') {
+        sendJson(res, 200, { ok: true, message: '快照已创建。', copied: createSnapshot(options) });
         return;
       }
 
