@@ -6,6 +6,8 @@ import type { SnowLumaAdminServerOptions } from './types';
 export type QaScope = 'global' | 'group';
 type QaEntryWithEnabled = QAEntry & { enabled?: boolean };
 
+const DISABLED_PREFIX = '__GG_QA_DISABLED__:';
+
 function cleanGroupId(groupId: string): string {
   const normalized = String(groupId || '').trim();
   if (!/^\d{4,20}$/.test(normalized)) throw new Error('群号格式不正确');
@@ -20,8 +22,22 @@ function normalizeMode(mode: any): QAEntry['mode'] {
   return mode === 'contains' || mode === 'regex' ? mode : 'exact';
 }
 
+function stripDisabledPrefix(keyword: any): string {
+  const text = String(keyword || '').trim();
+  return text.startsWith(DISABLED_PREFIX) ? text.slice(DISABLED_PREFIX.length) : text;
+}
+
+function withDisabledPrefix(keyword: string): string {
+  const clean = stripDisabledPrefix(keyword);
+  return `${DISABLED_PREFIX}${clean}`;
+}
+
+function isPrefixedDisabled(entry: any): boolean {
+  return String(entry?.keyword || '').startsWith(DISABLED_PREFIX);
+}
+
 function qaKey(entry: Pick<QAEntry, 'keyword' | 'mode'>): string {
-  return `${normalizeMode(entry.mode)}:${String(entry.keyword || '').trim()}`;
+  return `${normalizeMode(entry.mode)}:${stripDisabledPrefix(entry.keyword)}`;
 }
 
 function normalizeDisabledKeys(value: any): string[] {
@@ -29,11 +45,22 @@ function normalizeDisabledKeys(value: any): string[] {
 }
 
 function normalizeQaEntry(input: any): QaEntryWithEnabled {
-  const keyword = String(input?.keyword || '').trim();
+  const keyword = stripDisabledPrefix(input?.keyword);
   const reply = String(input?.reply || '').trim();
   if (!keyword) throw new Error('关键词不能为空');
   if (!reply) throw new Error('回复内容不能为空');
-  return { keyword, reply, mode: normalizeMode(input?.mode), enabled: input?.enabled !== false };
+  const enabled = input?.enabled !== false;
+  return { keyword: enabled ? keyword : withDisabledPrefix(keyword), reply, mode: normalizeMode(input?.mode), enabled };
+}
+
+function toDisplayEntry(entry: any, disabledSet: Set<string>): QaEntryWithEnabled {
+  const clean: QAEntry = {
+    keyword: stripDisabledPrefix(entry?.keyword),
+    reply: String(entry?.reply || ''),
+    mode: normalizeMode(entry?.mode)
+  };
+  const disabled = isPrefixedDisabled(entry) || entry?.enabled === false || disabledSet.has(qaKey(clean));
+  return { ...clean, enabled: !disabled };
 }
 
 function getGroupQaList(groupId: string): QaEntryWithEnabled[] {
@@ -41,7 +68,7 @@ function getGroupQaList(groupId: string): QaEntryWithEnabled[] {
   const group = configStateService.getGroupSettings(id) as any;
   const disabled = new Set(normalizeDisabledKeys(group?.qaDisabledKeys));
   const list = Array.isArray(group?.qaList) ? group.qaList : [];
-  return list.map((entry: QAEntry) => ({ ...entry, enabled: (entry as any).enabled !== false && !disabled.has(qaKey(entry)) }));
+  return list.map((entry: QAEntry) => toDisplayEntry(entry, disabled));
 }
 
 function ensureGroupConfig(groupId: string) {
@@ -60,7 +87,7 @@ function getQaListForScope(scope: QaScope, groupIdInput: any): QaEntryWithEnable
   if (scope === 'global') {
     const disabled = new Set(normalizeDisabledKeys(config.qaDisabledKeys));
     const list = Array.isArray(config.qaList) ? config.qaList : [];
-    return list.map((entry: QAEntry) => ({ ...entry, enabled: (entry as any).enabled !== false && !disabled.has(qaKey(entry)) }));
+    return list.map((entry: QAEntry) => toDisplayEntry(entry, disabled));
   }
   return getGroupQaList(cleanGroupId(groupIdInput));
 }
@@ -79,6 +106,11 @@ function setDisabledKey(scope: QaScope, groupIdInput: any, entry: QAEntry, enabl
   if (enabled) set.delete(qaKey(entry));
   else set.add(qaKey(entry));
   group.qaDisabledKeys = Array.from(set);
+}
+
+function storeEntryWithEnabled(entry: QaEntryWithEnabled, enabled: boolean): QaEntryWithEnabled {
+  const keyword = enabled ? stripDisabledPrefix(entry.keyword) : withDisabledPrefix(entry.keyword);
+  return { ...entry, keyword, enabled };
 }
 
 function filterQa(list: QaEntryWithEnabled[], keyword: string) {
@@ -112,16 +144,18 @@ export function listQaEntries(scopeInput: any, groupIdInput: any, keyword = '') 
 export function addQaEntry(options: SnowLumaAdminServerOptions, scopeInput: any, groupIdInput: any, input: any) {
   const scope = normalizeScope(scopeInput);
   const entry = normalizeQaEntry(input);
+  const enabled = entry.enabled !== false;
+  const stored = storeEntryWithEnabled(entry, enabled);
   const config = configStateService.getConfig() as any;
   if (scope === 'global') {
     if (!Array.isArray(config.qaList)) config.qaList = [];
-    config.qaList.push(entry);
-    setDisabledKey(scope, groupIdInput, entry, entry.enabled !== false);
+    config.qaList.push(stored);
+    setDisabledKey(scope, groupIdInput, stored, enabled);
   } else {
     const groupId = cleanGroupId(groupIdInput);
     const group = ensureGroupConfig(groupId);
-    group.qaList!.push(entry);
-    setDisabledKey(scope, groupId, entry, entry.enabled !== false);
+    group.qaList!.push(stored);
+    setDisabledKey(scope, groupId, stored, enabled);
   }
   configStateService.setConfig(config);
   saveConfigStrict(options.ctx);
@@ -133,19 +167,21 @@ export function updateQaEntry(options: SnowLumaAdminServerOptions, scopeInput: a
   const index = Number(indexInput);
   if (!Number.isInteger(index) || index < 0) throw new Error('问答序号不正确');
   const entry = normalizeQaEntry(input);
+  const enabled = entry.enabled !== false;
+  const stored = storeEntryWithEnabled(entry, enabled);
   const config = configStateService.getConfig() as any;
   if (scope === 'global') {
     if (!Array.isArray(config.qaList) || !config.qaList[index]) throw new Error('问答不存在');
     setDisabledKey(scope, groupIdInput, config.qaList[index], true);
-    config.qaList[index] = entry;
+    config.qaList[index] = stored;
   } else {
     const groupId = cleanGroupId(groupIdInput);
     const group = ensureGroupConfig(groupId);
     if (!group.qaList![index]) throw new Error('问答不存在');
     setDisabledKey(scope, groupId, group.qaList![index], true);
-    group.qaList![index] = entry;
+    group.qaList![index] = stored;
   }
-  setDisabledKey(scope, groupIdInput, entry, entry.enabled !== false);
+  setDisabledKey(scope, groupIdInput, stored, enabled);
   configStateService.setConfig(config);
   saveConfigStrict(options.ctx);
   return listQaEntries(scope, groupIdInput);
@@ -159,13 +195,13 @@ export function setQaEntryEnabled(options: SnowLumaAdminServerOptions, scopeInpu
   const enabled = enabledInput !== false;
   if (scope === 'global') {
     if (!Array.isArray(config.qaList) || !config.qaList[index]) throw new Error('问答不存在');
-    config.qaList[index].enabled = enabled;
+    config.qaList[index] = storeEntryWithEnabled(config.qaList[index], enabled);
     setDisabledKey(scope, groupIdInput, config.qaList[index], enabled);
   } else {
     const groupId = cleanGroupId(groupIdInput);
     const group = ensureGroupConfig(groupId);
     if (!group.qaList![index]) throw new Error('问答不存在');
-    group.qaList![index].enabled = enabled;
+    group.qaList![index] = storeEntryWithEnabled(group.qaList![index], enabled);
     setDisabledKey(scope, groupId, group.qaList![index], enabled);
   }
   configStateService.setConfig(config);
