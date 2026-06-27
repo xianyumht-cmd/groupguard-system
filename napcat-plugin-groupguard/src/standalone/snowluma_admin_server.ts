@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
 import path from 'path';
-import { URL } from 'url';
+import { URL } from 'node:url';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { normalizePluginConfig } from '../config';
 import { configStateService } from '../core/state-services/config_state_service';
@@ -94,6 +94,13 @@ function parseAuthToken(req: IncomingMessage, url: URL): string {
   return headerToken || queryToken;
 }
 
+function isTokenMatch(provided: string, expected: string): boolean {
+  const left = Buffer.from(provided || '');
+  const right = Buffer.from(expected || '');
+  if (!left.length || left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
 function send(res: ServerResponse, status: number, body: string, contentType = 'text/plain; charset=utf-8'): void {
   res.writeHead(status, {
     'content-type': contentType,
@@ -120,7 +127,14 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 function splitPath(key: string): string[] {
-  return String(key || '').split('.').map(item => item.trim()).filter(Boolean);
+  const text = String(key || '').trim();
+  if (text.startsWith('global.featureSwitches.query.')) {
+    return ['global', 'featureSwitches', `query.${text.slice('global.featureSwitches.query.'.length)}`];
+  }
+  if (text.startsWith('global.featureSwitches.builtin.')) {
+    return ['global', 'featureSwitches', `builtin.${text.slice('global.featureSwitches.builtin.'.length)}`];
+  }
+  return text.split('.').map(item => item.trim()).filter(Boolean);
 }
 
 function setByPath(target: JsonRecord, key: string, value: any): void {
@@ -133,16 +147,6 @@ function setByPath(target: JsonRecord, key: string, value: any): void {
     cur = cur[part];
   }
   cur[parts[parts.length - 1]] = value;
-}
-
-function getByPath(target: JsonRecord, key: string, fallback: any = ''): any {
-  const parts = splitPath(key);
-  let cur: any = target;
-  for (const part of parts) {
-    if (!cur || typeof cur !== 'object' || !(part in cur)) return fallback;
-    cur = cur[part];
-  }
-  return cur;
 }
 
 function parsePatchValue(value: any): any {
@@ -192,20 +196,6 @@ function getStatus(options: SnowLumaAdminServerOptions) {
   };
 }
 
-function renderInput(label: string, key: string, value: any, type = 'text'): string {
-  const safeValue = String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  return `<label><span>${label}</span><input data-config-key="${key}" type="${type}" value="${safeValue}"></label>`;
-}
-
-function renderSelect(label: string, key: string, value: any, options: string[]): string {
-  const items = options.map(option => `<option value="${option}" ${String(value) === option ? 'selected' : ''}>${option}</option>`).join('');
-  return `<label><span>${label}</span><select data-config-key="${key}">${items}</select></label>`;
-}
-
-function renderSwitch(label: string, key: string, value: any): string {
-  return `<label class="switch-row"><span>${label}</span><input data-config-key="${key}" type="checkbox" ${value ? 'checked' : ''}></label>`;
-}
-
 function renderHomePage(): string {
   return `<!doctype html>
 <html lang="zh-CN">
@@ -214,7 +204,7 @@ function renderHomePage(): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GroupGuard SnowLuma WebUI</title>
 <style>
-:root{color-scheme:dark light}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#101827;color:#e5e7eb}.wrap{max-width:1180px;margin:0 auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.card{background:#172033;border:1px solid #2f3d56;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 12px 28px rgba(0,0,0,.18)}h1{font-size:22px;margin:0}h2{font-size:17px;margin:0 0 12px}button{background:#2563eb;color:white;border:0;border-radius:10px;padding:9px 13px;cursor:pointer;font-weight:600}button.secondary{background:#334155}button.danger{background:#b91c1c}input,select,textarea{box-sizing:border-box;width:100%;border:1px solid #40506b;background:#0f172a;color:#e5e7eb;border-radius:10px;padding:9px;font-family:inherit}textarea{min-height:420px;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:13px;line-height:1.45}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}label{display:block;margin-bottom:10px}label span{display:block;font-size:13px;color:#9ca3af;margin-bottom:5px}.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#0f172a;border:1px solid #263349;border-radius:10px;padding:10px}.switch-row input{width:auto}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{background:#1f2937}.tab.active{background:#2563eb}.hidden{display:none}.status-grid{display:grid;grid-template-columns:190px 1fr;gap:8px 12px;font-size:13px}.k{color:#9ca3af}.v{word-break:break-all}pre{white-space:pre-wrap;word-break:break-all;background:#0f172a;border:1px solid #263349;border-radius:10px;padding:12px;max-height:420px;overflow:auto}.hint{color:#93c5fd;font-size:13px}.error{color:#fca5a5}.ok{color:#86efac}.footer{font-size:12px;color:#94a3b8;margin-top:18px}
+:root{color-scheme:dark light}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#101827;color:#e5e7eb}.wrap{max-width:1180px;margin:0 auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.card{background:#172033;border:1px solid #2f3d56;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 12px 28px rgba(0,0,0,.18)}h1{font-size:22px;margin:0}h2{font-size:17px;margin:0 0 12px}button{background:#2563eb;color:white;border:0;border-radius:10px;padding:9px 13px;cursor:pointer;font-weight:600}button.secondary{background:#334155}input,select,textarea{box-sizing:border-box;width:100%;border:1px solid #40506b;background:#0f172a;color:#e5e7eb;border-radius:10px;padding:9px;font-family:inherit}textarea{min-height:420px;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:13px;line-height:1.45}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}label{display:block;margin-bottom:10px}label span{display:block;font-size:13px;color:#9ca3af;margin-bottom:5px}.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#0f172a;border:1px solid #263349;border-radius:10px;padding:10px}.switch-row input{width:auto}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{background:#1f2937}.tab.active{background:#2563eb}.hidden{display:none}.status-grid{display:grid;grid-template-columns:190px 1fr;gap:8px 12px;font-size:13px}.k{color:#9ca3af}.v{word-break:break-all}.hint{color:#93c5fd;font-size:13px}.error{color:#fca5a5}.ok{color:#86efac}.footer{font-size:12px;color:#94a3b8;margin-top:18px}
 </style>
 </head>
 <body>
@@ -242,62 +232,63 @@ let token = new URL(location.href).searchParams.get('token') || localStorage.get
 if (!token) token = prompt('请输入 GROUPGUARD_WEBUI_TOKEN / 启动日志里的临时 token') || '';
 localStorage.setItem('GROUPGUARD_WEBUI_TOKEN', token);
 let config = {};
-const api = (path, options={}) => fetch(path, { ...options, headers: { 'content-type': 'application/json', 'x-groupguard-token': token, ...(options.headers||{}) }}).then(async r => { const text = await r.text(); let data; try { data = JSON.parse(text); } catch { data = { ok:false, error:text }; } if(!r.ok) throw new Error(data.error || text || r.statusText); return data; });
-const show = (msg, ok=true) => { const n=document.getElementById('notice'); n.className='card ' + (ok?'ok':'error'); n.textContent=msg; };
-const get = (obj, path, fallback='') => path.split('.').reduce((a,k)=>a&&a[k]!==undefined?a[k]:undefined,obj) ?? fallback;
-document.querySelectorAll('.tab').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('section[id^="tab-"]').forEach(s=>s.classList.add('hidden'));document.getElementById('tab-'+btn.dataset.tab).classList.remove('hidden');});
-function fieldValue(input){ if(input.type==='checkbox') return input.checked; const v=input.value.trim(); if(v==='true')return true;if(v==='false')return false;if(v==='null')return null;if(/^-?\\d+(\\.\\d+)?$/.test(v))return Number(v); if((v.startsWith('[')&&v.endsWith(']'))||(v.startsWith('{')&&v.endsWith('}'))) return JSON.parse(v); return input.value; }
-function collectPatch(formId){ const patch={}; document.querySelectorAll('#'+formId+' [data-config-key]').forEach(i=>patch[i.dataset.configKey]=fieldValue(i)); return patch; }
-function renderStatus(status){ const box=document.getElementById('statusBox'); box.innerHTML=''; Object.entries(status).forEach(([k,v])=>{ const a=document.createElement('div'); a.className='k'; a.textContent=k; const b=document.createElement('div'); b.className='v'; b.textContent=typeof v==='object'?JSON.stringify(v):String(v); box.append(a,b); }); }
+function api(path, options){ options = options || {}; return fetch(path, { method: options.method || 'GET', body: options.body, headers: Object.assign({ 'content-type': 'application/json', 'x-groupguard-token': token }, options.headers || {}) }).then(async function(r){ var text = await r.text(); var data; try { data = JSON.parse(text); } catch(e) { data = { ok:false, error:text }; } if(!r.ok) throw new Error(data.error || text || r.statusText); return data; }); }
+function show(msg, ok){ var n=document.getElementById('notice'); n.className='card ' + (ok === false ? 'error' : 'ok'); n.textContent=msg; }
+function get(obj, p, fallback){ var cur=obj; var parts=p.split('.'); for(var i=0;i<parts.length;i++){ if(!cur || cur[parts[i]]===undefined) return fallback; cur=cur[parts[i]]; } return cur; }
+function htmlEscape(v){ return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function inputHtml(label,key,value,type){ return '<label><span>'+label+'</span><input data-config-key="'+key+'" type="'+(type||'text')+'" value="'+htmlEscape(value)+'"></label>'; }
+function selectHtml(label,key,value,opts){ var s='<label><span>'+label+'</span><select data-config-key="'+key+'">'; for(var i=0;i<opts.length;i++){ var o=opts[i]; s+='<option value="'+o+'" '+(String(value)===o?'selected':'')+'>'+o+'</option>'; } return s+'</select></label>'; }
+function switchHtml(label,key,value){ return '<label class="switch-row"><span>'+label+'</span><input data-config-key="'+key+'" type="checkbox" '+(value?'checked':'')+'></label>'; }
+document.querySelectorAll('.tab').forEach(function(btn){ btn.onclick=function(){ document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active')}); btn.classList.add('active'); document.querySelectorAll('section[id^="tab-"]').forEach(function(s){s.classList.add('hidden')}); document.getElementById('tab-'+btn.dataset.tab).classList.remove('hidden'); }; });
+function fieldValue(input){ if(input.type==='checkbox') return input.checked; var v=input.value.trim(); if(v==='true')return true;if(v==='false')return false;if(v==='null')return null;if(/^-?\\d+(\\.\\d+)?$/.test(v))return Number(v); if((v.startsWith('[')&&v.endsWith(']'))||(v.startsWith('{')&&v.endsWith('}'))) return JSON.parse(v); return input.value; }
+function collectPatch(formId){ var patch={}; document.querySelectorAll('#'+formId+' [data-config-key]').forEach(function(i){ patch[i.dataset.configKey]=fieldValue(i); }); return patch; }
+function renderStatus(status){ var box=document.getElementById('statusBox'); box.innerHTML=''; Object.entries(status).forEach(function(entry){ var a=document.createElement('div'); a.className='k'; a.textContent=entry[0]; var b=document.createElement('div'); b.className='v'; b.textContent=typeof entry[1]==='object'?JSON.stringify(entry[1]):String(entry[1]); box.append(a,b); }); }
 function renderForms(){
-  document.getElementById('switchForm').innerHTML = `
-    ${renderSwitchHtml('总开关 masterEnabled','global.masterEnabled',get(config,'global.masterEnabled',true))}
-    ${renderSelectHtml('静默模式 silentMode','global.silentMode',get(config,'global.silentMode','off'),['off','noPassiveReply','noBotSend'])}
-    ${renderSwitchHtml('主动发送 activeReplyEnabled','global.activeReplyEnabled',get(config,'global.activeReplyEnabled',true))}
-    ${renderSwitchHtml('查询总开关 queryEnabled','global.queryEnabled',get(config,'global.queryEnabled',true))}
-    ${renderSwitchHtml('问答总开关 qaEnabled','global.qaEnabled',get(config,'global.qaEnabled',true))}
-    ${renderSwitchHtml('动态命令 dynamicCommandEnabled','global.dynamicCommandEnabled',get(config,'global.dynamicCommandEnabled',true))}
-    ${renderSwitchHtml('旧问答禁用 disableQA','global.disableQA',get(config,'global.disableQA',false))}
-    ${renderSwitchHtml('旧LOL查询禁用 disableLolQuery','global.disableLolQuery',get(config,'global.disableLolQuery',false))}
-    ${renderSwitchHtml('查封号 query.lol_ban','global.featureSwitches.query.lol_ban',get(config,'global.featureSwitches.query.lol_ban',true))}
-    ${renderSwitchHtml('查战绩 query.lol_battle','global.featureSwitches.query.lol_battle',get(config,'global.featureSwitches.query.lol_battle',true))}
-    ${renderSwitchHtml('查隐藏 query.lol_hidden','global.featureSwitches.query.lol_hidden',get(config,'global.featureSwitches.query.lol_hidden',true))}
-    ${renderSwitchHtml('查合集 query.lol_shard','global.featureSwitches.query.lol_shard',get(config,'global.featureSwitches.query.lol_shard',true))}`;
-  document.getElementById('queryForm').innerHTML = `
-    ${renderInputHtml('LOL API Base','lolApiBaseUrl',get(config,'lolApiBaseUrl',''))}
-    ${renderInputHtml('查封号主接口','lolBanPrimaryUrl',get(config,'lolBanPrimaryUrl',''))}
-    ${renderInputHtml('战绩查询接口','lolQueryUrl',get(config,'lolQueryUrl',''))}
-    ${renderInputHtml('战绩授权 key','lolAuthKey',get(config,'lolAuthKey',''))}
-    ${renderSelectHtml('战绩输出格式','global.lolQueryOutputFormat',get(config,'global.lolQueryOutputFormat','forward'),['forward','text','image','card'])}
-    ${renderInputHtml('查询超时秒','global.lolQueryRequestTimeoutSeconds',get(config,'global.lolQueryRequestTimeoutSeconds',20),'number')}
-    ${renderInputHtml('全局查询间隔秒','global.lolQueryGlobalMinIntervalSeconds',get(config,'global.lolQueryGlobalMinIntervalSeconds',1),'number')}
-    ${renderInputHtml('群查询间隔秒','global.lolQueryGroupMinIntervalSeconds',get(config,'global.lolQueryGroupMinIntervalSeconds',2),'number')}
-    ${renderSelectHtml('合集输出格式','shardQueryOutputFormat',get(config,'shardQueryOutputFormat','image'),['image','text','forward','card'])}
-    ${renderInputHtml('合集数据 URL','shardDataUrl',get(config,'shardDataUrl',''))}
-    ${renderInputHtml('英雄列表 URL','shardHeroListUrl',get(config,'shardHeroListUrl',''))}`;
-  document.getElementById('sendForm').innerHTML = `
-    ${renderSwitchHtml('发送包装 botSendWrapperEnabled','global.botSendWrapperEnabled',get(config,'global.botSendWrapperEnabled',false))}
-    ${renderSelectHtml('包装模式','global.botSendWrapperMode',get(config,'global.botSendWrapperMode','normal'),['normal','forward'])}
-    ${renderSwitchHtml('问答包装','global.botSendWrapperQaEnabled',get(config,'global.botSendWrapperQaEnabled',false))}
-    ${renderSwitchHtml('查询包装','global.botSendWrapperQueryEnabled',get(config,'global.botSendWrapperQueryEnabled',false))}
-    ${renderSwitchHtml('全局包装','global.botSendWrapperAllEnabled',get(config,'global.botSendWrapperAllEnabled',false))}
-    ${renderSelectHtml('随机后缀模式','global.botAntiRiskSuffixMode',get(config,'global.botAntiRiskSuffixMode','mixed'),['mixed','punctuation','none','global'])}
-    ${renderInputHtml('最小随机延迟 ms','global.randomDelayMin',get(config,'global.randomDelayMin',500),'number')}
-    ${renderInputHtml('最大随机延迟 ms','global.randomDelayMax',get(config,'global.randomDelayMax',1500),'number')}
-    ${renderInputHtml('全局每分钟上限','global.globalMaxPerMinute',get(config,'global.globalMaxPerMinute',60),'number')}
-    ${renderInputHtml('每分钟撤回上限','global.maxRecallPerMinute',get(config,'global.maxRecallPerMinute',60),'number')}
-    ${renderInputHtml('群熔断阈值','global.groupFuseThreshold',get(config,'global.groupFuseThreshold',45),'number')}
-    ${renderInputHtml('群熔断冷却秒','global.groupFuseCooldownSeconds',get(config,'global.groupFuseCooldownSeconds',90),'number')}`;
+  document.getElementById('switchForm').innerHTML = ''+
+    switchHtml('总开关 masterEnabled','global.masterEnabled',get(config,'global.masterEnabled',true))+
+    selectHtml('静默模式 silentMode','global.silentMode',get(config,'global.silentMode','off'),['off','noPassiveReply','noBotSend'])+
+    switchHtml('主动发送 activeReplyEnabled','global.activeReplyEnabled',get(config,'global.activeReplyEnabled',true))+
+    switchHtml('查询总开关 queryEnabled','global.queryEnabled',get(config,'global.queryEnabled',true))+
+    switchHtml('问答总开关 qaEnabled','global.qaEnabled',get(config,'global.qaEnabled',true))+
+    switchHtml('动态命令 dynamicCommandEnabled','global.dynamicCommandEnabled',get(config,'global.dynamicCommandEnabled',true))+
+    switchHtml('旧问答禁用 disableQA','global.disableQA',get(config,'global.disableQA',false))+
+    switchHtml('旧LOL查询禁用 disableLolQuery','global.disableLolQuery',get(config,'global.disableLolQuery',false))+
+    switchHtml('查封号 query.lol_ban','global.featureSwitches.query.lol_ban',get(config,'global.featureSwitches.query.lol_ban',true))+
+    switchHtml('查战绩 query.lol_battle','global.featureSwitches.query.lol_battle',get(config,'global.featureSwitches.query.lol_battle',true))+
+    switchHtml('查隐藏 query.lol_hidden','global.featureSwitches.query.lol_hidden',get(config,'global.featureSwitches.query.lol_hidden',true))+
+    switchHtml('查合集 query.lol_shard','global.featureSwitches.query.lol_shard',get(config,'global.featureSwitches.query.lol_shard',true));
+  document.getElementById('queryForm').innerHTML = ''+
+    inputHtml('LOL API Base','lolApiBaseUrl',get(config,'lolApiBaseUrl',''))+
+    inputHtml('查封号主接口','lolBanPrimaryUrl',get(config,'lolBanPrimaryUrl',''))+
+    inputHtml('战绩查询接口','lolQueryUrl',get(config,'lolQueryUrl',''))+
+    inputHtml('战绩授权 key','lolAuthKey',get(config,'lolAuthKey',''))+
+    selectHtml('战绩输出格式','global.lolQueryOutputFormat',get(config,'global.lolQueryOutputFormat','forward'),['forward','text','image','card'])+
+    inputHtml('查询超时秒','global.lolQueryRequestTimeoutSeconds',get(config,'global.lolQueryRequestTimeoutSeconds',20),'number')+
+    inputHtml('全局查询间隔秒','global.lolQueryGlobalMinIntervalSeconds',get(config,'global.lolQueryGlobalMinIntervalSeconds',1),'number')+
+    inputHtml('群查询间隔秒','global.lolQueryGroupMinIntervalSeconds',get(config,'global.lolQueryGroupMinIntervalSeconds',2),'number')+
+    selectHtml('合集输出格式','shardQueryOutputFormat',get(config,'shardQueryOutputFormat','image'),['image','text','forward','card'])+
+    inputHtml('合集数据 URL','shardDataUrl',get(config,'shardDataUrl',''))+
+    inputHtml('英雄列表 URL','shardHeroListUrl',get(config,'shardHeroListUrl',''));
+  document.getElementById('sendForm').innerHTML = ''+
+    switchHtml('发送包装 botSendWrapperEnabled','global.botSendWrapperEnabled',get(config,'global.botSendWrapperEnabled',false))+
+    selectHtml('包装模式','global.botSendWrapperMode',get(config,'global.botSendWrapperMode','normal'),['normal','forward'])+
+    switchHtml('问答包装','global.botSendWrapperQaEnabled',get(config,'global.botSendWrapperQaEnabled',false))+
+    switchHtml('查询包装','global.botSendWrapperQueryEnabled',get(config,'global.botSendWrapperQueryEnabled',false))+
+    switchHtml('全局包装','global.botSendWrapperAllEnabled',get(config,'global.botSendWrapperAllEnabled',false))+
+    selectHtml('随机后缀模式','global.botAntiRiskSuffixMode',get(config,'global.botAntiRiskSuffixMode','mixed'),['mixed','punctuation','none','global'])+
+    inputHtml('最小随机延迟 ms','global.randomDelayMin',get(config,'global.randomDelayMin',500),'number')+
+    inputHtml('最大随机延迟 ms','global.randomDelayMax',get(config,'global.randomDelayMax',1500),'number')+
+    inputHtml('全局每分钟上限','global.globalMaxPerMinute',get(config,'global.globalMaxPerMinute',60),'number')+
+    inputHtml('每分钟撤回上限','global.maxRecallPerMinute',get(config,'global.maxRecallPerMinute',60),'number')+
+    inputHtml('群熔断阈值','global.groupFuseThreshold',get(config,'global.groupFuseThreshold',45),'number')+
+    inputHtml('群熔断冷却秒','global.groupFuseCooldownSeconds',get(config,'global.groupFuseCooldownSeconds',90),'number');
 }
-function renderInputHtml(label,key,value,type='text'){return `<label><span>${label}</span><input data-config-key="${key}" type="${type}" value="${String(value??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"></label>`;}
-function renderSelectHtml(label,key,value,opts){return `<label><span>${label}</span><select data-config-key="${key}">${opts.map(o=>`<option value="${o}" ${String(value)===o?'selected':''}>${o}</option>`).join('')}</select></label>`;}
-function renderSwitchHtml(label,key,value){return `<label class="switch-row"><span>${label}</span><input data-config-key="${key}" type="checkbox" ${value?'checked':''}></label>`;}
 async function loadStatus(){ renderStatus(await api('/api/status')); }
-async function loadConfig(){ const data=await api('/api/config'); config=data.config; document.getElementById('configEditor').value=JSON.stringify(config,null,2); renderForms(); }
-async function loadCommands(){ const data=await api('/api/dynamic-commands'); document.getElementById('commandsEditor').value=JSON.stringify(data.config,null,2); }
-async function savePatch(formId){ try{ const res=await api('/api/config/patch',{method:'POST',body:JSON.stringify({patch:collectPatch(formId)})}); show(res.message||'保存成功'); await loadConfig(); await loadStatus(); }catch(e){show(e.message,false);} }
-async function saveRawConfig(){ try{ const parsed=JSON.parse(document.getElementById('configEditor').value); const res=await api('/api/config',{method:'POST',body:JSON.stringify({config:parsed})}); show(res.message||'保存成功'); await loadConfig(); await loadStatus(); }catch(e){show(e.message,false);} }
-async function saveCommands(){ try{ const parsed=JSON.parse(document.getElementById('commandsEditor').value); const res=await api('/api/dynamic-commands',{method:'POST',body:JSON.stringify({config:parsed})}); show(res.message||'保存成功'); await loadCommands(); await loadStatus(); }catch(e){show(e.message,false);} }
+async function loadConfig(){ var data=await api('/api/config'); config=data.config; document.getElementById('configEditor').value=JSON.stringify(config,null,2); renderForms(); }
+async function loadCommands(){ var data=await api('/api/dynamic-commands'); document.getElementById('commandsEditor').value=JSON.stringify(data.config,null,2); }
+async function savePatch(formId){ try{ var res=await api('/api/config/patch',{method:'POST',body:JSON.stringify({patch:collectPatch(formId)})}); show(res.message||'保存成功'); await loadConfig(); await loadStatus(); }catch(e){show(e.message,false);} }
+async function saveRawConfig(){ try{ var parsed=JSON.parse(document.getElementById('configEditor').value); var res=await api('/api/config',{method:'POST',body:JSON.stringify({config:parsed})}); show(res.message||'保存成功'); await loadConfig(); await loadStatus(); }catch(e){show(e.message,false);} }
+async function saveCommands(){ try{ var parsed=JSON.parse(document.getElementById('commandsEditor').value); var res=await api('/api/dynamic-commands',{method:'POST',body:JSON.stringify({config:parsed})}); show(res.message||'保存成功'); await loadCommands(); await loadStatus(); }catch(e){show(e.message,false);} }
 async function reloadAll(){ try{ await loadStatus(); await loadConfig(); await loadCommands(); show('已刷新'); }catch(e){show(e.message,false);} }
 reloadAll();
 </script>
@@ -308,13 +299,14 @@ reloadAll();
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
   const logger = options.logger || console;
   const host = options.host || process.env.GROUPGUARD_WEBUI_HOST || '127.0.0.1';
-  const port = options.port || Number(process.env.GROUPGUARD_WEBUI_PORT || 6108);
+  const parsedPort = options.port || Number(process.env.GROUPGUARD_WEBUI_PORT || 6108);
+  const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 6108;
   const token = options.token || process.env.GROUPGUARD_WEBUI_TOKEN || crypto.randomBytes(18).toString('hex');
   const tokenFromEnv = Boolean(options.token || process.env.GROUPGUARD_WEBUI_TOKEN);
 
   const requireAuth = (req: IncomingMessage, res: ServerResponse, url: URL): boolean => {
     const provided = parseAuthToken(req, url);
-    if (provided && crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(token))) return true;
+    if (isTokenMatch(provided, token)) return true;
     sendJson(res, 401, { ok: false, error: 'unauthorized: missing or invalid token' });
     return false;
   };
