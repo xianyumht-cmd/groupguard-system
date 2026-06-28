@@ -1,4 +1,5 @@
 import { communicationStateService } from '../core/state-services/communication_state_service';
+import { shouldBlockByBotRole } from '../core/bot_role';
 import { configStateService } from '../core/state-services/config_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { safeBan, safeKick, safeRecall, type GuardResult } from './action_guard_service';
@@ -448,7 +449,17 @@ function insertTaskSorted(task: QueueTask): void {
   queue.splice(lo, 0, task);
 }
 
-function enqueueTask(task: QueueTask): 'ok' | 'queue_overflow' | 'backpressure_reject' | 'skip_duplicate' {
+function enqueueTask(task: QueueTask): 'ok' | 'queue_overflow' | 'backpressure_reject' | 'skip_duplicate' | 'bot_role_blocked' {
+  const intent = task.type === 'self_recall' ? 'self_recall_like' : 'moderation_like';
+  const roleBlock = shouldBlockByBotRole({ source: 'action_queue', rawMessage: taskSubject(task), intent, actionType: task.type });
+  if (roleBlock.blocked) {
+    stats.queueDropped += 1;
+    recordMinuteMetric('dropped');
+    loggingStateService.info(roleBlock.logLine || `bot_role_blocked role=${roleBlock.role} intent=${intent} rawMessage=${taskSubject(task)} source=action_queue`);
+    appendQueueLog(`${task.type} ${taskSubject(task)} dropped_bot_role`);
+    recordActionQueueEvent(task, 'dropped', { code: 'bot_role_blocked', ok: false });
+    return 'bot_role_blocked';
+  }
   if (isBackpressureActive()) {
     stats.queueDropped += 1;
     recordMinuteMetric('dropped');

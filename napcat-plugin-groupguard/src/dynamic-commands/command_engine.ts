@@ -1,6 +1,7 @@
 import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { loggingStateService } from '../core/state-services/logging_state_service';
+import { shouldBlockByBotRole } from '../core/bot_role';
 import type { CommandContext } from '../commands/dispatcher';
 import {
   runAfterExecuteHooks,
@@ -251,6 +252,18 @@ export async function executeDynamicCommand(
     };
     try {
       const input = buildNormalizedInput(matched, event, commandContext);
+      const roleBlock = shouldBlockByBotRole({
+        source: matched.command.id.startsWith('legacy.') ? 'legacy' : 'dynamic_command',
+        rawMessage,
+        featureType: matched.command.featureType || 'dynamic',
+        featureKey: matched.command.featureKey || `dynamic.${matched.command.id}`,
+        commandId: matched.command.id,
+        legacyDomain: matched.command.id.startsWith('legacy.') ? matched.command.id.split('.')[1] : undefined
+      });
+      if (roleBlock.blocked) {
+        loggingStateService.info(roleBlock.logLine || `bot_role_blocked role=${roleBlock.role} intent=${roleBlock.intent} rawMessage=${rawMessage} source=dynamic_command`);
+        return true;
+      }
       await runBeforeExecuteHooks(matched, hookContext);
       const executionStartedAt = Date.now();
       const { primaryResult, finalResult } = await executeResolvedPlugin(matched, input, {
@@ -291,13 +304,16 @@ export async function executeDynamicCommand(
         durationMs: Date.now() - executionStartedAt
       });
 
-      if (!primaryResult.ok) {
+      if (!primaryResult.ok && primaryResult.errorType !== 'bot_role_blocked') {
         await runOnErrorHooks(matched, primaryResult.errorType, primaryResult.message, hookContext);
       }
 
       await runAfterExecuteHooks(matched, toLegacyExecutionResult(finalResult), hookContext);
 
       if (!finalResult.ok) {
+        if (finalResult.errorType === 'bot_role_blocked') {
+          return true;
+        }
         if (
           finalResult.errorType === 'plugin_disabled' ||
           finalResult.errorType === 'permission_denied' ||

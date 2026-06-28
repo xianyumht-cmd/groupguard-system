@@ -1,8 +1,10 @@
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import { authManager } from '../auth';
+import { isQaOnlyBotRole, isQueryOnlyBotRole, shouldBlockByBotRole } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { configStateService } from '../core/state-services/config_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 import { runtimeControlService } from '../core/state-services/runtime_control_service';
 import {
   handleCommand, handleAntiRecall, cacheMessage, handleEmojiReact,
@@ -35,6 +37,11 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
     }
 
     if (userId === selfId) {
+      if (isQueryOnlyBotRole()) {
+        const block = shouldBlockByBotRole({ source: 'runtime_message_pipeline', rawMessage: raw, intent: 'self_recall_like', actionType: 'self_recall' });
+        if (block.blocked) loggingStateService.info(block.logLine || `bot_role_blocked role=query intent=self_recall_like rawMessage=${raw} source=runtime_message_pipeline`);
+        return;
+      }
       runtimeControlService.scheduleSelfRecall(groupId, messageId, 'message_event');
       return;
     }
@@ -42,6 +49,25 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
     const isWhite = authStateService.isWhitelisted(userId);
     const settings = configStateService.resolveGroupSettings(groupId);
     const precheck = settings.blacklistCheckBeforeCommand !== false;
+
+    if (isQueryOnlyBotRole()) {
+      const handled = await handleCommand(event, ctx);
+      if (!handled) {
+        await runWithForcedResponseScene('qa_reply', () => handleQA(groupId, userId, raw));
+      }
+      return;
+    }
+
+    if (isQaOnlyBotRole()) {
+      const handled = await handleCommand(event, ctx);
+      if (handled) return;
+      const qaHandled = await runWithForcedResponseScene('qa_reply', () => handleQA(groupId, userId, raw));
+      if (qaHandled) {
+        await recordActivity(groupId, userId);
+        cacheMessage(messageId, userId, groupId, raw, messageSegments);
+      }
+      return;
+    }
 
     if (!isWhite && precheck && !authStateService.isOwner(userId)) {
       const blacklisted = await handleBlacklist(groupId, userId, messageId);

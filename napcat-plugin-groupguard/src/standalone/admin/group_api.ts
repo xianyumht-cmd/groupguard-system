@@ -4,10 +4,31 @@ import type { GroupGuardSettings } from '../../types';
 import { applyPatch } from './object_patch';
 import type { JsonRecord, SnowLumaAdminServerOptions } from './types';
 
+const QUERY_GROUP_PATCH_KEYS = new Set([
+  'queryEnabled',
+  'disableLolQuery',
+  'lolQueryOutputFormat',
+  'shardQueryOutputFormat',
+  'lolQueryRequestTimeoutSeconds',
+  'lolQueryGroupMinIntervalSeconds',
+  'lolQueryGroupRateLimitPerMinute',
+  'lolQueryDailyLimit'
+]);
+
 function cleanGroupId(groupId: string): string {
   const normalized = String(groupId || '').trim();
   if (!/^\d{4,20}$/.test(normalized)) throw new Error('群号格式不正确');
   return normalized;
+}
+
+function hasQueryGroupPatch(patch: JsonRecord): boolean {
+  return Object.keys(patch || {}).some(key => (
+    QUERY_GROUP_PATCH_KEYS.has(key)
+    || key.startsWith('featureSwitches.query.')
+    || key.startsWith('lolQueryCommandSwitch.')
+    || (key === 'featureSwitches' && Object.keys(patch.featureSwitches || {}).some(item => item.startsWith('query.')))
+    || (key === 'lolQueryCommandSwitch' && patch.lolQueryCommandSwitch && typeof patch.lolQueryCommandSwitch === 'object')
+  ));
 }
 
 export function listGroups() {
@@ -50,7 +71,9 @@ export function saveGroupConfig(options: SnowLumaAdminServerOptions, groupId: st
 export function patchGroupConfig(options: SnowLumaAdminServerOptions, groupId: string, patch: JsonRecord): ReturnType<typeof getGroupConfig> {
   const id = cleanGroupId(groupId);
   const current = configStateService.getGroupSettings(id) || {} as JsonRecord;
-  const next = applyPatch(current as JsonRecord, patch || {});
+  const normalizedPatch = patch || {};
+  if (hasQueryGroupPatch(normalizedPatch)) normalizedPatch.useGlobal = false;
+  const next = applyPatch(current as JsonRecord, normalizedPatch);
   return saveGroupConfig(options, id, next);
 }
 

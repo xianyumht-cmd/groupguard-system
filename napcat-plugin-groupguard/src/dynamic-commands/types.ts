@@ -16,7 +16,8 @@ export type DynamicCommandErrorType =
   | 'circuit_open'
   | 'plugin_disabled'
   | 'permission_denied'
-  | 'quota_exceeded';
+  | 'quota_exceeded'
+  | 'bot_role_blocked';
 
 export interface DynamicCommandTriggerDefinition {
   type: DynamicCommandTriggerType;

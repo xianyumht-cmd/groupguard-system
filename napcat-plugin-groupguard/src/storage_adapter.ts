@@ -534,6 +534,37 @@ export class StorageAdapter {
     return result;
   }
 
+  listGroupQaSummaries(): Array<{ groupId: string; configured: boolean; qaCount: number; config: Record<string, any>; }> {
+    const db = this.assertReady();
+    const configRows = db.prepare('SELECT group_id, config_json FROM group_config').all();
+    const qaRows = db.prepare('SELECT group_id, COUNT(1) AS c FROM group_qa GROUP BY group_id').all();
+    const map = new Map<string, { groupId: string; configured: boolean; qaCount: number; config: Record<string, any>; }>();
+    for (const row of configRows) {
+      const groupId = String(row.group_id || '');
+      if (!groupId) continue;
+      let parsed: Record<string, any> = {};
+      try {
+        parsed = JSON.parse(String(row.config_json || '{}'));
+      } catch {
+        parsed = {};
+      }
+      map.set(groupId, {
+        groupId,
+        configured: true,
+        qaCount: 0,
+        config: parsed
+      });
+    }
+    for (const row of qaRows) {
+      const groupId = String(row.group_id || '');
+      if (!groupId) continue;
+      const current = map.get(groupId) || { groupId, configured: false, qaCount: 0, config: {} };
+      current.qaCount = toNumber(row.c, 0);
+      map.set(groupId, current);
+    }
+    return Array.from(map.values());
+  }
+
   migrateFromJson(configDir: string, groupsFromConfig: Record<string, GroupGuardSettings>): void {
     if (this.isMigrated()) return;
     const runChunk = (fn: () => void) => this.runInTransaction(fn);

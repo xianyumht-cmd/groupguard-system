@@ -1,13 +1,25 @@
 import { authManager } from '../auth';
 import { isAdminOrOwner, saveConfig, sendGroupScene } from '../commands/common';
+import { classifyMessageIntent, isQueryOnlyBotRole, isQaOnlyBotRole, shouldBlockByBotRole } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { configStateService } from '../core/state-services/config_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 import type { CommandExecutionContext } from './command_service_types';
 
 export async function executeQaCommand(input: CommandExecutionContext): Promise<boolean> {
   const { event, text, userId, groupId, ctx } = input;
   if (event.message_type !== 'group') return false;
   if (!authManager.getGroupLicense(groupId)) return false;
+  if (isQueryOnlyBotRole()) {
+    const block = shouldBlockByBotRole({ source: 'qa_service', rawMessage: text, intent: 'qa_like', featureType: 'qa' });
+    if (block.blocked) loggingStateService.info(block.logLine || `bot_role_blocked role=query intent=qa_like rawMessage=${text} source=qa_service`);
+    return true;
+  }
+  if (isQaOnlyBotRole() && classifyMessageIntent(text) === 'moderation_like') {
+    const block = shouldBlockByBotRole({ source: 'qa_service', rawMessage: text, intent: 'moderation_like', featureType: 'moderation' });
+    if (block.blocked) loggingStateService.info(block.logLine || `bot_role_blocked role=qa intent=moderation_like rawMessage=${text} source=qa_service`);
+    return true;
+  }
 
   if (text.startsWith('添加违禁词') || text.startsWith('添加全局违禁词') || text.startsWith('删除违禁词') || text.startsWith('删除全局违禁词') || text.startsWith('设置违禁词惩罚 ') || text.startsWith('设置违禁词禁言 ') || text === '违禁词列表') {
     if (text === '违禁词列表') {

@@ -30,6 +30,8 @@ import {
   SYSTEM_PREFIXES,
   handleSystemCommand
 } from '../commands/modules/system';
+import { shouldBlockByBotRole } from '../core/bot_role';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
 import { captureCommandResponseDeliveries } from './response_capture_runtime';
@@ -49,6 +51,10 @@ interface LegacyModuleDescriptor {
 }
 
 function toFeatureType(domain: LegacyModuleDescriptor['domain']) {
+  if (domain === 'interaction') return 'query';
+  if (domain === 'qa') return 'qa';
+  if (domain === 'moderation') return 'moderation';
+  if (domain === 'risk') return 'risk';
   return 'system';
 }
 
@@ -184,6 +190,22 @@ function createLegacyPlugin(descriptor: LegacyModuleDescriptor, triggerType: 'ex
     defaultConfig: {},
     validate: async () => null,
     execute: async (_input, executionContext) => {
+      const roleBlock = shouldBlockByBotRole({
+        source: `legacy.${descriptor.domain}`,
+        rawMessage: executionContext.event.raw_message || '',
+        featureType: toFeatureType(descriptor.domain),
+        featureKey: `builtin.${descriptor.domain}`,
+        commandId,
+        legacyDomain: descriptor.domain
+      });
+      if (roleBlock.blocked) {
+        loggingStateService.info(roleBlock.logLine || `bot_role_blocked role=${roleBlock.role} intent=${roleBlock.intent} rawMessage=${executionContext.event.raw_message || ''} source=legacy.${descriptor.domain}`);
+        return {
+          ok: false,
+          errorType: 'bot_role_blocked',
+          message: roleBlock.reason || 'bot_role_blocked'
+        };
+      }
       const { result, deliveries } = await captureCommandResponseDeliveries(() => descriptor.handler(executionContext.event, executionContext.pluginContext));
       if (!result) {
         return {

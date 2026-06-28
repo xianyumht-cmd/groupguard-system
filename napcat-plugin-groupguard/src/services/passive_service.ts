@@ -1,4 +1,5 @@
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import { isQueryOnlyBotRole, shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { cacheStateService } from '../core/state-services/cache_state_service';
 import { communicationStateService } from '../core/state-services/communication_state_service';
@@ -23,6 +24,13 @@ let activityFlushTimerReady = false;
 let activityFlushTimer: NodeJS.Timeout | null = null;
 const MAX_ACTIVITY_MEM = 2000;
 const ACTIVITY_TTL_MS = 24 * 60 * 60 * 1000;
+
+function blockPassiveByRole(source: string, rawMessage: string, intent: BotRoleIntent): boolean {
+  const block = shouldBlockByBotRole({ source, rawMessage, intent, featureType: intent === 'qa_like' ? 'qa' : 'passive' });
+  if (!block.blocked) return false;
+  loggingStateService.info(block.logLine || `bot_role_blocked role=${block.role} intent=${intent} rawMessage=${rawMessage} source=${source}`);
+  return true;
+}
 
 function ensureAntiRecallDigestTimer(): void {
   if (antiRecallDigestTimerReady) return;
@@ -88,6 +96,7 @@ async function flushActivityBatch(): Promise<void> {
 }
 
 export async function executeHandleAntiRecall(groupId: string, messageId: string, operatorId: string): Promise<void> {
+  if (blockPassiveByRole('passive_service', `group=${groupId} message=${messageId}`, 'moderation_like')) return;
   const config = configStateService.getConfig();
   if (operatorId === identityStateService.getBotId()) return;
   if (!config.antiRecallGroups.includes(groupId) && !config.globalAntiRecall) return;
@@ -107,6 +116,7 @@ export function executeCacheMessage(messageId: string, userId: string, groupId: 
 }
 
 export async function executeHandleEmojiReact(groupId: string, userId: string, messageId: string, selfId: string): Promise<void> {
+  if (blockPassiveByRole('passive_service', `group=${groupId} message=${messageId}`, 'moderation_like')) return;
   const config = configStateService.getConfig();
   if (config.globalEmojiReact) {
     await enqueueMiscAction({
@@ -134,6 +144,7 @@ export async function executeHandleEmojiReact(groupId: string, userId: string, m
 }
 
 export async function executeHandleCardLockCheck(groupId: string, userId: string): Promise<void> {
+  if (blockPassiveByRole('passive_service', `group=${groupId} user=${userId}`, 'moderation_like')) return;
   const key = `${groupId}:${userId}`;
   const lockedCard = configStateService.getConfig().cardLocks[key];
   if (lockedCard === undefined) return;
@@ -153,6 +164,7 @@ export async function executeHandleCardLockCheck(groupId: string, userId: string
 }
 
 export async function executeHandleCardLockOnMessage(groupId: string, userId: string, senderCard: string): Promise<void> {
+  if (blockPassiveByRole('passive_service', `group=${groupId} user=${userId}`, 'moderation_like')) return;
   const key = `${groupId}:${userId}`;
   const lockedCard = configStateService.getConfig().cardLocks[key];
   if (lockedCard === undefined) return;
@@ -171,6 +183,7 @@ export async function executeHandleCardLockOnMessage(groupId: string, userId: st
 }
 
 export async function executeHandleAutoRecall(groupId: string, userId: string, messageId: string): Promise<boolean> {
+  if (blockPassiveByRole('passive_service', `group=${groupId} message=${messageId}`, 'moderation_like')) return false;
   const settings = configStateService.resolveGroupSettings(groupId);
   const targets = settings.targetUsers || [];
   if (!targets.includes(userId)) return false;
@@ -188,6 +201,7 @@ export async function executeHandleAutoRecall(groupId: string, userId: string, m
 }
 
 export async function executeSendWelcomeMessage(groupId: string, userId: string): Promise<void> {
+  if (blockPassiveByRole('passive_service', `group=${groupId} user=${userId}`, 'welcome_like')) return;
   const settings = configStateService.resolveGroupSettings(groupId);
   const tpl = (settings.welcomeMessage !== undefined && settings.welcomeMessage !== '') ? settings.welcomeMessage : (configStateService.getConfig().welcomeMessage || '');
   if (tpl) {
@@ -212,6 +226,7 @@ export async function executeSendWelcomeMessage(groupId: string, userId: string)
 }
 
 export async function executeHandleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[]): Promise<boolean> {
+  if (blockPassiveByRole('passive_service', raw, 'moderation_like')) return false;
   const settings = configStateService.resolveGroupSettings(groupId);
   const filter = settings.msgFilter || configStateService.getConfig().msgFilter;
   if (!filter) return false;
@@ -260,6 +275,7 @@ export async function executeHandleMsgTypeFilter(groupId: string, userId: string
 }
 
 export async function executeHandleBlacklist(groupId: string, userId: string, messageId: string): Promise<boolean> {
+  if (blockPassiveByRole('passive_service', `group=${groupId} user=${userId}`, 'moderation_like')) return false;
   const settings = configStateService.resolveGroupSettings(groupId);
   const isGlobalBlack = authStateService.isBlacklisted(userId);
   const isGroupBlack = (settings.groupBlacklist || []).includes(userId);
@@ -284,6 +300,7 @@ export async function executeHandleBlacklist(groupId: string, userId: string, me
 }
 
 export async function executeHandleFilterKeywords(groupId: string, userId: string, messageId: string, raw: string, ctx: NapCatPluginContext): Promise<boolean> {
+  if (blockPassiveByRole('passive_service', raw, 'moderation_like')) return false;
   const settings = configStateService.resolveGroupSettings(groupId);
   const groupKw = settings.filterKeywords || [];
   const globalKw = configStateService.getConfig().filterKeywords || [];
@@ -310,6 +327,7 @@ export async function executeHandleFilterKeywords(groupId: string, userId: strin
 }
 
 export async function executeHandleSpamDetect(groupId: string, userId: string, raw: string = ''): Promise<boolean> {
+  if (blockPassiveByRole('passive_service', raw, 'moderation_like')) return false;
   const settings = configStateService.resolveGroupSettings(groupId);
   const config = configStateService.getConfig();
   const spamOn = settings.spamDetect !== undefined ? settings.spamDetect : config.spamDetect;
@@ -368,20 +386,6 @@ export async function executeHandleSpamDetect(groupId: string, userId: string, r
 export async function executeHandleQA(groupId: string, userId: string, raw: string): Promise<boolean> {
   const settings = configStateService.resolveGroupSettings(groupId);
   if (settings.disableQA) return false;
-  const gate = await checkFeatureGate({
-    featureType: 'qa',
-    featureKey: 'qa.auto_reply',
-    groupId,
-    userId,
-    messageType: 'group',
-    source: 'passive',
-    scope: 'group',
-    requiresLicense: true,
-    permission: 'all',
-    passiveReply: true,
-    botSend: true
-  });
-  if (!gate.allowed) return false;
   const config = configStateService.getConfig();
   const isGroupCustom = config.groups[groupId] && !config.groups[groupId].useGlobal;
   const qaList = isGroupCustom ? (settings.qaList || []) : (config.qaList || []);
@@ -403,6 +407,25 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
     else if (qa.mode === 'contains') matched = normalizedText.includes(normalizedKeyword);
     else if (qa.mode === 'regex') { try { matched = new RegExp(keyword, 'i').test(text); } catch {} }
     if (!matched) continue;
+    if (isQueryOnlyBotRole()) {
+      blockPassiveByRole('passive_service', raw, 'qa_like');
+      return false;
+    }
+
+    const gate = await checkFeatureGate({
+      featureType: 'qa',
+      featureKey: 'qa.auto_reply',
+      groupId,
+      userId,
+      messageType: 'group',
+      source: 'passive',
+      scope: 'group',
+      requiresLicense: true,
+      permission: 'all',
+      passiveReply: true,
+      botSend: true
+    });
+    if (!gate.allowed) return false;
 
     const now = Date.now();
     const baseCooldown = settings.qaCooldownSeconds ?? config.global.qaCooldownSeconds ?? 30;
@@ -446,6 +469,7 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
 }
 
 export async function executeRecordActivity(groupId: string, userId: string): Promise<void> {
+  if (isQueryOnlyBotRole()) return;
   const settings = configStateService.resolveGroupSettings(groupId);
   if (settings.disableActivity) return;
   ensureActivityFlushTimer();

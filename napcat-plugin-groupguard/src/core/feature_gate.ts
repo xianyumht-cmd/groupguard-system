@@ -1,4 +1,5 @@
 import { authManager } from '../auth';
+import { getGroupGuardBotRole, shouldBlockByBotRole } from './bot_role';
 import { authStateService } from './state-services/auth_state_service';
 import { communicationStateService } from './state-services/communication_state_service';
 import { configStateService } from './state-services/config_state_service';
@@ -63,6 +64,26 @@ function isFeatureSwitchEnabled(settings: GroupGuardSettings, featureKey: string
   return true;
 }
 
+function getQueryProfileType(featureKey: string): string {
+  const map: Record<string, string> = {
+    'query.lol_ban': 'lol_ban',
+    'query.lol_battle': 'lol_battle',
+    'query.lol_hidden': 'lol_hidden',
+    'query.lol_shard': 'lol_shard',
+    'query.scammer': 'scammer',
+    'query.peer': 'peer',
+    'query.video': 'video'
+  };
+  return map[featureKey] || '';
+}
+
+function isQueryProfileEnabled(featureKey: string): boolean {
+  const type = getQueryProfileType(featureKey);
+  if (!type) return true;
+  const profiles = (configStateService.getConfig() as any).queryCommandProfiles;
+  return profiles?.[type]?.enabled !== false;
+}
+
 function isFeatureFamilyEnabled(settings: GroupGuardSettings, featureType: FeatureType): boolean {
   if (featureType === 'qa') {
     if (settings.disableQA === true) return false;
@@ -105,6 +126,7 @@ export async function checkFeatureGate(input: FeatureGateInput): Promise<Feature
   const settings = getSettings(groupId || undefined);
   const featureType = input.featureType || 'dynamic';
   const featureKey = input.featureKey || DEFAULT_FEATURE_KEY;
+  const botRole = getGroupGuardBotRole();
   const ownerBypass = input.ownerBypass === true && userId && authStateService.isOwner(userId);
 
   if (ownerBypass && messageType === 'private') {
@@ -131,8 +153,29 @@ export async function checkFeatureGate(input: FeatureGateInput): Promise<Feature
     return { allowed: false, reason: 'active_reply_disabled' };
   }
 
+  const roleBlock = shouldBlockByBotRole({
+    source: input.source === 'passive' ? 'passive_service' : 'dynamic_command',
+    featureType,
+    featureKey,
+    rawMessage: featureKey
+  });
+  if (roleBlock.blocked) {
+    return { allowed: false, reason: roleBlock.reason || `bot_role_${botRole}_blocked` };
+  }
+
+  if (botRole === 'qa' && featureType === 'query') {
+    return { allowed: false, reason: 'bot_role_query_blocked' };
+  }
+  if (botRole === 'query' && featureType === 'qa') {
+    return { allowed: false, reason: 'bot_role_qa_blocked' };
+  }
+
   if (!isFeatureFamilyEnabled(settings, featureType)) {
     return { allowed: false, reason: `${featureType}_disabled` };
+  }
+
+  if (!isQueryProfileEnabled(featureKey)) {
+    return { allowed: false, reason: 'query_profile_disabled' };
   }
 
   if (!isFeatureSwitchEnabled(settings, featureKey)) {

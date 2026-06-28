@@ -2,6 +2,7 @@ import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { checkFeatureGate } from '../core/feature_gate';
+import { shouldBlockByBotRole } from '../core/bot_role';
 import { initializeDynamicCommands, loadDynamicCommands, reloadDynamicCommandsIfChanged } from '../dynamic-commands/command_loader';
 import { assertCommandPluginRegistryReady, getCommandPluginRecord, refreshCommandPluginRegistry } from '../dynamic-commands/command_plugin_registry';
 import { getDynamicCommandRegistrySnapshotVersion, refreshDynamicCommandRegistry, resolveDynamicCommandCandidates } from '../dynamic-commands/command_registry';
@@ -94,12 +95,24 @@ function collectCandidates(cleanedText: string): CommandCandidate[] {
   return candidates;
 }
 
-async function isCandidateAllowed(candidate: CommandCandidate, event: OB11Message): Promise<boolean> {
+async function isCandidateAllowed(candidate: CommandCandidate, event: OB11Message, cleanedText: string): Promise<{ allowed: boolean; roleBlocked: boolean; }> {
   const command = candidate.match.command;
   const record = getCommandPluginRecord(command.id);
   if (record && !record.enabled) {
     loggingStateService.debug(`[CommandDispatcher] filtered=${candidate.commandId} reason=plugin_runtime_disabled`);
-    return false;
+    return { allowed: false, roleBlocked: false };
+  }
+  const roleBlock = shouldBlockByBotRole({
+    source: candidate.commandId.startsWith('legacy.') ? 'legacy' : 'dynamic_command',
+    rawMessage: cleanedText,
+    featureType: command.featureType || 'dynamic',
+    featureKey: command.featureKey || `dynamic.${command.id}`,
+    commandId: candidate.commandId,
+    legacyDomain: candidate.commandId.startsWith('legacy.') ? candidate.commandId.split('.')[1] : undefined
+  });
+  if (roleBlock.blocked) {
+    loggingStateService.info(roleBlock.logLine || `[CommandDispatcher] filtered=${candidate.commandId} reason=${roleBlock.reason}`);
+    return { allowed: false, roleBlocked: true };
   }
   const groupId = event.group_id ? String(event.group_id) : undefined;
   const userId = String(event.user_id || '');
@@ -122,7 +135,7 @@ async function isCandidateAllowed(candidate: CommandCandidate, event: OB11Messag
   if (!gate.allowed) {
     loggingStateService.debug(`[CommandDispatcher] filtered=${candidate.commandId} reason=${gate.reason}`);
   }
-  return gate.allowed;
+  return { allowed: gate.allowed, roleBlocked: false };
 }
 
 function compareCandidates(left: CommandCandidate, right: CommandCandidate): number {
@@ -187,12 +200,25 @@ export class CommandDispatcher {
     if (!preprocessed.cleanedText) return false;
     await runBeforeMatchHooks(preprocessed.cleanedText);
 
+    const rawRoleBlock = shouldBlockByBotRole({
+      source: 'dynamic_command',
+      rawMessage: preprocessed.cleanedText,
+      featureType: 'dynamic'
+    });
+    if (rawRoleBlock.blocked) {
+      loggingStateService.info(rawRoleBlock.logLine || `[CommandDispatcher] role_blocked raw=${preprocessed.cleanedText}`);
+      return true;
+    }
+
     const collectedCandidates = collectCandidates(preprocessed.cleanedText);
     const candidates: CommandCandidate[] = [];
+    let blockedByRole = false;
     for (const candidate of collectedCandidates) {
-      if (await isCandidateAllowed(candidate, event)) candidates.push(candidate);
+      const allowed = await isCandidateAllowed(candidate, event, preprocessed.cleanedText);
+      if (allowed.allowed) candidates.push(candidate);
+      if (allowed.roleBlocked) blockedByRole = true;
     }
-    if (!candidates.length) return false;
+    if (!candidates.length) return blockedByRole;
 
     const rankedCandidates = [...candidates]
       .map((candidate) => ({

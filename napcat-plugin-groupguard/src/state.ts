@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'node:url';
 import type { ReplyPersona } from './types';
 import { generateReply, isReplyTemplateSceneAllowed } from './reply_generator';
+import { shouldBlockByBotRole } from './core/bot_role';
 
 // 运行时从 package.json 读取版本号
 function getPluginVersion (): string {
@@ -321,6 +322,11 @@ class PluginState {
   scheduleSelfRecall(groupId: string, messageId: string, source: 'send_group_msg' | 'message_event' = 'send_group_msg'): number {
     const gid = String(groupId || '');
     const msgId = String(messageId || '');
+    const roleBlock = shouldBlockByBotRole({ source: 'send_wrapper', rawMessage: `group=${gid} message=${msgId}`, intent: 'self_recall_like', actionType: 'self_recall' });
+    if (roleBlock.blocked) {
+      this.debug(roleBlock.logLine || `bot_role_blocked role=${roleBlock.role} intent=self_recall_like rawMessage=group=${gid} message=${msgId} source=send_wrapper`);
+      return 0;
+    }
     if (!gid || !msgId) {
       this.debug(`[SelfRecall] skipped reason=msgId_missing source=${source} groupId=${gid || 'unknown'}`);
       return 0;

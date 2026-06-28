@@ -10,7 +10,7 @@ import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
 import { deleteLicense, getLicense, listLicenses, saveLicense } from './license_api';
 import { createSnapshot, listBackups } from './backup_api';
-import { addQaEntry, deleteQaEntry, listQaEntries, setQaEntryEnabled, updateQaEntry } from './qa_api';
+import { addQaEntry, deleteQaEntry, listQaEntries, listQaGroups, setQaEntryEnabled, updateQaEntry } from './qa_api';
 import { getQueryOverview, patchQueryConfig, testQueryEndpoint } from './query_api';
 import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_commands_api';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
@@ -144,6 +144,11 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       if (req.method === 'GET' && url.pathname === '/api/qa') {
         sendJson(res, 200, { ok: true, ...listQaEntries(url.searchParams.get('scope'), url.searchParams.get('groupId'), url.searchParams.get('q') || '') });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/qa/groups') {
+        sendJson(res, 200, { ok: true, groups: listQaGroups() });
         return;
       }
 

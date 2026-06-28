@@ -1,5 +1,6 @@
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { authManager } from '../auth';
+import { isQaOnlyBotRole, isQueryOnlyBotRole, shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { configStateService } from '../core/state-services/config_state_service';
 import { identityStateService } from '../core/state-services/identity_state_service';
@@ -13,6 +14,13 @@ import { flushInviteService, recordInviteRelation } from '../services/invite_ser
 import { GroupJoinVerifier } from '../join_verifier';
 import { handleAntiRecall, handleCardLockCheck, saveConfig, sendWelcomeMessage } from '../commands';
 
+function blockEventByRole(rawMessage: string, intent: BotRoleIntent): boolean {
+  const block = shouldBlockByBotRole({ source: 'runtime_event_pipeline', rawMessage, intent, featureType: intent === 'welcome_like' ? 'welcome' : 'moderation' });
+  if (!block.blocked) return false;
+  loggingStateService.info(block.logLine || `bot_role_blocked role=${block.role} intent=${intent} rawMessage=${rawMessage} source=runtime_event_pipeline`);
+  return true;
+}
+
 export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown): Promise<void> {
   const e = event as {
     post_type?: string; request_type?: string; notice_type?: string; sub_type?: string;
@@ -23,8 +31,10 @@ export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown
   const groupId = String(e.group_id);
   const license = authManager.getGroupLicense(groupId);
   if (!license && groupId !== 'undefined') return;
+  const splitRole = isQueryOnlyBotRole() || isQaOnlyBotRole();
 
   if (e.post_type === 'request' && e.request_type === 'group' && e.sub_type === 'add') {
+    if (splitRole && blockEventByRole(`group=${groupId} user=${String(e.user_id || '')}`, 'moderation_like')) return;
     const handled = await GroupJoinVerifier.handleJoinRequest(ctx, {
       group_id: groupId,
       user_id: String(e.user_id),
@@ -40,6 +50,7 @@ export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown
   if (e.post_type === 'notice' && e.notice_type === 'group_increase') {
     const groupId = String(e.group_id);
     const userId = String(e.user_id);
+    if (splitRole && blockEventByRole(`group=${groupId} user=${userId}`, 'welcome_like')) return;
     const operatorId = String(e.operator_id || '');
     const settings = configStateService.resolveGroupSettings(groupId);
 
@@ -121,6 +132,7 @@ export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown
     const groupId = String(e.group_id);
     const messageId = String(e.message_id);
     const userId = String(e.user_id);
+    if (splitRole && blockEventByRole(`group=${groupId} message=${messageId}`, 'moderation_like')) return;
     await handleAntiRecall(groupId, messageId, userId);
     return;
   }
@@ -128,6 +140,7 @@ export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown
   if (e.post_type === 'notice' && e.notice_type === 'group_card') {
     const groupId = String(e.group_id);
     const userId = String(e.user_id);
+    if (splitRole && blockEventByRole(`group=${groupId} user=${userId}`, 'moderation_like')) return;
     await handleCardLockCheck(groupId, userId);
     return;
   }
@@ -135,6 +148,7 @@ export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown
   if (e.post_type === 'notice' && e.notice_type === 'group_decrease' && e.sub_type === 'leave') {
     const groupId = String(e.group_id);
     const userId = String(e.user_id);
+    if (splitRole && blockEventByRole(`group=${groupId} user=${userId}`, 'moderation_like')) return;
     const settings = configStateService.resolveGroupSettings(groupId);
     const config = configStateService.getConfig();
     const globalLeave = config.leaveBlacklist;

@@ -5,6 +5,7 @@ import { OneBotActionCaller } from './onebot_action_caller';
 import { createStandaloneContext } from './standalone_context';
 import { startSnowLumaAdminServer, type SnowLumaAdminServerRuntime } from './snowluma_admin_server';
 import { plugin_init, plugin_onmessage, plugin_onevent, plugin_cleanup } from '../index';
+import { getGroupGuardBotRole } from '../core/bot_role';
 
 type RuntimeState = {
   ctx: any;
@@ -51,6 +52,8 @@ async function start(): Promise<RuntimeState> {
   const dynamicCommandsConfigPath = path.resolve(env('DYNAMIC_COMMANDS_CONFIG_PATH', path.join(workDir, 'config', 'dynamic-commands', 'commands.json')));
   const timeoutMs = numberEnv('ONEBOT_ACTION_TIMEOUT_MS', 10000);
   const reconnectDelayMs = numberEnv('ONEBOT_RECONNECT_DELAY_MS', 3000);
+  const botRole = getGroupGuardBotRole();
+  logger.info(`GroupGuard bot role: ${botRole}`);
 
   const client = new OneBotWsClient({
     url: wsUrl,

@@ -1,4 +1,5 @@
 import { authManager } from '../auth';
+import { isQaOnlyBotRole, shouldBlockByBotRole } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { checkFeatureGate } from '../core/feature_gate';
 import { communicationStateService } from '../core/state-services/communication_state_service';
@@ -24,6 +25,84 @@ function getConfig() {
 
 function getGroupSettings(groupId: string) {
   return configStateService.resolveGroupSettings(groupId);
+}
+
+const QUERY_ROLE_PREFIXES = [
+  '查封号',
+  '查战绩',
+  '查隐藏',
+  '查合集',
+  '海符榜',
+  '我要看',
+  '查骗子',
+  '举报骗子',
+  '查同行',
+  '举报同行',
+  '设置战绩接口',
+  '设置战绩全局开关',
+  '设置战绩全局限流',
+  '设置战绩分群开关',
+  '设置战绩分群限流',
+  '设置战绩指令开关',
+  '设置看视频接口',
+  '删除看视频接口',
+  '设置lolurl',
+  '设置lolkey',
+  '设置loltoken',
+  '设置封号主接口',
+  '设置封号接口配置',
+  '删除封号备用接口',
+  '设置骗子查询接口',
+  '添加骗子查询接口',
+  '删除骗子查询接口',
+  '设置骗子举报接口',
+  '设置骗子库限制',
+  '设置骗子风控'
+];
+
+const QUERY_ROLE_EXACT = new Set([
+  '封号接口列表',
+  '战绩接口状态',
+  '战绩配置',
+  '看视频接口列表',
+  '骗子接口状态'
+]);
+
+function isQueryRoleInteractionText(text: string): boolean {
+  return QUERY_ROLE_EXACT.has(text) || QUERY_ROLE_PREFIXES.some(prefix => text.startsWith(prefix));
+}
+
+type QueryCommandType = 'lol_battle' | 'lol_hidden' | 'lol_shard';
+type QueryOutputFormat = 'forward' | 'text' | 'image' | 'card';
+type QueryWrapperMode = 'global' | 'none' | 'forward';
+
+function getQueryCommandProfiles(): Record<string, any> {
+  const profiles = (getConfig() as any).queryCommandProfiles;
+  return profiles && typeof profiles === 'object' && !Array.isArray(profiles) ? profiles : {};
+}
+
+function normalizeQueryOutputFormat(value: unknown, fallback: QueryOutputFormat): QueryOutputFormat {
+  return value === 'forward' || value === 'text' || value === 'image' || value === 'card'
+    ? value
+    : fallback;
+}
+
+function resolveQueryOutputFormat(groupId: string, type: QueryCommandType, fallback: QueryOutputFormat): QueryOutputFormat {
+  const group = configStateService.getGroupSettings(groupId) as any;
+  const groupKey = type === 'lol_shard' ? 'shardQueryOutputFormat' : 'lolQueryOutputFormat';
+  if (group && Object.prototype.hasOwnProperty.call(group, groupKey)) {
+    return normalizeQueryOutputFormat(group[groupKey], fallback);
+  }
+  const profileFormat = getQueryCommandProfiles()[type]?.outputFormat;
+  if (profileFormat !== undefined && profileFormat !== '') {
+    return normalizeQueryOutputFormat(profileFormat, fallback);
+  }
+  return fallback;
+}
+
+function resolveQueryWrapperMode(type: QueryCommandType): QueryWrapperMode {
+  const mode = getQueryCommandProfiles()[type]?.wrapperMode;
+  return mode === 'none' || mode === 'forward' ? mode : 'global';
 }
 
 type BanStatus = 'banned' | 'safe' | 'unknown';
@@ -445,18 +524,20 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-function resolveShardDataUrls(): { ok: true; dataUrl: string; heroUrl: string; imageTemplate: string; outputFormat: 'forward' | 'text' | 'image' } | { ok: false; reason: string } {
+function resolveShardDataUrls(groupId: string): { ok: true; dataUrl: string; heroUrl: string; imageTemplate: string; outputFormat: QueryOutputFormat; wrapperMode: QueryWrapperMode } | { ok: false; reason: string } {
   const cfg = getConfig() as any;
   const dataUrl = String(cfg.shardDataUrl || DEFAULT_SHARD_DATA_URL).trim();
   const heroUrl = String(cfg.shardHeroListUrl || DEFAULT_SHARD_HERO_LIST_URL).trim();
   const configuredImageTemplate = String(cfg.shardImageUrlTemplate || '').trim();
   const imageTemplate = configuredImageTemplate || `${resolveLolApiBaseUrl()}/shard_query?hero={name}&output=image`;
-  const outputFormat = cfg.shardQueryOutputFormat === 'text' || cfg.shardQueryOutputFormat === 'image' ? cfg.shardQueryOutputFormat : 'forward';
+  const fallback = normalizeQueryOutputFormat(cfg.shardQueryOutputFormat, 'image');
+  const outputFormat = resolveQueryOutputFormat(groupId, 'lol_shard', fallback);
+  const wrapperMode = resolveQueryWrapperMode('lol_shard');
   if (!isHttpUrl(dataUrl) || !isHttpUrl(heroUrl)) return { ok: false, reason: '合集接口地址格式无效，仅支持 http/https' };
   if (imageTemplate && !isHttpUrl(imageTemplate.replaceAll('{alias}', 'Yasuo').replaceAll('{hero}', 'Yasuo').replaceAll('{name}', 'Yasuo'))) {
     return { ok: false, reason: '合集图片接口模板格式无效' };
   }
-  return { ok: true, dataUrl, heroUrl, imageTemplate, outputFormat };
+  return { ok: true, dataUrl, heroUrl, imageTemplate, outputFormat, wrapperMode };
 }
 
 async function loadShardData(dataUrl: string, heroUrl: string): Promise<{ ok: true; shards: Record<string, ChampionShardStat>; champions: ChampionMeta[] } | { ok: false; error: string }> {
@@ -747,6 +828,48 @@ async function sendGroupSegmentsDirect(groupId: string, segments: Array<Record<s
     force: true,
     applyTemplate: true
   });
+}
+
+async function sendQueryCardDirect(groupId: string, title: string, pages: string[]): Promise<void> {
+  const summaryText = pages.join('\n').substring(0, 100).replace(/\n/g, ' ');
+  const jsonCard = {
+    app: 'com.tencent.structmsg',
+    config: { autosize: true, forward: true, type: 'normal' },
+    view: 'layout',
+    meta: {
+      layout: {
+        title,
+        desc: `${summaryText}...`,
+        preview: 'https://shp.qpic.cn/collector/10000/3/0'
+      }
+    },
+    prompt: title
+  };
+  await sendGroupSegmentsDirect(groupId, [
+    { type: 'json', data: { data: JSON.stringify(jsonCard) } }
+  ]);
+}
+
+async function sendFormattedQueryPagesDirect(
+  groupId: string,
+  selfId: string,
+  nickname: string,
+  pages: string[],
+  outputFormat: QueryOutputFormat,
+  wrapperMode: QueryWrapperMode
+): Promise<void> {
+  if (wrapperMode === 'none' || outputFormat === 'text') {
+    await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+    return;
+  }
+  if (wrapperMode === 'global' && outputFormat === 'card') {
+    await sendQueryCardDirect(groupId, nickname, pages);
+    return;
+  }
+  const forwarded = await sendForwardTextPagesDirect(groupId, selfId, nickname, pages);
+  if (!forwarded) {
+    await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
+  }
 }
 
 async function sendLolQueryImage(groupId: string, imageUrl: string): Promise<boolean> {
@@ -1254,6 +1377,7 @@ async function allowGroupFeature(input: CommandExecutionContext, featureKey: str
     botSend: true
   });
   if (gate.allowed) return true;
+  if (gate.reason === 'bot_role_query_blocked' || gate.reason === 'bot_role_qa_blocked') return false;
   if (gate.reason === 'master_disabled' || gate.reason === 'silent_no_bot_send' || gate.reason === 'active_reply_disabled') return false;
   await sendGroupScene(input.groupId, 'feature_disabled', disabledMessage);
   return false;
@@ -1263,6 +1387,12 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   const { event, text, userId, groupId, raw, ctx } = input;
   if (event.message_type !== 'group') return false;
   if (!authManager.getGroupLicense(groupId)) return false;
+  const qaRoleBlock = shouldBlockByBotRole({ source: 'interaction_service', rawMessage: text, featureType: 'query' });
+  if (isQaOnlyBotRole() && (isQueryRoleInteractionText(text) || qaRoleBlock.blocked)) {
+    const block = qaRoleBlock.blocked ? qaRoleBlock : shouldBlockByBotRole({ source: 'interaction_service', rawMessage: text, intent: 'query_like', featureType: 'query' });
+    loggingStateService.info(block.logLine || `bot_role_blocked role=qa intent=query_like rawMessage=${text} source=interaction_service`);
+    return true;
+  }
   if (text.startsWith('设置骗子查询接口')) {
     if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
     const url = text.replace('设置骗子查询接口', '').trim();
@@ -1479,6 +1609,9 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'command_format_error', `格式：${reportDef.command}<QQ或微信号> 描述`, { example: `${reportDef.command}123456 收款后拉黑，有聊天记录` });
       return true;
     }
+    const reportFeatureKey = reportDef.category === 'peer' ? 'query.peer' : 'query.scammer';
+    const reportDisabledMessage = reportDef.category === 'peer' ? '本群已关闭同行举报功能' : '本群已关闭骗子举报功能';
+    if (!await allowGroupFeature(input, reportFeatureKey, reportDisabledMessage)) return true;
     const guard = checkRiskReportGuard(groupId, userId, reportDef.category, parsed.identifier, parsed.evidence);
     if (!guard.ok) {
       await sendGroupScene(groupId, 'invalid_range', guard.reason || '举报提交过于频繁，请稍后再试。');
@@ -1656,10 +1789,11 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     await sendGroupScene(groupId, 'raw_text', `正在为您查询${parsed.playerId}${parsed.region ? parsed.region : ''}，请耐心等待`);
     runDetachedQuery('查战绩', async () => {
       const baseUrl = resolveLolApiBaseUrl();
-      const outputFormat = getGroupSettings(groupId).lolQueryOutputFormat || 'forward';
+      const outputFormat = resolveQueryOutputFormat(groupId, 'lol_battle', normalizeQueryOutputFormat(getGroupSettings(groupId).lolQueryOutputFormat, 'forward'));
+      const wrapperMode = resolveQueryWrapperMode('lol_battle');
       const selfId = String((event as any).self_id || userId);
 
-      if (outputFormat === 'image') {
+      if (outputFormat === 'image' && wrapperMode === 'global') {
         const imgUrl = buildCrossQueryUrl(baseUrl, parsed.playerId, parsed.region, 'image');
         if (await sendLolQueryImage(groupId, imgUrl)) {
           return;
@@ -1674,37 +1808,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       }
       const pages = buildCrossPrettyPages(parsed.playerId, parsed.region, crossRes.data as CrossPrettyData, '');
 
-      if (outputFormat === 'image') {
-        const forwarded = await sendForwardTextPagesDirect(groupId, selfId, '🎮 战绩查询', pages);
-        if (!forwarded) {
-          await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
-        }
-      } else if (outputFormat === 'card') {
-        const summaryText = pages.join('\\n').substring(0, 100).replace(/\\n/g, ' ');
-        const jsonCard = {
-          app: "com.tencent.structmsg",
-          config: { autosize: true, forward: true, type: "normal" },
-          view: "layout",
-          meta: {
-            layout: {
-              title: "🎮 战绩查询",
-              desc: summaryText + '...',
-              preview: "https://shp.qpic.cn/collector/10000/3/0"
-            }
-          },
-          prompt: "🎮 战绩查询"
-        };
-        await sendGroupSegmentsDirect(groupId, [
-          { type: 'json', data: { data: JSON.stringify(jsonCard) } }
-        ]);
-      } else if (outputFormat === 'text') {
-        await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
-      } else {
-        const forwarded = await sendForwardTextPagesDirect(groupId, selfId, '🎮 战绩查询', pages);
-        if (!forwarded) {
-          await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
-        }
-      }
+      await sendFormattedQueryPagesDirect(groupId, selfId, '🎮 战绩查询', pages, outputFormat, wrapperMode);
     });
     return true;
   }
@@ -1721,7 +1825,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
       return true;
     }
-    const urls = resolveShardDataUrls();
+    const urls = resolveShardDataUrls(groupId);
     if (!urls.ok) {
       await sendGroupScene(groupId, 'raw_text', urls.reason);
       return true;
@@ -1743,7 +1847,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         await sendGroupSceneDirect(groupId, 'not_found', `暂无 ${hero.title || hero.alias} 的合集数据`);
         return;
       }
-      if (urls.outputFormat === 'image' && urls.imageTemplate) {
+      if (urls.outputFormat === 'image' && urls.wrapperMode === 'global' && urls.imageTemplate) {
         const imageUrl = buildShardImageUrl(urls.imageTemplate, hero, rest);
         const probe = await probeImageUrlWithTimeout(imageUrl, resolveLolQueryTimeoutMs());
         if (probe.ok) {
@@ -1760,15 +1864,8 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         }
       }
       const pages = buildShardQueryPages(hero, stat);
-      if (urls.outputFormat === 'text') {
-        await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
-      } else {
-        const selfId = String((event as any).self_id || userId);
-        const forwarded = await sendForwardTextPagesDirect(groupId, selfId, '📦 合集查询', pages);
-        if (!forwarded) {
-          await sendGroupSceneDirect(groupId, 'raw_text', pages.join('\n\n'));
-        }
-      }
+      const selfId = String((event as any).self_id || userId);
+      await sendFormattedQueryPagesDirect(groupId, selfId, '📦 合集查询', pages, urls.outputFormat, urls.wrapperMode);
     });
     return true;
   }
@@ -2184,6 +2281,9 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     const args = rest.split(/\s+/);
     const name = args[0];
     const region = args[1] || '1';
+    const outputFormat = resolveQueryOutputFormat(groupId, 'lol_hidden', normalizeQueryOutputFormat(getGroupSettings(groupId).lolQueryOutputFormat, 'forward'));
+    const wrapperMode = resolveQueryWrapperMode('lol_hidden');
+    const selfId = String((event as any).self_id || userId);
     const customUrl = getConfig().lolQueryUrl;
     const customKey = getConfig().lolAuthKey;
     if (customUrl && customKey) {
@@ -2216,7 +2316,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
             msg += `灵活排: ${d.flexData?.tier} ${d.flexData?.rank} (${d.flexData?.lp}点)\n`;
             msg += `最后在线: ${d.last_game?.time || '未知'}\n`;
             msg += `排位资格: ${d.rankEligibility || '未知'}`;
-            await sendGroupScene(groupId, 'raw_text', msg);
+            await sendFormattedQueryPagesDirect(groupId, selfId, '🕵️ 隐藏战绩', [msg], outputFormat, wrapperMode);
             return true;
           }
           await sendGroupScene(groupId, 'raw_text', `查询失败: ${json.msg || '未知错误'}`);
@@ -2266,7 +2366,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       const detailJson = await detailRes.json() as any;
       const d = detailJson?.data?.[0] || detailJson?.data || {};
       const line = `📊 ${summary.name || name} (Lv.${summary.level || '?'})\n大区：${region}\n封号状态：${d.banstatus === 1 ? '❌ 封号' : '✅ 正常'}\n单双排：${d?.soloData?.tier || '-'} ${d?.soloData?.rank || ''} (${d?.soloData?.lp || 0}点)\n灵活排：${d?.flexData?.tier || '-'} ${d?.flexData?.rank || ''} (${d?.flexData?.lp || 0}点)\n最后在线：${d?.last_game?.time || '未知'}`;
-      await sendGroupScene(groupId, 'raw_text', line);
+      await sendFormattedQueryPagesDirect(groupId, selfId, '🕵️ 隐藏战绩', [line], outputFormat, wrapperMode);
       return true;
     } catch (e: any) {
       loggingStateService.error(`LOL查询失败: ${e}`);

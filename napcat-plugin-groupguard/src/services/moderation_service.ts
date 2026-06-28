@@ -1,7 +1,9 @@
 import { authManager } from '../auth';
+import { shouldBlockByBotRole } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { communicationStateService } from '../core/state-services/communication_state_service';
 import { configStateService } from '../core/state-services/config_state_service';
+import { loggingStateService } from '../core/state-services/logging_state_service';
 import { groupguardRepository } from '../repositories/groupguard_repository';
 import { getTarget, isAdminOrOwner, saveConfig, sendGroupScene } from '../commands/common';
 import type { CommandExecutionContext } from './command_service_types';
@@ -12,6 +14,11 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
   const { raw, text, userId, groupId, ctx, event } = input;
   if (event.message_type !== 'group') return false;
   if (!authManager.getGroupLicense(groupId)) return false;
+  const roleBlock = shouldBlockByBotRole({ source: 'moderation_service', rawMessage: text, intent: 'moderation_like', featureType: 'moderation' });
+  if (roleBlock.blocked) {
+    loggingStateService.info(roleBlock.logLine || `bot_role_blocked role=${roleBlock.role} intent=moderation_like rawMessage=${text} source=moderation_service`);
+    return true;
+  }
 
   if (text.startsWith('警告 ')) {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }

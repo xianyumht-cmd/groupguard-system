@@ -1,5 +1,6 @@
 import { configStateService } from '../../core/state-services/config_state_service';
 import { saveConfigStrict } from '../../commands/common';
+import { storageAdapter } from '../../storage_adapter';
 import type { QAEntry } from '../../types';
 import type { SnowLumaAdminServerOptions } from './types';
 
@@ -119,6 +120,60 @@ function filterQa(list: QaEntryWithEnabled[], keyword: string) {
     if (!q) return true;
     return String(item.keyword || '').toLowerCase().includes(q) || String(item.reply || '').toLowerCase().includes(q);
   });
+}
+
+export function listQaGroups() {
+  const config = configStateService.getConfig() as any;
+  const groups = configStateService.getGroups() || {};
+  const licenses = configStateService.getLicenses() || {};
+  const groupNames = config.groupNames || {};
+  const summaryMap = new Map<string, {
+    groupId: string;
+    configured: boolean;
+    qaCount: number;
+    config: Record<string, any>;
+  }>();
+
+  try {
+    for (const item of storageAdapter.listGroupQaSummaries()) {
+      summaryMap.set(item.groupId, item);
+    }
+  } catch {
+    // WebUI can still show in-memory config/licensed groups if storage is unavailable.
+  }
+
+  for (const [groupId, group] of Object.entries(groups)) {
+    const existing = summaryMap.get(groupId) || { groupId, configured: false, qaCount: 0, config: {} };
+    existing.configured = true;
+    existing.config = { ...existing.config, ...(group as Record<string, any>) };
+    const qaList = Array.isArray((group as any)?.qaList) ? (group as any).qaList : [];
+    existing.qaCount = Math.max(existing.qaCount, qaList.length);
+    summaryMap.set(groupId, existing);
+  }
+
+  for (const groupId of Object.keys(licenses)) {
+    if (!summaryMap.has(groupId)) {
+      summaryMap.set(groupId, { groupId, configured: false, qaCount: 0, config: {} });
+    }
+  }
+
+  return Array.from(summaryMap.values())
+    .sort((a, b) => Number(a.groupId) - Number(b.groupId))
+    .map(item => {
+      const effective = configStateService.resolveGroupSettings(item.groupId) as any;
+      const group = (groups as any)[item.groupId] || item.config || {};
+      const qaEnabled = effective.disableQA !== true && effective.qaEnabled !== false;
+      return {
+        groupId: item.groupId,
+        name: String(groupNames[item.groupId] || group.groupName || group.name || item.groupId),
+        qaCount: item.qaCount,
+        configured: item.configured || Boolean((groups as any)[item.groupId]),
+        licensed: Boolean((licenses as any)[item.groupId]),
+        useGlobal: group.useGlobal ?? true,
+        qaEnabled,
+        disableQA: effective.disableQA === true
+      };
+    });
 }
 
 export function listQaEntries(scopeInput: any, groupIdInput: any, keyword = '') {

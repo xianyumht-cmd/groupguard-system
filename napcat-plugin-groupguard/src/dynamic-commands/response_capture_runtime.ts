@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import { shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { GROUPGUARD_SEND_SCENE_KEY } from '../core/send_wrapper_constants';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { communicationStateService } from '../core/state-services/communication_state_service';
@@ -26,6 +27,16 @@ function resolveScene(scene: string): string {
   const forced = forcedResponseSceneStorage.getStore();
   if (forced && (!scene || scene === 'raw_text')) return forced;
   return scene || forced || 'raw_text';
+}
+
+function classifyDeliveryIntent(scene: string): BotRoleIntent {
+  const normalized = String(scene || '').toLowerCase();
+  if (normalized.includes('external_query') || normalized === 'query' || normalized.includes('query')) return 'query_like';
+  if (normalized.includes('qa')) return 'qa_like';
+  if (normalized.includes('welcome')) return 'welcome_like';
+  if (normalized.includes('self_recall')) return 'self_recall_like';
+  if (['moderation', 'risk', 'filter', 'blacklist', 'spam', 'recall', 'ban', 'kick'].some(part => normalized.includes(part))) return 'moderation_like';
+  return 'unknown';
 }
 
 function cloneSegment(segment: Record<string, unknown>): Record<string, unknown> {
@@ -76,6 +87,19 @@ export function pushCapturedCommandDelivery(delivery: CapturedCommandDelivery): 
 
 export async function send(delivery: CapturedCommandDelivery): Promise<void> {
   const resolvedDelivery = { ...delivery, scene: resolveScene(delivery.scene) };
+  const intent = classifyDeliveryIntent(resolvedDelivery.scene);
+  if (intent !== 'unknown') {
+    const roleBlock = shouldBlockByBotRole({
+      source: 'send_wrapper',
+      rawMessage: resolvedDelivery.message || resolvedDelivery.scene,
+      intent,
+      scene: resolvedDelivery.scene
+    });
+    if (roleBlock.blocked) {
+      loggingStateService.info(roleBlock.logLine || `bot_role_blocked role=${roleBlock.role} intent=${intent} rawMessage=${resolvedDelivery.message || resolvedDelivery.scene} source=send_wrapper`);
+      return;
+    }
+  }
   if (pushCapturedCommandDelivery(resolvedDelivery)) return;
   assertResponseCaptureAllowed({
     channel: resolvedDelivery.channel,
