@@ -1,5 +1,5 @@
 // 群管插件配置
-import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode, BotAntiRiskLimitFallbackMode, ContentRiskAction, ContentRiskRule, ContentRiskSettings, ContentRiskType, SubGameplaySettings } from './types';
+import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode, BotAntiRiskLimitFallbackMode, ContentRiskAction, ContentRiskRule, ContentRiskSettings, ContentRiskType, SubGameplaySettings, OutgoingRiskPackagingSettings, OutgoingRiskUrlMode, BanQueryResultMode, RiskPresetLevel } from './types';
 
 export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockVideo: false,
@@ -73,6 +73,17 @@ export const DEFAULT_SUB_GAMEPLAY: SubGameplaySettings = {
   commandAliases: {}
 };
 
+export const DEFAULT_OUTGOING_RISK: OutgoingRiskPackagingSettings = {
+  enabled: false,
+  urlMode: 'number',
+  urlNotice: '链接已做编号化处理，原始地址不由机器人直接发送。',
+  urlMaxPerMessage: 20,
+  applyToPrivate: true,
+  applyToForward: true,
+  highRiskScenes: ['qa', 'qa_reply', 'query', 'external_query', 'video_query', 'raw_text'],
+  logOnly: false
+};
+
 export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   useGlobal: true,
   masterEnabled: true,
@@ -123,6 +134,11 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   botAntiRiskSuffixMode: 'punctuation',
   botAntiRiskScenePolicies: {},
   botAntiRiskLimitFallbackMode: 'drop',
+  outgoingRisk: { ...DEFAULT_OUTGOING_RISK },
+  banQueryResultMode: 'short',
+  banQueryUserCooldownSeconds: 10,
+  banQueryGroupRateLimitPerMinute: 6,
+  riskPresetLevel: 'balanced',
   randomDelayMin: 500,
   randomDelayMax: 1500,
   queueMode: 'group',
@@ -344,6 +360,32 @@ function normalizeLimitFallbackMode(value: any, fallback: BotAntiRiskLimitFallba
   return value === 'forward' || value === 'drop' ? value : fallback;
 }
 
+function normalizeOutgoingRiskUrlMode(value: any, fallback: OutgoingRiskUrlMode = 'number'): OutgoingRiskUrlMode {
+  return value === 'off' || value === 'number' || value === 'mask' || value === 'drop' ? value : fallback;
+}
+
+function normalizeBanQueryResultMode(value: any, fallback: BanQueryResultMode = 'short'): BanQueryResultMode {
+  return value === 'short' || value === 'image' || value === 'text' ? value : fallback;
+}
+
+function normalizeRiskPresetLevel(value: any, fallback: RiskPresetLevel = 'balanced'): RiskPresetLevel {
+  return value === 'conservative' || value === 'balanced' || value === 'aggressive' ? value : fallback;
+}
+
+function normalizeOutgoingRisk(input: any): OutgoingRiskPackagingSettings {
+  const src = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return {
+    enabled: src.enabled === true,
+    urlMode: normalizeOutgoingRiskUrlMode(src.urlMode, DEFAULT_OUTGOING_RISK.urlMode),
+    urlNotice: String(src.urlNotice ?? DEFAULT_OUTGOING_RISK.urlNotice),
+    urlMaxPerMessage: normalizeNumber(src.urlMaxPerMessage, DEFAULT_OUTGOING_RISK.urlMaxPerMessage, 1, 100),
+    applyToPrivate: src.applyToPrivate !== false,
+    applyToForward: src.applyToForward !== false,
+    highRiskScenes: src.highRiskScenes === undefined ? [...DEFAULT_OUTGOING_RISK.highRiskScenes] : normalizeStringArray(src.highRiskScenes),
+    logOnly: src.logOnly === true
+  };
+}
+
 function normalizeBotAntiRiskScenePolicies(input: any): Record<string, BotAntiRiskScenePolicy> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   const out: Record<string, BotAntiRiskScenePolicy> = {};
@@ -439,6 +481,11 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
   merged.botAntiRiskSuffixMode = normalizeSuffixMode(merged.botAntiRiskSuffixMode, 'punctuation');
   merged.botAntiRiskScenePolicies = normalizeBotAntiRiskScenePolicies(merged.botAntiRiskScenePolicies);
   merged.botAntiRiskLimitFallbackMode = normalizeLimitFallbackMode(merged.botAntiRiskLimitFallbackMode, 'drop');
+  merged.outgoingRisk = normalizeOutgoingRisk((merged as any).outgoingRisk);
+  merged.banQueryResultMode = normalizeBanQueryResultMode(merged.banQueryResultMode, 'short');
+  merged.banQueryUserCooldownSeconds = normalizeNumber(merged.banQueryUserCooldownSeconds, 10, 0, 3600);
+  merged.banQueryGroupRateLimitPerMinute = normalizeNumber(merged.banQueryGroupRateLimitPerMinute, 6, 1, 1000);
+  merged.riskPresetLevel = normalizeRiskPresetLevel(merged.riskPresetLevel, 'balanced');
   merged.autoRecallSelf = merged.selfRecall.enabled;
   merged.autoRecallSelfDelay = merged.selfRecall.mode === 'fixed'
     ? merged.selfRecall.fixedDelay

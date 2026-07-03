@@ -340,6 +340,8 @@ const lolGroupRateBuckets = new Map<string, RateCounterBucket>();
 let lolGlobalLastQueryAt = 0;
 const lolGroupLastQueryAt = new Map<string, number>();
 const lolGroupDailyBuckets = new Map<string, { day: string; count: number }>();
+const banQueryGroupRateBuckets = new Map<string, RateCounterBucket>();
+const banQueryUserLastAt = new Map<string, number>();
 const LOL_RATE_MAP_LIMIT = 500;
 
 function toOnOff(value: string): boolean | null {
@@ -421,6 +423,40 @@ function checkAndConsumeLolRate(groupId: string): { ok: true } | { ok: false; re
       lolGroupRateBuckets.delete(staleKey);
       lolGroupLastQueryAt.delete(staleKey);
       lolGroupDailyBuckets.delete(staleKey);
+    }
+  }
+  return { ok: true };
+}
+
+function checkAndConsumeBanQueryRisk(groupId: string, userId: string): { ok: true } | { ok: false; reason: string } {
+  const settings = getGroupSettings(groupId);
+  const groupLimit = normalizePositiveInt(Number(settings.banQueryGroupRateLimitPerMinute), 6, 1000);
+  const userCooldownSec = Math.max(0, Math.floor(Number(settings.banQueryUserCooldownSeconds ?? 10)));
+  const now = Date.now();
+  let groupBucket = banQueryGroupRateBuckets.get(groupId);
+  if (!groupBucket) {
+    groupBucket = { windowStart: now, count: 0 };
+    banQueryGroupRateBuckets.set(groupId, groupBucket);
+  }
+  ensureRateWindow(groupBucket, now);
+  if (groupBucket.count >= groupLimit) {
+    return { ok: false, reason: `查封号过于频繁，本群每分钟上限 ${groupLimit} 次。` };
+  }
+  const userKey = `${groupId}:${userId}`;
+  const lastAt = banQueryUserLastAt.get(userKey) || 0;
+  if (userCooldownSec > 0 && lastAt > 0 && now - lastAt < userCooldownSec * 1000) {
+    return { ok: false, reason: `查封号冷却中，请 ${Math.ceil((userCooldownSec * 1000 - (now - lastAt)) / 1000)} 秒后再试。` };
+  }
+  groupBucket.count += 1;
+  banQueryUserLastAt.set(userKey, now);
+  if (banQueryGroupRateBuckets.size > LOL_RATE_MAP_LIMIT) {
+    for (const key of Array.from(banQueryGroupRateBuckets.keys()).slice(0, banQueryGroupRateBuckets.size - LOL_RATE_MAP_LIMIT)) {
+      banQueryGroupRateBuckets.delete(key);
+    }
+  }
+  if (banQueryUserLastAt.size > LOL_RATE_MAP_LIMIT * 2) {
+    for (const key of Array.from(banQueryUserLastAt.keys()).slice(0, banQueryUserLastAt.size - LOL_RATE_MAP_LIMIT * 2)) {
+      banQueryUserLastAt.delete(key);
     }
   }
   return { ok: true };
@@ -827,6 +863,63 @@ async function sendGroupSegmentsDirect(groupId: string, segments: Array<Record<s
     scene: 'raw_text',
     force: true,
     applyTemplate: true
+  });
+}
+
+function buildBanQueryShortText(targetQQ: string, status: BanStatus): string {
+  if (status === 'banned') return `QQ:${targetQQ} 状态：疑似封号。`;
+  if (status === 'safe') return `QQ:${targetQQ} 状态：未封。`;
+  return `QQ:${targetQQ} 状态：暂无法确认。`;
+}
+
+function normalizeImageLine(text: string): string {
+  return String(text || '')
+    .replace(/[^\x20-\x7E\n]/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+async function renderBanQueryResultImage(targetQQ: string, status: BanStatus, detail: string): Promise<string | null> {
+  loggingStateService.warn(`ban_query_image_mode_unavailable target=${targetQQ} status=${status} detail=${normalizeImageLine(detail).slice(0, 80)}`);
+  return null;
+}
+
+async function sendBanQueryResult(
+  groupId: string,
+  userId: string,
+  targetQQ: string,
+  status: BanStatus,
+  fullContent: string
+): Promise<void> {
+  const mode = getGroupSettings(groupId).banQueryResultMode || 'short';
+  const shortText = buildBanQueryShortText(targetQQ, status);
+  if (mode === 'image') {
+    const imagePath = await renderBanQueryResultImage(targetQQ, status, fullContent);
+    if (imagePath) {
+      try {
+        await sendGroupSegmentsDirect(groupId, [
+          { type: 'at', data: { qq: userId } },
+          { type: 'text', data: { text: ' 查询结果：' } },
+          { type: 'image', data: { file: `file:///${imagePath.replace(/\\/g, '/')}` } }
+        ]);
+        return;
+      } catch (e: any) {
+        loggingStateService.warn(`ban_query_image_send_failed err=${String(e?.message || e)}`);
+      }
+    }
+  }
+  const text = mode === 'text' ? `查询的QQ:${targetQQ}，${fullContent}` : shortText;
+  await send({
+    channel: 'group',
+    targetId: groupId,
+    scene: 'query_lol_ban',
+    segments: [
+      { type: 'at', data: { qq: userId } },
+      { type: 'text', data: { text: ` ${text}` } }
+    ],
+    vars: { user: userId, target: targetQQ },
+    force: true,
+    applyTemplate: mode === 'text'
   });
 }
 
@@ -1719,6 +1812,11 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
       return true;
     }
+    const banRiskCheck = checkAndConsumeBanQueryRisk(groupId, userId);
+    if (!banRiskCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', banRiskCheck.reason);
+      return true;
+    }
     const rest = text.slice(3).trim();
     let targetQQ = rest;
     if (!targetQQ || !/^\d+$/.test(targetQQ)) targetQQ = getTarget(raw, rest) || '';
@@ -1734,11 +1832,8 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     const pureTextMode = getConfig().global?.disableReplyTemplate === true;
     const banTexts = ['真是活该，直接进小黑屋了~', '这波操作属实离谱，封得明明白白。', '翻车现场，系统都看不下去了。', '号子已经躺平，连申诉都得排队。', '风控一锤定音，这把寄得很彻底。', '这号现在主打一个“只能看不能玩”。'];
     const unknownTexts = ['接口今天有点小情绪，稍后再查一次。', '这波网络不太给面子，过会儿再试试。', '数据源在摸鱼，建议晚点重试。', '查询通道有点拥挤，等等会更稳。'];
-    const sendResult = async (content: string) => {
-      await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
-        { type: 'at', data: { qq: userId } },
-        { type: 'text', data: { text: ` 查询的 QQ:${targetQQ}，${content}` } }
-      ], vars: { user: userId, target: targetQQ }, force: true, applyTemplate: true });
+    const sendResult = async (content: string, status: BanStatus) => {
+      await sendBanQueryResult(groupId, userId, targetQQ, status, content);
     };
     try {
       const endpoints = collectBanQueryEndpoints();
@@ -1750,22 +1845,22 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       }
       if (!attempt) {
         const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
-        await sendResult(`暂时无法确认是否封号，详情：没有可用查询接口${tail}`);
+        await sendResult(`暂时无法确认是否封号，详情：没有可用查询接口${tail}`, 'unknown');
         return true;
       }
       if (attempt.result.status === 'banned') {
         const tail = pureTextMode ? '' : `，${pick(banTexts)}`;
-        await sendResult(`这号被封了，详情：${attempt.result.detail || '接口未返回更多时间信息'}${tail}`);
+        await sendResult(`这号被封了，详情：${attempt.result.detail || '接口未返回更多时间信息'}${tail}`, 'banned');
       } else if (attempt.result.status === 'safe') {
-        await sendResult(`这号未封，${attempt.result.detail || '账号状态正常'}`);
+        await sendResult(`这号未封，${attempt.result.detail || '账号状态正常'}`, 'safe');
       } else {
         const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
-        await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}${tail}`);
+        await sendResult(`暂时无法确认是否封号，详情：${attempt.result.detail || '接口返回异常'}${tail}`, 'unknown');
       }
     } catch (e) {
       loggingStateService.error(`查询封号失败: ${e}`);
       const tail = pureTextMode ? '' : `，${pick(unknownTexts)}`;
-      await sendResult(`暂时无法确认是否封号${tail}`);
+      await sendResult(`暂时无法确认是否封号${tail}`, 'unknown');
     }
     return true;
   }

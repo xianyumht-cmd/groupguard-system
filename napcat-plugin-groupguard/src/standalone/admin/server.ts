@@ -13,6 +13,7 @@ import { createSnapshot, listBackups } from './backup_api';
 import { addQaEntry, deleteQaEntry, listQaEntries, listQaGroups, setQaEntryEnabled, updateQaEntry } from './qa_api';
 import { getQueryOverview, patchQueryConfig, testQueryEndpoint } from './query_api';
 import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_commands_api';
+import { applyRiskPreset, getHealthDashboard, getRiskDashboard } from './risk_ops_api';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 
 function resolveServerConfig(options: SnowLumaAdminServerOptions) {
@@ -65,6 +66,22 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       if (req.method === 'GET' && url.pathname === '/api/status') {
         sendJson(res, 200, getStatus(options));
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/health') {
+        sendJson(res, 200, await getHealthDashboard(options));
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/risk/dashboard') {
+        sendJson(res, 200, await getRiskDashboard(url.searchParams.get('hours') || 24));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/risk/preset') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, { message: '风险推荐档位已应用。', ...applyRiskPreset(options, payload.level) });
         return;
       }
 

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import type { ReplyPersona } from './types';
 import { generateReply, isReplyTemplateSceneAllowed } from './reply_generator';
 import { shouldBlockByBotRole } from './core/bot_role';
+import { packageForwardMessages, packageOutgoingSegments } from './services/outgoing_risk_packager';
 
 // 运行时从 package.json 读取版本号
 function getPluginVersion (): string {
@@ -287,6 +288,16 @@ class PluginState {
   private getSelfRecallSettings(groupId?: string): GroupGuardSettings {
     const gid = String(groupId || '').trim();
     return gid ? this.getGroupSettings(gid) : this.getGlobalSettings();
+  }
+
+  private packageOutgoingMessage(groupId: string, scene: string, message: any[], channel: 'group' | 'private' | 'forward' = 'group'): any[] {
+    const settings = channel === 'private' ? this.getGlobalSettings() : this.getGroupSettings(groupId);
+    const packed = packageOutgoingSegments(message, settings, scene, channel);
+    if (packed.urlCount > 0) {
+      const action = packed.changed ? 'wrapped' : 'detected';
+      this.log('warn', `[OutgoingRisk] url_${action} channel=${channel} group=${groupId || '-'} scene=${scene || 'raw_text'} count=${packed.urlCount}`);
+    }
+    return packed.message;
   }
 
   private getQueueConcurrency(): number {
@@ -792,7 +803,8 @@ class PluginState {
     const suffixInfo = this.getRandomSuffixInfo(groupId, scene);
     const suffix = suffixInfo.suffix;
     const finalContent = templated + suffix;
-    await this.enqueueGroupTask(groupId, [{ type: 'text', data: { text: finalContent } }], {
+    const outgoingMessage = this.packageOutgoingMessage(groupId, scene, [{ type: 'text', data: { text: finalContent } }], 'group');
+    await this.enqueueGroupTask(groupId, outgoingMessage, {
       force,
       applyTemplate,
       scene,
@@ -836,7 +848,8 @@ class PluginState {
         cloned.push({ type: 'text', data: { text: suffix } });
       }
     }
-    await this.enqueueGroupTask(groupId, cloned, {
+    const outgoingMessage = this.packageOutgoingMessage(groupId, scene, cloned, 'group');
+    await this.enqueueGroupTask(groupId, outgoingMessage, {
       force,
       applyTemplate,
       scene,
@@ -870,11 +883,12 @@ class PluginState {
     const suffix = this.getRandomSuffix(undefined, scene);
     const templated = (!templateDisabled && allowSemanticTemplate && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
     const finalContent = templated + suffix;
+    const outgoingMessage = this.packageOutgoingMessage('', scene, [{ type: 'text', data: { text: finalContent } }], 'private');
 
     try {
       await this.actions.call('send_private_msg', {
         user_id: userId,
-        message: [{ type: 'text', data: { text: finalContent } }]
+        message: outgoingMessage
       } as never, this.adapterName, this.networkConfig);
     } catch (e) {
       this.log('error', `发送私聊消息失败: ${e}`);
@@ -889,6 +903,25 @@ class PluginState {
     if (action === 'delete_msg' && params && params.message_id) {
         // 某些 NT 版本下，message_id 作为 string 传递更稳定
         params.message_id = String(params.message_id);
+    }
+    if (action === 'send_group_msg' && params && Array.isArray(params.message)) {
+      const groupId = String(params.group_id ?? params.groupId ?? '');
+      const scene = String(params.__groupguard_scene || 'raw_text');
+      params = { ...params, message: this.packageOutgoingMessage(groupId, scene, params.message, 'group') };
+    }
+    if (action === 'send_private_msg' && params && Array.isArray(params.message)) {
+      const scene = String(params.__groupguard_scene || 'raw_text');
+      params = { ...params, message: this.packageOutgoingMessage('', scene, params.message, 'private') };
+    }
+    if (action === 'send_group_forward_msg' && params && Array.isArray(params.messages)) {
+      const groupId = String(params.group_id ?? params.groupId ?? '');
+      const settings = this.getGroupSettings(groupId);
+      const packed = packageForwardMessages(params.messages, settings, 'raw_text');
+      if (packed.urlCount > 0) {
+        const actionText = packed.changed ? 'wrapped' : 'detected';
+        this.log('warn', `[OutgoingRisk] url_${actionText} channel=forward group=${groupId || '-'} scene=raw_text count=${packed.urlCount}`);
+      }
+      params = { ...params, messages: packed.messages };
     }
 
     try {

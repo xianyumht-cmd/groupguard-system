@@ -66,6 +66,9 @@ th{color:#93c5fd;background:#111827}
     <button class="tab" data-tab="backups">备份</button>
     <a class="tablink" id="queryLink" href="/query.html">查询配置</a>
     <button class="tab" data-tab="send">发送与风控</button>
+    <button class="tab" data-tab="presets">推荐档位</button>
+    <button class="tab" data-tab="risklog">日志分析</button>
+    <button class="tab" data-tab="health">健康监控</button>
     <button class="tab" data-tab="gameplay">SUB玩法</button>
     <button class="tab" data-tab="content-risk">内容风险</button>
     <button class="tab" data-tab="ele">ELE构建</button>
@@ -131,6 +134,32 @@ th{color:#93c5fd;background:#111827}
     <h2>发送与风控</h2>
     <div id="sendForm" class="grid"></div>
     <button data-save-form="sendForm">保存发送与风控配置</button>
+  </section>
+
+  <section id="tab-presets" class="card hidden">
+    <h2>风险推荐档位</h2>
+    <div class="toolbar">
+      <button data-risk-preset="conservative">保守</button>
+      <button class="secondary" data-risk-preset="balanced">平衡</button>
+      <button class="secondary" data-risk-preset="aggressive">激进</button>
+    </div>
+    <p class="hint">保守：URL编号化、查封号短文本、低频发送、合并转发包装；平衡：保留可用性同时降风险；激进：更接近原始发送，风险更高。</p>
+    <pre id="presetBox">等待操作...</pre>
+  </section>
+
+  <section id="tab-risklog" class="card hidden">
+    <h2>日志风险分析</h2>
+    <div class="row">
+      <label><span>统计小时数</span><input id="riskHours" type="number" value="24"></label>
+      <button id="loadRiskBtn">刷新风险分析</button>
+    </div>
+    <div id="riskBox"></div>
+  </section>
+
+  <section id="tab-health" class="card hidden">
+    <h2>远端健康监控</h2>
+    <div class="toolbar"><button id="loadHealthBtn">刷新健康状态</button></div>
+    <div id="healthBox"></div>
   </section>
 
   <section id="tab-gameplay" class="card hidden">
@@ -365,6 +394,19 @@ function renderForms(){
     + switchHtml('问答包装 botSendWrapperQaEnabled','global.botSendWrapperQaEnabled',get(config,'global.botSendWrapperQaEnabled',false))
     + switchHtml('查询包装 botSendWrapperQueryEnabled','global.botSendWrapperQueryEnabled',get(config,'global.botSendWrapperQueryEnabled',false))
     + switchHtml('全局包装 botSendWrapperAllEnabled','global.botSendWrapperAllEnabled',get(config,'global.botSendWrapperAllEnabled',false))
+    + sectionTitle('自身 URL 包装')
+    + switchHtml('启用自身 URL 包装 outgoingRisk.enabled','global.outgoingRisk.enabled',get(config,'global.outgoingRisk.enabled',false))
+    + selectHtml('URL处理模式 outgoingRisk.urlMode','global.outgoingRisk.urlMode',get(config,'global.outgoingRisk.urlMode','number'),[['off','关闭'],['number','编号化'],['mask','隐藏'],['drop','整条拦截']])
+    + inputHtml('URL包装提示 outgoingRisk.urlNotice','global.outgoingRisk.urlNotice',get(config,'global.outgoingRisk.urlNotice','链接已做编号化处理，原始地址不由机器人直接发送。'), 'text', {full:true})
+    + numberHtml('单条最多编号数 outgoingRisk.urlMaxPerMessage','global.outgoingRisk.urlMaxPerMessage',get(config,'global.outgoingRisk.urlMaxPerMessage',20))
+    + switchHtml('私聊也包装 outgoingRisk.applyToPrivate','global.outgoingRisk.applyToPrivate',get(config,'global.outgoingRisk.applyToPrivate',true))
+    + switchHtml('合并转发也包装 outgoingRisk.applyToForward','global.outgoingRisk.applyToForward',get(config,'global.outgoingRisk.applyToForward',true))
+    + jsonInputHtml('高风险场景 outgoingRisk.highRiskScenes','global.outgoingRisk.highRiskScenes',get(config,'global.outgoingRisk.highRiskScenes',['qa','qa_reply','query','external_query','video_query','raw_text']))
+    + switchHtml('仅记录不处理 outgoingRisk.logOnly','global.outgoingRisk.logOnly',get(config,'global.outgoingRisk.logOnly',false))
+    + sectionTitle('查封号风险策略')
+    + selectHtml('查封号结果模式 banQueryResultMode','global.banQueryResultMode',get(config,'global.banQueryResultMode','short'),[['short','短文本'],['image','图片优先'],['text','完整文本']])
+    + numberHtml('查封号用户冷却秒 banQueryUserCooldownSeconds','global.banQueryUserCooldownSeconds',get(config,'global.banQueryUserCooldownSeconds',10))
+    + numberHtml('查封号本群每分钟上限 banQueryGroupRateLimitPerMinute','global.banQueryGroupRateLimitPerMinute',get(config,'global.banQueryGroupRateLimitPerMinute',6))
     + selfRecallForm('global.', config.global || {})
     + sectionTitle('队列和限流')
     + selectHtml('发送队列模式 queueMode','global.queueMode',get(config,'global.queueMode','group'),[['group','分群队列'],['global','全局队列']])
@@ -442,6 +484,10 @@ function renderGroupForm(data){
     + switchHtml('查询包装 botSendWrapperQueryEnabled','botSendWrapperQueryEnabled',get(groupSrc,'botSendWrapperQueryEnabled',false))
     + switchHtml('全局包装 botSendWrapperAllEnabled','botSendWrapperAllEnabled',get(groupSrc,'botSendWrapperAllEnabled',false))
     + selectHtml('战绩输出格式 lolQueryOutputFormat','lolQueryOutputFormat',get(groupSrc,'lolQueryOutputFormat','forward'),['forward','text','image','card'])
+    + sectionTitle('本群查封号风险策略')
+    + selectHtml('查封号结果模式 banQueryResultMode','banQueryResultMode',get(groupSrc,'banQueryResultMode','short'),[['short','短文本'],['image','图片优先'],['text','完整文本']])
+    + numberHtml('查封号用户冷却秒 banQueryUserCooldownSeconds','banQueryUserCooldownSeconds',get(groupSrc,'banQueryUserCooldownSeconds',10))
+    + numberHtml('查封号本群每分钟上限 banQueryGroupRateLimitPerMinute','banQueryGroupRateLimitPerMinute',get(groupSrc,'banQueryGroupRateLimitPerMinute',6))
     + selfRecallForm('', groupSrc)
     + sectionTitle('SUB玩法')
     + subGameplayForm('', groupSrc)
@@ -462,6 +508,50 @@ function renderBackups(list){
   var html='<table><thead><tr><th>名称</th><th>时间</th><th>路径</th><th>文件</th></tr></thead><tbody>';
   list.forEach(function(x){ html+='<tr><td>'+esc(x.name)+'</td><td>'+esc(x.mtime)+'</td><td>'+esc(x.path)+'</td><td>'+esc((x.files||[]).join(', '))+'</td></tr>'; });
   box.innerHTML=html+'</tbody></table>';
+}
+function rowsTable(title, rows, cols){
+  var html='<h3>'+esc(title)+'</h3>';
+  if(!rows||!rows.length) return html+'<p class="hint">暂无数据</p>';
+  html+='<table><thead><tr>'+cols.map(function(c){return '<th>'+esc(c[0])+'</th>';}).join('')+'</tr></thead><tbody>';
+  rows.forEach(function(row){ html+='<tr>'+cols.map(function(c){return '<td>'+esc(row[c[1]]==null?'':row[c[1]])+'</td>';}).join('')+'</tr>'; });
+  return html+'</tbody></table>';
+}
+function renderRiskDashboard(data){
+  var s=data.highRiskSummary||{};
+  var html='<div class="status-grid">'
+    + '<div class="k">统计范围</div><div class="v">'+esc(data.hours)+' 小时</div>'
+    + '<div class="k">机器人发送</div><div class="v">总 '+esc(data.botSend&&data.botSend.total)+' / 成功 '+esc(data.botSend&&data.botSend.sent)+' / 丢弃 '+esc(data.botSend&&data.botSend.dropped)+' / 失败 '+esc(data.botSend&&data.botSend.failed)+'</div>'
+    + '<div class="k">自撤回</div><div class="v">成功 '+esc(data.botSend&&data.botSend.selfRecallSuccess)+' / 失败 '+esc(data.botSend&&data.botSend.selfRecallFailed)+' / 待处理 '+esc(data.botSend&&data.botSend.selfRecallPending)+'</div>'
+    + '<div class="k">审计事件</div><div class="v">'+esc(data.audit&&data.audit.total)+'</div>'
+    + '</div>';
+  html += rowsTable('高频群', s.topGroups, [['群号','groupId'],['次数','count'],['成功','sent'],['丢弃','dropped'],['失败','failed']]);
+  html += rowsTable('高频功能/场景', s.topScenes, [['场景','scene'],['次数','count'],['成功','sent'],['丢弃','dropped'],['失败','failed']]);
+  html += rowsTable('风险账号', s.topRiskUsers, [['账号','userId'],['次数','count']]);
+  html += rowsTable('动作账号', s.topActionUsers, [['账号','userId'],['次数','count']]);
+  html += rowsTable('最近发送', data.botSend&&data.botSend.recent, [['群号','groupId'],['场景','scene'],['类型','messageType'],['状态','status'],['原因','reason']]);
+  el('riskBox').innerHTML=html;
+}
+function renderHealth(data){
+  var html='<div class="status-grid">'
+    + '<div class="k">健康状态</div><div class="v">'+(data.healthy?'<span class="ok">正常</span>':'<span class="error">需关注</span>')+'</div>'
+    + '<div class="k">当前账号</div><div class="v">'+esc(data.runtime&&data.runtime.botId)+'</div>'
+    + '<div class="k">上次账号</div><div class="v">'+esc(data.runtime&&data.runtime.previousBotId)+'</div>'
+    + '<div class="k">WS地址</div><div class="v">'+esc(data.runtime&&data.runtime.wsUrl)+'</div>'
+    + '<div class="k">运行秒数</div><div class="v">'+esc(data.runtime&&data.runtime.uptimeSeconds)+'</div>'
+    + '</div>';
+  if(data.warnings&&data.warnings.length) html+='<h3>提示</h3><pre>'+esc(data.warnings.join('\\n'))+'</pre>';
+  html += rowsTable('最近10分钟发送', data.recentSend&&data.recentSend.recent, [['群号','groupId'],['场景','scene'],['状态','status'],['原因','reason']]);
+  el('healthBox').innerHTML=html;
+}
+function loadRiskDashboard(){ return api('/api/risk/dashboard?hours='+encodeURIComponent(el('riskHours').value||24)).then(renderRiskDashboard); }
+function loadHealth(){ return api('/api/health').then(renderHealth); }
+function applyRiskPreset(level){
+  el('presetBox').textContent='应用中...';
+  return api('/api/risk/preset',{method:'POST',body:JSON.stringify({level:level})}).then(function(res){
+    el('presetBox').textContent=JSON.stringify({level:res.level, patch:res.patch},null,2);
+    show(res.message||'风险档位已应用');
+    return loadConfig().then(loadStatus);
+  });
 }
 function loadStatus(){ return api('/api/status').then(renderStatus); }
 function loadConfig(){ return api('/api/config').then(function(data){ config=data.config; el('configEditor').value=JSON.stringify(config,null,2); renderForms(); }); }
@@ -505,7 +595,7 @@ function deleteLicense(){
 function createBackupSnapshot(){ return api('/api/backups/snapshot',{method:'POST',body:'{}'}).then(function(res){ show(res.message||'快照已创建'); return loadBackups(); }); }
 function saveRawConfig(){ var parsed=JSON.parse(el('configEditor').value); return api('/api/config',{method:'POST',body:JSON.stringify({config:parsed})}).then(function(res){ show(res.message||'保存成功'); return reloadAll(); }); }
 function saveCommands(){ var parsed=JSON.parse(el('commandsEditor').value); return api('/api/dynamic-commands',{method:'POST',body:JSON.stringify({config:parsed})}).then(function(res){ show(res.message||'保存成功'); return loadCommands().then(loadStatus); }); }
-function reloadAll(){ return Promise.resolve().then(loadStatus).then(loadConfig).then(loadCommands).then(loadGroups).then(loadLicenses).then(loadBackups).then(function(){ show('已刷新'); }).catch(function(e){ show(e.message || e, false); }); }
+function reloadAll(){ return Promise.resolve().then(loadStatus).then(loadConfig).then(loadCommands).then(loadGroups).then(loadLicenses).then(loadBackups).then(loadRiskDashboard).then(loadHealth).then(function(){ show('已刷新'); }).catch(function(e){ show(e.message || e, false); }); }
 function switchTab(tab){
   document.querySelectorAll('button.tab[data-tab]').forEach(function(b){ b.classList.remove('active'); });
   document.querySelectorAll('section[id^="tab-"]').forEach(function(s){ s.classList.add('hidden'); });
@@ -525,6 +615,9 @@ function bind(){
   el('deleteLicenseBtn').addEventListener('click',function(){ Promise.resolve(deleteLicense()).catch(function(e){ show(e.message,false); }); });
   el('snapshotBtn').addEventListener('click',function(){ createBackupSnapshot().catch(function(e){ show(e.message,false); }); });
   el('loadBackupsBtn').addEventListener('click',function(){ loadBackups().catch(function(e){ show(e.message,false); }); });
+  el('loadRiskBtn').addEventListener('click',function(){ loadRiskDashboard().catch(function(e){ show(e.message,false); }); });
+  el('loadHealthBtn').addEventListener('click',function(){ loadHealth().catch(function(e){ show(e.message,false); }); });
+  document.querySelectorAll('[data-risk-preset]').forEach(function(btn){ btn.addEventListener('click',function(){ applyRiskPreset(btn.dataset.riskPreset).catch(function(e){ show(e.message,false); }); }); });
   el('saveRawBtn').addEventListener('click',function(){ Promise.resolve(saveRawConfig()).catch(function(e){ show(e.message,false); }); });
   el('reloadConfigBtn').addEventListener('click',function(){ loadConfig().catch(function(e){ show(e.message,false); }); });
   el('saveCommandsBtn').addEventListener('click',function(){ Promise.resolve(saveCommands()).catch(function(e){ show(e.message,false); }); });

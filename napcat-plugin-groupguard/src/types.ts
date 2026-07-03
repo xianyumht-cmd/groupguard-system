@@ -77,6 +77,20 @@ export interface SelfRecallPolicy {
 
 export type BotAntiRiskSuffixMode = 'global' | 'mixed' | 'punctuation' | 'none';
 export type BotAntiRiskLimitFallbackMode = 'drop' | 'forward';
+export type OutgoingRiskUrlMode = 'off' | 'number' | 'mask' | 'drop';
+export type BanQueryResultMode = 'short' | 'image' | 'text';
+export type RiskPresetLevel = 'conservative' | 'balanced' | 'aggressive';
+
+export interface OutgoingRiskPackagingSettings {
+  enabled: boolean;
+  urlMode: OutgoingRiskUrlMode;
+  urlNotice: string;
+  urlMaxPerMessage: number;
+  applyToPrivate: boolean;
+  applyToForward: boolean;
+  highRiskScenes: string[];
+  logOnly: boolean;
+}
 
 export interface BotAntiRiskScenePolicy {
   delayMinMs?: number;
@@ -338,6 +352,11 @@ export interface GroupGuardSettings {
   botAntiRiskScenePolicies?: Record<string, BotAntiRiskScenePolicy>;
   /** 触发发送限流/熔断时的处理：drop=丢弃，forward=合并转发兜底 */
   botAntiRiskLimitFallbackMode?: BotAntiRiskLimitFallbackMode;
+  outgoingRisk?: OutgoingRiskPackagingSettings;
+  banQueryResultMode?: BanQueryResultMode;
+  banQueryUserCooldownSeconds?: number;
+  banQueryGroupRateLimitPerMinute?: number;
+  riskPresetLevel?: RiskPresetLevel;
   /** 随机延迟发送（毫秒） */
   randomDelayMin?: number;
   randomDelayMax?: number;

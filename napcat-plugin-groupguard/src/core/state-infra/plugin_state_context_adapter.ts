@@ -1,6 +1,7 @@
 import { GROUPGUARD_SEND_SCENE_KEY } from '../send_wrapper_constants';
 import { loggingStateService } from '../state-services/logging_state_service';
 import { pluginState } from '../../state';
+import { packageForwardMessages, packageOutgoingSegments } from '../../services/outgoing_risk_packager';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -99,6 +100,9 @@ export class PluginStateContextAdapter {
     const nickname = String(global.botSendForwardNickname || 'GroupGuard').trim() || 'GroupGuard';
     const userId = String(global.botSendForwardUserId || pluginState.botId || '0');
     const groupId = params?.group_id ?? params?.groupId;
+    const scene = String(params?.[GROUPGUARD_SEND_SCENE_KEY] || getSceneFromMessage(params?.message) || 'raw_text');
+    const settings = pluginState.getGroupSettings(String(groupId || ''));
+    const content = packageOutgoingSegments(normalizeForwardContent(params?.message), settings, scene, 'forward').message;
     return {
       group_id: groupId,
       messages: [{
@@ -106,10 +110,25 @@ export class PluginStateContextAdapter {
         data: {
           nickname,
           user_id: userId,
-          content: normalizeForwardContent(params?.message)
+          content
         }
       }]
     };
+  }
+
+  private sanitizeSendParams(actionName: string, params: unknown): unknown {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
+    const next = stripWrapperMeta(params) as any;
+    if (actionName === 'send_group_msg' && Array.isArray(next.message)) {
+      const groupId = String(next.group_id ?? next.groupId ?? '');
+      const scene = String((params as any)[GROUPGUARD_SEND_SCENE_KEY] || getSceneFromMessage((params as any).message) || 'raw_text');
+      next.message = packageOutgoingSegments(next.message, pluginState.getGroupSettings(groupId), scene, 'group').message;
+    }
+    if (actionName === 'send_group_forward_msg' && Array.isArray(next.messages)) {
+      const groupId = String(next.group_id ?? next.groupId ?? '');
+      next.messages = packageForwardMessages(next.messages, pluginState.getGroupSettings(groupId), 'raw_text').messages;
+    }
+    return next;
   }
 
   setActions(actions: any): void {
@@ -131,7 +150,7 @@ export class PluginStateContextAdapter {
           loggingStateService.warn(`forward_send_direct source=send_wrapper group=${String((wrappedParams as any).group_id || '')}`);
           return rawCall('send_group_forward_msg', wrappedParams, adapter, config);
         }
-        return rawCall(actionName, stripWrapperMeta(params), adapter, config);
+        return rawCall(actionName, this.sanitizeSendParams(actionName, params), adapter, config);
       }
     };
   }
