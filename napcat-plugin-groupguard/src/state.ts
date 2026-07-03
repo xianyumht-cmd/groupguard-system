@@ -284,6 +284,11 @@ class PluginState {
     return this.config.global || ({} as GroupGuardSettings);
   }
 
+  private getSelfRecallSettings(groupId?: string): GroupGuardSettings {
+    const gid = String(groupId || '').trim();
+    return gid ? this.getGroupSettings(gid) : this.getGlobalSettings();
+  }
+
   private getQueueConcurrency(): number {
     const n = Number(this.getGlobalSettings().queueConcurrency || 1);
     return Math.max(1, Math.min(20, Number.isFinite(n) ? n : 1));
@@ -310,8 +315,8 @@ class PluginState {
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
-  private computeSelfRecallDelayMs(): number {
-    const globalSettings = this.getGlobalSettings();
+  private computeSelfRecallDelayMs(groupId?: string): number {
+    const globalSettings = this.getSelfRecallSettings(groupId);
     const globalPolicy = globalSettings?.selfRecall;
     const enabled = (globalPolicy ? globalPolicy.enabled === true : false) || globalSettings?.autoRecallSelf === true;
     if (!enabled) return -1;
@@ -324,6 +329,13 @@ class PluginState {
     const jitterMs = Math.min(300000, Math.max(0, Number(policy?.jitter ?? 0)) * 1000);
     const base = mode === 'random' ? this.randomBetweenMs(minDelayMs, maxDelayMs) : fixedDelayMs;
     return Math.min(300000, base + this.randomBetweenMs(0, jitterMs));
+  }
+
+  private shouldScheduleSelfRecall(groupId?: string): boolean {
+    const settings = this.getSelfRecallSettings(groupId);
+    const p = Number(settings.selfRecall?.probability ?? settings.autoRecallSelfProbability ?? 100);
+    const probability = Math.max(0, Math.min(100, Number.isFinite(p) ? p : 100));
+    return Math.random() * 100 < probability;
   }
 
   private extractSendMessageId(res: any): string {
@@ -346,9 +358,13 @@ class PluginState {
       this.debug(`[SelfRecall] skipped reason=msgId_missing source=${source} groupId=${gid || 'unknown'}`);
       return 0;
     }
-    const delay = this.computeSelfRecallDelayMs();
+    const delay = this.computeSelfRecallDelayMs(gid);
     if (delay < 0) {
       this.debug(`[SelfRecall] skipped reason=disabled source=${source} groupId=${gid} msgId=${msgId}`);
+      return 0;
+    }
+    if (!this.shouldScheduleSelfRecall(gid)) {
+      this.debug(`[SelfRecall] skipped reason=probability source=${source} groupId=${gid} msgId=${msgId}`);
       return 0;
     }
     const now = Date.now();

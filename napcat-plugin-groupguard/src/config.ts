@@ -109,8 +109,10 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   lotteryReward: 200,
   autoRecallSelf: true,
   autoRecallSelfDelay: 60,
+  autoRecallSelfProbability: 100,
   selfRecall: {
     enabled: true,
+    probability: 100,
     mode: 'fixed',
     fixedDelay: 60,
     minDelay: 45,
@@ -311,13 +313,15 @@ function normalizeSelfRecall(settings: GroupGuardSettings): SelfRecallPolicy {
   const base = settings.selfRecall || ({} as SelfRecallPolicy);
   const legacyEnabled = settings.autoRecallSelf === true;
   const legacyDelay = normalizeNumber(settings.autoRecallSelfDelay, 60, 0, 300);
+  const legacyProbability = normalizeNumber(settings.autoRecallSelfProbability, 100, 0, 100);
   const enabled = base.enabled !== undefined ? base.enabled === true : legacyEnabled;
+  const probability = normalizeNumber(base.probability, legacyProbability, 0, 100);
   const mode = base.mode === 'random' ? 'random' : 'fixed';
   const fixedDelay = normalizeNumber(base.fixedDelay, legacyDelay, 0, 300);
   const minDelay = normalizeNumber(base.minDelay, Math.max(0, fixedDelay - 15), 0, 300);
   const maxDelay = normalizeNumber(base.maxDelay, Math.max(minDelay, fixedDelay + 30), minDelay, 300);
   const jitter = normalizeNumber(base.jitter, 0, 0, 300);
-  return { enabled, mode, fixedDelay, minDelay, maxDelay, jitter };
+  return { enabled, probability, mode, fixedDelay, minDelay, maxDelay, jitter };
 }
 
 function normalizeActionPriority(settings: GroupGuardSettings): ActionPrioritySettings {
@@ -439,6 +443,7 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
   merged.autoRecallSelfDelay = merged.selfRecall.mode === 'fixed'
     ? merged.selfRecall.fixedDelay
     : normalizeNumber((merged.selfRecall.minDelay + merged.selfRecall.maxDelay) / 2, 60, 0, 300);
+  merged.autoRecallSelfProbability = merged.selfRecall.probability;
   merged.actionPriority = normalizeActionPriority(merged);
   merged.actionQueueConcurrency = normalizeNumber(merged.actionQueueConcurrency, 2, 1, 20);
   merged.maxActionQueueSizeGlobal = normalizeNumber(merged.maxActionQueueSizeGlobal, 5000, 200);

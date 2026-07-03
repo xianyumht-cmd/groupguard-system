@@ -39,13 +39,6 @@ function parseQaPath(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function renderMainPage(): string {
-  return renderHomePage().replace(
-    '<button class="tab" data-tab="query">查询配置</button>',
-    '<a class="tablink" id="queryLink" href="/query.html">查询配置</a>'
-  );
-}
-
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
   const logger = options.logger || console;
   const { host, port, token, tokenFromEnv } = resolveServerConfig(options);
@@ -54,7 +47,7 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
     const url = new URL(req.url || '/', `http://${host}:${port}`);
     try {
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-        send(res, 200, renderMainPage(), 'text/html; charset=utf-8');
+        send(res, 200, renderHomePage(), 'text/html; charset=utf-8');
         return;
       }
 
@@ -83,7 +76,7 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       if (req.method === 'POST' && url.pathname === '/api/config') {
         const payload = JSON.parse(await readBody(req) || '{}');
         saveRawConfig(options, payload.config ?? payload);
-        sendJson(res, 200, { ok: true, message: 'config.json 已保存并刷新运行时配置。连接/路径类配置仍需重启服务完全生效。' });
+        sendJson(res, 200, { ok: true, message: 'config.json 已保存并刷新运行时配置。连接路径类配置仍需重启服务后完全生效。' });
         return;
       }
 

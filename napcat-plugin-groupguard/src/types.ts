@@ -67,6 +67,7 @@ export interface ContentRiskSettings {
 
 export interface SelfRecallPolicy {
   enabled: boolean;
+  probability: number;
   mode: 'fixed' | 'random';
   fixedDelay: number;
   minDelay: number;
@@ -327,6 +328,7 @@ export interface GroupGuardSettings {
   autoRecallSelf?: boolean;
   /** 自动撤回延迟（秒） */
   autoRecallSelfDelay?: number;
+  autoRecallSelfProbability?: number;
   selfRecall?: SelfRecallPolicy;
   /** 随机后缀（防复读风控） */
   randomSuffix?: boolean;
