@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "pluginMetrics": {
+    "builtin.sub_gameplay.master_servant.welfare.65786163743ae696b0e4babae7a68fe588a9": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 11,
+      "lastCalledAt": "2026-07-03T02:14:10.256Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.master_servant.profile.65786163743ae68891e79a84e5a591e7baa6": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T02:14:10.261Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.master_servant.hire.7072656669783ae99b87e4bda3": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 4,
+      "lastCalledAt": "2026-07-03T02:14:10.263Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.master_servant.grant_name.7072656669783ae8b590e5908d": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T01:36:57.869Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.master_servant.settle_servants.65786163743ae7bb93e7ae97e4bb86e4baba": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 0,
+      "lastCalledAt": "2026-07-03T01:36:58.385Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.master_servant.rank_gold.65786163743ae9bb84e98791e68e92e8a18c": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:36:59.222Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.racing.name.7072656669783ae591bde5908d": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 4,
+      "lastCalledAt": "2026-07-03T02:14:10.265Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.racing.career.65786163743ae7949fe6b6af": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T02:14:10.267Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.racing.exchange_coin.7072656669783ae68da2e8bda6e5b881": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T01:37:02.405Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.racing.race.65786163743ae58f82e8b59b": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:37:03.697Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.racing.rank_champions.65786163743ae586a0e5869be6a69c": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T01:37:05.057Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.light.rps.7072656669783ae78c9ce68bb3": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T02:14:10.268Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.light.dice.7072656669783ae9aab0e5ad90": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:37:06.587Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.sub_gameplay.light.number.7072656669783ae695b0e5ad97": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:37:08.003Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    },
+    "builtin.ele.build.656c65e4b88be8bdbd": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 12,
+      "lastCalledAt": "2026-07-03T02:14:10.277Z",
+      "lastErrorType": null,
+      "errorCounts": {}
+    }
+  },
+  "commandMetrics": {
+    "builtin.sub_gameplay.master_servant.welfare.65786163743ae696b0e4babae7a68fe588a9": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 11,
+      "lastCalledAt": "2026-07-03T02:14:10.256Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.master_servant.profile.65786163743ae68891e79a84e5a591e7baa6": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T02:14:10.261Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.master_servant.hire.7072656669783ae99b87e4bda3": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 4,
+      "lastCalledAt": "2026-07-03T02:14:10.263Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.master_servant.grant_name.7072656669783ae8b590e5908d": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T01:36:57.869Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.master_servant.settle_servants.65786163743ae7bb93e7ae97e4bb86e4baba": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 0,
+      "lastCalledAt": "2026-07-03T01:36:58.385Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.master_servant.rank_gold.65786163743ae9bb84e98791e68e92e8a18c": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:36:59.222Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.racing.name.7072656669783ae591bde5908d": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 4,
+      "lastCalledAt": "2026-07-03T02:14:10.265Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.racing.career.65786163743ae7949fe6b6af": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T02:14:10.267Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.racing.exchange_coin.7072656669783ae68da2e8bda6e5b881": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T01:37:02.405Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.racing.race.65786163743ae58f82e8b59b": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:37:03.697Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.racing.rank_champions.65786163743ae586a0e5869be6a69c": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T01:37:05.057Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.light.rps.7072656669783ae78c9ce68bb3": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 2,
+      "lastCalledAt": "2026-07-03T02:14:10.268Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.light.dice.7072656669783ae9aab0e5ad90": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:37:06.587Z",
+      "lastErrorType": null
+    },
+    "builtin.sub_gameplay.light.number.7072656669783ae695b0e5ad97": {
+      "totalCalls": 2,
+      "successCount": 2,
+      "failureCount": 0,
+      "totalLatencyMs": 1,
+      "lastCalledAt": "2026-07-03T01:37:08.003Z",
+      "lastErrorType": null
+    },
+    "builtin.ele.build.656c65e4b88be8bdbd": {
+      "totalCalls": 4,
+      "successCount": 4,
+      "failureCount": 0,
+      "totalLatencyMs": 12,
+      "lastCalledAt": "2026-07-03T02:14:10.277Z",
+      "lastErrorType": null
+    }
+  },
+  "errorMetrics": {},
+  "userUsage": {
+    "builtin.sub_gameplay.master_servant.welfare.65786163743ae696b0e4babae7a68fe588a9": {
+      "10001": 4
+    },
+    "builtin.sub_gameplay.master_servant.profile.65786163743ae68891e79a84e5a591e7baa6": {
+      "10001": 4
+    },
+    "builtin.sub_gameplay.master_servant.hire.7072656669783ae99b87e4bda3": {
+      "10001": 4
+    },
+    "builtin.sub_gameplay.master_servant.grant_name.7072656669783ae8b590e5908d": {
+      "10001": 2
+    },
+    "builtin.sub_gameplay.master_servant.settle_servants.65786163743ae7bb93e7ae97e4bb86e4baba": {
+      "10001": 2
+    },
+    "builtin.sub_gameplay.master_servant.rank_gold.65786163743ae9bb84e98791e68e92e8a18c": {
+      "10001": 2
+    },
+    "builtin.sub_gameplay.racing.name.7072656669783ae591bde5908d": {
+      "10001": 4
+    },
+    "builtin.sub_gameplay.racing.career.65786163743ae7949fe6b6af": {
+      "10001": 4
+    },
+    "builtin.sub_gameplay.racing.exchange_coin.7072656669783ae68da2e8bda6e5b881": {
+      "10001": 2
+    },
+    "builtin.sub_gameplay.racing.race.65786163743ae58f82e8b59b": {
+      "10001": 2
+    },
+    "builtin.sub_gameplay.racing.rank_champions.65786163743ae586a0e5869be6a69c": {
+      "10001": 2
+    },
+    "builtin.sub_gameplay.light.rps.7072656669783ae78c9ce68bb3": {
+      "10001": 4
+    },
+    "builtin.sub_gameplay.light.dice.7072656669783ae9aab0e5ad90": {
+      "10001": 2
+    },
+    "builtin.sub_gameplay.light.number.7072656669783ae695b0e5ad97": {
+      "10001": 2
+    },
+    "builtin.ele.build.656c65e4b88be8bdbd": {
+      "10001": 4
+    }
+  },
+  "groupUsage": {
+    "builtin.sub_gameplay.master_servant.welfare.65786163743ae696b0e4babae7a68fe588a9": {
+      "90001": 4
+    },
+    "builtin.sub_gameplay.master_servant.profile.65786163743ae68891e79a84e5a591e7baa6": {
+      "90001": 4
+    },
+    "builtin.sub_gameplay.master_servant.hire.7072656669783ae99b87e4bda3": {
+      "90001": 4
+    },
+    "builtin.sub_gameplay.master_servant.grant_name.7072656669783ae8b590e5908d": {
+      "90001": 2
+    },
+    "builtin.sub_gameplay.master_servant.settle_servants.65786163743ae7bb93e7ae97e4bb86e4baba": {
+      "90001": 2
+    },
+    "builtin.sub_gameplay.master_servant.rank_gold.65786163743ae9bb84e98791e68e92e8a18c": {
+      "90001": 2
+    },
+    "builtin.sub_gameplay.racing.name.7072656669783ae591bde5908d": {
+      "90001": 4
+    },
+    "builtin.sub_gameplay.racing.career.65786163743ae7949fe6b6af": {
+      "90001": 4
+    },
+    "builtin.sub_gameplay.racing.exchange_coin.7072656669783ae68da2e8bda6e5b881": {
+      "90001": 2
+    },
+    "builtin.sub_gameplay.racing.race.65786163743ae58f82e8b59b": {
+      "90001": 2
+    },
+    "builtin.sub_gameplay.racing.rank_champions.65786163743ae586a0e5869be6a69c": {
+      "90001": 2
+    },
+    "builtin.sub_gameplay.light.rps.7072656669783ae78c9ce68bb3": {
+      "90001": 4
+    },
+    "builtin.sub_gameplay.light.dice.7072656669783ae9aab0e5ad90": {
+      "90001": 2
+    },
+    "builtin.sub_gameplay.light.number.7072656669783ae695b0e5ad97": {
+      "90001": 2
+    },
+    "builtin.ele.build.656c65e4b88be8bdbd": {
+      "90001": 4
+    }
+  }
+}

@@ -2088,5 +2088,170 @@
       "group": 9,
       "private": 0
     }
+  },
+  "builtin.sub_gameplay.master_servant.welfare.65786163743ae696b0e4babae7a68fe588a9": {
+    "commandId": "builtin.sub_gameplay.master_servant.welfare.65786163743ae696b0e4babae7a68fe588a9",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 3,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.master_servant.profile.65786163743ae68891e79a84e5a591e7baa6": {
+    "commandId": "builtin.sub_gameplay.master_servant.profile.65786163743ae68891e79a84e5a591e7baa6",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 0,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.master_servant.hire.7072656669783ae99b87e4bda3": {
+    "commandId": "builtin.sub_gameplay.master_servant.hire.7072656669783ae99b87e4bda3",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.master_servant.grant_name.7072656669783ae8b590e5908d": {
+    "commandId": "builtin.sub_gameplay.master_servant.grant_name.7072656669783ae8b590e5908d",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.master_servant.settle_servants.65786163743ae7bb93e7ae97e4bb86e4baba": {
+    "commandId": "builtin.sub_gameplay.master_servant.settle_servants.65786163743ae7bb93e7ae97e4bb86e4baba",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 0,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.master_servant.rank_gold.65786163743ae9bb84e98791e68e92e8a18c": {
+    "commandId": "builtin.sub_gameplay.master_servant.rank_gold.65786163743ae9bb84e98791e68e92e8a18c",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.racing.name.7072656669783ae591bde5908d": {
+    "commandId": "builtin.sub_gameplay.racing.name.7072656669783ae591bde5908d",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.racing.career.65786163743ae7949fe6b6af": {
+    "commandId": "builtin.sub_gameplay.racing.career.65786163743ae7949fe6b6af",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.racing.exchange_coin.7072656669783ae68da2e8bda6e5b881": {
+    "commandId": "builtin.sub_gameplay.racing.exchange_coin.7072656669783ae68da2e8bda6e5b881",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.racing.race.65786163743ae58f82e8b59b": {
+    "commandId": "builtin.sub_gameplay.racing.race.65786163743ae58f82e8b59b",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 0,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.racing.rank_champions.65786163743ae586a0e5869be6a69c": {
+    "commandId": "builtin.sub_gameplay.racing.rank_champions.65786163743ae586a0e5869be6a69c",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.light.rps.7072656669783ae78c9ce68bb3": {
+    "commandId": "builtin.sub_gameplay.light.rps.7072656669783ae78c9ce68bb3",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 0,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.light.dice.7072656669783ae9aab0e5ad90": {
+    "commandId": "builtin.sub_gameplay.light.dice.7072656669783ae9aab0e5ad90",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 1,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.sub_gameplay.light.number.7072656669783ae695b0e5ad97": {
+    "commandId": "builtin.sub_gameplay.light.number.7072656669783ae695b0e5ad97",
+    "successCount": 1,
+    "failureCount": 0,
+    "averageLatencyMs": 0,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 1,
+      "private": 0
+    }
+  },
+  "builtin.ele.build.656c65e4b88be8bdbd": {
+    "commandId": "builtin.ele.build.656c65e4b88be8bdbd",
+    "successCount": 2,
+    "failureCount": 0,
+    "averageLatencyMs": 3,
+    "lastFailureReason": null,
+    "messageTypeStats": {
+      "group": 2,
+      "private": 0
+    }
   }
 }
