@@ -51,7 +51,7 @@ function wrapPlainReplyInCodeBlock(reply: string): string {
   return `复制下面内容到浏览器打开：\n\`\`\`text\n${text}\n\`\`\``;
 }
 
-function shouldSendSplitQaReply(settings: any): boolean {
+function shouldSendQaReply(settings: any): boolean {
   const policies = settings?.botAntiRiskScenePolicies || {};
   const scenePolicy = policies.qa_reply || policies.qa || {};
   const raw = Number(scenePolicy.replyProbability ?? settings?.replyProbability ?? 100);
@@ -446,29 +446,33 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
     if (userCooldown > 0 && now - lastGroupUserTs < userCooldown * 1000) return false;
     if (tierCooldown > 0 && now - lastGroupUserKeywordTs < tierCooldown * 1000) return false;
 
+    const reply = qa.reply.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
+    const linkDelivery = settings.qaLinkDelivery || config.global.qaLinkDelivery;
+    const shouldSplitLinkReply = linkDelivery?.enabled === true && countUrlsInText(reply) > 0;
+    if (!shouldSendQaReply(settings)) {
+      loggingStateService.debug(`问答命中但回复概率未通过，不记录冷却: 群 ${groupId} 用户 ${userId} 匹配 [${qa.mode}]${qa.keyword}`);
+      return true;
+    }
+
     cacheStateService.setQaCooldown(groupKeywordKey, now);
     cacheStateService.setQaCooldown(groupUserKey, now);
     cacheStateService.setQaCooldown(groupUserKeywordKey, now);
 
-    const reply = qa.reply.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
-    const linkDelivery = settings.qaLinkDelivery || config.global.qaLinkDelivery;
-    const shouldSplitLinkReply = linkDelivery?.enabled === true && countUrlsInText(reply) > 0;
     if (shouldSplitLinkReply) {
-      if (!shouldSendSplitQaReply(settings)) return true;
       await send({
         channel: 'group',
         targetId: groupId,
         scene: 'qa_link_notice',
         message: linkDelivery.noticeText,
-        force: true,
-        applyTemplate: false
+        force: false,
+        applyTemplate: false,
+        skipProbability: true
       });
       await sleep(randomBetween(Number(linkDelivery.delayMinMs || 0), Number(linkDelivery.delayMaxMs || 0)));
     }
     const finalReply = shouldSplitLinkReply && linkDelivery?.wrapInCodeBlock === true ? wrapPlainReplyInCodeBlock(reply) : reply;
-    const forceReply = shouldSplitLinkReply;
-    if (finalReply.includes('[CQ:')) await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'text', data: { text: finalReply } }], force: forceReply, applyTemplate: true });
-    else await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: finalReply, force: forceReply, applyTemplate: true });
+    if (finalReply.includes('[CQ:')) await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'text', data: { text: finalReply } }], force: false, applyTemplate: true, skipProbability: true });
+    else await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: finalReply, force: false, applyTemplate: true, skipProbability: true });
     
     loggingStateService.debug(`闂瓟瑙﹀彂: 缇?${groupId} 鐢ㄦ埛 ${userId} 鍖归厤 [${qa.mode}]${qa.keyword}`);
     return true;

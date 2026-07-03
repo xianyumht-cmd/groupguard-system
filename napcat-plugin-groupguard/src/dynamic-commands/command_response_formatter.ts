@@ -24,6 +24,7 @@ function normalizeDeliveryScene(delivery: {
   vars?: Record<string, string | number | boolean>;
   segments?: Array<Record<string, unknown>>;
   forwardNodes?: Array<Record<string, unknown>>;
+  skipProbability?: boolean;
 }, fallbackScene: string) {
   return {
     ...delivery,
@@ -39,6 +40,7 @@ function getStructuredDeliveries(payload: unknown): Array<{
   vars?: Record<string, string | number | boolean>;
   segments?: Array<Record<string, unknown>>;
   forwardNodes?: Array<Record<string, unknown>>;
+  skipProbability?: boolean;
 }> {
   if (!payload || typeof payload !== 'object') return [];
   const deliveries = (payload as { deliveries?: unknown; }).deliveries;
@@ -51,6 +53,7 @@ function getStructuredDeliveries(payload: unknown): Array<{
     vars?: Record<string, string | number | boolean>;
     segments?: Array<Record<string, unknown>>;
     forwardNodes?: Array<Record<string, unknown>>;
+    skipProbability?: boolean;
   } => (
     !!delivery &&
     typeof delivery === 'object' &&

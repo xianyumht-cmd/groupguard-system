@@ -781,7 +781,7 @@ class PluginState {
     }
   }
 
-  async sendGroupText (groupId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; }): Promise<void> {
+  async sendGroupText (groupId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; }): Promise<void> {
     if (!this.actions || !this.networkConfig) return;
     const templateDisabled = this.isReplyTemplateDisabled();
     const scene = options?.scene || 'raw_text';
@@ -798,7 +798,7 @@ class PluginState {
       }).text;
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
-    if (!force && !this.shouldSendByProbability(scene)) return;
+    if (!force && options?.skipProbability !== true && !this.shouldSendByProbability(scene)) return;
     const templated = (!templateDisabled && allowSemanticTemplate && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
     const suffixInfo = this.getRandomSuffixInfo(groupId, scene);
     const suffix = suffixInfo.suffix;
@@ -815,14 +815,14 @@ class PluginState {
   }
 
   /** 发送群消息 (Array) */
-  async sendGroupMsg (groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; }): Promise<void> {
+  async sendGroupMsg (groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; }): Promise<void> {
     if (!this.actions || !this.networkConfig) return;
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
     const scene = options?.scene || 'raw_text';
     const allowSemanticTemplate = isReplyTemplateSceneAllowed(scene);
-    if (!force && !this.shouldSendByProbability(scene)) return;
+    if (!force && options?.skipProbability !== true && !this.shouldSendByProbability(scene)) return;
     const cloned = this.cloneMessage(message);
     const firstText = cloned.find(seg => seg && seg.type === 'text' && seg.data && typeof seg.data.text === 'string');
     if (firstText) {

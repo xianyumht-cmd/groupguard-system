@@ -18,6 +18,7 @@ export interface CapturedCommandDelivery {
   forwardNodes?: Array<Record<string, unknown>>;
   applyTemplate?: boolean;
   force?: boolean;
+  skipProbability?: boolean;
 }
 
 const responseCaptureStorage = new AsyncLocalStorage<CapturedCommandDelivery[]>();
@@ -111,7 +112,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
       await communicationStateService.sendPrivateMsg(resolvedDelivery.targetId, resolvedDelivery.segments as any, {
         scene: resolvedDelivery.scene,
         force: resolvedDelivery.force ?? true,
-        applyTemplate: resolvedDelivery.applyTemplate ?? true
+        applyTemplate: resolvedDelivery.applyTemplate ?? true,
+        skipProbability: resolvedDelivery.skipProbability === true
       } as any);
       return;
     }
@@ -138,7 +140,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
       {
         scene: resolvedDelivery.scene,
         force: resolvedDelivery.force ?? true,
-        applyTemplate: resolvedDelivery.applyTemplate ?? true
+        applyTemplate: resolvedDelivery.applyTemplate ?? true,
+        skipProbability: resolvedDelivery.skipProbability === true
       } as any
     );
     return;
@@ -150,7 +153,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
       scene: resolvedDelivery.scene,
       vars: resolvedDelivery.vars,
       force: resolvedDelivery.force ?? true,
-      applyTemplate: resolvedDelivery.applyTemplate ?? true
+      applyTemplate: resolvedDelivery.applyTemplate ?? true,
+      skipProbability: resolvedDelivery.skipProbability === true
     } as any
   );
 }
