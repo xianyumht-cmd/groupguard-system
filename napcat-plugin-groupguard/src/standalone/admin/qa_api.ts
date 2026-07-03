@@ -45,6 +45,15 @@ function normalizeDisabledKeys(value: any): string[] {
   return Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
 }
 
+function loadStoredGroupConfig(groupId: string): any {
+  const id = cleanGroupId(groupId);
+  try {
+    return (storageAdapter.loadAllGroupConfigs() as any)[id] || {};
+  } catch {
+    return {};
+  }
+}
+
 function normalizeQaEntry(input: any): QaEntryWithEnabled {
   const keyword = stripDisabledPrefix(input?.keyword);
   const reply = String(input?.reply || '').trim();
@@ -67,19 +76,30 @@ function toDisplayEntry(entry: any, disabledSet: Set<string>): QaEntryWithEnable
 function getGroupQaList(groupId: string): QaEntryWithEnabled[] {
   const id = cleanGroupId(groupId);
   const group = configStateService.getGroupSettings(id) as any;
-  const disabled = new Set(normalizeDisabledKeys(group?.qaDisabledKeys));
-  const list = Array.isArray(group?.qaList) ? group.qaList : [];
+  const stored = loadStoredGroupConfig(id);
+  const disabled = new Set(normalizeDisabledKeys(group?.qaDisabledKeys ?? stored?.qaDisabledKeys));
+  const memoryList = Array.isArray(group?.qaList) ? group.qaList : [];
+  const storedList = Array.isArray(stored?.qaList) ? stored.qaList : [];
+  const list = memoryList.length ? memoryList : storedList;
   return list.map((entry: QAEntry) => toDisplayEntry(entry, disabled));
 }
 
 function ensureGroupConfig(groupId: string) {
   const id = cleanGroupId(groupId);
   const config = configStateService.getConfig();
+  const stored = loadStoredGroupConfig(id);
   if (!config.groups[id]) {
-    config.groups[id] = { ...configStateService.resolveGroupSettings(id), useGlobal: false, qaList: [] };
+    config.groups[id] = {
+      ...configStateService.resolveGroupSettings(id),
+      ...stored,
+      useGlobal: false,
+      qaList: Array.isArray(stored?.qaList) ? stored.qaList : []
+    };
   }
   config.groups[id].useGlobal = false;
-  if (!Array.isArray(config.groups[id].qaList)) config.groups[id].qaList = [];
+  if (!Array.isArray(config.groups[id].qaList)) {
+    config.groups[id].qaList = Array.isArray(stored?.qaList) ? stored.qaList : [];
+  }
   return config.groups[id] as any;
 }
 
@@ -184,14 +204,16 @@ export function listQaEntries(scopeInput: any, groupIdInput: any, keyword = '') 
     return { scope, groupId: '', list: filterQa(list, keyword), total: list.length };
   }
   const groupId = cleanGroupId(groupIdInput);
+  const stored = loadStoredGroupConfig(groupId);
   const list = getQaListForScope(scope, groupId);
+  const group = config.groups[groupId] || stored || {};
   return {
     scope,
     groupId,
     list: filterQa(list, keyword),
     total: list.length,
-    groupConfigured: Boolean(config.groups[groupId]),
-    useGlobal: config.groups[groupId]?.useGlobal ?? true,
+    groupConfigured: Boolean(config.groups[groupId]) || Boolean(Object.keys(stored || {}).length),
+    useGlobal: group.useGlobal ?? true,
     globalTotal: Array.isArray(config.qaList) ? config.qaList.length : 0
   };
 }
