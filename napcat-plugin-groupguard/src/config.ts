@@ -1,5 +1,5 @@
 // 群管插件配置
-import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode, BotAntiRiskLimitFallbackMode, ContentRiskAction, ContentRiskRule, ContentRiskSettings, ContentRiskType, SubGameplaySettings, OutgoingRiskPackagingSettings, OutgoingRiskUrlMode, BanQueryResultMode, RiskPresetLevel } from './types';
+import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode, BotAntiRiskLimitFallbackMode, ContentRiskAction, ContentRiskRule, ContentRiskSettings, ContentRiskType, SubGameplaySettings, QaLinkDeliverySettings, OutgoingRiskPackagingSettings, OutgoingRiskUrlMode, BanQueryResultMode, RiskPresetLevel } from './types';
 
 export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockVideo: false,
@@ -84,6 +84,14 @@ export const DEFAULT_OUTGOING_RISK: OutgoingRiskPackagingSettings = {
   logOnly: false
 };
 
+export const DEFAULT_QA_LINK_DELIVERY: QaLinkDeliverySettings = {
+  enabled: false,
+  noticeText: '已找到资源，稍后发送链接。请不要连续重复触发。',
+  delayMinMs: 1000,
+  delayMaxMs: 3000,
+  wrapInCodeBlock: false
+};
+
 export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   useGlobal: true,
   masterEnabled: true,
@@ -134,6 +142,7 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   botAntiRiskSuffixMode: 'punctuation',
   botAntiRiskScenePolicies: {},
   botAntiRiskLimitFallbackMode: 'drop',
+  qaLinkDelivery: { ...DEFAULT_QA_LINK_DELIVERY },
   outgoingRisk: { ...DEFAULT_OUTGOING_RISK },
   banQueryResultMode: 'short',
   banQueryUserCooldownSeconds: 10,
@@ -386,6 +395,19 @@ function normalizeOutgoingRisk(input: any): OutgoingRiskPackagingSettings {
   };
 }
 
+function normalizeQaLinkDelivery(input: any): QaLinkDeliverySettings {
+  const src = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const min = normalizeNumber(src.delayMinMs, DEFAULT_QA_LINK_DELIVERY.delayMinMs, 0, 60000);
+  const max = normalizeNumber(src.delayMaxMs, DEFAULT_QA_LINK_DELIVERY.delayMaxMs, min, 60000);
+  return {
+    enabled: src.enabled === true,
+    noticeText: String(src.noticeText ?? DEFAULT_QA_LINK_DELIVERY.noticeText).trim() || DEFAULT_QA_LINK_DELIVERY.noticeText,
+    delayMinMs: min,
+    delayMaxMs: max,
+    wrapInCodeBlock: src.wrapInCodeBlock === true
+  };
+}
+
 function normalizeBotAntiRiskScenePolicies(input: any): Record<string, BotAntiRiskScenePolicy> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   const out: Record<string, BotAntiRiskScenePolicy> = {};
@@ -481,6 +503,7 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
   merged.botAntiRiskSuffixMode = normalizeSuffixMode(merged.botAntiRiskSuffixMode, 'punctuation');
   merged.botAntiRiskScenePolicies = normalizeBotAntiRiskScenePolicies(merged.botAntiRiskScenePolicies);
   merged.botAntiRiskLimitFallbackMode = normalizeLimitFallbackMode(merged.botAntiRiskLimitFallbackMode, 'drop');
+  merged.qaLinkDelivery = normalizeQaLinkDelivery((merged as any).qaLinkDelivery);
   merged.outgoingRisk = normalizeOutgoingRisk((merged as any).outgoingRisk);
   merged.banQueryResultMode = normalizeBanQueryResultMode(merged.banQueryResultMode, 'short');
   merged.banQueryUserCooldownSeconds = normalizeNumber(merged.banQueryUserCooldownSeconds, 10, 0, 3600);
@@ -524,7 +547,7 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
 }
 
 export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
-  configVersion: 4,
+  configVersion: 7,
   licenseKey: '',
   debug: false,
   ownerQQs: '',
@@ -623,7 +646,7 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   if (!(input as any)?.global?.contentRisk && ((input as any)?.contentRisk || (input as any)?.msgFilter)) {
     merged.global = { ...(merged.global || {}), contentRisk: merged.contentRisk };
   }
-  merged.configVersion = 6;
+  merged.configVersion = 7;
   const normalizedQaList: QAEntry[] = Array.isArray(merged.qaList)
     ? merged.qaList
       .filter((qa: any) => qa && typeof qa.keyword === 'string' && typeof qa.reply === 'string')
@@ -649,7 +672,10 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
     : 'image';
   const groups: Record<string, GroupGuardSettings> = {};
   for (const [gid, gs] of Object.entries(merged.groups || {})) {
-    groups[gid] = normalizeGroupSettings(gs as GroupGuardSettings);
+    const groupInput = gs as GroupGuardSettings;
+    const hasQaLinkDelivery = Object.prototype.hasOwnProperty.call(groupInput as any, 'qaLinkDelivery');
+    groups[gid] = normalizeGroupSettings(groupInput);
+    if (!hasQaLinkDelivery) delete (groups[gid] as any).qaLinkDelivery;
   }
   merged.groups = groups;
   const videoTemplates = merged.videoApiTemplates || {};

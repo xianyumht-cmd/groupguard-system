@@ -335,6 +335,7 @@ function mergedGroupSettings(e,g){
   var out=Object.assign({}, e||{}, g||{});
   out.featureSwitches=Object.assign({}, get(e,'featureSwitches',{}), get(g,'featureSwitches',{}));
   out.selfRecall=Object.assign({}, get(e,'selfRecall',{}), get(g,'selfRecall',{}));
+  out.qaLinkDelivery=Object.assign({}, get(e,'qaLinkDelivery',{}), get(g,'qaLinkDelivery',{}));
   out.subGameplay=Object.assign({}, get(e,'subGameplay',{}), get(g,'subGameplay',{}));
   out.contentRisk=Object.assign({}, get(e,'contentRisk',{}), get(g,'contentRisk',{}));
   out.contentRisk.rules=Object.assign({}, get(e,'contentRisk.rules',{}), get(g,'contentRisk.rules',{}));
@@ -388,6 +389,12 @@ function renderForms(){
     + numberHtml('最大随机延迟 ms randomDelayMax','global.randomDelayMax',get(config,'global.randomDelayMax',1500))
     + selectHtml('随机后缀模式 botAntiRiskSuffixMode','global.botAntiRiskSuffixMode',get(config,'global.botAntiRiskSuffixMode','mixed'),[['mixed','混合'],['punctuation','标点'],['none','关闭'],['global','跟随全局']])
     + jsonInputHtml('场景策略 botAntiRiskScenePolicies','global.botAntiRiskScenePolicies',get(config,'global.botAntiRiskScenePolicies',{}))
+    + sectionTitle('问答链接二段发送')
+    + switchHtml('启用问答链接先提示 qaLinkDelivery.enabled','global.qaLinkDelivery.enabled',get(config,'global.qaLinkDelivery.enabled',false))
+    + inputHtml('提示文本 qaLinkDelivery.noticeText','global.qaLinkDelivery.noticeText',get(config,'global.qaLinkDelivery.noticeText','已找到资源，稍后发送链接。请不要连续重复触发。'), 'text', {full:true})
+    + numberHtml('链接最小延迟 ms qaLinkDelivery.delayMinMs','global.qaLinkDelivery.delayMinMs',get(config,'global.qaLinkDelivery.delayMinMs',1000))
+    + numberHtml('链接最大延迟 ms qaLinkDelivery.delayMaxMs','global.qaLinkDelivery.delayMaxMs',get(config,'global.qaLinkDelivery.delayMaxMs',3000))
+    + switchHtml('第二条用代码块包裹 qaLinkDelivery.wrapInCodeBlock','global.qaLinkDelivery.wrapInCodeBlock',get(config,'global.qaLinkDelivery.wrapInCodeBlock',false))
     + sectionTitle('发送包装')
     + switchHtml('发送包装总开关 botSendWrapperEnabled','global.botSendWrapperEnabled',get(config,'global.botSendWrapperEnabled',false))
     + selectHtml('包装模式 botSendWrapperMode','global.botSendWrapperMode',get(config,'global.botSendWrapperMode','normal'),[['normal','普通发送'],['forward','合并转发']])
@@ -476,6 +483,12 @@ function renderGroupForm(data){
     + switchHtml('问答总开关 qaEnabled','qaEnabled',get(groupSrc,'qaEnabled',true))
     + switchHtml('动态命令 dynamicCommandEnabled','dynamicCommandEnabled',get(groupSrc,'dynamicCommandEnabled',true))
     + numberHtml('回复消息几率 replyProbability（0-100）','replyProbability',get(groupSrc,'replyProbability',100))
+    + sectionTitle('本群问答链接二段发送')
+    + switchHtml('启用问答链接先提示 qaLinkDelivery.enabled','qaLinkDelivery.enabled',get(groupSrc,'qaLinkDelivery.enabled',false))
+    + inputHtml('提示文本 qaLinkDelivery.noticeText','qaLinkDelivery.noticeText',get(groupSrc,'qaLinkDelivery.noticeText','已找到资源，稍后发送链接。请不要连续重复触发。'), 'text', {full:true})
+    + numberHtml('链接最小延迟 ms qaLinkDelivery.delayMinMs','qaLinkDelivery.delayMinMs',get(groupSrc,'qaLinkDelivery.delayMinMs',1000))
+    + numberHtml('链接最大延迟 ms qaLinkDelivery.delayMaxMs','qaLinkDelivery.delayMaxMs',get(groupSrc,'qaLinkDelivery.delayMaxMs',3000))
+    + switchHtml('第二条用代码块包裹 qaLinkDelivery.wrapInCodeBlock','qaLinkDelivery.wrapInCodeBlock',get(groupSrc,'qaLinkDelivery.wrapInCodeBlock',false))
     + switchHtml('查封号 query.lol_ban','featureSwitches.query.lol_ban',get(groupSrc,'featureSwitches.query.lol_ban',true))
     + switchHtml('查战绩 query.lol_battle','featureSwitches.query.lol_battle',get(groupSrc,'featureSwitches.query.lol_battle',true))
     + switchHtml('查隐藏 query.lol_hidden','featureSwitches.query.lol_hidden',get(groupSrc,'featureSwitches.query.lol_hidden',true))

@@ -1,6 +1,6 @@
 import type { GroupGuardSettings, OutgoingRiskPackagingSettings } from '../types';
 
-const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`，。！？、；：）)\]}]+/gi;
+const URL_PATTERN = /\b(?:https?:\/\/|www\.)[^\s<>"'`，。！？、；：）)\]}]+/gi;
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

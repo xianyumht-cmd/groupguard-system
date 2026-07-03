@@ -11,6 +11,7 @@ import { send } from '../dynamic-commands/response_capture_runtime';
 import { groupguardRepository } from '../repositories/groupguard_repository';
 import { createRiskSignal } from '../risk/signals';
 import { processRiskSignal } from '../risk/policy_engine';
+import { countUrlsInText } from './outgoing_risk_packager';
 import { enqueueMiscAction } from './action_queue_service';
 import { handleContentRiskFilter, recordContentRiskAudit } from './content_risk_service';
 
@@ -30,6 +31,32 @@ function blockPassiveByRole(source: string, rawMessage: string, intent: BotRoleI
   if (!block.blocked) return false;
   loggingStateService.info(block.logLine || `bot_role_blocked role=${block.role} intent=${intent} rawMessage=${rawMessage} source=${source}`);
   return true;
+}
+
+function randomBetween(min: number, max: number): number {
+  const safeMin = Math.max(0, Math.floor(Number.isFinite(min) ? min : 0));
+  const safeMax = Math.max(safeMin, Math.floor(Number.isFinite(max) ? max : safeMin));
+  if (safeMax <= safeMin) return safeMin;
+  return Math.floor(Math.random() * (safeMax - safeMin + 1)) + safeMin;
+}
+
+function sleep(ms: number): Promise<void> {
+  return ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
+}
+
+function wrapPlainReplyInCodeBlock(reply: string): string {
+  const text = String(reply || '').trim();
+  if (!text || text.includes('[CQ:')) return reply;
+  if (text.includes('```')) return reply;
+  return `复制下面内容到浏览器打开：\n\`\`\`text\n${text}\n\`\`\``;
+}
+
+function shouldSendSplitQaReply(settings: any): boolean {
+  const policies = settings?.botAntiRiskScenePolicies || {};
+  const scenePolicy = policies.qa_reply || policies.qa || {};
+  const raw = Number(scenePolicy.replyProbability ?? settings?.replyProbability ?? 100);
+  const probability = Math.max(0, Math.min(100, Number.isFinite(raw) ? raw : 100));
+  return Math.random() * 100 < probability;
 }
 
 function ensureAntiRecallDigestTimer(): void {
@@ -424,8 +451,24 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
     cacheStateService.setQaCooldown(groupUserKeywordKey, now);
 
     const reply = qa.reply.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
-    if (reply.includes('[CQ:')) await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'text', data: { text: reply } }], force: false, applyTemplate: true });
-    else await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: reply, force: false, applyTemplate: true });
+    const linkDelivery = settings.qaLinkDelivery || config.global.qaLinkDelivery;
+    const shouldSplitLinkReply = linkDelivery?.enabled === true && countUrlsInText(reply) > 0;
+    if (shouldSplitLinkReply) {
+      if (!shouldSendSplitQaReply(settings)) return true;
+      await send({
+        channel: 'group',
+        targetId: groupId,
+        scene: 'qa_link_notice',
+        message: linkDelivery.noticeText,
+        force: true,
+        applyTemplate: false
+      });
+      await sleep(randomBetween(Number(linkDelivery.delayMinMs || 0), Number(linkDelivery.delayMaxMs || 0)));
+    }
+    const finalReply = shouldSplitLinkReply && linkDelivery?.wrapInCodeBlock === true ? wrapPlainReplyInCodeBlock(reply) : reply;
+    const forceReply = shouldSplitLinkReply;
+    if (finalReply.includes('[CQ:')) await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'text', data: { text: finalReply } }], force: forceReply, applyTemplate: true });
+    else await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: finalReply, force: forceReply, applyTemplate: true });
     
     loggingStateService.debug(`闂瓟瑙﹀彂: 缇?${groupId} 鐢ㄦ埛 ${userId} 鍖归厤 [${qa.mode}]${qa.keyword}`);
     return true;

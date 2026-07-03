@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GroupGuardKing 群管王用户手册</title>
+  <title>GroupGuard 用户手册</title>
   <style>
     :root {
       --bg: #f5f7fb;
       --panel: #ffffff;
-      --panel-soft: #f8fafc;
+      --soft: #f8fafc;
       --text: #172033;
       --muted: #5e6b82;
       --line: #dbe3ef;
@@ -16,6 +16,7 @@
       --accent-soft: #eaf1ff;
       --green: #0f8f61;
       --amber: #b46900;
+      --red: #b42318;
       --shadow: 0 10px 28px rgba(18, 34, 66, 0.08);
     }
     * { box-sizing: border-box; }
@@ -25,7 +26,7 @@
       color: var(--text);
       background: var(--bg);
       font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
-      line-height: 1.7;
+      line-height: 1.72;
     }
     .layout { display: flex; min-height: 100vh; }
     .side {
@@ -39,29 +40,17 @@
       background: #fff;
     }
     .brand { padding: 20px 18px 14px; border-bottom: 1px solid var(--line); }
-    .brand h1 { margin: 0; font-size: 19px; line-height: 1.35; }
+    .brand h1 { margin: 0; font-size: 20px; line-height: 1.35; }
     .brand p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
-    .brand .update-badge {
+    .badge {
       display: inline-flex;
-      align-items: center;
-      gap: 7px;
       margin-top: 12px;
-      padding: 7px 11px;
+      padding: 6px 10px;
       border-radius: 999px;
       color: #fff;
-      background: linear-gradient(135deg, #2563eb, #0ea5e9);
-      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+      background: #2563eb;
       font-size: 13px;
       font-weight: 700;
-      line-height: 1.2;
-    }
-    .brand .update-badge::before {
-      content: "";
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #bff7d2;
-      box-shadow: 0 0 0 4px rgba(191, 247, 210, 0.2);
     }
     .search-wrap { padding: 12px 14px; border-bottom: 1px solid var(--line); }
     .search {
@@ -71,7 +60,7 @@
       border-radius: 8px;
       outline: none;
       font-size: 14px;
-      background: var(--panel-soft);
+      background: var(--soft);
       color: var(--text);
     }
     .search:focus { border-color: var(--accent); background: #fff; }
@@ -88,44 +77,28 @@
     .nav a:hover, .nav a.active { color: var(--accent); background: var(--accent-soft); }
     .main { flex: 1; padding: 28px; overflow: auto; }
     .doc { max-width: 1160px; margin: 0 auto; }
-    .hero {
-      padding: 26px 28px;
+    .hero, section {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: var(--shadow);
     }
+    .hero { padding: 26px 28px; }
     .hero h2 { margin: 0 0 8px; font-size: 28px; line-height: 1.3; }
     .hero p { margin: 0; color: var(--muted); }
-    .notice {
-      margin-top: 14px;
-      padding: 12px 14px;
-      border: 1px solid #c9d8f7;
-      border-radius: 8px;
-      background: #f2f6ff;
-      color: #24406f;
-      font-size: 14px;
-    }
-    section {
-      margin-top: 20px;
-      padding: 22px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: var(--shadow);
-    }
+    section { margin-top: 20px; padding: 22px; }
     section h2 { margin: 0 0 6px; font-size: 22px; }
     section h3 { margin: 22px 0 8px; font-size: 18px; }
-    section > p, .section-desc { margin: 0 0 12px; color: var(--muted); }
+    section > p, .desc { margin: 0 0 12px; color: var(--muted); }
     .quick-list {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
-      margin-top: 12px;
+      margin-top: 14px;
     }
     .quick-list div {
       padding: 10px 12px;
-      background: var(--panel-soft);
+      background: var(--soft);
       border: 1px solid var(--line);
       border-radius: 8px;
       color: var(--muted);
@@ -143,20 +116,15 @@
       font-family: Consolas, "SFMono-Regular", monospace;
       word-break: break-word;
     }
-    .tip {
+    .tip, .warn, .danger {
       margin: 10px 0 0;
       padding: 10px 12px;
-      border-left: 4px solid var(--green);
-      background: #effaf5;
-      color: #24624b;
+      border-radius: 8px;
+      border-left: 4px solid;
     }
-    .warn {
-      margin: 10px 0 0;
-      padding: 10px 12px;
-      border-left: 4px solid var(--amber);
-      background: #fff7e8;
-      color: #68440f;
-    }
+    .tip { border-color: var(--green); background: #effaf5; color: #24624b; }
+    .warn { border-color: var(--amber); background: #fff7e8; color: #68440f; }
+    .danger { border-color: var(--red); background: #fff1f0; color: #7a271a; }
     ul { margin: 8px 0 0 20px; padding: 0; }
     li { margin: 4px 0; }
     .hidden { display: none !important; }
@@ -175,331 +143,265 @@
     <aside class="side">
       <div class="brand">
         <h1>GroupGuard 用户手册</h1>
-        <p>面向群成员与群管理员 </p>
-        <p class="update-badge">最近更新：2026-6-23</p>
+        <p>面向群成员与群管理员。</p>
+        <span class="badge">更新：2026-07-04</span>
       </div>
       <div class="search-wrap">
-        <input id="kw" class="search" placeholder="搜索功能或指令，例如：查战绩、海符榜、禁言" />
+        <input id="kw" class="search" placeholder="搜索功能或指令，例如：问答、链接、查封号、签到" />
       </div>
       <nav class="nav" id="nav">
         <a href="#intro" class="active">使用前说明</a>
-        <a href="#query">查询类功能</a>
-        <a href="#interaction">成员互动</a>
-        <a href="#manage">群管理功能</a>
-        <a href="#security">安全与过滤</a>
-        <a href="#feature-toggle">功能开关</a>
-        <a href="#qa">问答与词库</a>
-        <a href="#schedule">定时与帮助</a>
+        <a href="#qa">自动问答</a>
+        <a href="#query">查询功能</a>
+        <a href="#member">成员互动</a>
+        <a href="#sub">SUB 玩法</a>
+        <a href="#manage">群管理</a>
+        <a href="#filter">安全与过滤</a>
         <a href="#faq">常见问题</a>
       </nav>
     </aside>
 
     <main class="main">
       <div class="doc" id="content">
-        <div class="hero" id="intro" data-key="使用前说明 群成员 群管理员 权限 冷却">
-          <h2>GroupGuardKing 群管王用户手册</h2>
-          <p>本手册说明群内可直接使用的功能指令。不同群的功能开关、频率限制和输出方式可能不同，如果指令无响应或提示功能关闭、如需降低查询频率限制、如需定制功能，请联系客服处理。</p>
+        <div class="hero" id="intro" data-key="使用前说明 群成员 群管理员 权限 冷却 自动问答 链接">
+          <h2>GroupGuard 群内使用手册</h2>
+          <p>本手册只说明群内可直接使用的功能和指令。不同群的功能开关、冷却时间、回复形式可能不同，如指令无响应或提示功能关闭，请联系群管理员处理。</p>
           <div class="quick-list">
-            <div>指令直接在群聊发送，除特别说明外不需要私聊机器人。</div>
-            <div>查询类指令可能有冷却时间，短时间重复查询会提示稍后再试。</div>
-            <div>管理类指令通常需要群管理员权限，机器人自身也需要对应管理权限。</div>
-            <div>长结果常用合并转发返回，便于阅读，也能减少群内刷屏。</div>
+            <div>普通成员可使用自动问答、查询、签到、积分、邀请、部分娱乐功能。</div>
+            <div>群管理指令通常要求操作者是群管理员或群主，且机器人也需要具备对应管理权限。</div>
+            <div>查询和问答可能存在冷却时间，短时间重复触发会提示稍后再试。</div>
+            <div>包含链接的问答可能会被编号化、延迟或短文本提示，这是为了降低发送风险。</div>
           </div>
         </div>
 
-        <section id="query" data-key="查询 查战绩 查封号 查隐藏 查合集 海符榜 查骗子 举报骗子 查同行 举报同行 邀请 查询 活跃统计 我要看 重置邀请统计 清空邀请统计">
-          <h2>1. 查询类功能</h2>
-          <p class="section-desc">查询类指令放在一起，方便群成员快速找到入口。</p>
+        <section id="qa" data-key="自动问答 问答 链接 网盘 编号 冷却 精确问 模糊问 正则问 删除问答 问答列表">
+          <h2>1. 自动问答</h2>
+          <p class="desc">自动问答是核心功能。群成员发送命中关键词的消息后，机器人会按已设置的规则回复。</p>
 
-          <h3>1.1 战绩与 LOL 查询</h3>
+          <h3>1.1 群成员如何触发问答</h3>
           <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
+            <thead><tr><th>场景</th><th>用法</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td>查询战绩</td><td><code>查战绩游戏名#标签</code></td><td><code>查战绩张三#12345</code></td><td>查询常规战绩与隐藏战绩，通常以合并转发形式返回。</td></tr>
-              <tr><td>查询封号</td><td><code>查封号QQ号</code> 或 <code>查封号 @成员</code></td><td><code>查封号123456789</code></td><td>查询指定 QQ 的封号状态。</td></tr>
-              <tr><td>查询合集</td><td><code>查合集英雄名</code></td><td><code>查合集亚索</code></td><td>查询指定英雄可用合集、选率、胜率等数据，优先以图片返回。支持中文名、称号、英文名。</td></tr>
-              <tr><td>海符榜</td><td><code>海符榜英雄名</code></td><td><code>海符榜亚索</code></td><td>查询海克斯大乱斗强化符文、核心出装、召唤师技能和加点优先级，优先以图片返回。</td></tr>
+              <tr><td>精确问答</td><td>发送与关键词完全相同的文字</td><td>例如关键词是 <code>官网</code>，只发送 <code>官网</code> 才触发。</td></tr>
+              <tr><td>模糊问答</td><td>消息里包含关键词即可</td><td>例如关键词是 <code>购买</code>，发送 <code>怎么买</code> 或 <code>购买地址</code> 可能触发。</td></tr>
+              <tr><td>正则问答</td><td>按管理员设置的表达式匹配</td><td>适合复杂格式，普通成员只需要正常发送问题。</td></tr>
             </tbody>
           </table>
 
-          <h3>1.2 风险库查询(仅供参考，提交举报会审核一段时间)</h3>
+          <h3>1.2 链接类问答的回复规则</h3>
+          <div class="warn">如果问答回复里包含网盘、下载页、资源页等链接，机器人可能不会每次都直接发送完整链接。</div>
           <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
+            <thead><tr><th>可能看到的回复</th><th>含义</th><th>该怎么做</th></tr></thead>
             <tbody>
-              <tr><td>查询骗子记录</td><td><code>查骗子QQ或微信号</code></td><td><code>查骗子123456789</code></td><td>查询本地和已配置数据源中的风险记录。</td></tr>
-              <tr><td>举报骗子</td><td><code>举报骗子QQ或微信号 证据描述</code></td><td><code>举报骗子123456789 收款后拉黑</code></td><td>提交风险举报记录。账号和描述之间要有空格。</td></tr>
-              <tr><td>查询同行记录</td><td><code>查同行QQ或微信号</code></td><td><code>查同行wxid_test</code></td><td>查询同行风险记录。</td></tr>
-              <tr><td>举报同行</td><td><code>举报同行QQ或微信号 证据描述</code></td><td><code>举报同行123456789 偷客户</code></td><td>提交同行风险举报记录。</td></tr>
+              <tr><td><code>链接已做编号化处理</code></td><td>原始链接没有直接发出，已用编号替代。</td><td>按群内说明查看编号对应资源，或联系管理员。</td></tr>
+              <tr><td><code>资源编号：156</code></td><td>该资源使用编号领取方式。</td><td>按提示发送领取口令，或查看群公告。</td></tr>
+              <tr><td><code>请稍后再试</code></td><td>同一用户或同一群触发太频繁。</td><td>等待冷却结束后再发送，不要连续刷关键词。</td></tr>
+              <tr><td><code>请查看上方消息</code></td><td>同一链接刚刚已经发过。</td><td>往上翻看最近的机器人回复。</td></tr>
             </tbody>
           </table>
-          <div class="tip">账号格式：QQ 为 5 到 13 位数字；微信号以字母开头，支持字母、数字、下划线、横杠和点号，不支持空格。</div>
+          <div class="tip">正规链接仍可通过问答提供。编号化、冷却、延迟是为了减少重复直发链接带来的风险，不代表资源不可用。</div>
 
-          <h3>1.3 群数据查询</h3>
+          <h3>1.3 群管理员维护问答</h3>
           <table>
             <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td>我的积分</td><td><code>我的积分</code></td><td><code>我的积分</code></td><td>查看自己的积分。</td></tr>
-              <tr><td>签到榜</td><td><code>签到榜</code></td><td><code>签到榜</code></td><td>查看当天签到排行。</td></tr>
-              <tr><td>邀请查询</td><td><code>邀请查询</code></td><td><code>邀请查询</code></td><td>查看自己邀请入群的人数。</td></tr>
-              <tr><td>邀请榜</td><td><code>邀请榜</code></td><td><code>邀请榜</code></td><td>查看群内邀请排行。</td></tr>
-              <tr><td>查邀请</td><td><code>查邀请QQ号</code></td><td><code>查邀请123456789</code></td><td>查询指定成员邀请入群的人数。</td></tr>
-              <tr><td>查来源</td><td><code>查来源QQ号</code></td><td><code>查来源123456789</code></td><td>查询某成员可能由谁邀请入群。</td></tr>
-              <tr><td>重置邀请统计</td><td><code>重置邀请统计</code> 或 <code>清空邀请统计</code></td><td><code>重置邀请统计</code></td><td>清空本群邀请统计数据。需要群管理员权限。</td></tr>
-              <tr><td>活跃统计</td><td><code>活跃统计</code></td><td><code>活跃统计</code></td><td>查看本群活跃度统计。</td></tr>
+              <tr><td>添加精确问答</td><td><code>精确问A答B</code></td><td><code>精确问价格答请看置顶公告</code></td><td>用户消息等于 A 时回复 B。</td></tr>
+              <tr><td>添加模糊问答</td><td><code>模糊问A答B</code></td><td><code>模糊问官网答请查看群公告</code></td><td>用户消息包含 A 时回复 B。</td></tr>
+              <tr><td>添加正则问答</td><td><code>添加正则问答 表达式|回复</code></td><td><code>添加正则问答 ^你好$|你好呀</code></td><td>适合复杂匹配。</td></tr>
+              <tr><td>查看问答</td><td><code>问答列表</code></td><td><code>问答列表</code></td><td>查看本群问答。</td></tr>
+              <tr><td>删除问答</td><td><code>删除问答 关键词</code> 或 <code>删问关键词</code></td><td><code>删除问答 官网</code></td><td>删除本群指定关键词问答。</td></tr>
+            </tbody>
+          </table>
+          <div class="danger">维护链接类问答时，建议避免多个关键词同时回复同一个完整 URL，也不要让用户频繁刷关键词领取链接。</div>
+        </section>
+
+        <section id="query" data-key="查询 查战绩 查封号 查合集 海符榜 查骗子 举报骗子 查同行 举报同行 我要看 视频">
+          <h2>2. 查询功能</h2>
+          <p class="desc">查询类指令通常有冷却和频率限制。结果较长时，机器人可能使用合并转发、图片或短文本返回。</p>
+
+          <h3>2.1 LOL 相关查询</h3>
+          <table>
+            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td>查战绩</td><td><code>查战绩游戏名#标签</code></td><td><code>查战绩张三#12345</code></td><td>查询常规战绩和相关信息。</td></tr>
+              <tr><td>查封号</td><td><code>查封号QQ号</code> 或 <code>查封号 @成员</code></td><td><code>查封号 123456789</code></td><td>结果可能以短文本返回，避免频繁重复查询。</td></tr>
+              <tr><td>查合集</td><td><code>查合集 英雄名</code></td><td><code>查合集 亚索</code></td><td>查询英雄合集数据，可能以图片或合并转发返回。</td></tr>
+              <tr><td>海符榜</td><td><code>海符榜 英雄名</code></td><td><code>海符榜 亚索</code></td><td>查询英雄海符榜数据。</td></tr>
             </tbody>
           </table>
 
-          <h3>1.4 视频与娱乐查询</h3>
+          <h3>2.2 风险记录查询</h3>
           <table>
             <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td>随机视频</td><td><code>我要看分类</code></td><td><code>我要看搞笑</code></td><td>按分类获取一个视频链接。具体分类以本群配置为准。</td></tr>
+              <tr><td>查骗子</td><td><code>查骗子QQ或微信号</code></td><td><code>查骗子123456</code></td><td>查询本地或已接入的数据记录。</td></tr>
+              <tr><td>举报骗子</td><td><code>举报骗子QQ或微信号 描述</code></td><td><code>举报骗子123456 收款后拉黑</code></td><td>描述和账号之间需要有空格。</td></tr>
+              <tr><td>查同行</td><td><code>查同行QQ或微信号</code></td><td><code>查同行123456</code></td><td>查询同行记录。</td></tr>
+              <tr><td>举报同行</td><td><code>举报同行QQ或微信号 描述</code></td><td><code>举报同行123456 偷客户</code></td><td>请勿重复刷屏提交。</td></tr>
+            </tbody>
+          </table>
+
+          <h3>2.3 视频或资源查询</h3>
+          <table>
+            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td>按分类看视频</td><td><code>我要看分类</code></td><td><code>我要看搞笑</code></td><td>返回对应分类内容。包含链接时可能被编号化或限频。</td></tr>
             </tbody>
           </table>
         </section>
 
-        <section id="interaction" data-key="签到 抽奖 积分 商城 兑换 发言奖励">
-          <h2>2. 成员互动功能</h2>
+        <section id="member" data-key="成员互动 签到 签到榜 我的积分 抽奖 积分商城 邀请查询 邀请榜 活跃统计 商城 兑换">
+          <h2>3. 成员互动</h2>
           <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
+            <thead><tr><th>功能</th><th>指令</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td>每日签到</td><td><code>签到</code></td><td><code>签到</code></td><td>每天签到一次，获得积分。</td></tr>
-              <tr><td>抽奖</td><td><code>抽奖</code></td><td><code>抽奖</code></td><td>消耗积分抽奖。</td></tr>
-              <tr><td>积分商城</td><td><code>积分商城</code> 或 <code>商城</code></td><td><code>积分商城</code></td><td>查看可兑换项目。</td></tr>
-              <tr><td>兑换商品</td><td><code>兑换 商品名 参数</code></td><td><code>兑换 头衔 最强王者</code></td><td>按商城提示兑换对应项目。</td></tr>
-              <tr><td>开启发言奖励</td><td><code>开启发言奖励 积分数</code></td><td><code>开启发言奖励 2</code></td><td>设置每条消息奖励积分。需要群管理员权限。</td></tr>
-              <tr><td>关闭发言奖励</td><td><code>关闭发言奖励</code></td><td><code>关闭发言奖励</code></td><td>关闭本群发言积分奖励。需要群管理员权限。</td></tr>
-            </tbody>
-          </table>
-          <div class="tip">常见兑换项以机器人实际返回的商城列表为准。部分兑换需要机器人具备管理员权限，例如设置头衔、解除禁言等。</div>
-        </section>
-
-        <section id="manage" data-key="踢出 禁言 解禁 全体禁言 全体解禁 头衔 警告 群拉黑 群黑名单 针对 名片锁定 防撤回 回应表情">
-          <h2>3. 群管理功能</h2>
-          <p class="section-desc">以下功能通常需要群管理员权限。</p>
-
-          <h3>3.1 基础管理</h3>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>踢出成员</td><td><code>踢出@成员</code> 或 <code>踢出QQ号</code></td><td><code>踢出@张三</code></td><td>将成员移出群聊。</td></tr>
-              <tr><td>禁言成员</td><td><code>禁言@成员 分钟</code></td><td><code>禁言@张三 30</code></td><td>禁言指定成员。未写分钟时按默认时长处理。</td></tr>
-              <tr><td>解除禁言</td><td><code>解禁@成员</code> 或 <code>解禁QQ号</code></td><td><code>解禁@张三</code></td><td>解除指定成员禁言。</td></tr>
-              <tr><td>全体禁言</td><td><code>全体禁言</code></td><td><code>全体禁言</code></td><td>开启全员禁言。</td></tr>
-              <tr><td>全体解禁</td><td><code>全体解禁</code></td><td><code>全体解禁</code></td><td>关闭全员禁言。</td></tr>
-              <tr><td>授予头衔</td><td><code>授予头衔@成员 内容</code></td><td><code>授予头衔@张三 MVP</code></td><td>为成员设置群头衔。</td></tr>
-              <tr><td>清除头衔</td><td><code>清除头衔@成员</code></td><td><code>清除头衔@张三</code></td><td>清除成员群头衔。</td></tr>
-            </tbody>
-          </table>
-
-          <h3>3.2 警告系统</h3>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>警告成员</td><td><code>警告 @成员</code></td><td><code>警告 @张三</code></td><td>记录一次警告。达到上限后按本群策略处理。</td></tr>
-              <tr><td>查看警告</td><td><code>查看警告 @成员</code></td><td><code>查看警告 @张三</code></td><td>查看成员当前警告次数。</td></tr>
-              <tr><td>清除警告</td><td><code>清除警告 @成员</code></td><td><code>清除警告 @张三</code></td><td>清空成员警告记录。</td></tr>
-            </tbody>
-          </table>
-
-          <h3>3.3 本群黑名单与针对</h3>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>群拉黑</td><td><code>群拉黑@成员</code> 或 <code>群拉黑QQ号</code></td><td><code>群拉黑@张三</code></td><td>将成员加入本群黑名单。</td></tr>
-              <tr><td>取消群拉黑</td><td><code>群取消拉黑@成员</code></td><td><code>群取消拉黑@张三</code></td><td>移出本群黑名单。</td></tr>
-              <tr><td>群黑名单列表</td><td><code>群黑名单列表</code></td><td><code>群黑名单列表</code></td><td>查看本群黑名单。</td></tr>
-              <tr><td>针对成员</td><td><code>针对@成员</code></td><td><code>针对@张三</code></td><td>该成员发言会被自动处理。</td></tr>
-              <tr><td>取消针对</td><td><code>取消针对@成员</code></td><td><code>取消针对@张三</code></td><td>解除针对。</td></tr>
-              <tr><td>针对列表</td><td><code>针对列表</code></td><td><code>针对列表</code></td><td>查看当前针对名单。</td></tr>
-              <tr><td>清除针对</td><td><code>清除针对</code></td><td><code>清除针对</code></td><td>清空针对名单。</td></tr>
-            </tbody>
-          </table>
-
-          <h3>3.4 名片锁定、防撤回与回应表情</h3>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>锁定名片</td><td><code>锁定名片@成员</code></td><td><code>锁定名片@张三</code></td><td>锁定成员当前群名片。</td></tr>
-              <tr><td>解锁名片</td><td><code>解锁名片@成员</code></td><td><code>解锁名片@张三</code></td><td>取消名片锁定。</td></tr>
-              <tr><td>名片锁定列表</td><td><code>名片锁定列表</code></td><td><code>名片锁定列表</code></td><td>查看已锁定名片的成员。</td></tr>
-              <tr><td>开启防撤回</td><td><code>开启防撤回</code></td><td><code>开启防撤回</code></td><td>记录撤回事件并提醒。</td></tr>
-              <tr><td>关闭防撤回</td><td><code>关闭防撤回</code></td><td><code>关闭防撤回</code></td><td>关闭防撤回。</td></tr>
-              <tr><td>防撤回列表</td><td><code>防撤回列表</code></td><td><code>防撤回列表</code></td><td>查看开启防撤回的群。</td></tr>
-              <tr><td>开启回应表情</td><td><code>开启回应表情</code></td><td><code>开启回应表情</code></td><td>机器人可对消息做表情回应。</td></tr>
-              <tr><td>关闭回应表情</td><td><code>关闭回应表情</code></td><td><code>关闭回应表情</code></td><td>关闭回应表情。</td></tr>
+              <tr><td>签到</td><td><code>签到</code></td><td>每日签到获取积分。</td></tr>
+              <tr><td>签到排行</td><td><code>签到榜</code></td><td>查看今日签到排行。</td></tr>
+              <tr><td>我的积分</td><td><code>我的积分</code></td><td>查看自己的积分余额。</td></tr>
+              <tr><td>抽奖</td><td><code>抽奖</code></td><td>消耗积分抽奖。</td></tr>
+              <tr><td>积分商城</td><td><code>积分商城</code> 或 <code>商城</code></td><td>查看可兑换商品。</td></tr>
+              <tr><td>邀请查询</td><td><code>邀请查询</code></td><td>查看自己邀请入群的人数。</td></tr>
+              <tr><td>邀请榜</td><td><code>邀请榜</code></td><td>查看邀请人数排行。</td></tr>
+              <tr><td>活跃统计</td><td><code>活跃统计</code></td><td>查看群内活跃数据。</td></tr>
             </tbody>
           </table>
         </section>
 
-        <section id="security" data-key="入群验证 自动审批 入群暗号 暗号回落 退群拉黑 宵禁 刷屏 复读 屏蔽 二维码 撤回">
-          <h2>4. 安全与过滤功能</h2>
-
-          <h3>4.1 入群、宵禁与刷屏</h3>
+        <section id="sub" data-key="SUB SUB帮助 新人福利 我的契约 命名 生涯 参赛 主仆 赛车 娱乐">
+          <h2>4. SUB 玩法</h2>
+          <p class="desc">如果本群开启了 SUB 玩法，可以使用以下入口。具体可用模块以本群实际开放为准。</p>
           <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
+            <thead><tr><th>功能</th><th>指令</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td>开启入群验证</td><td><code>开启入群验证</code></td><td><code>开启入群验证</code></td><td>新成员进群需要完成验证。</td></tr>
-              <tr><td>关闭入群验证</td><td><code>关闭入群验证</code></td><td><code>关闭入群验证</code></td><td>关闭入群验证。</td></tr>
-              <tr><td>开启自动审批</td><td><code>开启自动审批</code></td><td><code>开启自动审批</code></td><td>自动处理入群申请。</td></tr>
-              <tr><td>关闭自动审批</td><td><code>关闭自动审批</code></td><td><code>关闭自动审批</code></td><td>关闭自动审批。</td></tr>
-              <tr><td>开启退群拉黑</td><td><code>开启退群拉黑</code></td><td><code>开启退群拉黑</code></td><td>成员退群后按本群策略加入黑名单。需要群管理员权限。</td></tr>
-              <tr><td>关闭退群拉黑</td><td><code>关闭退群拉黑</code></td><td><code>关闭退群拉黑</code></td><td>关闭退群拉黑。需要群管理员权限。</td></tr>
-              <tr><td>设置入群暗号</td><td><code>设置入群暗号 暗号</code></td><td><code>设置入群暗号 banana</code></td><td>设置入群暗号。</td></tr>
-              <tr><td>设置暗号</td><td><code>设置暗号 暗号</code></td><td><code>设置暗号 banana</code></td><td><code>设置入群暗号</code> 的简写。</td></tr>
-              <tr><td>关闭入群暗号</td><td><code>关闭入群暗号</code></td><td><code>关闭入群暗号</code></td><td>关闭暗号验证。</td></tr>
-              <tr><td>开启暗号回落</td><td><code>开启暗号回落</code></td><td><code>开启暗号回落</code></td><td>暗号关闭后按配置回落到自动审批。需要群管理员权限。</td></tr>
-              <tr><td>关闭暗号回落</td><td><code>关闭暗号回落</code></td><td><code>关闭暗号回落</code></td><td>关闭暗号回落。需要群管理员权限。</td></tr>
-              <tr><td>开启宵禁</td><td><code>开启宵禁 开始时间 结束时间</code></td><td><code>开启宵禁 00:00 06:00</code></td><td>在指定时段开启全员禁言。需要群管理员权限。</td></tr>
-              <tr><td>关闭宵禁</td><td><code>关闭宵禁</code></td><td><code>关闭宵禁</code></td><td>关闭宵禁。需要群管理员权限。</td></tr>
-              <tr><td>开启刷屏检测</td><td><code>开启刷屏检测</code></td><td><code>开启刷屏检测</code></td><td>检测高频发言和复读。</td></tr>
-              <tr><td>关闭刷屏检测</td><td><code>关闭刷屏检测</code></td><td><code>关闭刷屏检测</code></td><td>关闭刷屏检测。</td></tr>
-              <tr><td>设置复读阈值</td><td><code>设置复读阈值 次数</code></td><td><code>设置复读阈值 4</code></td><td>设置重复消息触发阈值。</td></tr>
-              <tr><td>设置刷屏窗口</td><td><code>设置刷屏窗口 秒数</code></td><td><code>设置刷屏窗口 10</code></td><td>设置检测时间窗口。</td></tr>
-              <tr><td>设置刷屏阈值</td><td><code>设置刷屏阈值 次数</code></td><td><code>设置刷屏阈值 8</code></td><td>设置窗口内触发次数。</td></tr>
-              <tr><td>设置刷屏禁言</td><td><code>设置刷屏禁言 分钟</code></td><td><code>设置刷屏禁言 5</code></td><td>设置刷屏后的禁言时长。</td></tr>
-            </tbody>
-          </table>
-
-          <h3>4.2 消息类型屏蔽</h3>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>屏蔽类型</td><td><code>屏蔽 类型</code></td><td><code>屏蔽 图片</code></td><td>自动撤回指定类型消息。</td></tr>
-              <tr><td>取消屏蔽</td><td><code>取消屏蔽 类型</code></td><td><code>取消屏蔽 图片</code></td><td>取消对应屏蔽。</td></tr>
-              <tr><td>开启二维码撤回</td><td><code>开启二维码撤回</code></td><td><code>开启二维码撤回</code></td><td>自动识别并撤回二维码图片。</td></tr>
-              <tr><td>关闭二维码撤回</td><td><code>关闭二维码撤回</code></td><td><code>关闭二维码撤回</code></td><td>关闭二维码撤回。</td></tr>
-            </tbody>
-          </table>
-          <div class="tip">支持类型：<code>图片</code>、<code>视频</code>、<code>语音</code>、<code>链接</code>、<code>二维码</code>、<code>名片</code>、<code>小程序</code>、<code>转发</code>。</div>
-        </section>
-
-        <section id="feature-toggle" data-key="功能开关 开启功能 关闭功能 问答 签到 抽奖 邀请统计 入群欢迎 活跃统计 自动同意 入群验证 刷屏检测 退群拉黑 暗号回落">
-          <h2>5. 功能开关</h2>
-          <p class="section-desc">群管理员可以用统一格式开启或关闭本群常用功能。关闭后，对应指令或自动处理会停止生效。</p>
-
-          <h3>5.1 使用格式</h3>
-          <table>
-            <thead><tr><th>操作</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>开启功能</td><td><code>开启功能 功能名</code></td><td><code>开启功能 签到</code></td><td>开启本群指定功能。需要群管理员权限。</td></tr>
-              <tr><td>关闭功能</td><td><code>关闭功能 功能名</code></td><td><code>关闭功能 签到</code></td><td>关闭本群指定功能。需要群管理员权限。</td></tr>
-            </tbody>
-          </table>
-
-          <h3>5.2 支持的功能名</h3>
-          <table>
-            <thead><tr><th>功能名</th><th>开启示例</th><th>关闭示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td><code>问答</code></td><td><code>开启功能 问答</code></td><td><code>关闭功能 问答</code></td><td>控制本群问答自动回复。</td></tr>
-              <tr><td><code>签到</code></td><td><code>开启功能 签到</code></td><td><code>关闭功能 签到</code></td><td>控制签到、积分查询等签到相关功能。</td></tr>
-              <tr><td><code>抽奖</code></td><td><code>开启功能 抽奖</code></td><td><code>关闭功能 抽奖</code></td><td>控制积分抽奖和积分商城兑换。</td></tr>
-              <tr><td><code>邀请统计</code></td><td><code>开启功能 邀请统计</code></td><td><code>关闭功能 邀请统计</code></td><td>控制邀请查询、邀请榜、查邀请等统计功能。</td></tr>
-              <tr><td><code>入群欢迎</code></td><td><code>开启功能 入群欢迎</code></td><td><code>关闭功能 入群欢迎</code></td><td>控制新成员入群欢迎语。</td></tr>
-              <tr><td><code>活跃统计</code></td><td><code>开启功能 活跃统计</code></td><td><code>关闭功能 活跃统计</code></td><td>控制活跃统计查询。</td></tr>
-              <tr><td><code>自动同意</code></td><td><code>开启功能 自动同意</code></td><td><code>关闭功能 自动同意</code></td><td>控制入群申请是否自动同意。</td></tr>
-              <tr><td><code>入群验证</code></td><td><code>开启功能 入群验证</code></td><td><code>关闭功能 入群验证</code></td><td>控制新成员入群验证流程。</td></tr>
-              <tr><td><code>刷屏检测</code></td><td><code>开启功能 刷屏检测</code></td><td><code>关闭功能 刷屏检测</code></td><td>控制高频发言和复读检测。</td></tr>
-              <tr><td><code>退群拉黑</code></td><td><code>开启功能 退群拉黑</code></td><td><code>关闭功能 退群拉黑</code></td><td>控制成员退群后的拉黑记录策略。</td></tr>
-              <tr><td><code>暗号回落</code></td><td><code>开启功能 暗号回落</code></td><td><code>关闭功能 暗号回落</code></td><td>控制暗号关闭后是否回落到自动审批。</td></tr>
-            </tbody>
-          </table>
-          <div class="tip">功能名需要按表格填写。不同群的默认开启状态可能不同，如提示功能关闭，可联系本群管理员处理。</div>
-        </section>
-
-        <section id="qa" data-key="问答 词库 违禁词 拒绝词 精确问 模糊问">
-          <h2>6. 问答与词库</h2>
-
-          <h3>6.1 问答</h3>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>精确问答</td><td><code>精确问问题答回答</code></td><td><code>精确问官网答https://example.com</code></td><td>消息完全匹配问题时回复。</td></tr>
-              <tr><td>模糊问答</td><td><code>模糊问关键词答回答</code></td><td><code>模糊问价格答请看群公告</code></td><td>消息包含关键词时回复。</td></tr>
-              <tr><td>删除问答</td><td><code>删除问答 关键词</code> 或 <code>删问关键词</code></td><td><code>删除问答 官网</code></td><td>删除指定问答。</td></tr>
-              <tr><td>问答列表</td><td><code>问答列表</code></td><td><code>问答列表</code></td><td>查看本群问答。</td></tr>
-            </tbody>
-          </table>
-
-          <h3>6.2 违禁词与拒绝词</h3>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>添加违禁词</td><td><code>添加违禁词词语</code></td><td><code>添加违禁词广告</code></td><td>添加本群违禁词。</td></tr>
-              <tr><td>删除违禁词</td><td><code>删除违禁词词语</code></td><td><code>删除违禁词广告</code></td><td>删除本群违禁词。</td></tr>
-              <tr><td>违禁词列表</td><td><code>违禁词列表</code></td><td><code>违禁词列表</code></td><td>查看违禁词。</td></tr>
-              <tr><td>设置违禁词惩罚</td><td><code>设置违禁词惩罚 等级</code></td><td><code>设置违禁词惩罚 2</code></td><td>设置触发后的处理等级。</td></tr>
-              <tr><td>设置违禁词禁言</td><td><code>设置违禁词禁言 分钟</code></td><td><code>设置违禁词禁言 10</code></td><td>设置禁言时长。</td></tr>
-              <tr><td>添加拒绝词</td><td><code>添加拒绝词词语</code></td><td><code>添加拒绝词引流</code></td><td>入群申请命中后可拒绝。</td></tr>
-              <tr><td>删除拒绝词</td><td><code>删除拒绝词词语</code></td><td><code>删除拒绝词引流</code></td><td>删除拒绝词。</td></tr>
-              <tr><td>拒绝词列表</td><td><code>拒绝词列表</code></td><td><code>拒绝词列表</code></td><td>查看拒绝词。</td></tr>
-            </tbody>
-          </table>
-          <div class="warn">违禁词惩罚等级常见含义：1 仅撤回；2 撤回并禁言；3 撤回、禁言并踢出；4 撤回、禁言、踢出并拉黑。</div>
-        </section>
-
-        <section id="schedule" data-key="欢迎词 入群私聊 定时任务 定时列表 帮助 菜单 群管帮助">
-          <h2>7. 定时与帮助</h2>
-          <table>
-            <thead><tr><th>功能</th><th>指令</th><th>示例</th><th>说明</th></tr></thead>
-            <tbody>
-              <tr><td>设置欢迎词</td><td><code>设置欢迎词 内容</code></td><td><code>设置欢迎词 欢迎 {user}</code></td><td>设置新成员入群欢迎语。支持 <code>{user}</code>、<code>{group}</code>。</td></tr>
-              <tr><td>开启入群私聊</td><td><code>开启入群私聊</code></td><td><code>开启入群私聊</code></td><td>新成员入群后自动私聊提醒。</td></tr>
-              <tr><td>关闭入群私聊</td><td><code>关闭入群私聊</code></td><td><code>关闭入群私聊</code></td><td>关闭入群私聊。</td></tr>
-              <tr><td>设置入群私聊</td><td><code>设置入群私聊 内容</code></td><td><code>设置入群私聊 请先看群公告</code></td><td>设置私聊内容。</td></tr>
-              <tr><td>添加定时任务</td><td><code>定时任务 时间 内容</code></td><td><code>定时任务 08:00 早上好</code></td><td>添加每日定时群消息。</td></tr>
-              <tr><td>删除定时任务</td><td><code>删除定时任务 ID</code></td><td><code>删除定时任务 abc123</code></td><td>删除指定定时任务。</td></tr>
-              <tr><td>定时列表</td><td><code>定时列表</code></td><td><code>定时列表</code></td><td>查看本群定时任务。</td></tr>
-              <tr><td>帮助菜单</td><td><code>帮助</code>、<code>菜单</code>、<code>群管帮助</code></td><td><code>群管帮助</code></td><td>查看机器人简要菜单。</td></tr>
+              <tr><td>查看帮助</td><td><code>SUB帮助</code></td><td>查看当前玩法说明。</td></tr>
+              <tr><td>领取福利</td><td><code>新人福利</code></td><td>领取每日或新人奖励。</td></tr>
+              <tr><td>查看契约</td><td><code>我的契约</code></td><td>查看主仆契约信息。</td></tr>
+              <tr><td>命名</td><td><code>命名 名字</code></td><td>设置玩法昵称。</td></tr>
+              <tr><td>生涯</td><td><code>生涯</code></td><td>查看个人玩法数据。</td></tr>
+              <tr><td>参赛</td><td><code>参赛</code></td><td>参与赛车或相关活动。</td></tr>
             </tbody>
           </table>
         </section>
 
-        <section id="faq" data-key="常见问题 没反应 合并转发 权限不足 举报">
-          <h2>8. 常见问题</h2>
-          <h3>指令没反应怎么办？</h3>
+        <section id="manage" data-key="群管理 踢出 禁言 解禁 全体禁言 全体解禁 警告 查看警告 清除警告 黑名单 名片 宵禁 定时任务">
+          <h2>5. 群管理</h2>
+          <p class="desc">以下功能通常需要群管理员或群主权限，且机器人本身也需要对应管理权限。</p>
+
+          <h3>5.1 基础管理</h3>
+          <table>
+            <thead><tr><th>功能</th><th>指令</th><th>示例</th></tr></thead>
+            <tbody>
+              <tr><td>踢出成员</td><td><code>踢出 @某人</code> 或 <code>踢出 QQ号</code></td><td><code>踢出 @张三</code></td></tr>
+              <tr><td>禁言成员</td><td><code>禁言 @某人 分钟</code></td><td><code>禁言 @张三 30</code></td></tr>
+              <tr><td>解除禁言</td><td><code>解禁 @某人</code></td><td><code>解禁 @张三</code></td></tr>
+              <tr><td>全员禁言</td><td><code>全体禁言</code></td><td><code>全体禁言</code></td></tr>
+              <tr><td>解除全员禁言</td><td><code>全体解禁</code></td><td><code>全体解禁</code></td></tr>
+            </tbody>
+          </table>
+
+          <h3>5.2 警告与名单</h3>
+          <table>
+            <thead><tr><th>功能</th><th>指令</th><th>示例</th></tr></thead>
+            <tbody>
+              <tr><td>警告成员</td><td><code>警告 @某人</code></td><td><code>警告 @张三</code></td></tr>
+              <tr><td>查看警告</td><td><code>查看警告 @某人</code></td><td><code>查看警告 @张三</code></td></tr>
+              <tr><td>清除警告</td><td><code>清除警告 @某人</code></td><td><code>清除警告 @张三</code></td></tr>
+              <tr><td>本群拉黑</td><td><code>群拉黑 @某人</code> 或 <code>群拉黑 QQ号</code></td><td><code>群拉黑 @张三</code></td></tr>
+              <tr><td>取消本群拉黑</td><td><code>群取消拉黑 @某人</code></td><td><code>群取消拉黑 @张三</code></td></tr>
+              <tr><td>查看本群黑名单</td><td><code>群黑名单列表</code></td><td><code>群黑名单列表</code></td></tr>
+            </tbody>
+          </table>
+
+          <h3>5.3 群名片、宵禁、定时任务</h3>
+          <table>
+            <thead><tr><th>功能</th><th>指令</th><th>示例</th></tr></thead>
+            <tbody>
+              <tr><td>锁定名片</td><td><code>锁定名片 @某人</code></td><td><code>锁定名片 @张三</code></td></tr>
+              <tr><td>解锁名片</td><td><code>解锁名片 @某人</code></td><td><code>解锁名片 @张三</code></td></tr>
+              <tr><td>开启宵禁</td><td><code>开启宵禁 开始时间 结束时间</code></td><td><code>开启宵禁 00:00 06:00</code></td></tr>
+              <tr><td>关闭宵禁</td><td><code>关闭宵禁</code></td><td><code>关闭宵禁</code></td></tr>
+              <tr><td>添加定时任务</td><td><code>定时任务 时间 内容</code></td><td><code>定时任务 08:00 大家早上好</code></td></tr>
+              <tr><td>删除定时任务</td><td><code>删除定时任务 ID</code></td><td><code>删除定时任务 abc123</code></td></tr>
+              <tr><td>查看定时任务</td><td><code>定时列表</code></td><td><code>定时列表</code></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="filter" data-key="安全 过滤 违禁词 拒绝词 刷屏 链接 图片 视频 语音 二维码 小程序 转发">
+          <h2>6. 安全与过滤</h2>
+          <p class="desc">这些指令用于维护本群秩序。不同群可能只开放其中一部分。</p>
+          <table>
+            <thead><tr><th>功能</th><th>指令</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td>添加违禁词</td><td><code>添加违禁词 词语</code></td><td>添加本群违禁词。</td></tr>
+              <tr><td>删除违禁词</td><td><code>删除违禁词 词语</code></td><td>删除本群违禁词。</td></tr>
+              <tr><td>查看违禁词</td><td><code>违禁词列表</code></td><td>查看本群违禁词。</td></tr>
+              <tr><td>添加入群拒绝词</td><td><code>添加拒绝词 词语</code></td><td>入群验证信息包含该词时可拒绝。</td></tr>
+              <tr><td>删除入群拒绝词</td><td><code>删除拒绝词 词语</code></td><td>删除本群拒绝词。</td></tr>
+              <tr><td>屏蔽内容类型</td><td><code>屏蔽 图片/视频/语音/链接/二维码/名片/小程序/转发</code></td><td>按类型处理风险内容。</td></tr>
+              <tr><td>取消屏蔽</td><td><code>取消屏蔽 图片/视频/语音/链接/二维码/名片/小程序/转发</code></td><td>恢复对应类型。</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="faq" data-key="常见问题 FAQ 无响应 链接 编号 冷却 私聊 权限">
+          <h2>7. 常见问题</h2>
+
+          <h3>为什么自动问答没有回复？</h3>
           <ul>
-            <li>确认指令是否输入完整，空格是否正确。</li>
-            <li>确认当前群是否开启了对应功能。</li>
-            <li>确认查询是否触发冷却或频率限制。</li>
-            <li>管理类指令需要操作者和机器人都具备足够权限。</li>
+            <li>关键词没有命中，或该问答被管理员停用。</li>
+            <li>本群该功能暂时关闭。</li>
+            <li>同一用户或同一群触发过快，正在冷却。</li>
+            <li>机器人没有正常在线，或没有发送权限。</li>
           </ul>
 
-          <h3>为什么查询结果是合并转发？</h3>
-          <p>战绩、合集、活跃统计等内容较长，合并转发更方便阅读，也能减少群内刷屏。</p>
+          <h3>为什么链接没有完整显示？</h3>
+          <p>链接类回复可能会被编号化、隐藏、延迟或限频。这是为了减少机器人连续直发链接带来的风险。正常情况下请按机器人提示查看编号、群公告或等待冷却后再试。</p>
 
-          <h3>为什么某些功能提示权限不足？</h3>
-          <p>踢人、禁言、词库管理、过滤开关等功能通常需要群管理员权限。部分操作还要求机器人本身是管理员。</p>
+          <h3>为什么查封号只返回很短一句？</h3>
+          <p>查封号属于高频风险查询，结果可能以短文本展示。这样能保留查询功能，同时减少长文本重复发送。</p>
 
-          <h3>举报骗子或同行会自动处罚吗？</h3>
-          <p>不会。举报会写入风险记录，用于后续查询和判断；是否处罚仍以群规则和管理员处理为准。</p>
+          <h3>能不能私聊机器人领取链接？</h3>
+          <p>不建议频繁私聊领取链接。私聊连续发送链接风险更高，优先在群内按问答提示操作。</p>
+
+          <h3>管理员指令提示权限不足怎么办？</h3>
+          <ul>
+            <li>确认你在群内是管理员或群主。</li>
+            <li>确认机器人本身也是管理员。</li>
+            <li>确认该功能在本群已开放。</li>
+          </ul>
         </section>
 
-        <div class="footer">GroupGuard 用户手册，仅面向群内使用场景。</div>
+        <div class="footer">GroupGuard 用户手册。请以本群实际开放功能为准。</div>
       </div>
     </main>
   </div>
 
   <script>
-    const input = document.getElementById('kw');
-    const blocks = Array.from(document.querySelectorAll('.hero, section'));
-    const navLinks = Array.from(document.querySelectorAll('.nav a'));
+    (function () {
+      var input = document.getElementById('kw');
+      var sections = Array.prototype.slice.call(document.querySelectorAll('#content section, #content .hero'));
+      var links = Array.prototype.slice.call(document.querySelectorAll('#nav a'));
 
-    input.addEventListener('input', () => {
-      const kw = input.value.trim().toLowerCase();
-      blocks.forEach(block => {
-        const text = ((block.textContent || '') + ' ' + (block.dataset.key || '')).toLowerCase();
-        block.classList.toggle('hidden', Boolean(kw) && !text.includes(kw));
+      function norm(value) {
+        return String(value || '').toLowerCase().replace(/\s+/g, '');
+      }
+
+      input.addEventListener('input', function () {
+        var q = norm(input.value);
+        sections.forEach(function (section) {
+          var haystack = norm((section.dataset.key || '') + ' ' + section.innerText);
+          section.classList.toggle('hidden', !!q && haystack.indexOf(q) === -1);
+        });
       });
-    });
 
-    const observer = new IntersectionObserver(entries => {
-      const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (!visible) return;
-      navLinks.forEach(link => link.classList.toggle('active', link.getAttribute('href') === '#' + visible.target.id));
-    }, { rootMargin: '-20% 0px -65% 0px', threshold: [0.1, 0.25, 0.5] });
-
-    blocks.forEach(block => observer.observe(block));
+      links.forEach(function (link) {
+        link.addEventListener('click', function () {
+          links.forEach(function (item) { item.classList.remove('active'); });
+          link.classList.add('active');
+        });
+      });
+    })();
   </script>
 </body>
 </html>

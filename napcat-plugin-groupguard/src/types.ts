@@ -81,6 +81,14 @@ export type OutgoingRiskUrlMode = 'off' | 'number' | 'mask' | 'drop';
 export type BanQueryResultMode = 'short' | 'image' | 'text';
 export type RiskPresetLevel = 'conservative' | 'balanced' | 'aggressive';
 
+export interface QaLinkDeliverySettings {
+  enabled: boolean;
+  noticeText: string;
+  delayMinMs: number;
+  delayMaxMs: number;
+  wrapInCodeBlock: boolean;
+}
+
 export interface OutgoingRiskPackagingSettings {
   enabled: boolean;
   urlMode: OutgoingRiskUrlMode;
@@ -352,6 +360,7 @@ export interface GroupGuardSettings {
   botAntiRiskScenePolicies?: Record<string, BotAntiRiskScenePolicy>;
   /** 触发发送限流/熔断时的处理：drop=丢弃，forward=合并转发兜底 */
   botAntiRiskLimitFallbackMode?: BotAntiRiskLimitFallbackMode;
+  qaLinkDelivery?: QaLinkDeliverySettings;
   outgoingRisk?: OutgoingRiskPackagingSettings;
   banQueryResultMode?: BanQueryResultMode;
   banQueryUserCooldownSeconds?: number;
