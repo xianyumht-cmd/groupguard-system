@@ -591,6 +591,36 @@ export function registerRuntimeRoutes(
     }
   });
 
+  router.getNoAuth('/sub-gameplay/overview', async (req: any, res: any) => {
+    try {
+      const groupId = String(req.query?.group_id || '').trim();
+      if (!groupId) {
+        res.status(400).json({ code: -1, message: 'missing_group_id' });
+        return;
+      }
+      const limit = Math.max(3, Math.min(50, Number(req.query?.limit || 10)));
+      res.json({
+        code: 0,
+        data: {
+          groupId,
+          masterServant: {
+            goldRank: storageAdapter.listSubPlayersByRank(groupId, 'gold', limit),
+            valueRank: storageAdapter.listSubPlayersByRank(groupId, 'value', limit),
+            levelRank: storageAdapter.listSubPlayersByRank(groupId, 'level', limit)
+          },
+          racing: {
+            winsRank: storageAdapter.listSubRacingPlayersByRank(groupId, 'wins', limit),
+            championsRank: storageAdapter.listSubRacingPlayersByRank(groupId, 'champions', limit)
+          },
+          resources: storageAdapter.listSubResources(groupId),
+          recentEvents: storageAdapter.listSubGameplayEvents(groupId, Math.max(20, limit))
+        }
+      });
+    } catch (e) {
+      res.status(500).json({ code: -1, message: String(e) });
+    }
+  });
+
   router.getNoAuth('/presets', (_req: any, res: any) => {
     res.json({ code: 0, data: configStateService.getPresets() || [] });
   });

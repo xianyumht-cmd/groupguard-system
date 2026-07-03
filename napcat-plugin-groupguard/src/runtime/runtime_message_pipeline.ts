@@ -50,25 +50,6 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
     const settings = configStateService.resolveGroupSettings(groupId);
     const precheck = settings.blacklistCheckBeforeCommand !== false;
 
-    if (isQueryOnlyBotRole()) {
-      const handled = await handleCommand(event, ctx);
-      if (!handled) {
-        await runWithForcedResponseScene('qa_reply', () => handleQA(groupId, userId, raw));
-      }
-      return;
-    }
-
-    if (isQaOnlyBotRole()) {
-      const handled = await handleCommand(event, ctx);
-      if (handled) return;
-      const qaHandled = await runWithForcedResponseScene('qa_reply', () => handleQA(groupId, userId, raw));
-      if (qaHandled) {
-        await recordActivity(groupId, userId);
-        cacheMessage(messageId, userId, groupId, raw, messageSegments);
-      }
-      return;
-    }
-
     if (!isWhite && precheck && !authStateService.isOwner(userId)) {
       const blacklisted = await handleBlacklist(groupId, userId, messageId);
       if (blacklisted) return;
@@ -82,11 +63,19 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
       if (blacklisted) return;
     }
 
-    const qaHandled = await runWithForcedResponseScene('qa_reply', () => handleQA(groupId, userId, raw));
-    if (qaHandled) {
-      await recordActivity(groupId, userId);
-      cacheMessage(messageId, userId, groupId, raw, messageSegments);
-      return;
+    if (!isWhite) {
+      const filtered = await handleFilterKeywords(groupId, userId, messageId, raw, ctx);
+      if (filtered) return;
+    }
+
+    if (!isWhite) {
+      const typeFiltered = await handleMsgTypeFilter(groupId, userId, messageId, raw, messageSegments, ctx);
+      if (typeFiltered) return;
+    }
+
+    if (!isWhite) {
+      const spammed = await handleSpamDetect(groupId, userId, raw);
+      if (spammed) return;
     }
 
     if (!isWhite) {
@@ -94,18 +83,15 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
       if (recalled) return;
     }
 
-    if (!isWhite) {
-      const filtered = await handleFilterKeywords(groupId, userId, messageId, raw, ctx);
-      if (filtered) return;
+    const qaHandled = await runWithForcedResponseScene('qa_reply', () => handleQA(groupId, userId, raw));
+    if (qaHandled) {
+      await recordActivity(groupId, userId);
+      cacheMessage(messageId, userId, groupId, raw, messageSegments);
+      return;
     }
 
-    if (!isWhite) {
-      const typeFiltered = await handleMsgTypeFilter(groupId, userId, messageId, raw, messageSegments);
-      if (typeFiltered) return;
-    }
-
-    if (!isWhite) {
-      await handleSpamDetect(groupId, userId, raw);
+    if (isQueryOnlyBotRole() || isQaOnlyBotRole()) {
+      return;
     }
 
     await recordActivity(groupId, userId);

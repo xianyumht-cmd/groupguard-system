@@ -25,7 +25,7 @@ interface RuntimeObservabilityPersistedState {
 
 export interface PluginObservabilityMetricSnapshot {
   pluginId: string;
-  metadata: ReturnType<NonNullable<typeof getCommandPluginRecord>>['metadata'] | null;
+  metadata: NonNullable<ReturnType<typeof getCommandPluginRecord>>['metadata'] | null;
   enabled: boolean;
   totalCalls: number;
   successCount: number;

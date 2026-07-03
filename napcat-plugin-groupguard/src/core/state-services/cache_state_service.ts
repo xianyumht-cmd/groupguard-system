@@ -5,6 +5,8 @@ import {
   type RepeatCacheEntry
 } from '../state-infra/plugin_state_cache_adapter';
 
+export type { AdminCacheEntry, MessageCacheEntry, RepeatCacheEntry } from '../state-infra/plugin_state_cache_adapter';
+
 export class CacheStateService {
   getMessageCache(): Map<string, MessageCacheEntry> {
     return pluginStateCacheAdapter.getMessageCache();

@@ -19,6 +19,13 @@ function normalizeExpireTime(input: any): number {
   return Math.floor(value);
 }
 
+function isLicenseRecord(license: GroupLicense | undefined): license is GroupLicense {
+  if (!license || typeof license !== 'object') return false;
+  const expireTime = Number((license as GroupLicense).expireTime);
+  const level = (license as GroupLicense).level;
+  return Number.isFinite(expireTime) && expireTime >= 0 && ['free', 'pro', 'enterprise'].includes(level);
+}
+
 function daysToExpireTime(days: any): number {
   const value = Number(days || 0);
   if (!Number.isFinite(value) || value <= 0) return 0;
@@ -26,14 +33,33 @@ function daysToExpireTime(days: any): number {
 }
 
 function formatLicense(groupId: string, license: GroupLicense | undefined) {
+  if (!isLicenseRecord(license)) {
+    return {
+      groupId,
+      level: null,
+      expireTime: null,
+      permanent: false,
+      expired: false,
+      valid: false,
+      licensed: false,
+      status: 'unlicensed',
+      remainingDays: null,
+      expireAt: '\u672a\u6388\u6743'
+    };
+  }
+
   const expireTime = normalizeExpireTime(license?.expireTime || 0);
   const now = Date.now();
+  const expired = expireTime > 0 && expireTime <= now;
   return {
     groupId,
     level: normalizeLevel(license?.level),
     expireTime,
     permanent: expireTime === 0,
-    expired: expireTime > 0 && expireTime <= now,
+    expired,
+    valid: !expired,
+    licensed: true,
+    status: expired ? 'expired' : (expireTime === 0 ? 'permanent' : 'active'),
     remainingDays: expireTime === 0 ? null : Math.max(0, Math.ceil((expireTime - now) / 86400000)),
     expireAt: expireTime === 0 ? '永久' : new Date(expireTime).toLocaleString('zh-CN')
   };
@@ -54,6 +80,7 @@ export function getLicense(groupId: string) {
 export function saveLicense(options: SnowLumaAdminServerOptions, groupId: string, payload: any) {
   const id = cleanGroupId(groupId);
   const config = configStateService.getConfig();
+  if (!config.licenses) config.licenses = {};
   const expireTime = payload?.permanent ? 0 : (payload?.days ? daysToExpireTime(payload.days) : normalizeExpireTime(payload?.expireTime));
   config.licenses[id] = {
     level: normalizeLevel(payload?.level),

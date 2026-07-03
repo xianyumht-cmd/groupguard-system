@@ -8,6 +8,7 @@ import { normalizeGroupSettings, normalizePluginConfig } from './config';
 import { authManager } from './auth';
 import { configStateService } from './core/state-services/config_state_service';
 import { contextStateService } from './core/state-services/context_state_service';
+import { cacheStateService } from './core/state-services/cache_state_service';
 import { identityStateService } from './core/state-services/identity_state_service';
 import { loggingStateService } from './core/state-services/logging_state_service';
 import { initDB } from './db';
@@ -234,6 +235,11 @@ const plugin_cleanup: PluginModule['plugin_cleanup'] = async () => {
   stopPassiveServiceTimers();
   stopJoinVerifier();
   clearAllSessions();
+  cacheStateService.clearMessageCache();
+  cacheStateService.clearSpamCache();
+  cacheStateService.clearRepeatCache();
+  cacheStateService.clearQaCooldowns();
+  cacheStateService.clearAdminCache();
 };
 
 // ========== 消息处理 ==========

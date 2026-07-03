@@ -33,6 +33,7 @@ export class OneBotWsClient {
   private readonly handlers = new Set<OneBotEventHandler>();
   private readonly timeoutMs: number;
   private readonly reconnectDelayMs: number;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly options: OneBotWsClientOptions) {
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || 10000));
@@ -56,6 +57,10 @@ export class OneBotWsClient {
   close(): void {
     this.started = false;
     this.manuallyClosed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     for (const [echo, call] of this.pending.entries()) {
       clearTimeout(call.timer);
       call.reject(new Error(`onebot_client_closed:${call.action}`));
@@ -101,7 +106,11 @@ export class OneBotWsClient {
   }
 
   private async connect(): Promise<void> {
-    if (this.connecting) return;
+    if (this.connecting || !this.started || this.manuallyClosed) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.connecting = true;
 
     try {
@@ -133,9 +142,7 @@ export class OneBotWsClient {
       });
     } catch (error) {
       this.options.logger?.error?.(`OneBot WS connect failed: ${String(error)}`);
-      if (this.started && !this.manuallyClosed) {
-        setTimeout(() => void this.connect(), this.reconnectDelayMs);
-      }
+      this.scheduleReconnect();
       throw error;
     } finally {
       this.connecting = false;
@@ -151,14 +158,21 @@ export class OneBotWsClient {
       if (this.ws === ws) this.ws = null;
       this.rejectPending(new Error('onebot_ws_closed'));
       this.options.logger?.warn?.('OneBot WS closed');
-      if (this.started && !this.manuallyClosed) {
-        setTimeout(() => void this.connect().catch(() => undefined), this.reconnectDelayMs);
-      }
+      this.scheduleReconnect();
     });
 
     ws.addEventListener('error', (event: any) => {
       this.options.logger?.error?.(`OneBot WS error: ${String(event?.error || 'unknown')}`);
     });
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.started || this.manuallyClosed || this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.started || this.manuallyClosed) return;
+      void this.connect().catch(() => undefined);
+    }, this.reconnectDelayMs);
   }
 
   private rejectPending(error: Error): void {

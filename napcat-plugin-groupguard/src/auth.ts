@@ -5,6 +5,13 @@ import { send } from './dynamic-commands/response_capture_runtime';
 
 export type AuthLevel = 'free' | 'pro' | 'enterprise';
 
+function isValidLicense(license: GroupLicense | undefined): license is GroupLicense {
+  if (!license || typeof license !== 'object') return false;
+  const expireTime = Number((license as GroupLicense).expireTime);
+  const level = (license as GroupLicense).level;
+  return Number.isFinite(expireTime) && expireTime >= 0 && ['free', 'pro', 'enterprise'].includes(level);
+}
+
 export class AuthManager {
   private static instance: AuthManager;
   private checkInterval: NodeJS.Timeout | null = null;
@@ -43,6 +50,13 @@ export class AuthManager {
     if (!config.licenses) config.licenses = {};
     
     for (const [groupId, license] of Object.entries(config.licenses)) {
+      if (!isValidLicense(license)) {
+        loggingStateService.warn(`Invalid license record for group ${groupId}, ignored`);
+        delete config.licenses[groupId];
+        changed = true;
+        continue;
+      }
+
       // 1. 清理过期
       if (license.expireTime > 0 && now > license.expireTime) {
         loggingStateService.info(`群 ${groupId} 授权已过期，自动降级为免费版`);
@@ -79,6 +93,10 @@ export class AuthManager {
     if (!config.licenses) return null;
     const license = config.licenses[groupId];
     if (!license) return null;
+    if (!isValidLicense(license)) {
+      delete config.licenses[groupId];
+      return null;
+    }
     
     // 检查是否过期
     if (license.expireTime > 0 && Date.now() > license.expireTime) {

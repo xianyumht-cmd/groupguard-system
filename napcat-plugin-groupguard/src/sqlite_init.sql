@@ -101,9 +101,88 @@ CREATE TABLE IF NOT EXISTS recall_tasks (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sub_players (
+  group_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  nickname TEXT NOT NULL DEFAULT '',
+  gold INTEGER NOT NULL DEFAULT 0,
+  value INTEGER NOT NULL DEFAULT 0,
+  exp INTEGER NOT NULL DEFAULT 0,
+  level INTEGER NOT NULL DEFAULT 1,
+  title TEXT NOT NULL DEFAULT '',
+  servant_name TEXT NOT NULL DEFAULT '',
+  master_id TEXT NOT NULL DEFAULT '',
+  last_welfare_day TEXT NOT NULL DEFAULT '',
+  last_action_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS sub_contracts (
+  group_id TEXT NOT NULL,
+  master_id TEXT NOT NULL,
+  servant_id TEXT NOT NULL,
+  price INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL DEFAULT 'active',
+  servant_name TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, servant_id)
+);
+
+CREATE TABLE IF NOT EXISTS sub_gameplay_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT NOT NULL,
+  module TEXT NOT NULL,
+  action TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  target_id TEXT NOT NULL DEFAULT '',
+  amount INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sub_racing_players (
+  group_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  racer_name TEXT NOT NULL DEFAULT '',
+  car_coins INTEGER NOT NULL DEFAULT 0,
+  fuel INTEGER NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  losses INTEGER NOT NULL DEFAULT 0,
+  champions INTEGER NOT NULL DEFAULT 0,
+  career_runs INTEGER NOT NULL DEFAULT 0,
+  active_car_id TEXT NOT NULL DEFAULT 'starter',
+  owned_cars_json TEXT NOT NULL DEFAULT '["starter"]',
+  last_duel_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS sub_resources (
+  group_id TEXT NOT NULL DEFAULT '',
+  resource_key TEXT NOT NULL,
+  module TEXT NOT NULL DEFAULT '',
+  resource_type TEXT NOT NULL DEFAULT 'text',
+  value TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, resource_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_group_last_active ON activity(group_id, last_active DESC);
 CREATE INDEX IF NOT EXISTS idx_signin_group_points ON signin(group_id, points DESC);
 CREATE INDEX IF NOT EXISTS idx_join_logs_group_timestamp ON join_logs(group_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_warnings_group_count ON warnings(group_id, count DESC);
 CREATE INDEX IF NOT EXISTS idx_self_recall_due_status ON self_recall_tasks(status, next_retry_at);
 CREATE INDEX IF NOT EXISTS idx_recall_due_status ON recall_tasks(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_sub_players_gold ON sub_players(group_id, gold DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_players_value ON sub_players(group_id, value DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_players_level ON sub_players(group_id, level DESC, exp DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_contracts_master ON sub_contracts(group_id, master_id, state);
+CREATE INDEX IF NOT EXISTS idx_sub_gameplay_events_group_created ON sub_gameplay_events(group_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_racing_wins ON sub_racing_players(group_id, wins DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_racing_champions ON sub_racing_players(group_id, champions DESC);

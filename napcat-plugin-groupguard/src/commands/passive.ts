@@ -43,8 +43,8 @@ export async function sendWelcomeMessage(groupId: string, userId: string): Promi
   await executeSendWelcomeMessage(groupId, userId);
 }
 
-export async function handleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[]): Promise<boolean> {
-  return executeHandleMsgTypeFilter(groupId, userId, messageId, raw, messageSegments);
+export async function handleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[], ctx?: NapCatPluginContext): Promise<boolean> {
+  return executeHandleMsgTypeFilter(groupId, userId, messageId, raw, messageSegments, ctx);
 }
 
 export async function handleBlacklist(groupId: string, userId: string, messageId: string): Promise<boolean> {

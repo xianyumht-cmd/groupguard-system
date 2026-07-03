@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+﻿import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { isQueryOnlyBotRole, shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { cacheStateService } from '../core/state-services/cache_state_service';
@@ -8,11 +8,11 @@ import { configStateService } from '../core/state-services/config_state_service'
 import { identityStateService } from '../core/state-services/identity_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { send } from '../dynamic-commands/response_capture_runtime';
-import { detectQrCode } from '../qr';
 import { groupguardRepository } from '../repositories/groupguard_repository';
 import { createRiskSignal } from '../risk/signals';
 import { processRiskSignal } from '../risk/policy_engine';
 import { enqueueMiscAction } from './action_queue_service';
+import { handleContentRiskFilter, recordContentRiskAudit } from './content_risk_service';
 
 const antiRecallDigest = new Map<string, Map<string, { count: number; lastUserId: string; }>>();
 let antiRecallDigestTimerReady = false;
@@ -47,12 +47,12 @@ async function flushAntiRecallDigest(): Promise<void> {
     const rows = Array.from(groupMap.entries()).sort((a, b) => b[1].count - a[1].count);
     if (!rows.length) continue;
     const total = rows.reduce((acc, [, v]) => acc + v.count, 0);
-    const lines = rows.slice(0, 20).map(([gid, v]) => `群${gid}: ${v.count}条（最近QQ:${v.lastUserId || '-'})`);
+    const lines = rows.slice(0, 20).map(([gid, v]) => `缇?{gid}: ${v.count}鏉★紙鏈€杩慟Q:${v.lastUserId || '-'})`);
     await send({
       channel: 'private',
       targetId: owner,
       scene: 'raw_text',
-      message: `🔔 防撤回聚合通知\n30秒内共 ${total} 条撤回事件\n${lines.join('\n')}`,
+      message: `馃敂 闃叉挙鍥炶仛鍚堥€氱煡\n30绉掑唴鍏?${total} 鏉℃挙鍥炰簨浠禱n${lines.join('\n')}`,
       force: true,
       applyTemplate: false
     });
@@ -159,7 +159,7 @@ export async function executeHandleCardLockCheck(groupId: string, userId: string
       dedupKey: `${groupId}:card:${userId}`,
       maxRetries: 2
     });
-    loggingStateService.debug(`名片锁定: ${userId} 在群 ${groupId} 名片被还原为 ${lockedCard}`);
+    loggingStateService.debug(`鍚嶇墖閿佸畾: ${userId} 鍦ㄧ兢 ${groupId} 鍚嶇墖琚繕鍘熶负 ${lockedCard}`);
   }
 }
 
@@ -170,7 +170,7 @@ export async function executeHandleCardLockOnMessage(groupId: string, userId: st
   if (lockedCard === undefined) return;
   const currentCard = senderCard || '';
   if (currentCard !== lockedCard) {
-    loggingStateService.info(`[MsgCheck] 监测到 ${userId} 名片异常(当前: "${currentCard}", 锁定: "${lockedCard}")，正在修正...`);
+    loggingStateService.info(`[MsgCheck] 鐩戞祴鍒?${userId} 鍚嶇墖寮傚父(褰撳墠: "${currentCard}", 閿佸畾: "${lockedCard}")锛屾鍦ㄤ慨姝?..`);
     await enqueueMiscAction({
       groupId,
       action: 'set_group_card',
@@ -196,7 +196,7 @@ export async function executeHandleAutoRecall(groupId: string, userId: string, m
     severity: 'medium',
     evidence: { source: 'targetUsers' }
   }));
-  loggingStateService.debug(`针对撤回信号: 群 ${groupId} 用户 ${userId} 消息 ${messageId} handled=${handled}`);
+  loggingStateService.debug(`閽堝鎾ゅ洖淇″彿: 缇?${groupId} 鐢ㄦ埛 ${userId} 娑堟伅 ${messageId} handled=${handled}`);
   return handled;
 }
 
@@ -219,59 +219,14 @@ export async function executeSendWelcomeMessage(groupId: string, userId: string)
     });
   }
   if (settings.joinPrivateEnabled === true) {
-    const dmTpl = String(settings.joinPrivateMessage || '欢迎加入，进群后请先阅读群公告与群规。');
+    const dmTpl = String(settings.joinPrivateMessage || '欢迎加入，请先阅读群公告与群规。');
     const dm = dmTpl.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId);
     await send({ channel: 'private', targetId: userId, scene: 'raw_text', message: dm, force: true, applyTemplate: false });
   }
 }
 
-export async function executeHandleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[]): Promise<boolean> {
-  if (blockPassiveByRole('passive_service', raw, 'moderation_like')) return false;
-  const settings = configStateService.resolveGroupSettings(groupId);
-  const filter = settings.msgFilter || configStateService.getConfig().msgFilter;
-  if (!filter) return false;
-  const types = (messageSegments || []).map((s: any) => s.type);
-  let blocked = false;
-  let reason = '';
-  if (filter.blockVideo && types.includes('video')) { blocked = true; reason = '视频'; }
-  else if (filter.blockImage && types.includes('image')) { blocked = true; reason = '图片'; }
-  else if (filter.blockRecord && types.includes('record')) { blocked = true; reason = '语音'; }
-  else if (filter.blockForward && types.includes('forward')) { blocked = true; reason = '合并转发'; }
-  else if (filter.blockLightApp && (raw.includes('[CQ:json,') || raw.includes('[CQ:xml,'))) { blocked = true; reason = '小程序卡片'; }
-  else if (filter.blockContact && (raw.includes('"app":"com.tencent.contact.lua"') || raw.includes('"app":"com.tencent.qq.checkin"') || types.includes('contact'))) { blocked = true; reason = '名片分享'; }
-  else if (filter.blockUrl) {
-    const plainText = raw.replace(/\[CQ:[^\]]+\]/g, '');
-    const urlPattern = /https?:\/\/\S+|www\.\S+|[a-zA-Z0-9][-a-zA-Z0-9]{0,62}\.(?:com|cn|net|org|io|cc|co|me|top|xyz|info|dev|app|site|vip|pro|tech|cloud|link|fun|icu|club|ltd|live|tv|asia|biz|wang|mobi|online|shop|store|work)\b/i;
-    if (urlPattern.test(plainText)) { blocked = true; reason = '链接'; }
-  }
-  if (!blocked && filter.blockQr) {
-    const images = messageSegments.filter((s: any) => s.type === 'image');
-    for (const img of images) {
-      const url = img.url || img.file;
-      if (url && (url.startsWith('http') || url.startsWith('file://'))) {
-        try {
-          const hasQr = await detectQrCode(url);
-          if (hasQr) {
-            blocked = true;
-            reason = '二维码';
-            break;
-          }
-        } catch {}
-      }
-    }
-  }
-  if (!blocked) return false;
-  const handled = await processRiskSignal(createRiskSignal({
-    kind: 'media_filter',
-    groupId,
-    userId,
-    messageId,
-    reason: `msg_filter_${reason}`,
-    severity: reason === '二维码' || reason === '链接' ? 'high' : 'medium',
-    evidence: { mediaType: reason, actionReason: `msg_filter_${reason}` }
-  }));
-  loggingStateService.info(`消息类型过滤信号: 群 ${groupId} 用户 ${userId} 发送${reason} handled=${handled}`);
-  return handled;
+export async function executeHandleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[], ctx?: NapCatPluginContext): Promise<boolean> {
+  return handleContentRiskFilter({ groupId, userId, messageId, raw, messageSegments, ctx });
 }
 
 export async function executeHandleBlacklist(groupId: string, userId: string, messageId: string): Promise<boolean> {
@@ -293,29 +248,28 @@ export async function executeHandleBlacklist(groupId: string, userId: string, me
         mode: settings.blacklistAction || 'recall'
       }
     }));
-    loggingStateService.debug(`黑名单信号: 群 ${groupId} 用户 ${userId} handled=${handled}`);
+    loggingStateService.debug(`榛戝悕鍗曚俊鍙? 缇?${groupId} 鐢ㄦ埛 ${userId} handled=${handled}`);
     return handled;
   }
   return false;
 }
 
 export async function executeHandleFilterKeywords(groupId: string, userId: string, messageId: string, raw: string, ctx: NapCatPluginContext): Promise<boolean> {
-  if (blockPassiveByRole('passive_service', raw, 'moderation_like')) return false;
   const settings = configStateService.resolveGroupSettings(groupId);
   const groupKw = settings.filterKeywords || [];
   const globalKw = configStateService.getConfig().filterKeywords || [];
   const allKw = [...new Set([...groupKw, ...globalKw])];
   if (!allKw.length) return false;
 
-  // 修改：转小写匹配
+  // 淇敼锛氳浆灏忓啓鍖归厤
   const lowerRaw = raw.toLowerCase();
   const matched = allKw.find(k => lowerRaw.includes(k.toLowerCase()));
 
   if (!matched) return false;
-  loggingStateService.info(`违禁词拦截: 群 ${groupId} 用户 ${userId} 触发「${matched}」`);
+  loggingStateService.info(`[KeywordFilter] group=${groupId} user=${userId} matched=${matched}`);
   const level = settings.filterPunishLevel || 1;
   const banMin = (groupKw && groupKw.length) ? (settings.filterBanMinutes || 10) : (configStateService.getConfig().filterBanMinutes || 10);
-  return processRiskSignal(createRiskSignal({
+  const handled = await processRiskSignal(createRiskSignal({
     kind: 'keyword_filter',
     groupId,
     userId,
@@ -324,10 +278,20 @@ export async function executeHandleFilterKeywords(groupId: string, userId: strin
     severity: level >= 4 ? 'critical' : level >= 3 ? 'high' : level >= 2 ? 'medium' : 'low',
     evidence: { matched, level, banMinutes: banMin }
   }), ctx);
+  recordContentRiskAudit({
+    groupId,
+    userId,
+    messageId,
+    riskType: 'keyword',
+    matchedRule: matched,
+    action: level >= 4 ? 'recall_blacklist' : level >= 3 ? 'recall_kick' : level >= 2 ? 'recall_ban' : 'recall',
+    handled,
+    failedReason: handled ? '' : 'see_policy_decision'
+  });
+  return handled;
 }
 
 export async function executeHandleSpamDetect(groupId: string, userId: string, raw: string = ''): Promise<boolean> {
-  if (blockPassiveByRole('passive_service', raw, 'moderation_like')) return false;
   const settings = configStateService.resolveGroupSettings(groupId);
   const config = configStateService.getConfig();
   const spamOn = settings.spamDetect !== undefined ? settings.spamDetect : config.spamDetect;
@@ -353,7 +317,7 @@ export async function executeHandleSpamDetect(groupId: string, userId: string, r
     if (!handled) return false;
     cacheStateService.deleteSpamCacheEntry(key);
     cacheStateService.deleteRepeatCacheEntry(key);
-    loggingStateService.info(`刷屏检测: 群 ${groupId} 用户 ${userId} 在 ${windowMs / 1000}s 内发送 ${threshold} 条消息`);
+    loggingStateService.info(`[SpamDetect] group=${groupId} user=${userId} window=${windowMs / 1000}s threshold=${threshold}`);
     return true;
   }
   const repeatLimit = settings.repeatThreshold || 0;
@@ -362,6 +326,7 @@ export async function executeHandleSpamDetect(groupId: string, userId: string, r
     const lastMsg = cacheStateService.getRepeatCacheEntry(repeatKey);
     if (lastMsg && lastMsg.content === raw) {
       lastMsg.count++;
+      lastMsg.time = now;
       if (lastMsg.count >= repeatLimit) {
         const banMin = (settings.spamBanMinutes || 5);
         const handled = await processRiskSignal(createRiskSignal({
@@ -377,7 +342,7 @@ export async function executeHandleSpamDetect(groupId: string, userId: string, r
         return true;
       }
     } else {
-      cacheStateService.setRepeatCacheEntry(repeatKey, { content: raw, count: 1 });
+      cacheStateService.setRepeatCacheEntry(repeatKey, { content: raw, count: 1, time: now });
     }
   }
   return false;
@@ -395,7 +360,7 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
   const normalizedText = text.toLowerCase();
   if (text.startsWith('删问') || text.startsWith('模糊问') || text.startsWith('精确问') || text.startsWith('删除问答')) return false;
 
-  // 修改：统一文本小写
+  // 淇敼锛氱粺涓€鏂囨湰灏忓啓
   const lowerText = text.toLowerCase();
 
   for (const qa of qaList) {
@@ -433,7 +398,7 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
     const highPatterns = settings.qaHighRiskPatterns ?? config.global.qaHighRiskPatterns ?? [];
     const mediumPatterns = settings.qaMediumRiskPatterns ?? config.global.qaMediumRiskPatterns ?? [];
 
-    // 修改：使用已定义的 lowerText 和 lowerKeyword 进行风险检测
+    // 淇敼锛氫娇鐢ㄥ凡瀹氫箟鐨?lowerText 鍜?lowerKeyword 杩涜椋庨櫓妫€娴?
     const hitHigh = highPatterns.some(p => p && (lowerText.includes(String(p).toLowerCase()) || lowerKeyword.includes(String(p).toLowerCase())));
     const hitMedium = !hitHigh && mediumPatterns.some(p => p && (lowerText.includes(String(p).toLowerCase()) || lowerKeyword.includes(String(p).toLowerCase())));
     
@@ -462,7 +427,7 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
     if (reply.includes('[CQ:')) await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'text', data: { text: reply } }], force: false, applyTemplate: true });
     else await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: reply, force: false, applyTemplate: true });
     
-    loggingStateService.debug(`问答触发: 群 ${groupId} 用户 ${userId} 匹配 [${qa.mode}]${qa.keyword}`);
+    loggingStateService.debug(`闂瓟瑙﹀彂: 缇?${groupId} 鐢ㄦ埛 ${userId} 鍖归厤 [${qa.mode}]${qa.keyword}`);
     return true;
   }
   return false;

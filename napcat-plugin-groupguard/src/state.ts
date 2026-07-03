@@ -72,7 +72,7 @@ class PluginState {
   /** 刷屏检测缓存 key: `${groupId}:${userId}`, value: 时间戳数组 */
   spamCache: Map<string, number[]> = new Map();
   /** 复读检测缓存 key: `${groupId}:${userId}`, value: { content: string, count: number } */
-  repeatCache: Map<string, { content: string; count: number }> = new Map();
+  repeatCache: Map<string, { content: string; count: number; time?: number }> = new Map();
   /** 调试日志缓冲区 */
   logBuffer: LogEntry[] = [];
   private readonly maxLogEntries = 500;
@@ -126,6 +126,21 @@ class PluginState {
     // 5. 清理问答冷却缓存（最多保留 10 分钟）
     for (const [key, ts] of this.qaCooldownMap.entries()) {
       if (now - ts > 600000) this.qaCooldownMap.delete(key);
+    }
+    for (const [key, timestamps] of this.spamCache.entries()) {
+      const pruned = timestamps.filter(t => now - t < 600000).slice(-300);
+      if (pruned.length) this.spamCache.set(key, pruned);
+      else this.spamCache.delete(key);
+    }
+    for (const [key, val] of this.repeatCache.entries()) {
+      const lastSeen = Number(val.time || 0);
+      if (!lastSeen || now - lastSeen > 600000) this.repeatCache.delete(key);
+    }
+    if (this.spamCache.size > 5000) {
+      for (const key of Array.from(this.spamCache.keys()).slice(0, this.spamCache.size - 5000)) this.spamCache.delete(key);
+    }
+    if (this.repeatCache.size > 5000) {
+      for (const key of Array.from(this.repeatCache.keys()).slice(0, this.repeatCache.size - 5000)) this.repeatCache.delete(key);
     }
     for (const [groupId, list] of this.groupSendHistory.entries()) {
       const pruned = list.filter(t => now - t < 300000);

@@ -11,6 +11,7 @@ export interface MessageCacheEntry {
 export interface RepeatCacheEntry {
   content: string;
   count: number;
+  time?: number;
 }
 
 export interface AdminCacheEntry {

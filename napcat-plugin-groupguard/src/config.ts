@@ -1,5 +1,5 @@
 // 群管插件配置
-import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode, BotAntiRiskLimitFallbackMode } from './types';
+import type { PluginConfig, GroupGuardSettings, MsgFilterSettings, SelfRecallPolicy, ActionPrioritySettings, QAEntry, BotAntiRiskScenePolicy, BotAntiRiskSuffixMode, BotAntiRiskLimitFallbackMode, ContentRiskAction, ContentRiskRule, ContentRiskSettings, ContentRiskType, SubGameplaySettings } from './types';
 
 export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockVideo: false,
@@ -10,6 +10,67 @@ export const DEFAULT_MSG_FILTER: MsgFilterSettings = {
   blockContact: false,
   blockUrl: false,
   blockQr: false,
+  blockGroupInvite: false,
+  groupInviteDetectUrl: true,
+  groupInviteDetectCard: true,
+  groupInviteDetectForward: true,
+  groupInviteAction: 'recall',
+  groupInviteBanMinutes: 10,
+};
+
+export const DEFAULT_CONTENT_RISK_RULE: ContentRiskRule = {
+  enabled: false,
+  action: 'recall',
+  banMinutes: 10,
+  reason: ''
+};
+
+const CONTENT_RISK_TYPES: ContentRiskType[] = ['image', 'video', 'record', 'forward', 'lightApp', 'contact', 'url', 'qr', 'groupInvite'];
+
+export const DEFAULT_CONTENT_RISK: ContentRiskSettings = {
+  enabled: false,
+  notifyGroup: false,
+  logOnly: false,
+  rules: CONTENT_RISK_TYPES.reduce((acc, type) => {
+    acc[type] = { ...DEFAULT_CONTENT_RISK_RULE };
+    return acc;
+  }, {} as Record<ContentRiskType, ContentRiskRule>),
+  urlAllowlist: [],
+  urlBlocklist: [],
+  qrDetectTimeoutMs: 3000,
+  qrDetectMaxBytes: 5242880,
+  qrDetectConcurrency: 2,
+  qrCacheSeconds: 300,
+  blockGroupInvite: false,
+  groupInviteDetectUrl: true,
+  groupInviteDetectCard: true,
+  groupInviteDetectForward: true,
+  groupInviteAction: 'recall',
+  groupInviteBanMinutes: 10
+};
+
+export const DEFAULT_SUB_GAMEPLAY: SubGameplaySettings = {
+  enabled: false,
+  commandPrefix: '',
+  masterServantEnabled: true,
+  racingEnabled: true,
+  lightEntertainmentEnabled: true,
+  dailyWelfareGold: 1000,
+  initialGold: 500,
+  initialRacingCoins: 0,
+  initialFuel: 100,
+  maxFuel: 100,
+  duelCostFuel: 10,
+  raceCostFuel: 15,
+  carCoinExchangeRate: 10,
+  fuelExchangeRate: 5,
+  pkCooldownSeconds: 30,
+  escapeSuccessRate: 18,
+  snatchSuccessRate: 45,
+  contractTaxRate: 10,
+  rankLimit: 10,
+  textTemplates: {},
+  commandAliases: {}
 };
 
 export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
@@ -21,6 +82,7 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   qaEnabled: true,
   dynamicCommandEnabled: true,
   featureSwitches: {},
+  subGameplay: { ...DEFAULT_SUB_GAMEPLAY },
   autoApprove: true,
   enableVerify: true,
   verifyTimeout: 300,
@@ -147,6 +209,8 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   blacklistKickDelayMinSeconds: 5,
   blacklistKickDelayMaxSeconds: 20,
   blacklistCheckBeforeCommand: true,
+  msgFilter: { ...DEFAULT_MSG_FILTER },
+  contentRisk: JSON.parse(JSON.stringify(DEFAULT_CONTENT_RISK)),
 };
 
 function normalizeNumber(value: any, fallback: number, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY): number {
@@ -155,6 +219,92 @@ function normalizeNumber(value: any, fallback: number, min = Number.NEGATIVE_INF
   if (n < min) return min;
   if (n > max) return max;
   return n;
+}
+
+function normalizeStringArray(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item: any) => String(item || '').trim()).filter(Boolean)));
+}
+
+function normalizeContentRiskAction(value: any, fallback: ContentRiskAction = 'recall'): ContentRiskAction {
+  return value === 'recall'
+    || value === 'recall_warn'
+    || value === 'recall_ban'
+    || value === 'recall_kick'
+    || value === 'recall_blacklist'
+    ? value
+    : fallback;
+}
+
+function normalizeMsgFilter(input: any): MsgFilterSettings {
+  const src = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return {
+    blockVideo: src.blockVideo === true,
+    blockImage: src.blockImage === true,
+    blockRecord: src.blockRecord === true,
+    blockForward: src.blockForward === true,
+    blockLightApp: src.blockLightApp === true,
+    blockContact: src.blockContact === true,
+    blockUrl: src.blockUrl === true,
+    blockQr: src.blockQr === true,
+    blockGroupInvite: src.blockGroupInvite === true,
+    groupInviteDetectUrl: src.groupInviteDetectUrl !== false,
+    groupInviteDetectCard: src.groupInviteDetectCard !== false,
+    groupInviteDetectForward: src.groupInviteDetectForward !== false,
+    groupInviteAction: normalizeContentRiskAction(src.groupInviteAction, 'recall'),
+    groupInviteBanMinutes: normalizeNumber(src.groupInviteBanMinutes, 10, 1, 1440)
+  };
+}
+
+function legacyRuleEnabled(type: ContentRiskType, filter: MsgFilterSettings): boolean {
+  if (type === 'image') return filter.blockImage === true;
+  if (type === 'video') return filter.blockVideo === true;
+  if (type === 'record') return filter.blockRecord === true;
+  if (type === 'forward') return filter.blockForward === true;
+  if (type === 'lightApp') return filter.blockLightApp === true;
+  if (type === 'contact') return filter.blockContact === true;
+  if (type === 'url') return filter.blockUrl === true;
+  if (type === 'qr') return filter.blockQr === true;
+  if (type === 'groupInvite') return filter.blockGroupInvite === true;
+  return false;
+}
+
+function normalizeContentRisk(input: any, legacyFilter: MsgFilterSettings): ContentRiskSettings {
+  const src = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const srcRules = src.rules && typeof src.rules === 'object' && !Array.isArray(src.rules) ? src.rules : {};
+  const rules = CONTENT_RISK_TYPES.reduce((acc, type) => {
+    const rawRule = srcRules[type] && typeof srcRules[type] === 'object' && !Array.isArray(srcRules[type]) ? srcRules[type] : {};
+    const legacyEnabled = legacyRuleEnabled(type, legacyFilter);
+    const actionFallback = type === 'groupInvite'
+      ? normalizeContentRiskAction(src.groupInviteAction || legacyFilter.groupInviteAction, 'recall')
+      : 'recall';
+    acc[type] = {
+      enabled: rawRule.enabled === true || legacyEnabled,
+      action: normalizeContentRiskAction(rawRule.action, actionFallback),
+      banMinutes: normalizeNumber(rawRule.banMinutes, type === 'groupInvite' ? (src.groupInviteBanMinutes ?? legacyFilter.groupInviteBanMinutes ?? 10) : 10, 1, 1440),
+      reason: String(rawRule.reason || '')
+    };
+    return acc;
+  }, {} as Record<ContentRiskType, ContentRiskRule>);
+  const anyLegacyEnabled = CONTENT_RISK_TYPES.some(type => legacyRuleEnabled(type, legacyFilter));
+  return {
+    enabled: src.enabled === true || anyLegacyEnabled,
+    notifyGroup: src.notifyGroup === true,
+    logOnly: src.logOnly === true,
+    rules,
+    urlAllowlist: normalizeStringArray(src.urlAllowlist),
+    urlBlocklist: normalizeStringArray(src.urlBlocklist),
+    qrDetectTimeoutMs: normalizeNumber(src.qrDetectTimeoutMs, 3000, 300, 30000),
+    qrDetectMaxBytes: normalizeNumber(src.qrDetectMaxBytes, 5242880, 102400, 52428800),
+    qrDetectConcurrency: normalizeNumber(src.qrDetectConcurrency, 2, 1, 10),
+    qrCacheSeconds: normalizeNumber(src.qrCacheSeconds, 300, 0, 86400),
+    blockGroupInvite: src.blockGroupInvite === true || legacyFilter.blockGroupInvite === true || rules.groupInvite.enabled === true,
+    groupInviteDetectUrl: src.groupInviteDetectUrl !== false && legacyFilter.groupInviteDetectUrl !== false,
+    groupInviteDetectCard: src.groupInviteDetectCard !== false && legacyFilter.groupInviteDetectCard !== false,
+    groupInviteDetectForward: src.groupInviteDetectForward !== false && legacyFilter.groupInviteDetectForward !== false,
+    groupInviteAction: normalizeContentRiskAction(src.groupInviteAction || legacyFilter.groupInviteAction, rules.groupInvite.action),
+    groupInviteBanMinutes: normalizeNumber(src.groupInviteBanMinutes ?? legacyFilter.groupInviteBanMinutes, rules.groupInvite.banMinutes ?? 10, 1, 1440)
+  };
 }
 
 function normalizeSelfRecall(settings: GroupGuardSettings): SelfRecallPolicy {
@@ -207,11 +357,66 @@ function normalizeBotAntiRiskScenePolicies(input: any): Record<string, BotAntiRi
   return out;
 }
 
+function normalizeStringRecordArray(input: any): Record<string, string[]> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(input)) {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) continue;
+    const values = Array.isArray(value)
+      ? value.map(item => String(item || '').trim()).filter(Boolean)
+      : String(value || '').split(/[,\n]/).map(item => item.trim()).filter(Boolean);
+    if (values.length) out[normalizedKey] = Array.from(new Set(values));
+  }
+  return out;
+}
+
+function normalizeStringRecord(input: any): Record<string, string> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) continue;
+    out[normalizedKey] = String(value ?? '');
+  }
+  return out;
+}
+
+function normalizeSubGameplay(input: any): SubGameplaySettings {
+  const src = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const d = DEFAULT_SUB_GAMEPLAY;
+  return {
+    enabled: src.enabled === true,
+    commandPrefix: String(src.commandPrefix ?? d.commandPrefix).trim(),
+    masterServantEnabled: src.masterServantEnabled !== false,
+    racingEnabled: src.racingEnabled !== false,
+    lightEntertainmentEnabled: src.lightEntertainmentEnabled !== false,
+    dailyWelfareGold: normalizeNumber(src.dailyWelfareGold, d.dailyWelfareGold, 0, 100000000),
+    initialGold: normalizeNumber(src.initialGold, d.initialGold, 0, 100000000),
+    initialRacingCoins: normalizeNumber(src.initialRacingCoins, d.initialRacingCoins, 0, 100000000),
+    initialFuel: normalizeNumber(src.initialFuel, d.initialFuel, 0, 1000000),
+    maxFuel: normalizeNumber(src.maxFuel, d.maxFuel, 1, 1000000),
+    duelCostFuel: normalizeNumber(src.duelCostFuel, d.duelCostFuel, 0, 1000000),
+    raceCostFuel: normalizeNumber(src.raceCostFuel, d.raceCostFuel, 0, 1000000),
+    carCoinExchangeRate: normalizeNumber(src.carCoinExchangeRate, d.carCoinExchangeRate, 1, 1000000),
+    fuelExchangeRate: normalizeNumber(src.fuelExchangeRate, d.fuelExchangeRate, 1, 1000000),
+    pkCooldownSeconds: normalizeNumber(src.pkCooldownSeconds, d.pkCooldownSeconds, 0, 86400),
+    escapeSuccessRate: normalizeNumber(src.escapeSuccessRate, d.escapeSuccessRate, 0, 100),
+    snatchSuccessRate: normalizeNumber(src.snatchSuccessRate, d.snatchSuccessRate, 0, 100),
+    contractTaxRate: normalizeNumber(src.contractTaxRate, d.contractTaxRate, 0, 90),
+    rankLimit: normalizeNumber(src.rankLimit, d.rankLimit, 3, 50),
+    textTemplates: normalizeStringRecord(src.textTemplates),
+    commandAliases: normalizeStringRecordArray(src.commandAliases)
+  };
+}
+
 export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSettings {
   const merged: GroupGuardSettings = {
     ...JSON.parse(JSON.stringify(DEFAULT_GROUP_SETTINGS)),
     ...(input || {}),
   };
+  merged.msgFilter = normalizeMsgFilter(merged.msgFilter);
+  merged.contentRisk = normalizeContentRisk((merged as any).contentRisk, merged.msgFilter);
   merged.selfRecall = normalizeSelfRecall(merged);
   merged.masterEnabled = merged.masterEnabled !== false;
   merged.silentMode = merged.silentMode === 'noPassiveReply' || merged.silentMode === 'noBotSend' ? merged.silentMode : 'off';
@@ -226,6 +431,7 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
       return acc;
     }, {} as Record<string, boolean>)
     : {};
+  merged.subGameplay = normalizeSubGameplay((merged as any).subGameplay);
   merged.botAntiRiskSuffixMode = normalizeSuffixMode(merged.botAntiRiskSuffixMode, 'punctuation');
   merged.botAntiRiskScenePolicies = normalizeBotAntiRiskScenePolicies(merged.botAntiRiskScenePolicies);
   merged.botAntiRiskLimitFallbackMode = normalizeLimitFallbackMode(merged.botAntiRiskLimitFallbackMode, 'drop');
@@ -295,6 +501,7 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   lolBanPrimaryUrl: '',
   lolBanBackupUrls: [],
   lolApiBaseUrl: 'http://192.168.3.94:5000',
+  eleBuildApiBaseUrl: '',
   shardDataUrl: 'https://raw.githubusercontent.com/badspacebar/release/master/files/shards.json',
   shardHeroListUrl: 'https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js',
   shardImageUrlTemplate: '',
@@ -316,6 +523,7 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
     热门: 'https://api.pearktrue.cn/api/random_video/?name=热门'
   },
   msgFilter: { ...DEFAULT_MSG_FILTER },
+  contentRisk: JSON.parse(JSON.stringify(DEFAULT_CONTENT_RISK)),
   qaList: [],
   rejectKeywords: [],
   presets: [],
@@ -355,7 +563,15 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
       botAntiRiskLimitFallbackMode: (merged.global as any)?.botAntiRiskLimitFallbackMode || 'drop'
     };
   }
-  merged.configVersion = 5;
+  merged.msgFilter = normalizeMsgFilter((merged as any).msgFilter);
+  merged.contentRisk = normalizeContentRisk((merged as any).contentRisk, merged.msgFilter);
+  if (!(input as any)?.global?.msgFilter && (input as any)?.msgFilter) {
+    merged.global = { ...(merged.global || {}), msgFilter: merged.msgFilter };
+  }
+  if (!(input as any)?.global?.contentRisk && ((input as any)?.contentRisk || (input as any)?.msgFilter)) {
+    merged.global = { ...(merged.global || {}), contentRisk: merged.contentRisk };
+  }
+  merged.configVersion = 6;
   const normalizedQaList: QAEntry[] = Array.isArray(merged.qaList)
     ? merged.qaList
       .filter((qa: any) => qa && typeof qa.keyword === 'string' && typeof qa.reply === 'string')
@@ -373,6 +589,7 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   merged.global.actionQueueEventRetentionMaxAgeDays = Math.max(1, Math.min(3650, Number(merged.global.actionQueueEventRetentionMaxAgeDays || 7)));
   merged.global.actionQueueEventRetentionMaxRows = Math.max(100, Math.min(1000000, Number(merged.global.actionQueueEventRetentionMaxRows || 50000)));
   merged.shardDataUrl = String(merged.shardDataUrl || '').trim();
+  merged.eleBuildApiBaseUrl = String(merged.eleBuildApiBaseUrl || '').trim().replace(/\/+$/, '');
   merged.shardHeroListUrl = String(merged.shardHeroListUrl || '').trim();
   merged.shardImageUrlTemplate = String(merged.shardImageUrlTemplate || '').trim();
   merged.shardQueryOutputFormat = merged.shardQueryOutputFormat === 'text' || merged.shardQueryOutputFormat === 'image'

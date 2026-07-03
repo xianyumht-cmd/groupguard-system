@@ -41,6 +41,7 @@
     "build:snowluma": "vite build --mode snowluma",
     "build:all": "npm run build:release && npm run build:snowluma",
     "config:migrate:snowluma": "node scripts/migrate-snowluma-config.mjs",
+    "verify:content-risk": "node --experimental-strip-types --loader ./scripts/internal/ts-extension-loader.mjs scripts/verify-content-risk.ts",
     "start:snowluma": "node dist/snowluma-service.mjs",
     "report:scene": "node scene_coverage_report.mjs",
     "report:commands": "node scripts/command_coverage_report.mjs"

@@ -161,6 +161,73 @@ CREATE TABLE IF NOT EXISTS contact_risk_records (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (category, identifier_type, identifier_value)
 );
+CREATE TABLE IF NOT EXISTS sub_players (
+  group_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  nickname TEXT NOT NULL DEFAULT '',
+  gold INTEGER NOT NULL DEFAULT 0,
+  value INTEGER NOT NULL DEFAULT 0,
+  exp INTEGER NOT NULL DEFAULT 0,
+  level INTEGER NOT NULL DEFAULT 1,
+  title TEXT NOT NULL DEFAULT '',
+  servant_name TEXT NOT NULL DEFAULT '',
+  master_id TEXT NOT NULL DEFAULT '',
+  last_welfare_day TEXT NOT NULL DEFAULT '',
+  last_action_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS sub_contracts (
+  group_id TEXT NOT NULL,
+  master_id TEXT NOT NULL,
+  servant_id TEXT NOT NULL,
+  price INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL DEFAULT 'active',
+  servant_name TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, servant_id)
+);
+CREATE TABLE IF NOT EXISTS sub_gameplay_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT NOT NULL,
+  module TEXT NOT NULL,
+  action TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  target_id TEXT NOT NULL DEFAULT '',
+  amount INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sub_racing_players (
+  group_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  racer_name TEXT NOT NULL DEFAULT '',
+  car_coins INTEGER NOT NULL DEFAULT 0,
+  fuel INTEGER NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  losses INTEGER NOT NULL DEFAULT 0,
+  champions INTEGER NOT NULL DEFAULT 0,
+  career_runs INTEGER NOT NULL DEFAULT 0,
+  active_car_id TEXT NOT NULL DEFAULT 'starter',
+  owned_cars_json TEXT NOT NULL DEFAULT '["starter"]',
+  last_duel_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS sub_resources (
+  group_id TEXT NOT NULL DEFAULT '',
+  resource_key TEXT NOT NULL,
+  module TEXT NOT NULL DEFAULT '',
+  resource_type TEXT NOT NULL DEFAULT 'text',
+  value TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, resource_key)
+);
 CREATE INDEX IF NOT EXISTS idx_activity_group_last_active ON activity(group_id, last_active DESC);
 CREATE INDEX IF NOT EXISTS idx_signin_group_points ON signin(group_id, points DESC);
 CREATE INDEX IF NOT EXISTS idx_join_logs_group_timestamp ON join_logs(group_id, timestamp DESC);
@@ -182,6 +249,13 @@ CREATE INDEX IF NOT EXISTS idx_scammer_records_last_reported ON scammer_records(
 CREATE INDEX IF NOT EXISTS idx_contact_risk_records_category_updated ON contact_risk_records(category, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_contact_risk_records_identifier ON contact_risk_records(identifier_type, identifier_value);
 CREATE INDEX IF NOT EXISTS idx_contact_risk_records_last_reported ON contact_risk_records(category, last_reported_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_players_gold ON sub_players(group_id, gold DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_players_value ON sub_players(group_id, value DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_players_level ON sub_players(group_id, level DESC, exp DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_contracts_master ON sub_contracts(group_id, master_id, state);
+CREATE INDEX IF NOT EXISTS idx_sub_gameplay_events_group_created ON sub_gameplay_events(group_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_racing_wins ON sub_racing_players(group_id, wins DESC);
+CREATE INDEX IF NOT EXISTS idx_sub_racing_champions ON sub_racing_players(group_id, champions DESC);
 `;
 
 type SqliteDb = any;
@@ -783,6 +857,266 @@ export class StorageAdapter {
     db.prepare('INSERT OR REPLACE INTO warnings(group_id, user_id, count) VALUES (?, ?, ?)').run(groupId, userId, toNumber(count, 0));
   }
 
+  getSubPlayer(groupId: string, userId: string): any {
+    const db = this.assertReady();
+    const row = db.prepare(`SELECT group_id, user_id, nickname, gold, value, exp, level, title, servant_name, master_id, last_welfare_day, last_action_at, created_at, updated_at
+      FROM sub_players WHERE group_id = ? AND user_id = ?`).get(String(groupId), String(userId));
+    if (!row) return undefined;
+    return {
+      groupId: String(row.group_id || ''),
+      userId: String(row.user_id || ''),
+      nickname: String(row.nickname || ''),
+      gold: toNumber(row.gold, 0),
+      value: toNumber(row.value, 0),
+      exp: toNumber(row.exp, 0),
+      level: toNumber(row.level, 1),
+      title: String(row.title || ''),
+      servantName: String(row.servant_name || ''),
+      masterId: String(row.master_id || ''),
+      lastWelfareDay: String(row.last_welfare_day || ''),
+      lastActionAt: toNumber(row.last_action_at, 0),
+      createdAt: toNumber(row.created_at, 0),
+      updatedAt: toNumber(row.updated_at, 0)
+    };
+  }
+
+  upsertSubPlayer(record: any): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    db.prepare(`INSERT OR REPLACE INTO sub_players(
+      group_id, user_id, nickname, gold, value, exp, level, title, servant_name, master_id, last_welfare_day, last_action_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      String(record.groupId || record.group_id || ''),
+      String(record.userId || record.user_id || ''),
+      String(record.nickname || ''),
+      toNumber(record.gold, 0),
+      toNumber(record.value, 0),
+      toNumber(record.exp, 0),
+      toNumber(record.level, 1),
+      String(record.title || ''),
+      String(record.servantName || record.servant_name || ''),
+      String(record.masterId || record.master_id || ''),
+      String(record.lastWelfareDay || record.last_welfare_day || ''),
+      toNumber(record.lastActionAt || record.last_action_at, 0),
+      toNumber(record.createdAt || record.created_at, now),
+      now
+    );
+  }
+
+  listSubPlayersByRank(groupId: string, rankBy: 'gold' | 'value' | 'level', limit = 10): any[] {
+    const db = this.assertReady();
+    const column = rankBy === 'value' ? 'value' : rankBy === 'level' ? 'level' : 'gold';
+    const secondary = rankBy === 'level' ? ', exp DESC' : '';
+    const rows = db.prepare(`SELECT group_id, user_id, nickname, gold, value, exp, level, title, servant_name, master_id, last_welfare_day, last_action_at, created_at, updated_at
+      FROM sub_players WHERE group_id = ? ORDER BY ${column} DESC${secondary}, updated_at DESC LIMIT ?`).all(String(groupId), Math.max(1, Math.min(100, Math.floor(limit))));
+    return rows.map((row: any) => ({
+      groupId: String(row.group_id || ''),
+      userId: String(row.user_id || ''),
+      nickname: String(row.nickname || ''),
+      gold: toNumber(row.gold, 0),
+      value: toNumber(row.value, 0),
+      exp: toNumber(row.exp, 0),
+      level: toNumber(row.level, 1),
+      title: String(row.title || ''),
+      servantName: String(row.servant_name || ''),
+      masterId: String(row.master_id || ''),
+      lastWelfareDay: String(row.last_welfare_day || ''),
+      lastActionAt: toNumber(row.last_action_at, 0),
+      createdAt: toNumber(row.created_at, 0),
+      updatedAt: toNumber(row.updated_at, 0)
+    }));
+  }
+
+  getSubContractByServant(groupId: string, servantId: string): any {
+    const db = this.assertReady();
+    const row = db.prepare(`SELECT group_id, master_id, servant_id, price, state, servant_name, created_at, updated_at
+      FROM sub_contracts WHERE group_id = ? AND servant_id = ?`).get(String(groupId), String(servantId));
+    if (!row) return undefined;
+    return {
+      groupId: String(row.group_id || ''),
+      masterId: String(row.master_id || ''),
+      servantId: String(row.servant_id || ''),
+      price: toNumber(row.price, 0),
+      state: String(row.state || 'active'),
+      servantName: String(row.servant_name || ''),
+      createdAt: toNumber(row.created_at, 0),
+      updatedAt: toNumber(row.updated_at, 0)
+    };
+  }
+
+  listSubContractsByMaster(groupId: string, masterId: string): any[] {
+    const db = this.assertReady();
+    const rows = db.prepare(`SELECT group_id, master_id, servant_id, price, state, servant_name, created_at, updated_at
+      FROM sub_contracts WHERE group_id = ? AND master_id = ? AND state = 'active' ORDER BY price DESC, updated_at DESC`).all(String(groupId), String(masterId));
+    return rows.map((row: any) => ({
+      groupId: String(row.group_id || ''),
+      masterId: String(row.master_id || ''),
+      servantId: String(row.servant_id || ''),
+      price: toNumber(row.price, 0),
+      state: String(row.state || 'active'),
+      servantName: String(row.servant_name || ''),
+      createdAt: toNumber(row.created_at, 0),
+      updatedAt: toNumber(row.updated_at, 0)
+    }));
+  }
+
+  upsertSubContract(record: any): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    db.prepare(`INSERT OR REPLACE INTO sub_contracts(group_id, master_id, servant_id, price, state, servant_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      String(record.groupId || record.group_id || ''),
+      String(record.masterId || record.master_id || ''),
+      String(record.servantId || record.servant_id || ''),
+      toNumber(record.price, 0),
+      String(record.state || 'active'),
+      String(record.servantName || record.servant_name || ''),
+      toNumber(record.createdAt || record.created_at, now),
+      now
+    );
+  }
+
+  deleteSubContract(groupId: string, servantId: string): void {
+    const db = this.assertReady();
+    db.prepare('DELETE FROM sub_contracts WHERE group_id = ? AND servant_id = ?').run(String(groupId), String(servantId));
+  }
+
+  getSubRacingPlayer(groupId: string, userId: string): any {
+    const db = this.assertReady();
+    const row = db.prepare(`SELECT group_id, user_id, racer_name, car_coins, fuel, wins, losses, champions, career_runs, active_car_id, owned_cars_json, last_duel_at, created_at, updated_at
+      FROM sub_racing_players WHERE group_id = ? AND user_id = ?`).get(String(groupId), String(userId));
+    if (!row) return undefined;
+    const ownedCars = parseJsonArray(String(row.owned_cars_json || '[]'));
+    return {
+      groupId: String(row.group_id || ''),
+      userId: String(row.user_id || ''),
+      racerName: String(row.racer_name || ''),
+      carCoins: toNumber(row.car_coins, 0),
+      fuel: toNumber(row.fuel, 0),
+      wins: toNumber(row.wins, 0),
+      losses: toNumber(row.losses, 0),
+      champions: toNumber(row.champions, 0),
+      careerRuns: toNumber(row.career_runs, 0),
+      activeCarId: String(row.active_car_id || 'starter'),
+      ownedCars: ownedCars.length ? ownedCars : ['starter'],
+      lastDuelAt: toNumber(row.last_duel_at, 0),
+      createdAt: toNumber(row.created_at, 0),
+      updatedAt: toNumber(row.updated_at, 0)
+    };
+  }
+
+  upsertSubRacingPlayer(record: any): void {
+    const db = this.assertReady();
+    const now = Date.now();
+    db.prepare(`INSERT OR REPLACE INTO sub_racing_players(
+      group_id, user_id, racer_name, car_coins, fuel, wins, losses, champions, career_runs, active_car_id, owned_cars_json, last_duel_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      String(record.groupId || record.group_id || ''),
+      String(record.userId || record.user_id || ''),
+      String(record.racerName || record.racer_name || ''),
+      toNumber(record.carCoins || record.car_coins, 0),
+      toNumber(record.fuel, 0),
+      toNumber(record.wins, 0),
+      toNumber(record.losses, 0),
+      toNumber(record.champions, 0),
+      toNumber(record.careerRuns || record.career_runs, 0),
+      String(record.activeCarId || record.active_car_id || 'starter'),
+      JSON.stringify(Array.isArray(record.ownedCars) ? record.ownedCars : ['starter']),
+      toNumber(record.lastDuelAt || record.last_duel_at, 0),
+      toNumber(record.createdAt || record.created_at, now),
+      now
+    );
+  }
+
+  listSubRacingPlayersByRank(groupId: string, rankBy: 'wins' | 'champions', limit = 10): any[] {
+    const db = this.assertReady();
+    const column = rankBy === 'champions' ? 'champions' : 'wins';
+    const rows = db.prepare(`SELECT group_id, user_id, racer_name, car_coins, fuel, wins, losses, champions, career_runs, active_car_id, owned_cars_json, last_duel_at, created_at, updated_at
+      FROM sub_racing_players WHERE group_id = ? ORDER BY ${column} DESC, wins DESC, updated_at DESC LIMIT ?`).all(String(groupId), Math.max(1, Math.min(100, Math.floor(limit))));
+    return rows.map((row: any) => ({
+      groupId: String(row.group_id || ''),
+      userId: String(row.user_id || ''),
+      racerName: String(row.racer_name || ''),
+      carCoins: toNumber(row.car_coins, 0),
+      fuel: toNumber(row.fuel, 0),
+      wins: toNumber(row.wins, 0),
+      losses: toNumber(row.losses, 0),
+      champions: toNumber(row.champions, 0),
+      careerRuns: toNumber(row.career_runs, 0),
+      activeCarId: String(row.active_car_id || 'starter'),
+      ownedCars: parseJsonArray(String(row.owned_cars_json || '[]')),
+      lastDuelAt: toNumber(row.last_duel_at, 0),
+      createdAt: toNumber(row.created_at, 0),
+      updatedAt: toNumber(row.updated_at, 0)
+    }));
+  }
+
+  insertSubGameplayEvent(entry: any): void {
+    const db = this.assertReady();
+    db.prepare(`INSERT INTO sub_gameplay_events(group_id, module, action, actor_id, target_id, amount, status, detail, payload_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      String(entry.groupId || entry.group_id || ''),
+      String(entry.module || ''),
+      String(entry.action || ''),
+      String(entry.actorId || entry.actor_id || ''),
+      String(entry.targetId || entry.target_id || ''),
+      toNumber(entry.amount, 0),
+      String(entry.status || ''),
+      String(entry.detail || ''),
+      JSON.stringify(entry.payload || {}),
+      toNumber(entry.createdAt || entry.created_at, Date.now())
+    );
+  }
+
+  listSubGameplayEvents(groupId: string, limit = 50): any[] {
+    const db = this.assertReady();
+    const rows = db.prepare(`SELECT id, group_id, module, action, actor_id, target_id, amount, status, detail, payload_json, created_at
+      FROM sub_gameplay_events WHERE group_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`).all(
+      String(groupId),
+      Math.max(1, Math.min(200, Math.floor(limit)))
+    );
+    return rows.map((row: any) => ({
+      id: toNumber(row.id, 0),
+      groupId: String(row.group_id || ''),
+      module: String(row.module || ''),
+      action: String(row.action || ''),
+      actorId: String(row.actor_id || ''),
+      targetId: String(row.target_id || ''),
+      amount: toNumber(row.amount, 0),
+      status: String(row.status || ''),
+      detail: String(row.detail || ''),
+      payload: parseJson(String(row.payload_json || '{}')) || {},
+      createdAt: toNumber(row.created_at, 0)
+    }));
+  }
+
+  upsertSubResource(record: any): void {
+    const db = this.assertReady();
+    db.prepare(`INSERT OR REPLACE INTO sub_resources(group_id, resource_key, module, resource_type, value, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(
+      String(record.groupId || record.group_id || ''),
+      String(record.key || record.resourceKey || record.resource_key || ''),
+      String(record.module || ''),
+      String(record.type || record.resourceType || record.resource_type || 'text'),
+      String(record.value || ''),
+      Date.now()
+    );
+  }
+
+  listSubResources(groupId = ''): any[] {
+    const db = this.assertReady();
+    const rows = db.prepare(`SELECT group_id, resource_key, module, resource_type, value, updated_at
+      FROM sub_resources WHERE group_id = '' OR group_id = ? ORDER BY module ASC, resource_key ASC`).all(String(groupId || ''));
+    return rows.map((row: any) => ({
+      groupId: String(row.group_id || ''),
+      key: String(row.resource_key || ''),
+      module: String(row.module || ''),
+      type: String(row.resource_type || 'text'),
+      value: String(row.value || ''),
+      updatedAt: toNumber(row.updated_at, 0)
+    }));
+  }
+
   insertJoinLog(entry: JoinLogEntry): void {
     const db = this.assertReady();
     db.prepare('INSERT INTO join_logs(group_id, user_id, answer, passphrase_matched, action, reason, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
@@ -1246,7 +1580,8 @@ export class StorageAdapter {
       risk_signal: 0,
       risk_assessment: 0,
       policy_decision: 0,
-      manual_policy_action: 0
+      manual_policy_action: 0,
+      content_risk: 0
     };
     for (const row of typeRows || []) {
       const type = String(row.event_type || '') as keyof typeof byType;
@@ -1270,7 +1605,8 @@ export class StorageAdapter {
       risk_signal: 0,
       risk_assessment: 0,
       policy_decision: 0,
-      manual_policy_action: 0
+      manual_policy_action: 0,
+      content_risk: 0
     };
     if (!userId) {
       return { userId, sinceMs, total: 0, byType: emptyByType, highestScore: 0, latestRiskLevel: '', groups: [], recentQueueTaskIds: [], recentActions: [], recentEvents: [] };

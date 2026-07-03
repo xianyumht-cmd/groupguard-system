@@ -18,6 +18,51 @@ export interface MsgFilterSettings {
   blockUrl: boolean;
   /** 自动撤回二维码图片 */
   blockQr: boolean;
+  blockGroupInvite?: boolean;
+  groupInviteDetectUrl?: boolean;
+  groupInviteDetectCard?: boolean;
+  groupInviteDetectForward?: boolean;
+  groupInviteAction?: ContentRiskAction;
+  groupInviteBanMinutes?: number;
+}
+
+export type ContentRiskAction = 'recall' | 'recall_warn' | 'recall_ban' | 'recall_kick' | 'recall_blacklist';
+
+export type ContentRiskType =
+  | 'image'
+  | 'video'
+  | 'record'
+  | 'forward'
+  | 'lightApp'
+  | 'contact'
+  | 'url'
+  | 'qr'
+  | 'groupInvite';
+
+export interface ContentRiskRule {
+  enabled: boolean;
+  action: ContentRiskAction;
+  banMinutes?: number;
+  reason?: string;
+}
+
+export interface ContentRiskSettings {
+  enabled: boolean;
+  notifyGroup: boolean;
+  logOnly: boolean;
+  rules: Partial<Record<ContentRiskType, ContentRiskRule>>;
+  urlAllowlist?: string[];
+  urlBlocklist?: string[];
+  qrDetectTimeoutMs?: number;
+  qrDetectMaxBytes?: number;
+  qrDetectConcurrency?: number;
+  qrCacheSeconds?: number;
+  blockGroupInvite?: boolean;
+  groupInviteDetectUrl?: boolean;
+  groupInviteDetectCard?: boolean;
+  groupInviteDetectForward?: boolean;
+  groupInviteAction?: ContentRiskAction;
+  groupInviteBanMinutes?: number;
 }
 
 export interface SelfRecallPolicy {
@@ -63,6 +108,30 @@ export interface ActionPrioritySettings {
   self_recall: number;
 }
 
+export interface SubGameplaySettings {
+  enabled: boolean;
+  commandPrefix: string;
+  masterServantEnabled: boolean;
+  racingEnabled: boolean;
+  lightEntertainmentEnabled: boolean;
+  dailyWelfareGold: number;
+  initialGold: number;
+  initialRacingCoins: number;
+  initialFuel: number;
+  maxFuel: number;
+  duelCostFuel: number;
+  raceCostFuel: number;
+  carCoinExchangeRate: number;
+  fuelExchangeRate: number;
+  pkCooldownSeconds: number;
+  escapeSuccessRate: number;
+  snatchSuccessRate: number;
+  contractTaxRate: number;
+  rankLimit: number;
+  textTemplates?: Record<string, string>;
+  commandAliases?: Record<string, string[]>;
+}
+
 export interface PluginConfig {
   configVersion?: number;
   licenseKey?: string;
@@ -100,6 +169,7 @@ export interface PluginConfig {
   lolBanBackupUrls?: string[];
   /** 本地 LOL 战绩查询服务地址（如 http://192.168.3.94:5000） */
   lolApiBaseUrl?: string;
+  eleBuildApiBaseUrl?: string;
   shardDataUrl?: string;
   shardHeroListUrl?: string;
   shardImageUrlTemplate?: string;
@@ -119,6 +189,7 @@ export interface PluginConfig {
   scammerReportDedupHours?: number;
   /** 全局消息类型过滤 */
   msgFilter: MsgFilterSettings;
+  contentRisk?: ContentRiskSettings;
   /** 全局问答列表 */
   qaList: QAEntry[];
   /** 入群审核拒绝关键词 */
@@ -183,6 +254,7 @@ export interface GroupGuardSettings {
   qaEnabled?: boolean;
   dynamicCommandEnabled?: boolean;
   featureSwitches?: Record<string, boolean>;
+  subGameplay?: SubGameplaySettings;
   autoApprove: boolean;
   enableVerify: boolean;
   verifyTimeout: number;
@@ -222,6 +294,7 @@ export interface GroupGuardSettings {
   adminCacheSeconds?: number;
   /** 群独立消息类型过滤 */
   msgFilter?: MsgFilterSettings;
+  contentRisk?: ContentRiskSettings;
   /** 群独立问答列表 */
   qaList?: QAEntry[];
   /** 警告上限次数 */
@@ -434,7 +507,7 @@ export interface JoinLogEntry {
   timestamp: number;
 }
 
-export type AuditEventType = 'risk_signal' | 'risk_assessment' | 'policy_decision' | 'manual_policy_action';
+export type AuditEventType = 'risk_signal' | 'risk_assessment' | 'policy_decision' | 'manual_policy_action' | 'content_risk';
 
 export interface StandardAuditPayload {
   schemaVersion: 1;
@@ -646,6 +719,7 @@ export interface PresetConfig {
     spamThreshold?: number;
     spamBanMinutes?: number;
     msgFilter?: MsgFilterSettings;
+    contentRisk?: ContentRiskSettings;
     welcomeMessage?: string;
     qaList?: QAEntry[];
   };

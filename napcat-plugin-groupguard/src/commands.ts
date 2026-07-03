@@ -5,8 +5,10 @@ import { initializeDynamicCommands, loadDynamicCommands } from './dynamic-comman
 import { assertCommandPluginRegistryReady, refreshCommandPluginRegistry } from './dynamic-commands/command_plugin_registry';
 import { refreshDynamicCommandRegistry } from './dynamic-commands/command_registry';
 import { initializeDynamicCommandMetrics } from './dynamic-commands/command_engine';
+import { registerEleBuildCommandPlugins } from './dynamic-commands/ele_build_runtime_plugin';
 import { registerLegacyRuntimePlugins } from './dynamic-commands/legacy_runtime_plugins';
 import { registerSendWrapperCommandPlugins } from './dynamic-commands/send_wrapper_runtime_plugins';
+import { registerSubGameplayCommandPlugins } from './dynamic-commands/sub_gameplay_runtime_plugin';
 import { commandDispatcher } from './commands/dispatcher';
 export { saveConfig } from './commands/common';
 export {
@@ -31,6 +33,8 @@ export function initCommandValidation(): void {
   commandValidationRan = true;
   registerLegacyRuntimePlugins();
   registerSendWrapperCommandPlugins();
+  registerEleBuildCommandPlugins();
+  registerSubGameplayCommandPlugins();
   void initializeDynamicCommands().then(() => {
     refreshCommandPluginRegistry();
     assertCommandPluginRegistryReady();

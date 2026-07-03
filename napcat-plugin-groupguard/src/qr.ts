@@ -1,14 +1,26 @@
+import fs from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { Jimp } from 'jimp';
 import jsQR from 'jsqr';
+import { loggingStateService } from './core/state-services/logging_state_service';
 
-/**
- * Helper to scan bitmap data with jsQR
- */
+export interface QrDetectOptions {
+  timeoutMs?: number;
+  maxBytes?: number;
+  concurrency?: number;
+  cacheSeconds?: number;
+}
+
+type QrCacheEntry = { value: boolean; expiresAt: number };
+
+const qrCache = new Map<string, QrCacheEntry>();
+let activeScans = 0;
+const waiters: Array<() => void> = [];
+
 function scanImage(image: any): boolean {
   try {
     const { width, height, data } = image.bitmap;
     const clamped = new Uint8ClampedArray(data);
-    // jsQR options: inversionAttempts defaults to 'attemptBoth'
     const code = jsQR(clamped, width, height, { inversionAttempts: 'attemptBoth' });
     return !!code;
   } catch {
@@ -16,55 +28,128 @@ function scanImage(image: any): boolean {
   }
 }
 
-/**
- * Check if the image at the given URL contains a QR code.
- * Implements a multi-pass strategy to enhance detection rate:
- * 1. Raw scan
- * 2. Pre-processing (Grayscale + Contrast + Normalize)
- * 3. Scaling (Downscale large images / Upscale small images)
- * @param url Image URL
- * @returns true if QR code is detected
- */
-export async function detectQrCode(url: string): Promise<boolean> {
-  if (!url) return false;
+function normalizeOptions(options: QrDetectOptions = {}): Required<QrDetectOptions> {
+  return {
+    timeoutMs: Math.max(300, Math.min(30000, Number(options.timeoutMs ?? 3000))),
+    maxBytes: Math.max(102400, Math.min(52428800, Number(options.maxBytes ?? 5242880))),
+    concurrency: Math.max(1, Math.min(10, Number(options.concurrency ?? 2))),
+    cacheSeconds: Math.max(0, Math.min(86400, Number(options.cacheSeconds ?? 300)))
+  };
+}
+
+async function acquire(limit: number): Promise<void> {
+  if (activeScans < limit) {
+    activeScans += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => waiters.push(resolve));
+  activeScans += 1;
+}
+
+function release(): void {
+  activeScans = Math.max(0, activeScans - 1);
+  const next = waiters.shift();
+  if (next) next();
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
   try {
-    // Jimp.read supports URL, buffer, etc.
-    const image = await Jimp.read(url);
-    
-    // Pass 1: Raw Scan (Fastest)
-    if (scanImage(image)) return true;
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('qr_detect_timeout')), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
-    // Pass 2: Pre-processing (Grayscale + High Contrast)
-    // Enhance features for standard QR codes
-    const processed = image.clone();
-    processed.greyscale().contrast(0.5).normalize();
-    if (scanImage(processed)) return true;
-
-    // Pass 3: Scaling Strategy
-    // jsQR can struggle with very large images (noise) or very small images
-    const { width, height } = image.bitmap;
-    let scaled: any = null;
-
-    if (width > 1200 || height > 1200) {
-        // Downscale large images to reduce noise and improve speed
-        scaled = image.clone().resize({ w: width / 2 });
-    } else if (width < 200 || height < 200) {
-        // Upscale small images
-        scaled = image.clone().scale(2);
+async function readImageBuffer(url: string, options: Required<QrDetectOptions>): Promise<Buffer | null> {
+  if (url.startsWith('file://')) {
+    const filePath = fileURLToPath(url);
+    const stat = await fs.stat(filePath);
+    if (stat.size > options.maxBytes) {
+      loggingStateService.info(`[QR] skipped url=file size=${stat.size} max=${options.maxBytes}`);
+      return null;
     }
+    return fs.readFile(filePath);
+  }
 
-    if (scaled) {
-        // Try raw scaled
-        if (scanImage(scaled)) return true;
-        // Try processed scaled
-        scaled.greyscale().contrast(0.4).normalize();
-        if (scanImage(scaled)) return true;
+  if (!/^https?:\/\//i.test(url)) {
+    loggingStateService.info(`[QR] skipped unsupported_url url=${url.slice(0, 120)}`);
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    if (!resp.ok) throw new Error(`http_${resp.status}`);
+    const length = Number(resp.headers.get('content-length') || 0);
+    if (length > options.maxBytes) {
+      loggingStateService.info(`[QR] skipped content_length=${length} max=${options.maxBytes}`);
+      return null;
     }
+    const arrayBuffer = await resp.arrayBuffer();
+    if (arrayBuffer.byteLength > options.maxBytes) {
+      loggingStateService.info(`[QR] skipped downloaded_bytes=${arrayBuffer.byteLength} max=${options.maxBytes}`);
+      return null;
+    }
+    return Buffer.from(arrayBuffer);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
+async function scanBuffer(buffer: Buffer): Promise<boolean> {
+  const image = await Jimp.read(buffer);
+  if (scanImage(image)) return true;
+
+  const processed = image.clone();
+  processed.greyscale().contrast(0.5).normalize();
+  if (scanImage(processed)) return true;
+
+  const { width, height } = image.bitmap;
+  let scaled: any = null;
+  if (width > 1200 || height > 1200) scaled = image.clone().resize({ w: Math.max(1, Math.floor(width / 2)) });
+  else if (width < 200 || height < 200) scaled = image.clone().scale(2);
+
+  if (scaled) {
+    if (scanImage(scaled)) return true;
+    scaled.greyscale().contrast(0.4).normalize();
+    if (scanImage(scaled)) return true;
+  }
+  return false;
+}
+
+export async function detectQrCode(url: string, rawOptions: QrDetectOptions = {}): Promise<boolean> {
+  if (!url) return false;
+  const options = normalizeOptions(rawOptions);
+  const cacheKey = `${url}|${options.maxBytes}`;
+  const cached = qrCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    loggingStateService.debug(`[QR] cache_hit result=${cached.value} url=${url.slice(0, 120)}`);
+    return cached.value;
+  }
+
+  await acquire(options.concurrency);
+  try {
+    const result = await withTimeout((async () => {
+      const buffer = await readImageBuffer(url, options);
+      if (!buffer) return false;
+      return scanBuffer(buffer);
+    })(), options.timeoutMs);
+    if (options.cacheSeconds > 0) qrCache.set(cacheKey, { value: result, expiresAt: Date.now() + options.cacheSeconds * 1000 });
+    loggingStateService.info(`[QR] detected=${result} url=${url.slice(0, 120)}`);
+    return result;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    loggingStateService.info(`[QR] failed reason=${reason} url=${url.slice(0, 120)}`);
+    if (options.cacheSeconds > 0) qrCache.set(cacheKey, { value: false, expiresAt: Date.now() + Math.min(options.cacheSeconds, 30) * 1000 });
     return false;
-  } catch (e) {
-    // If download fails or decode fails, just return false
-    // console.error('QR Check Error:', e);
-    return false;
+  } finally {
+    release();
   }
 }
