@@ -5,14 +5,27 @@ interface RateCounterBucket {
   count: number;
 }
 
+export interface QueryRateLimitInput {
+  groupId: string;
+  userId?: string;
+  featureKey?: string;
+  commandId?: string;
+  label?: string;
+  source?: 'dispatcher' | 'legacy' | 'direct';
+}
+
 const QUERY_RATE_WINDOW_MS = 60_000;
 const QUERY_RATE_MAP_LIMIT = 500;
+const DISPATCHER_DEDUP_MS = 1500;
 
 const globalRateBucket: RateCounterBucket = { windowStart: 0, count: 0 };
 const groupRateBuckets = new Map<string, RateCounterBucket>();
+const commandGroupRateBuckets = new Map<string, RateCounterBucket>();
 let globalLastQueryAt = 0;
 const groupLastQueryAt = new Map<string, number>();
+const commandUserLastQueryAt = new Map<string, number>();
 const groupDailyBuckets = new Map<string, { day: string; count: number }>();
+const recentDispatcherConsumes = new Map<string, number>();
 
 function normalizePositiveInt(value: number, fallback: number, max: number): number {
   if (!Number.isFinite(value)) return fallback;
@@ -32,17 +45,95 @@ function resolveSettings(groupId: string) {
   return groupId ? configStateService.resolveGroupSettings(groupId) : configStateService.getGlobalSettings();
 }
 
-export function checkAndConsumeQueryRate(groupId: string, label = '\u67e5\u8be2'): { ok: true } | { ok: false; reason: string } {
-  const normalizedGroupId = String(groupId || 'private').trim() || 'private';
-  const settings = resolveSettings(groupId);
-  if (settings.disableLolQuery) return { ok: false, reason: `\u672c\u7fa4${label}\u529f\u80fd\u5df2\u5173\u95ed` };
+function normalizeFeatureKey(value: unknown): string {
+  const text = String(value || '').trim();
+  return text.startsWith('query.') ? text : '';
+}
+
+function inferFeatureKeyFromLabel(label: string): string {
+  const text = String(label || '').trim();
+  if (text.startsWith('查封号')) return 'query.lol_ban';
+  if (text.startsWith('查战绩')) return 'query.lol_battle';
+  if (text.startsWith('查隐藏')) return 'query.lol_hidden';
+  if (text.startsWith('查合集')) return 'query.lol_shard';
+  if (text.startsWith('海符榜')) return 'query.lol_shard';
+  if (text.startsWith('我要看')) return 'query.video';
+  if (text.startsWith('查骗子') || text.startsWith('举报骗子')) return 'query.scammer';
+  if (text.startsWith('查同行') || text.startsWith('举报同行')) return 'query.peer';
+  return 'query.generic';
+}
+
+function resolveFeatureKey(input: QueryRateLimitInput): string {
+  return normalizeFeatureKey(input.featureKey) || inferFeatureKeyFromLabel(input.label || input.commandId || '');
+}
+
+function buildGroupCommandKey(groupId: string, featureKey: string): string {
+  return `${featureKey}:${groupId}`;
+}
+
+function buildUserCommandKey(groupId: string, userId: string, featureKey: string): string {
+  return `${featureKey}:${groupId}:${userId}`;
+}
+
+function getCommandGroupLimit(settings: any, featureKey: string, fallback: number): number {
+  if (featureKey === 'query.lol_ban') {
+    return normalizePositiveInt(Number(settings.banQueryGroupRateLimitPerMinute), 6, 1000);
+  }
+  if (featureKey === 'query.scammer' || featureKey === 'query.peer') {
+    return normalizePositiveInt(Number(settings.scammerQueryGroupRateLimitPerMinute), fallback, 1000);
+  }
+  return fallback;
+}
+
+function getCommandUserCooldownSeconds(settings: any, featureKey: string): number {
+  if (featureKey === 'query.lol_ban') {
+    return Math.max(0, Math.floor(Number(settings.banQueryUserCooldownSeconds ?? 10)));
+  }
+  if (featureKey === 'query.scammer' || featureKey === 'query.peer') {
+    return Math.max(0, Math.floor(Number(settings.scammerQueryUserCooldownSeconds ?? 10)));
+  }
+  return 0;
+}
+
+function isRecentlyConsumedByDispatcher(groupId: string, featureKey: string, now: number): boolean {
+  const key = buildGroupCommandKey(groupId, featureKey);
+  const last = recentDispatcherConsumes.get(key) || 0;
+  return last > 0 && now - last <= DISPATCHER_DEDUP_MS;
+}
+
+function rememberDispatcherConsume(groupId: string, featureKey: string, now: number): void {
+  recentDispatcherConsumes.set(buildGroupCommandKey(groupId, featureKey), now);
+}
+
+function trimMapByInsertionOrder<T>(map: Map<string, T>, limit: number): void {
+  if (map.size <= limit) return;
+  const keys = Array.from(map.keys());
+  for (let i = 0; i < keys.length - limit; i += 1) {
+    map.delete(keys[i]);
+  }
+}
+
+export function checkAndConsumeQueryCommandRate(input: QueryRateLimitInput): { ok: true } | { ok: false; reason: string } {
+  const label = String(input.label || '查询').trim() || '查询';
+  const normalizedGroupId = String(input.groupId || 'private').trim() || 'private';
+  const normalizedUserId = String(input.userId || '').trim();
+  const featureKey = resolveFeatureKey(input);
+  const settings = resolveSettings(input.groupId);
+  const now = Date.now();
+
+  if (input.source !== 'dispatcher' && isRecentlyConsumedByDispatcher(normalizedGroupId, featureKey, now)) {
+    return { ok: true };
+  }
+
+  if (settings.disableLolQuery) return { ok: false, reason: `本群${label}功能已关闭` };
 
   const globalLimit = normalizePositiveInt(Number(settings.lolQueryGlobalRateLimitPerMinute), 120, 5000);
   const groupLimit = normalizePositiveInt(Number(settings.lolQueryGroupRateLimitPerMinute), 20, 1000);
+  const commandGroupLimit = getCommandGroupLimit(settings, featureKey, groupLimit);
   const globalMinIntervalSec = Math.max(0, Math.floor(Number(settings.lolQueryGlobalMinIntervalSeconds ?? 1)));
   const groupMinIntervalSec = Math.max(0, Math.floor(Number(settings.lolQueryGroupMinIntervalSeconds ?? 2)));
+  const commandUserCooldownSec = getCommandUserCooldownSeconds(settings, featureKey);
   const groupDailyLimit = normalizePositiveInt(Number(settings.lolQueryDailyLimit), 200, 100000);
-  const now = Date.now();
   const dayKey = new Date(now).toISOString().slice(0, 10);
 
   ensureRateWindow(globalRateBucket, now);
@@ -53,43 +144,66 @@ export function checkAndConsumeQueryRate(groupId: string, label = '\u67e5\u8be2'
   }
   ensureRateWindow(groupBucket, now);
 
+  const groupCommandKey = buildGroupCommandKey(normalizedGroupId, featureKey);
+  let commandGroupBucket = commandGroupRateBuckets.get(groupCommandKey);
+  if (!commandGroupBucket) {
+    commandGroupBucket = { windowStart: now, count: 0 };
+    commandGroupRateBuckets.set(groupCommandKey, commandGroupBucket);
+  }
+  ensureRateWindow(commandGroupBucket, now);
+
   if (globalRateBucket.count >= globalLimit) {
-    return { ok: false, reason: `${label}\u8fc7\u4e8e\u9891\u7e41\uff08\u5168\u5c40\u6bcf\u5206\u949f\u4e0a\u9650 ${globalLimit} \u6b21\uff09` };
+    return { ok: false, reason: `${label}过于频繁（全局每分钟上限 ${globalLimit} 次）` };
   }
   if (groupBucket.count >= groupLimit) {
-    return { ok: false, reason: `${label}\u8fc7\u4e8e\u9891\u7e41\uff08\u672c\u7fa4\u6bcf\u5206\u949f\u4e0a\u9650 ${groupLimit} \u6b21\uff09` };
+    return { ok: false, reason: `${label}过于频繁（本群查询每分钟上限 ${groupLimit} 次）` };
+  }
+  if (commandGroupBucket.count >= commandGroupLimit) {
+    return { ok: false, reason: `${label}过于频繁（本群该指令每分钟上限 ${commandGroupLimit} 次）` };
   }
 
   const dailyBucketRaw = groupDailyBuckets.get(normalizedGroupId);
   const dailyBucket = (!dailyBucketRaw || dailyBucketRaw.day !== dayKey) ? { day: dayKey, count: 0 } : dailyBucketRaw;
   if (dailyBucket.count >= groupDailyLimit) {
-    return { ok: false, reason: `${label}\u5df2\u8fbe\u672c\u7fa4\u5f53\u65e5\u4e0a\u9650\uff08${groupDailyLimit} \u6b21\uff09` };
+    return { ok: false, reason: `${label}已达本群当日上限（${groupDailyLimit} 次）` };
   }
   if (globalMinIntervalSec > 0 && globalLastQueryAt > 0 && now - globalLastQueryAt < globalMinIntervalSec * 1000) {
-    return { ok: false, reason: `${label}\u8fc7\u4e8e\u9891\u7e41\uff08\u5168\u5c40\u6700\u5c0f\u95f4\u9694 ${globalMinIntervalSec} \u79d2\uff09` };
+    return { ok: false, reason: `${label}过于频繁（全局最小间隔 ${globalMinIntervalSec} 秒）` };
   }
 
   const groupLastAt = groupLastQueryAt.get(normalizedGroupId) || 0;
   if (groupMinIntervalSec > 0 && groupLastAt > 0 && now - groupLastAt < groupMinIntervalSec * 1000) {
-    return { ok: false, reason: `${label}\u8fc7\u4e8e\u9891\u7e41\uff08\u672c\u7fa4\u6700\u5c0f\u95f4\u9694 ${groupMinIntervalSec} \u79d2\uff09` };
+    return { ok: false, reason: `${label}过于频繁（本群最小间隔 ${groupMinIntervalSec} 秒）` };
+  }
+
+  if (normalizedUserId && commandUserCooldownSec > 0) {
+    const userCommandKey = buildUserCommandKey(normalizedGroupId, normalizedUserId, featureKey);
+    const userLastAt = commandUserLastQueryAt.get(userCommandKey) || 0;
+    if (userLastAt > 0 && now - userLastAt < commandUserCooldownSec * 1000) {
+      return { ok: false, reason: `${label}过于频繁（同用户冷却 ${commandUserCooldownSec} 秒）` };
+    }
+    commandUserLastQueryAt.set(userCommandKey, now);
   }
 
   globalRateBucket.count += 1;
   groupBucket.count += 1;
+  commandGroupBucket.count += 1;
   dailyBucket.count += 1;
   groupDailyBuckets.set(normalizedGroupId, dailyBucket);
   globalLastQueryAt = now;
   groupLastQueryAt.set(normalizedGroupId, now);
+  if (input.source === 'dispatcher') rememberDispatcherConsume(normalizedGroupId, featureKey, now);
 
-  if (groupRateBuckets.size > QUERY_RATE_MAP_LIMIT) {
-    const keys = Array.from(groupRateBuckets.keys());
-    for (let i = 0; i < keys.length - QUERY_RATE_MAP_LIMIT; i += 1) {
-      const staleKey = keys[i];
-      groupRateBuckets.delete(staleKey);
-      groupLastQueryAt.delete(staleKey);
-      groupDailyBuckets.delete(staleKey);
-    }
-  }
+  trimMapByInsertionOrder(groupRateBuckets, QUERY_RATE_MAP_LIMIT);
+  trimMapByInsertionOrder(commandGroupRateBuckets, QUERY_RATE_MAP_LIMIT * 4);
+  trimMapByInsertionOrder(groupLastQueryAt, QUERY_RATE_MAP_LIMIT);
+  trimMapByInsertionOrder(groupDailyBuckets, QUERY_RATE_MAP_LIMIT);
+  trimMapByInsertionOrder(commandUserLastQueryAt, QUERY_RATE_MAP_LIMIT * 10);
+  trimMapByInsertionOrder(recentDispatcherConsumes, QUERY_RATE_MAP_LIMIT * 4);
 
   return { ok: true };
+}
+
+export function checkAndConsumeQueryRate(groupId: string, label = '查询'): { ok: true } | { ok: false; reason: string } {
+  return checkAndConsumeQueryCommandRate({ groupId, label, source: 'legacy' });
 }
