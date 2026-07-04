@@ -52,9 +52,9 @@ const LIGHT_SELECTED_IMAGES: Record<string, string> = {
 
 const MODULE_REPRESENTATIVE_IMAGES: Record<string, string> = {
   core: 'viewable/core/RT_ICON_1_2052.bmp',
-  master_servant: 'viewable/master_servant/RT_ICON_1_2052.bmp',
+  master_servant: 'selected/master_servant/representative_icon.png',
   light_entertainment: 'selected/light_entertainment/rps_win_icon_101bd5a1.png',
-  racing: 'viewable/racing/RT_ICON_1_2052.bmp'
+  racing: 'selected/racing/representative_icon.png'
 };
 
 function isDirectory(dir: string): boolean {

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-04T05:10:26.622Z",
+  "generatedAt": "2026-07-04T05:18:50.567Z",
   "sourceRoot": "D:/project2/unpackage/recovered",
   "modules": [
     "core",
@@ -8,24 +8,24 @@
     "racing"
   ],
   "summary": {
-    "total": 352,
+    "total": 354,
     "byModule": {
       "core": 88,
       "light_entertainment": 90,
-      "master_servant": 78,
-      "racing": 90,
+      "master_servant": 79,
+      "racing": 91,
       "shared": 6
     },
     "byCollection": {
       "raw": 255,
       "root": 5,
-      "selected": 12,
+      "selected": 14,
       "viewable": 80
     },
     "byMediaType": {
       "binary": 255,
       "document": 6,
-      "image": 88,
+      "image": 90,
       "audio": 3
     }
   },
@@ -3823,6 +3823,34 @@
       "size": 6184,
       "extension": ".png",
       "sha1": "0a310e9770d8548374d43e197f69d6be8342aadb"
+    },
+    {
+      "resourceId": "sub.master_servant.representative_icon",
+      "path": "selected/master_servant/representative_icon.png",
+      "displayName": "representative_icon.png",
+      "module": "master_servant",
+      "collection": "selected",
+      "mediaType": "image",
+      "semanticKey": "representative_icon",
+      "sourcePath": "D:/project2/unpackage/recovered/deep_dive/resources/viewable/master_servant/RT_ICON_1_2052.bmp",
+      "sourceRelation": "converted",
+      "size": 419,
+      "extension": ".png",
+      "sha1": "5b5118e96cdb534c4cf8d4da0ef589c50076b65a"
+    },
+    {
+      "resourceId": "sub.racing.representative_icon",
+      "path": "selected/racing/representative_icon.png",
+      "displayName": "representative_icon.png",
+      "module": "racing",
+      "collection": "selected",
+      "mediaType": "image",
+      "semanticKey": "representative_icon",
+      "sourcePath": "D:/project2/unpackage/recovered/deep_dive/resources/viewable/racing/RT_ICON_1_2052.bmp",
+      "sourceRelation": "converted",
+      "size": 419,
+      "extension": ".png",
+      "sha1": "5b5118e96cdb534c4cf8d4da0ef589c50076b65a"
     },
     {
       "resourceId": "sub.shared.root.viewable_manifest_json",

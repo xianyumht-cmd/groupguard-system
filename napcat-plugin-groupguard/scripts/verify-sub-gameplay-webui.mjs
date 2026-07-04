@@ -45,23 +45,23 @@ const relationCounts = entries.reduce((counts, entry) => {
   return counts;
 }, {});
 
-assert(entries.length === 352, `unexpected manifest entry count: ${entries.length}`);
+assert(entries.length === 354, `unexpected manifest entry count: ${entries.length}`);
 assert(sourcePathCount === entries.length, `sourcePath coverage mismatch: ${sourcePathCount}/${entries.length}`);
 assert(relationCounts.direct === 273, `unexpected direct relation count: ${relationCounts.direct || 0}`);
-assert(relationCounts.converted === 79, `unexpected converted relation count: ${relationCounts.converted || 0}`);
+assert(relationCounts.converted === 81, `unexpected converted relation count: ${relationCounts.converted || 0}`);
 
 const integrity = verifySubGameplayResourceIntegrity();
 assert(integrity.ok, `resource integrity failed: ${integrity.errors.join(', ')}`);
-assert(integrity.sourcePathCoverage === 352, `unexpected integrity sourcePath coverage: ${integrity.sourcePathCoverage}`);
+assert(integrity.sourcePathCoverage === 354, `unexpected integrity sourcePath coverage: ${integrity.sourcePathCoverage}`);
 assert(integrity.sourceRelations.direct === 273, `unexpected integrity direct count: ${integrity.sourceRelations.direct || 0}`);
-assert(integrity.sourceRelations.converted === 79, `unexpected integrity converted count: ${integrity.sourceRelations.converted || 0}`);
+assert(integrity.sourceRelations.converted === 81, `unexpected integrity converted count: ${integrity.sourceRelations.converted || 0}`);
 
 const convertedOverview = getSubGameplayResourceOverview('', 500, '', '', '', 'converted');
 const directOverview = getSubGameplayResourceOverview('', 500, '', '', '', 'direct');
 const selectedLightImages = getSubGameplayResourceOverview('light_entertainment', 500, '', 'selected', 'image', 'direct');
 const rpsSearch = getSubGameplayResourceOverview('light_entertainment', 500, 'rps', 'selected', 'image', 'direct');
 
-assert(convertedOverview.entries.length === 79, `converted filter mismatch: ${convertedOverview.entries.length}`);
+assert(convertedOverview.entries.length === 81, `converted filter mismatch: ${convertedOverview.entries.length}`);
 assert(directOverview.entries.length === 273, `direct filter mismatch: ${directOverview.entries.length}`);
 assert(selectedLightImages.entries.length === 12, `selected light image filter mismatch: ${selectedLightImages.entries.length}`);
 assert(rpsSearch.entries.length >= 6, `rps search returned too few entries: ${rpsSearch.entries.length}`);

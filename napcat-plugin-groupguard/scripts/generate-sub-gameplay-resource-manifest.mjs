@@ -10,6 +10,8 @@ const sourceRoot = 'D:/project2/unpackage/recovered';
 const modules = ['core', 'master_servant', 'light_entertainment', 'racing'];
 const moduleSet = new Set(modules);
 const selectedKeys = new Map([
+  ['selected/master_servant/representative_icon.png', 'representative_icon'],
+  ['selected/racing/representative_icon.png', 'representative_icon'],
   ['selected/light_entertainment/dice1_101d18bd.png', 'dice_1'],
   ['selected/light_entertainment/dice2_101d49b6.png', 'dice_2'],
   ['selected/light_entertainment/dice3_101d7c3e.png', 'dice_3'],
@@ -104,6 +106,17 @@ function sourceInfoFor(relativePath, classified, viewableSourceMap) {
     return {
       sourcePath: `${sourceRoot}/deep_dive/resources/light_selected/${normalized.split('/').slice(2).join('/')}`,
       sourceRelation: 'direct'
+    };
+  }
+
+  const selectedConvertedSources = new Map([
+    ['selected/master_servant/representative_icon.png', `${sourceRoot}/deep_dive/resources/viewable/master_servant/RT_ICON_1_2052.bmp`],
+    ['selected/racing/representative_icon.png', `${sourceRoot}/deep_dive/resources/viewable/racing/RT_ICON_1_2052.bmp`]
+  ]);
+  if (selectedConvertedSources.has(normalized)) {
+    return {
+      sourcePath: selectedConvertedSources.get(normalized),
+      sourceRelation: 'converted'
     };
   }
 
