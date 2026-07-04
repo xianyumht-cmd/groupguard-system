@@ -10,15 +10,18 @@ import { executeDynamicCommand, getDynamicCommandMetric, initializeDynamicComman
 import { runWithDispatcherExecutionScope } from '../dynamic-commands/execution_guard';
 import { runBeforeMatchHooks } from '../dynamic-commands/command_plugin_interface';
 import { communicationStateService } from '../core/state-services/communication_state_service';
-import { checkAndConsumeQueryRate } from '../services/query_rate_limit_service';
+import { checkAndConsumeQueryCommandRate } from '../services/query_rate_limit_service';
 import type { DynamicCommandMatchResult } from '../dynamic-commands/types';
 
 // All command resolution must happen in dispatcher only. No exceptions.
 
 const DYNAMIC_COMMAND_DEBUG = process.env.DYNAMIC_COMMAND_DEBUG === '1';
 const userCommandFrequency = new Map<string, Map<string, number>>();
+const rateLimitNoticeLastAt = new Map<string, number>();
 const MAX_USERS_TRACKED = 1000;
 const MAX_COMMANDS_PER_USER = 50;
+const RATE_LIMIT_NOTICE_COOLDOWN_MS = 15_000;
+const RATE_LIMIT_NOTICE_MAP_LIMIT = 500;
 
 export interface CommandContext {
   rawText: string;
@@ -203,7 +206,31 @@ function shouldApplyQueryRateLimit(candidate: CommandCandidate): boolean {
   return featureType === 'query' || featureKey.startsWith('query.') || providerType === 'http';
 }
 
-async function notifyRateLimited(event: OB11Message, reason: string): Promise<void> {
+function trimRateLimitNoticeMap(): void {
+  if (rateLimitNoticeLastAt.size <= RATE_LIMIT_NOTICE_MAP_LIMIT) return;
+  const keys = Array.from(rateLimitNoticeLastAt.keys());
+  for (let i = 0; i < keys.length - RATE_LIMIT_NOTICE_MAP_LIMIT; i += 1) {
+    rateLimitNoticeLastAt.delete(keys[i]);
+  }
+}
+
+function shouldNotifyRateLimited(event: OB11Message, candidate: CommandCandidate, reason: string): boolean {
+  if (event.message_type === 'private') return true;
+  const groupId = String(event.group_id || '');
+  const key = `${groupId}:${candidate.commandId}:${reason}`;
+  const now = Date.now();
+  const lastAt = rateLimitNoticeLastAt.get(key) || 0;
+  if (lastAt > 0 && now - lastAt < RATE_LIMIT_NOTICE_COOLDOWN_MS) {
+    loggingStateService.debug(`[CommandDispatcher] suppress_rate_limit_notice command=${candidate.commandId} group=${groupId}`);
+    return false;
+  }
+  rateLimitNoticeLastAt.set(key, now);
+  trimRateLimitNoticeMap();
+  return true;
+}
+
+async function notifyRateLimited(event: OB11Message, candidate: CommandCandidate, reason: string): Promise<void> {
+  if (!shouldNotifyRateLimited(event, candidate, reason)) return;
   if (event.message_type === 'private') {
     await communicationStateService.sendPrivateMsg(String(event.user_id || ''), reason, {
       scene: 'external_query',
@@ -287,9 +314,16 @@ export class CommandDispatcher {
       if (shouldApplyQueryRateLimit(selectedCandidate)) {
         const groupId = event.message_type === 'private' ? '' : String(event.group_id || '');
         const label = selectedCandidate.match.command.trigger.value || '查询';
-        const rateCheck = checkAndConsumeQueryRate(groupId, label);
+        const rateCheck = checkAndConsumeQueryCommandRate({
+          groupId,
+          userId: String(event.user_id || ''),
+          featureKey: selectedCandidate.match.command.featureKey,
+          commandId: selectedCandidate.commandId,
+          label,
+          source: 'dispatcher'
+        });
         if (!rateCheck.ok) {
-          await notifyRateLimited(event, rateCheck.reason);
+          await notifyRateLimited(event, selectedCandidate, rateCheck.reason);
           return true;
         }
       }
