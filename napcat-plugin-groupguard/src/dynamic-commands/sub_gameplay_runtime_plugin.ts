@@ -1,4 +1,4 @@
-import { executeSubGameplayCommand } from '../services/sub_gameplay_service';
+import { executeSubGameplayCommand, type SubGameplayCommandResult } from '../services/sub_gameplay_service';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
 
@@ -58,6 +58,34 @@ function commandIdFor(item: SubGameplayTrigger): string {
 
 function createPlugin(item: SubGameplayTrigger): CommandPlugin {
   const commandId = commandIdFor(item);
+  function toResponse(input: any, result: SubGameplayCommandResult) {
+    if (typeof result === 'string') {
+      return {
+        type: 'text' as const,
+        text: result
+      };
+    }
+    if (result.segments?.length) {
+      return {
+        type: 'structured' as const,
+        text: result.text,
+        payload: {
+          deliveries: [{
+            channel: 'group',
+            targetId: String(input.groupId || ''),
+            scene: 'sub_gameplay',
+            segments: result.segments,
+            force: true,
+            applyTemplate: false
+          }]
+        }
+      };
+    }
+    return {
+      type: 'text' as const,
+      text: result.text
+    };
+  }
   return {
     metadata: {
       id: commandId,
@@ -92,7 +120,7 @@ function createPlugin(item: SubGameplayTrigger): CommandPlugin {
         runtime: 'native'
       },
       response: {
-        type: 'text'
+        type: 'structured'
       },
       fallbackText: 'SUB玩法命令执行失败'
     },
@@ -112,8 +140,8 @@ function createPlugin(item: SubGameplayTrigger): CommandPlugin {
         optional: []
       },
       outputSchema: {
-        supported: ['text'],
-        defaultType: 'text'
+        supported: ['structured', 'text'],
+        defaultType: 'structured'
       }
     },
     defaultConfig: {
@@ -128,10 +156,7 @@ function createPlugin(item: SubGameplayTrigger): CommandPlugin {
     },
     execute: async (input) => ({
       ok: true,
-      response: {
-        type: 'text',
-        text: await executeSubGameplayCommand({ module: item.module, action: item.action }, input)
-      }
+      response: toResponse(input, await executeSubGameplayCommand({ module: item.module, action: item.action }, input))
     }),
     fallback: async (_input, failure) => ({
       ok: true,

@@ -1,7 +1,8 @@
 import http, { type Server } from 'http';
+import fs from 'fs';
 import { URL } from 'node:url';
 import { createToken, requireAuth } from './auth';
-import { readBody, send, sendJson } from './http';
+import { readBody, send, sendBuffer, sendJson } from './http';
 import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
 import { renderQueryPage } from './query_page';
@@ -14,7 +15,23 @@ import { addQaEntry, deleteQaEntry, listQaEntries, listQaGroups, setQaEntryEnabl
 import { getQueryOverview, patchQueryConfig, testQueryEndpoint } from './query_api';
 import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_commands_api';
 import { applyRiskPreset, getHealthDashboard, getRiskDashboard } from './risk_ops_api';
+import { getSubGameplayResourceFile, getSubGameplayResourceOverview, verifySubGameplayResourceIntegrity } from '../../services/sub_gameplay_resources';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
+
+function contentTypeForResource(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.ogg')) return 'audio/ogg';
+  if (lower.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (lower.endsWith('.md') || lower.endsWith('.txt')) return 'text/plain; charset=utf-8';
+  return 'application/octet-stream';
+}
 
 function resolveServerConfig(options: SnowLumaAdminServerOptions) {
   const host = options.host || process.env.GROUPGUARD_WEBUI_HOST || '127.0.0.1';
@@ -223,6 +240,38 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         const payload = JSON.parse(await readBody(req) || '{}');
         const count = await saveDynamicCommandsConfig(options, payload.config ?? payload);
         sendJson(res, 200, { ok: true, message: `动态命令已保存并重载，当前启用 ${count} 条。`, count });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/sub-gameplay/resources') {
+        const module = String(url.searchParams.get('module') || '').trim();
+        const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') || 120)));
+        const q = String(url.searchParams.get('q') || '').trim();
+        const collection = String(url.searchParams.get('collection') || '').trim();
+        const mediaType = String(url.searchParams.get('mediaType') || '').trim();
+        const sourceRelation = String(url.searchParams.get('sourceRelation') || '').trim();
+        const overview = getSubGameplayResourceOverview(module, limit, q, collection, mediaType, sourceRelation);
+        const integrity = verifySubGameplayResourceIntegrity();
+        sendJson(res, 200, {
+          ok: true,
+          root: overview.root,
+          generatedAt: overview.manifest?.generatedAt || '',
+          modules: overview.manifest?.modules || [],
+          summary: overview.manifest?.summary || null,
+          integrity,
+          entries: overview.entries
+        });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/sub-gameplay/resource-file') {
+        const resourcePath = String(url.searchParams.get('path') || url.searchParams.get('id') || '');
+        const filePath = getSubGameplayResourceFile(resourcePath);
+        if (!filePath) {
+          sendJson(res, 404, { ok: false, error: 'resource_not_found' });
+          return;
+        }
+        sendBuffer(res, 200, fs.readFileSync(filePath), contentTypeForResource(filePath));
         return;
       }
 

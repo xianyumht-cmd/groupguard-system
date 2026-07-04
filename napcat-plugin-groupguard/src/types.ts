@@ -137,6 +137,7 @@ export interface SubGameplaySettings {
   masterServantEnabled: boolean;
   racingEnabled: boolean;
   lightEntertainmentEnabled: boolean;
+  resourceMode: 'off' | 'light' | 'all';
   dailyWelfareGold: number;
   initialGold: number;
   initialRacingCoins: number;

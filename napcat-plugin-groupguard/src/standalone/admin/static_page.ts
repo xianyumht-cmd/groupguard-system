@@ -44,6 +44,8 @@ th,td{text-align:left;border-bottom:1px solid #263349;padding:8px;font-size:13px
 th{color:#93c5fd;background:#111827}
 .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#334155;font-size:12px}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.resource-preview{max-width:92px;max-height:58px;border:1px solid #334155;border-radius:6px;background:#0f172a}
+.resource-audio{max-width:180px}
 .full{grid-column:1/-1}
 .section-title{grid-column:1/-1;border-bottom:1px solid #263349;padding:12px 0 4px;margin-top:4px;color:#bfdbfe;font-weight:700}
 </style>
@@ -280,11 +282,37 @@ function selfRecallForm(prefix, src){
     + numberHtml('随机最大延迟秒 selfRecall.maxDelay',prefix+'selfRecall.maxDelay',get(src,'selfRecall.maxDelay',90))
     + numberHtml('额外抖动秒 selfRecall.jitter',prefix+'selfRecall.jitter',get(src,'selfRecall.jitter',0));
 }
-function subGameplayForm(prefix, src){
+function subGameplayFormLegacy(prefix, src){
+  var resourceModeHtml = selectHtml('资源发送模式 resourceMode',prefix+'subGameplay.resourceMode',get(src,'subGameplay.resourceMode','off'),[['off','关闭'],['light','仅轻娱乐图片'],['all','全部资源可用']]);
   return switchHtml('SUB总开关 subGameplay.enabled',prefix+'subGameplay.enabled',get(src,'subGameplay.enabled',false))
     + switchHtml('主仆契约 masterServantEnabled',prefix+'subGameplay.masterServantEnabled',get(src,'subGameplay.masterServantEnabled',true))
     + switchHtml('竞速赛车 racingEnabled',prefix+'subGameplay.racingEnabled',get(src,'subGameplay.racingEnabled',true))
     + switchHtml('轻娱乐 lightEntertainmentEnabled',prefix+'subGameplay.lightEntertainmentEnabled',get(src,'subGameplay.lightEntertainmentEnabled',true))
+    + inputHtml('命令前缀 commandPrefix',prefix+'subGameplay.commandPrefix',get(src,'subGameplay.commandPrefix',''))
+    + numberHtml('每日福利黄金 dailyWelfareGold',prefix+'subGameplay.dailyWelfareGold',get(src,'subGameplay.dailyWelfareGold',1000))
+    + numberHtml('初始黄金 initialGold',prefix+'subGameplay.initialGold',get(src,'subGameplay.initialGold',500))
+    + numberHtml('初始车币 initialRacingCoins',prefix+'subGameplay.initialRacingCoins',get(src,'subGameplay.initialRacingCoins',0))
+    + numberHtml('初始汽油 initialFuel',prefix+'subGameplay.initialFuel',get(src,'subGameplay.initialFuel',100))
+    + numberHtml('汽油上限 maxFuel',prefix+'subGameplay.maxFuel',get(src,'subGameplay.maxFuel',100))
+    + numberHtml('对决耗油 duelCostFuel',prefix+'subGameplay.duelCostFuel',get(src,'subGameplay.duelCostFuel',10))
+    + numberHtml('参赛耗油 raceCostFuel',prefix+'subGameplay.raceCostFuel',get(src,'subGameplay.raceCostFuel',15))
+    + numberHtml('车币兑换率 carCoinExchangeRate',prefix+'subGameplay.carCoinExchangeRate',get(src,'subGameplay.carCoinExchangeRate',10))
+    + numberHtml('汽油兑换率 fuelExchangeRate',prefix+'subGameplay.fuelExchangeRate',get(src,'subGameplay.fuelExchangeRate',5))
+    + numberHtml('PK冷却秒 pkCooldownSeconds',prefix+'subGameplay.pkCooldownSeconds',get(src,'subGameplay.pkCooldownSeconds',30))
+    + numberHtml('逃跑成功率 escapeSuccessRate',prefix+'subGameplay.escapeSuccessRate',get(src,'subGameplay.escapeSuccessRate',18))
+    + numberHtml('抢走成功率 snatchSuccessRate',prefix+'subGameplay.snatchSuccessRate',get(src,'subGameplay.snatchSuccessRate',45))
+    + numberHtml('契约税率 contractTaxRate',prefix+'subGameplay.contractTaxRate',get(src,'subGameplay.contractTaxRate',10))
+    + numberHtml('排行条数 rankLimit',prefix+'subGameplay.rankLimit',get(src,'subGameplay.rankLimit',10))
+    + jsonInputHtml('文本模板 textTemplates',prefix+'subGameplay.textTemplates',get(src,'subGameplay.textTemplates',{}))
+    + jsonInputHtml('命令别名 commandAliases',prefix+'subGameplay.commandAliases',get(src,'subGameplay.commandAliases',{}));
+}
+function subGameplayForm(prefix, src){
+  var resourceModeHtml = selectHtml('资源发送模式 resourceMode',prefix+'subGameplay.resourceMode',get(src,'subGameplay.resourceMode','off'),[['off','关闭'],['light','仅轻娱乐图片'],['all','全部资源可用']]);
+  return switchHtml('SUB总开关 subGameplay.enabled',prefix+'subGameplay.enabled',get(src,'subGameplay.enabled',false))
+    + switchHtml('主仆契约 masterServantEnabled',prefix+'subGameplay.masterServantEnabled',get(src,'subGameplay.masterServantEnabled',true))
+    + switchHtml('竞速赛车 racingEnabled',prefix+'subGameplay.racingEnabled',get(src,'subGameplay.racingEnabled',true))
+    + switchHtml('轻娱乐 lightEntertainmentEnabled',prefix+'subGameplay.lightEntertainmentEnabled',get(src,'subGameplay.lightEntertainmentEnabled',true))
+    + resourceModeHtml
     + inputHtml('命令前缀 commandPrefix',prefix+'subGameplay.commandPrefix',get(src,'subGameplay.commandPrefix',''))
     + numberHtml('每日福利黄金 dailyWelfareGold',prefix+'subGameplay.dailyWelfareGold',get(src,'subGameplay.dailyWelfareGold',1000))
     + numberHtml('初始黄金 initialGold',prefix+'subGameplay.initialGold',get(src,'subGameplay.initialGold',500))
@@ -556,6 +584,73 @@ function renderHealth(data){
   html += rowsTable('最近10分钟发送', data.recentSend&&data.recentSend.recent, [['群号','groupId'],['场景','scene'],['状态','status'],['原因','reason']]);
   el('healthBox').innerHTML=html;
 }
+function ensureSubResourceUi(){
+  if(!el('tab-sub-resources')){
+    var tabs=document.querySelector('.tabs');
+    var btn=document.createElement('button');
+    btn.className='tab';
+    btn.dataset.tab='sub-resources';
+    btn.textContent='SUB资源';
+    tabs.appendChild(btn);
+    var section=document.createElement('section');
+    section.id='tab-sub-resources';
+    section.className='card hidden';
+    section.innerHTML='<h2>SUB资源</h2>'
+      + '<div class="row">'
+      + '<label><span>模块</span><select id="resourceModule"><option value="">全部</option><option value="core">core</option><option value="master_servant">master_servant</option><option value="light_entertainment">light_entertainment</option><option value="racing">racing</option><option value="shared">shared</option></select></label>'
+      + '<label><span>分类</span><select id="resourceCollection"><option value="">全部</option><option value="raw">raw</option><option value="viewable">viewable</option><option value="selected">selected</option><option value="root">root</option></select></label>'
+      + '<label><span>类型</span><select id="resourceMediaType"><option value="">全部</option><option value="image">image</option><option value="audio">audio</option><option value="document">document</option><option value="binary">binary</option></select></label>'
+      + '<label><span>来源关系</span><select id="resourceSourceRelation"><option value="">全部</option><option value="direct">direct</option><option value="converted">converted</option></select></label>'
+      + '<label><span>搜索</span><input id="resourceQuery" placeholder="resourceId / path / semanticKey"></label>'
+      + '<label><span>条数</span><input id="resourceLimit" type="number" value="120"></label>'
+      + '<button id="loadResourcesBtn">读取资源</button>'
+      + '</div><div id="resourceSummary" class="status-grid"></div><div id="resourceBox"></div>';
+    var gameplay=el('tab-gameplay');
+    gameplay.parentNode.insertBefore(section, gameplay.nextSibling);
+  }
+}
+function resourceFileUrl(path){
+  return '/api/sub-gameplay/resource-file?token='+encodeURIComponent(token)+'&id='+encodeURIComponent(path);
+}
+function renderSubResources(data){
+  var summary=data.summary||{};
+  var integrity=data.integrity||{};
+  var integrityText=integrity.ok===false ? ('异常：'+(integrity.errors||[]).slice(0,8).join('；')) : 'OK';
+  el('resourceSummary').innerHTML=
+    '<div class="k">资源根目录</div><div class="v">'+esc(data.root||'')+'</div>'
+    + '<div class="k">生成时间</div><div class="v">'+esc(data.generatedAt||'')+'</div>'
+    + '<div class="k">完整性</div><div class="v">'+esc(integrityText)+'</div>'
+    + '<div class="k">已索引/文件</div><div class="v">'+esc((integrity.manifestEntries||0)+' / '+(integrity.resourceFiles||0))+'</div>'
+    + '<div class="k">来源覆盖</div><div class="v">'+esc((integrity.sourcePathCoverage||0)+' / '+(integrity.manifestEntries||0))+'</div>'
+    + '<div class="k">来源关系</div><div class="v">'+esc(JSON.stringify(integrity.sourceRelations||{}))+'</div>'
+    + '<div class="k">总条目</div><div class="v">'+esc(summary.total||0)+'</div>'
+    + '<div class="k">模块</div><div class="v">'+esc(JSON.stringify(summary.byModule||{}))+'</div>'
+    + '<div class="k">分类</div><div class="v">'+esc(JSON.stringify(summary.byCollection||{}))+'</div>'
+    + '<div class="k">媒体</div><div class="v">'+esc(JSON.stringify(summary.byMediaType||{}))+'</div>';
+  var rows=data.entries||[];
+  if(!rows.length){ el('resourceBox').innerHTML='<p class="hint">暂无资源</p>'; return; }
+  var html='<table><thead><tr><th>预览</th><th>操作</th><th>资源ID</th><th>模块</th><th>分类</th><th>类型</th><th>语义</th><th>路径</th><th>来源关系</th><th>来源</th><th>大小</th></tr></thead><tbody>';
+  rows.forEach(function(row){
+    var preview='';
+    var id=row.resourceId||row.path;
+    var fileUrl=resourceFileUrl(id);
+    var action='<a class="link" target="_blank" rel="noreferrer" href="'+fileUrl+'">打开</a>';
+    if(row.mediaType==='image') preview='<img class="resource-preview" src="'+fileUrl+'">';
+    else if(row.mediaType==='audio') preview='<audio class="resource-audio" controls src="'+fileUrl+'"></audio>';
+    html+='<tr><td>'+preview+'</td><td>'+action+'</td><td>'+esc(id)+'</td><td>'+esc(row.module)+'</td><td>'+esc(row.collection)+'</td><td>'+esc(row.mediaType)+'</td><td>'+esc(row.semanticKey||'')+'</td><td>'+esc(row.path)+'</td><td>'+esc(row.sourceRelation||'')+'</td><td>'+esc(row.sourcePath||'')+'</td><td>'+esc(row.size)+'</td></tr>';
+  });
+  el('resourceBox').innerHTML=html+'</tbody></table>';
+}
+function loadSubResources(){
+  ensureSubResourceUi();
+  var mod=el('resourceModule').value||'';
+  var collection=el('resourceCollection').value||'';
+  var mediaType=el('resourceMediaType').value||'';
+  var sourceRelation=el('resourceSourceRelation').value||'';
+  var limit=el('resourceLimit').value||120;
+  var q=el('resourceQuery').value||'';
+  return api('/api/sub-gameplay/resources?module='+encodeURIComponent(mod)+'&collection='+encodeURIComponent(collection)+'&mediaType='+encodeURIComponent(mediaType)+'&sourceRelation='+encodeURIComponent(sourceRelation)+'&limit='+encodeURIComponent(limit)+'&q='+encodeURIComponent(q)).then(renderSubResources);
+}
 function loadRiskDashboard(){ return api('/api/risk/dashboard?hours='+encodeURIComponent(el('riskHours').value||24)).then(renderRiskDashboard); }
 function loadHealth(){ return api('/api/health').then(renderHealth); }
 function applyRiskPreset(level){
@@ -616,6 +711,7 @@ function switchTab(tab){
   var section=el('tab-'+tab); if(section) section.classList.remove('hidden');
 }
 function bind(){
+  ensureSubResourceUi();
   el('qaLink').href='/qa.html?token='+encodeURIComponent(token);
   el('queryLink').href='/query.html?token='+encodeURIComponent(token);
   document.querySelectorAll('button.tab[data-tab]').forEach(function(btn){ btn.addEventListener('click',function(){ switchTab(btn.dataset.tab); }); });
@@ -630,6 +726,7 @@ function bind(){
   el('loadBackupsBtn').addEventListener('click',function(){ loadBackups().catch(function(e){ show(e.message,false); }); });
   el('loadRiskBtn').addEventListener('click',function(){ loadRiskDashboard().catch(function(e){ show(e.message,false); }); });
   el('loadHealthBtn').addEventListener('click',function(){ loadHealth().catch(function(e){ show(e.message,false); }); });
+  el('loadResourcesBtn').addEventListener('click',function(){ loadSubResources().catch(function(e){ show(e.message,false); }); });
   document.querySelectorAll('[data-risk-preset]').forEach(function(btn){ btn.addEventListener('click',function(){ applyRiskPreset(btn.dataset.riskPreset).catch(function(e){ show(e.message,false); }); }); });
   el('saveRawBtn').addEventListener('click',function(){ Promise.resolve(saveRawConfig()).catch(function(e){ show(e.message,false); }); });
   el('reloadConfigBtn').addEventListener('click',function(){ loadConfig().catch(function(e){ show(e.message,false); }); });

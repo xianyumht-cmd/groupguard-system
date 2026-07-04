@@ -11,6 +11,7 @@ import { groupguardRepository } from '../repositories/groupguard_repository';
 import { getReplyTemplateCatalog } from '../reply_generator';
 import { getGuardRuntimeSnapshot } from '../services/action_guard_service';
 import { getActionQueueTaskSnapshot, getActionQueueTaskTrace } from '../services/action_queue_service';
+import { getSubGameplayResourceOverview, verifySubGameplayResourceIntegrity } from '../services/sub_gameplay_resources';
 import { auditReplyTemplates } from '../reply_template_audit';
 import { BUILTIN_REPLY_SCENE_TEMPLATES } from '../reply_templates';
 import { saveConfig } from '../commands';
@@ -599,6 +600,7 @@ export function registerRuntimeRoutes(
         return;
       }
       const limit = Math.max(3, Math.min(50, Number(req.query?.limit || 10)));
+      const importedResources = getSubGameplayResourceOverview('', 12);
       res.json({
         code: 0,
         data: {
@@ -613,7 +615,39 @@ export function registerRuntimeRoutes(
             championsRank: storageAdapter.listSubRacingPlayersByRank(groupId, 'champions', limit)
           },
           resources: storageAdapter.listSubResources(groupId),
+          importedResources: {
+            root: importedResources.root,
+            generatedAt: importedResources.manifest?.generatedAt || '',
+            summary: importedResources.manifest?.summary || null,
+            samples: importedResources.entries
+          },
           recentEvents: storageAdapter.listSubGameplayEvents(groupId, Math.max(20, limit))
+        }
+      });
+    } catch (e) {
+      res.status(500).json({ code: -1, message: String(e) });
+    }
+  });
+
+  router.getNoAuth('/sub-gameplay/resources', async (req: any, res: any) => {
+    try {
+      const module = String(req.query?.module || '').trim();
+      const limit = Math.max(1, Math.min(500, Number(req.query?.limit || 100)));
+      const q = String(req.query?.q || '').trim();
+      const collection = String(req.query?.collection || '').trim();
+      const mediaType = String(req.query?.mediaType || '').trim();
+      const sourceRelation = String(req.query?.sourceRelation || '').trim();
+      const overview = getSubGameplayResourceOverview(module, limit, q, collection, mediaType, sourceRelation);
+      const integrity = verifySubGameplayResourceIntegrity();
+      res.json({
+        code: 0,
+        data: {
+          root: overview.root,
+          generatedAt: overview.manifest?.generatedAt || '',
+          modules: overview.manifest?.modules || [],
+          summary: overview.manifest?.summary || null,
+          integrity,
+          entries: overview.entries
         }
       });
     } catch (e) {

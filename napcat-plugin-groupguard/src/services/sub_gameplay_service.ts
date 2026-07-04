@@ -2,10 +2,19 @@ import { configStateService } from '../core/state-services/config_state_service'
 import { storageAdapter } from '../storage_adapter';
 import type { SubGameplaySettings } from '../types';
 import type { UnifiedCommandNormalizedInput } from '../dynamic-commands/types';
+import { getLightEntertainmentImage, getModuleRepresentativeImage, toLocalFileUrl } from './sub_gameplay_resources';
 
 type SubModule = 'master_servant' | 'racing' | 'light';
 type MasterRank = 'gold' | 'value' | 'level';
 type RacingRank = 'wins' | 'champions';
+type LightImageKey =
+  | 'dice_1' | 'dice_2' | 'dice_3' | 'dice_4' | 'dice_5' | 'dice_6'
+  | 'rps_paper' | 'rps_rock' | 'rps_scissors' | 'rps_win' | 'rps_draw' | 'rps_lose';
+
+export type SubGameplayCommandResult = string | {
+  text: string;
+  segments?: Array<Record<string, unknown>>;
+};
 
 interface SubCommandRoute {
   module: SubModule;
@@ -105,6 +114,40 @@ function isModuleEnabled(settings: SubGameplaySettings, module: SubModule): bool
   if (module === 'racing') return settings.racingEnabled !== false;
   if (module === 'light') return settings.lightEntertainmentEnabled !== false;
   return false;
+}
+
+function shouldUseResources(settings: SubGameplaySettings, module: SubModule): boolean {
+  if (settings.resourceMode === 'all') return true;
+  return settings.resourceMode === 'light' && module === 'light';
+}
+
+function withLightImages(settings: SubGameplaySettings, text: string, keys: LightImageKey[]): SubGameplayCommandResult {
+  if (!shouldUseResources(settings, 'light')) return text;
+  const imageSegments = keys
+    .map(key => getLightEntertainmentImage(key))
+    .filter((filePath): filePath is string => !!filePath)
+    .map(filePath => ({ type: 'image', data: { file: toLocalFileUrl(filePath) } }));
+  if (!imageSegments.length) return text;
+  return {
+    text,
+    segments: [
+      { type: 'text', data: { text: `${text}\n` } },
+      ...imageSegments
+    ]
+  };
+}
+
+function withModuleRepresentativeImage(settings: SubGameplaySettings, module: SubModule, text: string): SubGameplayCommandResult {
+  if (settings.resourceMode !== 'all') return text;
+  const filePath = getModuleRepresentativeImage(module);
+  if (!filePath) return text;
+  return {
+    text,
+    segments: [
+      { type: 'text', data: { text: `${text}\n` } },
+      { type: 'image', data: { file: toLocalFileUrl(filePath) } }
+    ]
+  };
 }
 
 function applyLevel(player: SubPlayer): SubPlayer {
@@ -563,11 +606,62 @@ async function executeLight(route: SubCommandRoute, input: UnifiedCommandNormali
   return helpText();
 }
 
-export async function executeSubGameplayCommand(route: SubCommandRoute, input: UnifiedCommandNormalizedInput): Promise<string> {
+async function executeLightWithResources(route: SubCommandRoute, input: UnifiedCommandNormalizedInput, settings: SubGameplaySettings): Promise<SubGameplayCommandResult> {
+  const groupId = input.groupId || '';
+  const userId = input.userId;
+  const targetId = extractTarget(input.rawText, input.rawArgument);
+
+  if (route.action === 'rps') {
+    const options: Array<{ id: 'rock' | 'scissors' | 'paper'; label: string; image: LightImageKey; }> = [
+      { id: 'rock', label: '石头', image: 'rps_rock' },
+      { id: 'scissors', label: '剪刀', image: 'rps_scissors' },
+      { id: 'paper', label: '布', image: 'rps_paper' }
+    ];
+    const a = options[randomInt(0, 2)];
+    const b = options[randomInt(0, 2)];
+    const outcome = a.id === b.id
+      ? 'draw'
+      : (a.id === 'rock' && b.id === 'scissors') || (a.id === 'scissors' && b.id === 'paper') || (a.id === 'paper' && b.id === 'rock')
+        ? 'win'
+        : 'lose';
+    const result = outcome === 'draw' ? '平局' : outcome === 'win' ? '胜利' : '失败';
+    const resultImage: LightImageKey = outcome === 'draw' ? 'rps_draw' : outcome === 'win' ? 'rps_win' : 'rps_lose';
+    logEvent(groupId, route.module, route.action, userId, `${a.label}:${b.label}:${result}`, targetId);
+    return withLightImages(
+      settings,
+      `猜拳${targetId ? ` vs ${displayUser(targetId)}` : ''}\n你：${a.label}\n对方：${b.label}\n结果：${result}`,
+      [a.image, b.image, resultImage]
+    );
+  }
+
+  if (route.action === 'dice') {
+    const a = randomInt(1, 6);
+    const b = randomInt(1, 6);
+    const result = a === b ? '平局' : a > b ? '胜利' : '失败';
+    logEvent(groupId, route.module, route.action, userId, `${a}:${b}:${result}`, targetId);
+    return withLightImages(
+      settings,
+      `骰子${targetId ? ` vs ${displayUser(targetId)}` : ''}\n你：${a}\n对方：${b}\n结果：${result}`,
+      [`dice_${a}` as LightImageKey, `dice_${b}` as LightImageKey]
+    );
+  }
+
+  if (route.action === 'number') {
+    const secret = randomInt(1, 10);
+    const guess = clampInt(input.rawArgument.match(/\d+/)?.[0], 0, 0, 10);
+    const text = guess ? `你的数字：${guess}\n目标数字：${secret}\n结果：${guess === secret ? '命中' : '未命中'}` : `数字游戏\n本轮数字：${secret}`;
+    logEvent(groupId, route.module, route.action, userId, text, targetId, guess === secret ? 1 : 0, guess === secret ? 'hit' : 'miss');
+    return text;
+  }
+
+  return helpText();
+}
+
+export async function executeSubGameplayCommand(route: SubCommandRoute, input: UnifiedCommandNormalizedInput): Promise<SubGameplayCommandResult> {
   if (!input.groupId) return 'SUB玩法仅支持群聊使用';
   const settings = getSettings(input.groupId);
   if (!isModuleEnabled(settings, route.module)) return 'SUB玩法当前未开启';
-  if (route.module === 'master_servant') return executeMasterServant(route, input, settings);
-  if (route.module === 'racing') return executeRacing(route, input, settings);
-  return executeLight(route, input);
+  if (route.module === 'master_servant') return withModuleRepresentativeImage(settings, route.module, await executeMasterServant(route, input, settings));
+  if (route.module === 'racing') return withModuleRepresentativeImage(settings, route.module, await executeRacing(route, input, settings));
+  return executeLightWithResources(route, input, settings);
 }

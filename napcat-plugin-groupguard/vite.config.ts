@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { resolve } from 'path';
 import { defineConfig } from 'vite';
 import nodeResolve from '@rollup/plugin-node-resolve';
@@ -38,6 +39,7 @@ export default defineConfig(({ mode }) => {
   const isDebug = mode === 'debug';
   const isSnowLuma = mode === 'snowluma';
   const entryName = isSnowLuma ? 'snowluma-service.mjs' : 'index.mjs';
+  const subGameplayResourcesDir = resolve(__dirname, 'resources/sub-gameplay');
 
   return {
     resolve: { conditions: ['node', 'default'] },
@@ -62,6 +64,17 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       emptyDirBeforeWrite: !isSnowLuma,
     },
-    plugins: [nodeResolve()],
+    plugins: [
+      nodeResolve(),
+      {
+        name: 'copy-sub-gameplay-resources',
+        closeBundle() {
+          if (!fs.existsSync(subGameplayResourcesDir)) return;
+          const target = resolve(__dirname, 'dist/resources/sub-gameplay');
+          fs.rmSync(target, { recursive: true, force: true });
+          fs.cpSync(subGameplayResourcesDir, target, { recursive: true });
+        },
+      },
+    ],
   };
 });

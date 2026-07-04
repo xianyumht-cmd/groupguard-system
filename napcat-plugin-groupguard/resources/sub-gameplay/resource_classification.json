@@ -1,0 +1,1540 @@
+{
+  "core": [
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1031_2052.bin",
+      "name": "RT_BITMAP_1031_2052.bin",
+      "size": 584,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1038_2052.bin",
+      "name": "RT_BITMAP_1038_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1138_2052.bin",
+      "name": "RT_BITMAP_1138_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1139_2052.bin",
+      "name": "RT_BITMAP_1139_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1140_2052.bin",
+      "name": "RT_BITMAP_1140_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1141_2052.bin",
+      "name": "RT_BITMAP_1141_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1142_2052.bin",
+      "name": "RT_BITMAP_1142_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1143_2052.bin",
+      "name": "RT_BITMAP_1143_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1144_2052.bin",
+      "name": "RT_BITMAP_1144_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_1145_2052.bin",
+      "name": "RT_BITMAP_1145_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_26567_2052.bin",
+      "name": "RT_BITMAP_26567_2052.bin",
+      "size": 1508,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_30994_2052.bin",
+      "name": "RT_BITMAP_30994_2052.bin",
+      "size": 184,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_30995_2052.bin",
+      "name": "RT_BITMAP_30995_2052.bin",
+      "size": 364,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_30996_2052.bin",
+      "name": "RT_BITMAP_30996_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_IEXT3_IDB_SCROLLBTNS_2052.bin",
+      "name": "RT_BITMAP_IEXT3_IDB_SCROLLBTNS_2052.bin",
+      "size": 4098,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_BITMAP_IEXT_IDB_STATEIMAGES_2052.bin",
+      "name": "RT_BITMAP_IEXT_IDB_STATEIMAGES_2052.bin",
+      "size": 364,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_1_2052.bin",
+      "name": "RT_CURSOR_1_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_2_2052.bin",
+      "name": "RT_CURSOR_2_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_3_2052.bin",
+      "name": "RT_CURSOR_3_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_4_2052.bin",
+      "name": "RT_CURSOR_4_2052.bin",
+      "size": 180,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_5_2052.bin",
+      "name": "RT_CURSOR_5_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_6_2052.bin",
+      "name": "RT_CURSOR_6_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_7_1040.bin",
+      "name": "RT_CURSOR_7_1040.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_8_1040.bin",
+      "name": "RT_CURSOR_8_1040.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_CURSOR_9_1040.bin",
+      "name": "RT_CURSOR_9_1040.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_1037_2052.bin",
+      "name": "RT_DIALOG_1037_2052.bin",
+      "size": 234,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_1084_2052.bin",
+      "name": "RT_DIALOG_1084_2052.bin",
+      "size": 2222,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_1124_2052.bin",
+      "name": "RT_DIALOG_1124_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_1134_2052.bin",
+      "name": "RT_DIALOG_1134_2052.bin",
+      "size": 204,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_1150_2052.bin",
+      "name": "RT_DIALOG_1150_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_150_2052.bin",
+      "name": "RT_DIALOG_150_2052.bin",
+      "size": 152,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_286_2052.bin",
+      "name": "RT_DIALOG_286_2052.bin",
+      "size": 378,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_30721_2052.bin",
+      "name": "RT_DIALOG_30721_2052.bin",
+      "size": 226,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_30722_2052.bin",
+      "name": "RT_DIALOG_30722_2052.bin",
+      "size": 396,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_DIALOG_554_2052.bin",
+      "name": "RT_DIALOG_554_2052.bin",
+      "size": 250,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_1032_2052.bin",
+      "name": "RT_GROUP_CURSOR_1032_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_1033_2052.bin",
+      "name": "RT_GROUP_CURSOR_1033_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_30977_2052.bin",
+      "name": "RT_GROUP_CURSOR_30977_2052.bin",
+      "size": 34,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_IEXT2_IDC_HORZLINEMOVECURSOR_2052.bin",
+      "name": "RT_GROUP_CURSOR_IEXT2_IDC_HORZLINEMOVECURSOR_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_IEXT2_IDC_VERTLINEMOVECURSOR_2052.bin",
+      "name": "RT_GROUP_CURSOR_IEXT2_IDC_VERTLINEMOVECURSOR_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_IEXT3_IDC_DRAGGING_1040.bin",
+      "name": "RT_GROUP_CURSOR_IEXT3_IDC_DRAGGING_1040.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_IEXT3_IDC_HANDCUR_1040.bin",
+      "name": "RT_GROUP_CURSOR_IEXT3_IDC_HANDCUR_1040.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_CURSOR_IEXT3_IDC_NODRAGGING_1040.bin",
+      "name": "RT_GROUP_CURSOR_IEXT3_IDC_NODRAGGING_1040.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_ICON_1151_2052.bin",
+      "name": "RT_GROUP_ICON_1151_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_ICON_1152_2052.bin",
+      "name": "RT_GROUP_ICON_1152_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "name": "RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_ICON_1_2052.bin",
+      "name": "RT_ICON_1_2052.bin",
+      "size": 744,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_ICON_2_2052.bin",
+      "name": "RT_ICON_2_2052.bin",
+      "size": 296,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_ICON_3_0.bin",
+      "name": "RT_ICON_3_0.bin",
+      "size": 67624,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_MANIFEST_1_0.bin",
+      "name": "RT_MANIFEST_1_0.bin",
+      "size": 461,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_MENU_1039_2052.bin",
+      "name": "RT_MENU_1039_2052.bin",
+      "size": 644,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_MENU_127_2052.bin",
+      "name": "RT_MENU_127_2052.bin",
+      "size": 12,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3841_2052.bin",
+      "name": "RT_STRING_3841_2052.bin",
+      "size": 80,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3842_2052.bin",
+      "name": "RT_STRING_3842_2052.bin",
+      "size": 44,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3843_2052.bin",
+      "name": "RT_STRING_3843_2052.bin",
+      "size": 120,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3857_2052.bin",
+      "name": "RT_STRING_3857_2052.bin",
+      "size": 452,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3858_2052.bin",
+      "name": "RT_STRING_3858_2052.bin",
+      "size": 298,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3859_2052.bin",
+      "name": "RT_STRING_3859_2052.bin",
+      "size": 326,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3865_2052.bin",
+      "name": "RT_STRING_3865_2052.bin",
+      "size": 64,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3866_2052.bin",
+      "name": "RT_STRING_3866_2052.bin",
+      "size": 100,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3867_2052.bin",
+      "name": "RT_STRING_3867_2052.bin",
+      "size": 472,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3868_2052.bin",
+      "name": "RT_STRING_3868_2052.bin",
+      "size": 276,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_STRING_3869_2052.bin",
+      "name": "RT_STRING_3869_2052.bin",
+      "size": 36,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\RT_VERSION_1_2052.bin",
+      "name": "RT_VERSION_1_2052.bin",
+      "size": 536,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\TEXTINCLUDE_1_2052.bin",
+      "name": "TEXTINCLUDE_1_2052.bin",
+      "size": 11,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\TEXTINCLUDE_2_2052.bin",
+      "name": "TEXTINCLUDE_2_2052.bin",
+      "size": 22,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\TEXTINCLUDE_3_2052.bin",
+      "name": "TEXTINCLUDE_3_2052.bin",
+      "size": 337,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\core\\resources_raw\\WAVE_IEXT2_IDR_WAVE1_2052.bin",
+      "name": "WAVE_IEXT2_IDR_WAVE1_2052.bin",
+      "size": 5192,
+      "kind": "wav"
+    }
+  ],
+  "master_servant": [
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1031_2052.bin",
+      "name": "RT_BITMAP_1031_2052.bin",
+      "size": 584,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1038_2052.bin",
+      "name": "RT_BITMAP_1038_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1138_2052.bin",
+      "name": "RT_BITMAP_1138_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1139_2052.bin",
+      "name": "RT_BITMAP_1139_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1140_2052.bin",
+      "name": "RT_BITMAP_1140_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1141_2052.bin",
+      "name": "RT_BITMAP_1141_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1142_2052.bin",
+      "name": "RT_BITMAP_1142_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1143_2052.bin",
+      "name": "RT_BITMAP_1143_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1144_2052.bin",
+      "name": "RT_BITMAP_1144_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_1145_2052.bin",
+      "name": "RT_BITMAP_1145_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_26567_2052.bin",
+      "name": "RT_BITMAP_26567_2052.bin",
+      "size": 1508,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_30994_2052.bin",
+      "name": "RT_BITMAP_30994_2052.bin",
+      "size": 184,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_30995_2052.bin",
+      "name": "RT_BITMAP_30995_2052.bin",
+      "size": 364,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_30996_2052.bin",
+      "name": "RT_BITMAP_30996_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_BITMAP_IEXT_IDB_STATEIMAGES_2052.bin",
+      "name": "RT_BITMAP_IEXT_IDB_STATEIMAGES_2052.bin",
+      "size": 364,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_CURSOR_1_2052.bin",
+      "name": "RT_CURSOR_1_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_CURSOR_2_2052.bin",
+      "name": "RT_CURSOR_2_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_CURSOR_3_2052.bin",
+      "name": "RT_CURSOR_3_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_CURSOR_4_2052.bin",
+      "name": "RT_CURSOR_4_2052.bin",
+      "size": 180,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_1037_2052.bin",
+      "name": "RT_DIALOG_1037_2052.bin",
+      "size": 234,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_1084_2052.bin",
+      "name": "RT_DIALOG_1084_2052.bin",
+      "size": 2222,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_1124_2052.bin",
+      "name": "RT_DIALOG_1124_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_1134_2052.bin",
+      "name": "RT_DIALOG_1134_2052.bin",
+      "size": 204,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_1150_2052.bin",
+      "name": "RT_DIALOG_1150_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_150_2052.bin",
+      "name": "RT_DIALOG_150_2052.bin",
+      "size": 152,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_286_2052.bin",
+      "name": "RT_DIALOG_286_2052.bin",
+      "size": 378,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_30721_2052.bin",
+      "name": "RT_DIALOG_30721_2052.bin",
+      "size": 226,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_30722_2052.bin",
+      "name": "RT_DIALOG_30722_2052.bin",
+      "size": 396,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_DIALOG_554_2052.bin",
+      "name": "RT_DIALOG_554_2052.bin",
+      "size": 250,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_GROUP_CURSOR_1032_2052.bin",
+      "name": "RT_GROUP_CURSOR_1032_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_GROUP_CURSOR_1033_2052.bin",
+      "name": "RT_GROUP_CURSOR_1033_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_GROUP_CURSOR_30977_2052.bin",
+      "name": "RT_GROUP_CURSOR_30977_2052.bin",
+      "size": 34,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_GROUP_ICON_1151_2052.bin",
+      "name": "RT_GROUP_ICON_1151_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_GROUP_ICON_1152_2052.bin",
+      "name": "RT_GROUP_ICON_1152_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "name": "RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "size": 48,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_ICON_1_2052.bin",
+      "name": "RT_ICON_1_2052.bin",
+      "size": 744,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_ICON_2_2052.bin",
+      "name": "RT_ICON_2_2052.bin",
+      "size": 296,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_ICON_3_0.bin",
+      "name": "RT_ICON_3_0.bin",
+      "size": 296,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_ICON_4_0.bin",
+      "name": "RT_ICON_4_0.bin",
+      "size": 744,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_ICON_5_0.bin",
+      "name": "RT_ICON_5_0.bin",
+      "size": 1640,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_MANIFEST_1_0.bin",
+      "name": "RT_MANIFEST_1_0.bin",
+      "size": 461,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_MENU_1039_2052.bin",
+      "name": "RT_MENU_1039_2052.bin",
+      "size": 644,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_MENU_127_2052.bin",
+      "name": "RT_MENU_127_2052.bin",
+      "size": 12,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3841_2052.bin",
+      "name": "RT_STRING_3841_2052.bin",
+      "size": 80,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3842_2052.bin",
+      "name": "RT_STRING_3842_2052.bin",
+      "size": 44,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3843_2052.bin",
+      "name": "RT_STRING_3843_2052.bin",
+      "size": 120,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3857_2052.bin",
+      "name": "RT_STRING_3857_2052.bin",
+      "size": 452,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3858_2052.bin",
+      "name": "RT_STRING_3858_2052.bin",
+      "size": 298,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3859_2052.bin",
+      "name": "RT_STRING_3859_2052.bin",
+      "size": 326,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3865_2052.bin",
+      "name": "RT_STRING_3865_2052.bin",
+      "size": 64,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3866_2052.bin",
+      "name": "RT_STRING_3866_2052.bin",
+      "size": 100,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3867_2052.bin",
+      "name": "RT_STRING_3867_2052.bin",
+      "size": 472,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3868_2052.bin",
+      "name": "RT_STRING_3868_2052.bin",
+      "size": 276,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_STRING_3869_2052.bin",
+      "name": "RT_STRING_3869_2052.bin",
+      "size": 36,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\RT_VERSION_1_2052.bin",
+      "name": "RT_VERSION_1_2052.bin",
+      "size": 584,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\TEXTINCLUDE_1_2052.bin",
+      "name": "TEXTINCLUDE_1_2052.bin",
+      "size": 11,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\TEXTINCLUDE_2_2052.bin",
+      "name": "TEXTINCLUDE_2_2052.bin",
+      "size": 22,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\master_servant\\resources_raw\\TEXTINCLUDE_3_2052.bin",
+      "name": "TEXTINCLUDE_3_2052.bin",
+      "size": 337,
+      "kind": "text_or_dialog"
+    }
+  ],
+  "light_entertainment": [
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1031_2052.bin",
+      "name": "RT_BITMAP_1031_2052.bin",
+      "size": 584,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1038_2052.bin",
+      "name": "RT_BITMAP_1038_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1138_2052.bin",
+      "name": "RT_BITMAP_1138_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1139_2052.bin",
+      "name": "RT_BITMAP_1139_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1140_2052.bin",
+      "name": "RT_BITMAP_1140_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1141_2052.bin",
+      "name": "RT_BITMAP_1141_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1142_2052.bin",
+      "name": "RT_BITMAP_1142_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1143_2052.bin",
+      "name": "RT_BITMAP_1143_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1144_2052.bin",
+      "name": "RT_BITMAP_1144_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_1145_2052.bin",
+      "name": "RT_BITMAP_1145_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_26567_2052.bin",
+      "name": "RT_BITMAP_26567_2052.bin",
+      "size": 1508,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_30994_2052.bin",
+      "name": "RT_BITMAP_30994_2052.bin",
+      "size": 184,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_30995_2052.bin",
+      "name": "RT_BITMAP_30995_2052.bin",
+      "size": 364,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_BITMAP_30996_2052.bin",
+      "name": "RT_BITMAP_30996_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_CURSOR_1_2052.bin",
+      "name": "RT_CURSOR_1_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_CURSOR_2_2052.bin",
+      "name": "RT_CURSOR_2_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_CURSOR_3_2052.bin",
+      "name": "RT_CURSOR_3_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_CURSOR_4_2052.bin",
+      "name": "RT_CURSOR_4_2052.bin",
+      "size": 180,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_CURSOR_5_2052.bin",
+      "name": "RT_CURSOR_5_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_CURSOR_6_2052.bin",
+      "name": "RT_CURSOR_6_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_1037_2052.bin",
+      "name": "RT_DIALOG_1037_2052.bin",
+      "size": 234,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_1084_2052.bin",
+      "name": "RT_DIALOG_1084_2052.bin",
+      "size": 2222,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_1124_2052.bin",
+      "name": "RT_DIALOG_1124_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_1134_2052.bin",
+      "name": "RT_DIALOG_1134_2052.bin",
+      "size": 204,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_1150_2052.bin",
+      "name": "RT_DIALOG_1150_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_150_2052.bin",
+      "name": "RT_DIALOG_150_2052.bin",
+      "size": 152,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_286_2052.bin",
+      "name": "RT_DIALOG_286_2052.bin",
+      "size": 378,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_30721_2052.bin",
+      "name": "RT_DIALOG_30721_2052.bin",
+      "size": 226,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_30722_2052.bin",
+      "name": "RT_DIALOG_30722_2052.bin",
+      "size": 396,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_DIALOG_554_2052.bin",
+      "name": "RT_DIALOG_554_2052.bin",
+      "size": 250,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_CURSOR_1032_2052.bin",
+      "name": "RT_GROUP_CURSOR_1032_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_CURSOR_1033_2052.bin",
+      "name": "RT_GROUP_CURSOR_1033_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_CURSOR_30977_2052.bin",
+      "name": "RT_GROUP_CURSOR_30977_2052.bin",
+      "size": 34,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_CURSOR_IEXT2_IDC_HORZLINEMOVECURSOR_2052.bin",
+      "name": "RT_GROUP_CURSOR_IEXT2_IDC_HORZLINEMOVECURSOR_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_CURSOR_IEXT2_IDC_VERTLINEMOVECURSOR_2052.bin",
+      "name": "RT_GROUP_CURSOR_IEXT2_IDC_VERTLINEMOVECURSOR_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_ICON_1151_2052.bin",
+      "name": "RT_GROUP_ICON_1151_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_ICON_1152_2052.bin",
+      "name": "RT_GROUP_ICON_1152_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "name": "RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_ICON_1_2052.bin",
+      "name": "RT_ICON_1_2052.bin",
+      "size": 744,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_ICON_2_2052.bin",
+      "name": "RT_ICON_2_2052.bin",
+      "size": 296,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_ICON_3_0.bin",
+      "name": "RT_ICON_3_0.bin",
+      "size": 67624,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_MANIFEST_1_0.bin",
+      "name": "RT_MANIFEST_1_0.bin",
+      "size": 461,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_MENU_1039_2052.bin",
+      "name": "RT_MENU_1039_2052.bin",
+      "size": 644,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_MENU_127_2052.bin",
+      "name": "RT_MENU_127_2052.bin",
+      "size": 12,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3841_2052.bin",
+      "name": "RT_STRING_3841_2052.bin",
+      "size": 80,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3842_2052.bin",
+      "name": "RT_STRING_3842_2052.bin",
+      "size": 44,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3843_2052.bin",
+      "name": "RT_STRING_3843_2052.bin",
+      "size": 120,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3857_2052.bin",
+      "name": "RT_STRING_3857_2052.bin",
+      "size": 452,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3858_2052.bin",
+      "name": "RT_STRING_3858_2052.bin",
+      "size": 298,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3859_2052.bin",
+      "name": "RT_STRING_3859_2052.bin",
+      "size": 326,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3865_2052.bin",
+      "name": "RT_STRING_3865_2052.bin",
+      "size": 64,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3866_2052.bin",
+      "name": "RT_STRING_3866_2052.bin",
+      "size": 100,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3867_2052.bin",
+      "name": "RT_STRING_3867_2052.bin",
+      "size": 472,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3868_2052.bin",
+      "name": "RT_STRING_3868_2052.bin",
+      "size": 276,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_STRING_3869_2052.bin",
+      "name": "RT_STRING_3869_2052.bin",
+      "size": 36,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\RT_VERSION_1_2052.bin",
+      "name": "RT_VERSION_1_2052.bin",
+      "size": 580,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\TEXTINCLUDE_1_2052.bin",
+      "name": "TEXTINCLUDE_1_2052.bin",
+      "size": 11,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\TEXTINCLUDE_2_2052.bin",
+      "name": "TEXTINCLUDE_2_2052.bin",
+      "size": 22,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\TEXTINCLUDE_3_2052.bin",
+      "name": "TEXTINCLUDE_3_2052.bin",
+      "size": 337,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\light_entertainment\\resources_raw\\WAVE_IEXT2_IDR_WAVE1_2052.bin",
+      "name": "WAVE_IEXT2_IDR_WAVE1_2052.bin",
+      "size": 5192,
+      "kind": "wav"
+    }
+  ],
+  "racing": [
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1031_2052.bin",
+      "name": "RT_BITMAP_1031_2052.bin",
+      "size": 584,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1038_2052.bin",
+      "name": "RT_BITMAP_1038_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1138_2052.bin",
+      "name": "RT_BITMAP_1138_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1139_2052.bin",
+      "name": "RT_BITMAP_1139_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1140_2052.bin",
+      "name": "RT_BITMAP_1140_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1141_2052.bin",
+      "name": "RT_BITMAP_1141_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1142_2052.bin",
+      "name": "RT_BITMAP_1142_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1143_2052.bin",
+      "name": "RT_BITMAP_1143_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1144_2052.bin",
+      "name": "RT_BITMAP_1144_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_1145_2052.bin",
+      "name": "RT_BITMAP_1145_2052.bin",
+      "size": 344,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_26567_2052.bin",
+      "name": "RT_BITMAP_26567_2052.bin",
+      "size": 1508,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_30994_2052.bin",
+      "name": "RT_BITMAP_30994_2052.bin",
+      "size": 184,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_30995_2052.bin",
+      "name": "RT_BITMAP_30995_2052.bin",
+      "size": 364,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_30996_2052.bin",
+      "name": "RT_BITMAP_30996_2052.bin",
+      "size": 324,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_BITMAP_IEXT3_IDB_SCROLLBTNS_2052.bin",
+      "name": "RT_BITMAP_IEXT3_IDB_SCROLLBTNS_2052.bin",
+      "size": 4098,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_1_2052.bin",
+      "name": "RT_CURSOR_1_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_2_2052.bin",
+      "name": "RT_CURSOR_2_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_3_2052.bin",
+      "name": "RT_CURSOR_3_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_4_2052.bin",
+      "name": "RT_CURSOR_4_2052.bin",
+      "size": 180,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_5_2052.bin",
+      "name": "RT_CURSOR_5_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_6_2052.bin",
+      "name": "RT_CURSOR_6_2052.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_7_1040.bin",
+      "name": "RT_CURSOR_7_1040.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_8_1040.bin",
+      "name": "RT_CURSOR_8_1040.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_CURSOR_9_1040.bin",
+      "name": "RT_CURSOR_9_1040.bin",
+      "size": 308,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_1037_2052.bin",
+      "name": "RT_DIALOG_1037_2052.bin",
+      "size": 234,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_1084_2052.bin",
+      "name": "RT_DIALOG_1084_2052.bin",
+      "size": 2222,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_1124_2052.bin",
+      "name": "RT_DIALOG_1124_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_1134_2052.bin",
+      "name": "RT_DIALOG_1134_2052.bin",
+      "size": 204,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_1150_2052.bin",
+      "name": "RT_DIALOG_1150_2052.bin",
+      "size": 178,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_150_2052.bin",
+      "name": "RT_DIALOG_150_2052.bin",
+      "size": 152,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_286_2052.bin",
+      "name": "RT_DIALOG_286_2052.bin",
+      "size": 378,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_30721_2052.bin",
+      "name": "RT_DIALOG_30721_2052.bin",
+      "size": 226,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_30722_2052.bin",
+      "name": "RT_DIALOG_30722_2052.bin",
+      "size": 396,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_DIALOG_554_2052.bin",
+      "name": "RT_DIALOG_554_2052.bin",
+      "size": 250,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_1032_2052.bin",
+      "name": "RT_GROUP_CURSOR_1032_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_1033_2052.bin",
+      "name": "RT_GROUP_CURSOR_1033_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_30977_2052.bin",
+      "name": "RT_GROUP_CURSOR_30977_2052.bin",
+      "size": 34,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_IEXT2_IDC_HORZLINEMOVECURSOR_2052.bin",
+      "name": "RT_GROUP_CURSOR_IEXT2_IDC_HORZLINEMOVECURSOR_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_IEXT2_IDC_VERTLINEMOVECURSOR_2052.bin",
+      "name": "RT_GROUP_CURSOR_IEXT2_IDC_VERTLINEMOVECURSOR_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_IEXT3_IDC_DRAGGING_1040.bin",
+      "name": "RT_GROUP_CURSOR_IEXT3_IDC_DRAGGING_1040.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_IEXT3_IDC_HANDCUR_1040.bin",
+      "name": "RT_GROUP_CURSOR_IEXT3_IDC_HANDCUR_1040.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_CURSOR_IEXT3_IDC_NODRAGGING_1040.bin",
+      "name": "RT_GROUP_CURSOR_IEXT3_IDC_NODRAGGING_1040.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_ICON_1151_2052.bin",
+      "name": "RT_GROUP_ICON_1151_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_ICON_1152_2052.bin",
+      "name": "RT_GROUP_ICON_1152_2052.bin",
+      "size": 20,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "name": "RT_GROUP_ICON_DEFAULT_ICON_0.bin",
+      "size": 48,
+      "kind": "ico_or_cur_group"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_ICON_1_2052.bin",
+      "name": "RT_ICON_1_2052.bin",
+      "size": 744,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_ICON_2_2052.bin",
+      "name": "RT_ICON_2_2052.bin",
+      "size": 296,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_ICON_3_0.bin",
+      "name": "RT_ICON_3_0.bin",
+      "size": 296,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_ICON_4_0.bin",
+      "name": "RT_ICON_4_0.bin",
+      "size": 744,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_ICON_5_0.bin",
+      "name": "RT_ICON_5_0.bin",
+      "size": 1640,
+      "kind": "dib_bitmap"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_MANIFEST_1_0.bin",
+      "name": "RT_MANIFEST_1_0.bin",
+      "size": 461,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_MENU_1039_2052.bin",
+      "name": "RT_MENU_1039_2052.bin",
+      "size": 644,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_MENU_127_2052.bin",
+      "name": "RT_MENU_127_2052.bin",
+      "size": 12,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3841_2052.bin",
+      "name": "RT_STRING_3841_2052.bin",
+      "size": 80,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3842_2052.bin",
+      "name": "RT_STRING_3842_2052.bin",
+      "size": 44,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3843_2052.bin",
+      "name": "RT_STRING_3843_2052.bin",
+      "size": 120,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3857_2052.bin",
+      "name": "RT_STRING_3857_2052.bin",
+      "size": 452,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3858_2052.bin",
+      "name": "RT_STRING_3858_2052.bin",
+      "size": 298,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3859_2052.bin",
+      "name": "RT_STRING_3859_2052.bin",
+      "size": 326,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3865_2052.bin",
+      "name": "RT_STRING_3865_2052.bin",
+      "size": 64,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3866_2052.bin",
+      "name": "RT_STRING_3866_2052.bin",
+      "size": 100,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3867_2052.bin",
+      "name": "RT_STRING_3867_2052.bin",
+      "size": 472,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3868_2052.bin",
+      "name": "RT_STRING_3868_2052.bin",
+      "size": 276,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_STRING_3869_2052.bin",
+      "name": "RT_STRING_3869_2052.bin",
+      "size": 36,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\RT_VERSION_1_2052.bin",
+      "name": "RT_VERSION_1_2052.bin",
+      "size": 584,
+      "kind": "binary"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\TEXTINCLUDE_1_2052.bin",
+      "name": "TEXTINCLUDE_1_2052.bin",
+      "size": 11,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\TEXTINCLUDE_2_2052.bin",
+      "name": "TEXTINCLUDE_2_2052.bin",
+      "size": 22,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\TEXTINCLUDE_3_2052.bin",
+      "name": "TEXTINCLUDE_3_2052.bin",
+      "size": 337,
+      "kind": "text_or_dialog"
+    },
+    {
+      "file": "recovered\\playbook_recovery\\racing\\resources_raw\\WAVE_IEXT2_IDR_WAVE1_2052.bin",
+      "name": "WAVE_IEXT2_IDR_WAVE1_2052.bin",
+      "size": 5192,
+      "kind": "wav"
+    }
+  ]
+}

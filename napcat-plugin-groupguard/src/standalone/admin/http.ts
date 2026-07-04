@@ -1,5 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 
+export function sendBuffer(res: ServerResponse, status: number, body: Buffer, contentType = 'application/octet-stream'): void {
+  res.writeHead(status, {
+    'content-type': contentType,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff'
+  });
+  res.end(body);
+}
+
 export function send(res: ServerResponse, status: number, body: string, contentType = 'text/plain; charset=utf-8'): void {
   res.writeHead(status, {
     'content-type': contentType,
