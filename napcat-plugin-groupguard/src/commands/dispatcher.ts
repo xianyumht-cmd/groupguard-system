@@ -9,6 +9,8 @@ import { getDynamicCommandRegistrySnapshotVersion, refreshDynamicCommandRegistry
 import { executeDynamicCommand, getDynamicCommandMetric, initializeDynamicCommandMetrics } from '../dynamic-commands/command_engine';
 import { runWithDispatcherExecutionScope } from '../dynamic-commands/execution_guard';
 import { runBeforeMatchHooks } from '../dynamic-commands/command_plugin_interface';
+import { communicationStateService } from '../core/state-services/communication_state_service';
+import { checkAndConsumeQueryRate } from '../services/query_rate_limit_service';
 import type { DynamicCommandMatchResult } from '../dynamic-commands/types';
 
 // All command resolution must happen in dispatcher only. No exceptions.
@@ -193,6 +195,30 @@ function getCandidateContextScore(candidate: CommandCandidate, event: OB11Messag
   return score;
 }
 
+function shouldApplyQueryRateLimit(candidate: CommandCandidate): boolean {
+  const command = candidate.match.command;
+  const featureType = String(command.featureType || '');
+  const featureKey = String(command.featureKey || '');
+  const providerType = String((command.provider as any)?.type || '');
+  return featureType === 'query' || featureKey.startsWith('query.') || providerType === 'http';
+}
+
+async function notifyRateLimited(event: OB11Message, reason: string): Promise<void> {
+  if (event.message_type === 'private') {
+    await communicationStateService.sendPrivateMsg(String(event.user_id || ''), reason, {
+      scene: 'external_query',
+      force: true,
+      applyTemplate: true
+    });
+    return;
+  }
+  await communicationStateService.sendGroupText(String(event.group_id || ''), reason, {
+    scene: 'external_query',
+    force: true,
+    applyTemplate: true
+  });
+}
+
 export class CommandDispatcher {
   async handle(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
     await syncDynamicCommands();
@@ -258,6 +284,15 @@ export class CommandDispatcher {
     };
 
     try {
+      if (shouldApplyQueryRateLimit(selectedCandidate)) {
+        const groupId = event.message_type === 'private' ? '' : String(event.group_id || '');
+        const label = selectedCandidate.match.command.trigger.value || '查询';
+        const rateCheck = checkAndConsumeQueryRate(groupId, label);
+        if (!rateCheck.ok) {
+          await notifyRateLimited(event, rateCheck.reason);
+          return true;
+        }
+      }
       const handled = await runWithDispatcherExecutionScope({
         commandId: selectedCandidate.commandId,
         rawText: preprocessed.rawText

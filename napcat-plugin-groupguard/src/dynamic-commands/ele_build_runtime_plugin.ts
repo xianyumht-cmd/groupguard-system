@@ -6,6 +6,8 @@ import {
   maskEleCardKey,
   normalizeEleCardKey
 } from '../services/ele_build_service';
+import { configStateService } from '../core/state-services/config_state_service';
+import { checkAndConsumeQueryRate } from '../services/query_rate_limit_service';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
 import type { UnifiedCommandExecutionContext, UnifiedCommandNormalizedInput } from './types';
@@ -182,6 +184,17 @@ function createEleBuildPlugin(triggerValue: string): CommandPlugin {
     defaultConfig: {},
     validate: async () => null,
     execute: async (input: UnifiedCommandNormalizedInput, executionContext: UnifiedCommandExecutionContext) => {
+      const config = configStateService.getConfig() as any;
+      if (config?.queryCommandProfiles?.ele_build?.enabled === false) {
+        return {
+          ok: true,
+          response: {
+            type: 'text',
+            text: 'ELE下载功能已关闭'
+          }
+        };
+      }
+
       const cardKey = normalizeEleCardKey(input.mappedParameters.cardKey || input.rawArgument || '');
       if (!cardKey) {
         return {
@@ -209,6 +222,17 @@ function createEleBuildPlugin(triggerValue: string): CommandPlugin {
           response: {
             type: 'text',
             text: '无法识别发送目标，请稍后再试'
+          }
+        };
+      }
+
+      const rateCheck = checkAndConsumeQueryRate(subscriber.channel === 'group' ? subscriber.targetId : '', 'ELE下载');
+      if (!rateCheck.ok) {
+        return {
+          ok: true,
+          response: {
+            type: 'text',
+            text: rateCheck.reason
           }
         };
       }

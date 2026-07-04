@@ -5,7 +5,7 @@ import type { SnowLumaAdminServerOptions } from './types';
 
 const MAX_BODY_PREVIEW = 12000;
 
-type QueryType = 'lol_ban' | 'lol_battle' | 'lol_hidden' | 'lol_shard' | 'scammer' | 'peer' | 'video' | 'custom';
+type QueryType = 'lol_ban' | 'lol_battle' | 'lol_hidden' | 'lol_shard' | 'scammer' | 'peer' | 'video' | 'ele_build' | 'custom';
 
 type QueryCommandProfile = {
   outputFormat?: string;
@@ -21,7 +21,8 @@ const QUERY_TYPES: Array<{ type: QueryType; name: string; trigger: string; featu
   { type: 'lol_shard', name: '查合集', trigger: '查合集', featureKey: 'query.lol_shard', dataSource: 'remote-json' },
   { type: 'scammer', name: '骗子查询', trigger: '查骗子', featureKey: 'query.scammer', dataSource: 'external' },
   { type: 'peer', name: '同行查询', trigger: '查同行', featureKey: 'query.peer', dataSource: 'local-db' },
-  { type: 'video', name: '视频接口', trigger: '查视频/视频', featureKey: 'query.video', dataSource: 'external' }
+  { type: 'video', name: '视频接口', trigger: '查视频/视频', featureKey: 'query.video', dataSource: 'external' },
+  { type: 'ele_build', name: 'ELE下载', trigger: 'ELE下载', featureKey: 'dynamic.ele_build', dataSource: 'external' }
 ];
 
 function getConfigAny(): any {
@@ -55,7 +56,7 @@ function getProfile(config: any, type: QueryType): QueryCommandProfile {
 
 function defaultOutputFor(config: any, global: any, type: QueryType): string {
   if (type === 'lol_shard') return config.shardQueryOutputFormat || 'image';
-  if (type === 'lol_ban' || type === 'scammer' || type === 'peer' || type === 'video') return 'text';
+  if (type === 'lol_ban' || type === 'scammer' || type === 'peer' || type === 'video' || type === 'ele_build') return 'text';
   return global.lolQueryOutputFormat || 'forward';
 }
 
@@ -78,6 +79,7 @@ function rowUrl(config: any, type: QueryType): string {
     const templates = config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? config.videoApiTemplates : {};
     return Object.values(templates)[0] ? String(Object.values(templates)[0]) : '';
   }
+  if (type === 'ele_build') return config.eleBuildApiBaseUrl || '';
   return '';
 }
 
@@ -94,6 +96,7 @@ function isQueryEnabled(config: any, global: any, type: QueryType): boolean {
   if (type === 'scammer') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.scammer');
   if (type === 'peer') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.peer');
   if (type === 'video') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.video');
+  if (type === 'ele_build') return global.masterEnabled !== false && global.queryEnabled !== false && global.dynamicCommandEnabled !== false && profile.enabled !== false;
   return false;
 }
 
@@ -128,6 +131,7 @@ function validateConfig(config: any): { warnings: string[]; errors: string[]; } 
   warnings.push(...validateUrlValue('战绩查询 URL', config.lolQueryUrl, false));
   warnings.push(...validateUrlValue('合集数据 URL', config.shardDataUrl, true));
   warnings.push(...validateUrlValue('英雄列表 URL', config.shardHeroListUrl, false));
+  warnings.push(...validateUrlValue('ELE API Base', config.eleBuildApiBaseUrl, false));
   warnings.push(...validateUrlValue('骗子举报 URL', config.scammerReportUrl, false));
   const scammerUrls = Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls : [];
   scammerUrls.forEach((url: string, index: number) => warnings.push(...validateUrlValue(`骗子查询 URL #${index + 1}`, url, false)));
@@ -179,6 +183,7 @@ export function getQueryOverview() {
       groupMinIntervalSeconds: global.lolQueryGroupMinIntervalSeconds || 2,
       globalRateLimitPerMinute: global.lolQueryGlobalRateLimitPerMinute || 120,
       groupRateLimitPerMinute: global.lolQueryGroupRateLimitPerMinute || 20,
+      groupDailyLimit: global.lolQueryDailyLimit || 200,
       defaultOutputFormat: global.lolQueryOutputFormat || 'forward',
       wrapperEnabled: global.botSendWrapperEnabled === true,
       wrapperQueryEnabled: global.botSendWrapperQueryEnabled === true,
@@ -192,6 +197,7 @@ export function getQueryOverview() {
       lolAuthKey: maskSecret(config.lolAuthKey),
       lolBanPrimaryUrl: config.lolBanPrimaryUrl || '',
       lolBanBackupUrls: config.lolBanBackupUrls || [],
+      eleBuildApiBaseUrl: config.eleBuildApiBaseUrl || '',
       shardDataUrl: config.shardDataUrl || '',
       shardHeroListUrl: config.shardHeroListUrl || '',
       shardImageUrlTemplate: config.shardImageUrlTemplate || '',
@@ -281,6 +287,10 @@ function buildTestUrl(type: QueryType, param: string, payload: any): string {
     const template = String(payload?.url || templates[templateKey] || '');
     if (!template) throw new Error('未配置 videoApiTemplates，也未填写测试 URL');
     return replaceTemplate(template, param, payload || {});
+  }
+  if (type === 'ele_build') {
+    const base = String(payload?.url || config.eleBuildApiBaseUrl || 'http://www.ele00001.cc.cd/api').replace(/\/+$/, '');
+    return `${base}/build/active/${encodeURIComponent(param)}`;
   }
   throw new Error(`未知查询类型: ${type}`);
 }

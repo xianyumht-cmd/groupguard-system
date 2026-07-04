@@ -12,6 +12,7 @@ import type { CommandExecutionContext } from './command_service_types';
 import { executeManualPolicyAction } from '../risk/policy_engine';
 import { enqueueMiscAction } from './action_queue_service';
 import { queryInvitedBy, queryInviterOf, resetInviteRelationData } from './invite_service';
+import { checkAndConsumeQueryRate } from './query_rate_limit_service';
 import { storageAdapter } from '../storage_adapter';
 import type { ContactIdentifierType, ContactRiskCategory, ContactRiskRecord, ScammerRecord } from '../types';
 
@@ -204,11 +205,6 @@ interface CrossPrettyData {
 
 type LolCommandKey = 'battleQuery' | 'banQuery' | 'hiddenQuery';
 
-interface RateCounterBucket {
-  windowStart: number;
-  count: number;
-}
-
 const BAN_UNAVAILABLE_PATTERNS = [
   /额度|上限|次数|限制|限流|频繁|拥挤|繁忙|维护|异常|失败|超时|重试|稍后|暂停|通道|风控|waf|拦截|拒绝/i,
   /会员|付费|到期|过期|充值/i
@@ -334,28 +330,11 @@ function parseLolQueryInput(input: string): { ok: true; playerId: string; region
   return { ok: true, playerId: idParsed.playerId, region: region || '' };
 }
 
-const LOL_RATE_WINDOW_MS = 60_000;
-const lolGlobalRateBucket: RateCounterBucket = { windowStart: 0, count: 0 };
-const lolGroupRateBuckets = new Map<string, RateCounterBucket>();
-let lolGlobalLastQueryAt = 0;
-const lolGroupLastQueryAt = new Map<string, number>();
-const lolGroupDailyBuckets = new Map<string, { day: string; count: number }>();
-const banQueryGroupRateBuckets = new Map<string, RateCounterBucket>();
-const banQueryUserLastAt = new Map<string, number>();
-const LOL_RATE_MAP_LIMIT = 500;
-
 function toOnOff(value: string): boolean | null {
   const raw = value.trim();
   if (['开', '开启', 'on', 'true', '1'].includes(raw)) return true;
   if (['关', '关闭', 'off', 'false', '0'].includes(raw)) return false;
   return null;
-}
-
-function normalizePositiveInt(value: number, fallback: number, max: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  const n = Math.floor(value);
-  if (n < 1) return fallback;
-  return Math.min(n, max);
 }
 
 function getLolCommandSwitch(groupId: string): Record<LolCommandKey, boolean> {
@@ -366,100 +345,6 @@ function getLolCommandSwitch(groupId: string): Record<LolCommandKey, boolean> {
     banQuery: (data as any).banQuery !== false,
     hiddenQuery: (data as any).hiddenQuery !== false
   };
-}
-
-function ensureRateWindow(bucket: RateCounterBucket, now: number): void {
-  if (!bucket.windowStart || now - bucket.windowStart >= LOL_RATE_WINDOW_MS) {
-    bucket.windowStart = now;
-    bucket.count = 0;
-  }
-}
-
-function checkAndConsumeLolRate(groupId: string): { ok: true } | { ok: false; reason: string } {
-  const settings = getGroupSettings(groupId);
-  if (settings.disableLolQuery) return { ok: false, reason: '本群战绩查询功能已关闭' };
-  const globalLimit = normalizePositiveInt(Number(settings.lolQueryGlobalRateLimitPerMinute), 120, 5000);
-  const groupLimit = normalizePositiveInt(Number(settings.lolQueryGroupRateLimitPerMinute), 20, 1000);
-  const globalMinIntervalSec = Math.max(0, Math.floor(Number(settings.lolQueryGlobalMinIntervalSeconds ?? 1)));
-  const groupMinIntervalSec = Math.max(0, Math.floor(Number(settings.lolQueryGroupMinIntervalSeconds ?? 2)));
-  const groupDailyLimit = normalizePositiveInt(Number(settings.lolQueryDailyLimit), 200, 100000);
-  const now = Date.now();
-  const dayKey = new Date(now).toISOString().slice(0, 10);
-  ensureRateWindow(lolGlobalRateBucket, now);
-  let groupBucket = lolGroupRateBuckets.get(groupId);
-  if (!groupBucket) {
-    groupBucket = { windowStart: now, count: 0 };
-    lolGroupRateBuckets.set(groupId, groupBucket);
-  }
-  ensureRateWindow(groupBucket, now);
-  if (lolGlobalRateBucket.count >= globalLimit) {
-    return { ok: false, reason: `战绩查询过于频繁（全局每分钟上限 ${globalLimit} 次）` };
-  }
-  if (groupBucket.count >= groupLimit) {
-    return { ok: false, reason: `战绩查询过于频繁（本群每分钟上限 ${groupLimit} 次）` };
-  }
-  const dailyBucketRaw = lolGroupDailyBuckets.get(groupId);
-  const dailyBucket = (!dailyBucketRaw || dailyBucketRaw.day !== dayKey) ? { day: dayKey, count: 0 } : dailyBucketRaw;
-  if (dailyBucket.count >= groupDailyLimit) {
-    return { ok: false, reason: `战绩查询已达本群当日上限（${groupDailyLimit} 次）` };
-  }
-  if (globalMinIntervalSec > 0 && lolGlobalLastQueryAt > 0 && now - lolGlobalLastQueryAt < globalMinIntervalSec * 1000) {
-    return { ok: false, reason: `战绩查询过于频繁（全局最小间隔 ${globalMinIntervalSec} 秒）` };
-  }
-  const groupLastAt = lolGroupLastQueryAt.get(groupId) || 0;
-  if (groupMinIntervalSec > 0 && groupLastAt > 0 && now - groupLastAt < groupMinIntervalSec * 1000) {
-    return { ok: false, reason: `战绩查询过于频繁（本群最小间隔 ${groupMinIntervalSec} 秒）` };
-  }
-  lolGlobalRateBucket.count += 1;
-  groupBucket.count += 1;
-  dailyBucket.count += 1;
-  lolGroupDailyBuckets.set(groupId, dailyBucket);
-  lolGlobalLastQueryAt = now;
-  lolGroupLastQueryAt.set(groupId, now);
-  if (lolGroupRateBuckets.size > LOL_RATE_MAP_LIMIT) {
-    const keys = Array.from(lolGroupRateBuckets.keys());
-    for (let i = 0; i < keys.length - LOL_RATE_MAP_LIMIT; i += 1) {
-      const staleKey = keys[i];
-      lolGroupRateBuckets.delete(staleKey);
-      lolGroupLastQueryAt.delete(staleKey);
-      lolGroupDailyBuckets.delete(staleKey);
-    }
-  }
-  return { ok: true };
-}
-
-function checkAndConsumeBanQueryRisk(groupId: string, userId: string): { ok: true } | { ok: false; reason: string } {
-  const settings = getGroupSettings(groupId);
-  const groupLimit = normalizePositiveInt(Number(settings.banQueryGroupRateLimitPerMinute), 6, 1000);
-  const userCooldownSec = Math.max(0, Math.floor(Number(settings.banQueryUserCooldownSeconds ?? 10)));
-  const now = Date.now();
-  let groupBucket = banQueryGroupRateBuckets.get(groupId);
-  if (!groupBucket) {
-    groupBucket = { windowStart: now, count: 0 };
-    banQueryGroupRateBuckets.set(groupId, groupBucket);
-  }
-  ensureRateWindow(groupBucket, now);
-  if (groupBucket.count >= groupLimit) {
-    return { ok: false, reason: `查封号过于频繁，本群每分钟上限 ${groupLimit} 次。` };
-  }
-  const userKey = `${groupId}:${userId}`;
-  const lastAt = banQueryUserLastAt.get(userKey) || 0;
-  if (userCooldownSec > 0 && lastAt > 0 && now - lastAt < userCooldownSec * 1000) {
-    return { ok: false, reason: `查封号冷却中，请 ${Math.ceil((userCooldownSec * 1000 - (now - lastAt)) / 1000)} 秒后再试。` };
-  }
-  groupBucket.count += 1;
-  banQueryUserLastAt.set(userKey, now);
-  if (banQueryGroupRateBuckets.size > LOL_RATE_MAP_LIMIT) {
-    for (const key of Array.from(banQueryGroupRateBuckets.keys()).slice(0, banQueryGroupRateBuckets.size - LOL_RATE_MAP_LIMIT)) {
-      banQueryGroupRateBuckets.delete(key);
-    }
-  }
-  if (banQueryUserLastAt.size > LOL_RATE_MAP_LIMIT * 2) {
-    for (const key of Array.from(banQueryUserLastAt.keys()).slice(0, banQueryUserLastAt.size - LOL_RATE_MAP_LIMIT * 2)) {
-      banQueryUserLastAt.delete(key);
-    }
-  }
-  return { ok: true };
 }
 
 function ensureGroupSettings(groupId: string): any {
@@ -1622,9 +1507,9 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       return true;
     }
     const identifier = parsed.identifier;
-    const guard = checkRiskQueryGuard(groupId, userId, queryDef.category, identifier);
-    if (!guard.ok) {
-      await sendGroupScene(groupId, 'invalid_range', guard.reason || '风险查询过于频繁，请稍后再试。');
+    const rateCheck = checkAndConsumeQueryRate(groupId, queryDef.command);
+    if (!rateCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
       return true;
     }
     let local = storageAdapter.getContactRiskRecord(queryDef.category, identifier.type, identifier.value);
@@ -1807,14 +1692,9 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查封号指令');
       return true;
     }
-    const rateCheck = checkAndConsumeLolRate(groupId);
+    const rateCheck = checkAndConsumeQueryRate(groupId, '查封号');
     if (!rateCheck.ok) {
       await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
-      return true;
-    }
-    const banRiskCheck = checkAndConsumeBanQueryRisk(groupId, userId);
-    if (!banRiskCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', banRiskCheck.reason);
       return true;
     }
     const rest = text.slice(3).trim();
@@ -1870,7 +1750,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查战绩指令');
       return true;
     }
-    const rateCheck = checkAndConsumeLolRate(groupId);
+    const rateCheck = checkAndConsumeQueryRate(groupId, '查战绩');
     if (!rateCheck.ok) {
       await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
       return true;
@@ -1915,7 +1795,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'command_format_error', '请输入：查合集 亚索', { example: '查合集 亚索' });
       return true;
     }
-    const rateCheck = checkAndConsumeLolRate(groupId);
+    const rateCheck = checkAndConsumeQueryRate(groupId, '查合集');
     if (!rateCheck.ok) {
       await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
       return true;
@@ -1972,7 +1852,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'command_format_error', '请输入：海符榜 亚索', { example: '海符榜 亚索' });
       return true;
     }
-    const rateCheck = checkAndConsumeLolRate(groupId);
+    const rateCheck = checkAndConsumeQueryRate(groupId, '海符榜');
     if (!rateCheck.ok) {
       await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
       return true;
@@ -2297,6 +2177,11 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   }
   if (text.startsWith('我要看')) {
     if (!await allowGroupFeature(input, 'query.video', '本群视频查询功能已关闭')) return true;
+    const rateCheck = checkAndConsumeQueryRate(groupId, '视频接口');
+    if (!rateCheck.ok) {
+      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      return true;
+    }
     const category = text.replace('我要看', '').trim() || '热门';
     const template = pickVideoApiByCategory(category);
     if (!template) {
@@ -2363,7 +2248,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查隐藏指令');
       return true;
     }
-    const rateCheck = checkAndConsumeLolRate(groupId);
+    const rateCheck = checkAndConsumeQueryRate(groupId, '查隐藏');
     if (!rateCheck.ok) {
       await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
       return true;
