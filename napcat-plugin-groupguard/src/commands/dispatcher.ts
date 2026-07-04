@@ -22,6 +22,18 @@ const MAX_USERS_TRACKED = 1000;
 const MAX_COMMANDS_PER_USER = 50;
 const RATE_LIMIT_NOTICE_COOLDOWN_MS = 15_000;
 const RATE_LIMIT_NOTICE_MAP_LIMIT = 500;
+const EXTERNAL_QUERY_TRIGGER_PREFIXES = [
+  '查封号',
+  '查战绩',
+  '查隐藏',
+  '查合集',
+  '海符榜',
+  '我要看',
+  '查骗子',
+  '举报骗子',
+  '查同行',
+  '举报同行'
+];
 
 export interface CommandContext {
   rawText: string;
@@ -198,12 +210,16 @@ function getCandidateContextScore(candidate: CommandCandidate, event: OB11Messag
   return score;
 }
 
+function isExternalQueryTrigger(value: string): boolean {
+  const text = String(value || '').trim();
+  return EXTERNAL_QUERY_TRIGGER_PREFIXES.some((prefix) => text.startsWith(prefix));
+}
+
 function shouldApplyQueryRateLimit(candidate: CommandCandidate): boolean {
   const command = candidate.match.command;
-  const featureType = String(command.featureType || '');
   const featureKey = String(command.featureKey || '');
   const providerType = String((command.provider as any)?.type || '');
-  return featureType === 'query' || featureKey.startsWith('query.') || providerType === 'http';
+  return featureKey.startsWith('query.') || providerType === 'http' || isExternalQueryTrigger(command.trigger.value);
 }
 
 function trimRateLimitNoticeMap(): void {
