@@ -28,6 +28,23 @@ function sha1(filePath) {
   return crypto.createHash('sha1').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+function isTextResource(filePath) {
+  return ['.json', '.md', '.txt'].includes(path.extname(filePath).toLowerCase());
+}
+
+function normalizedTextBytes(filePath) {
+  return fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+}
+
+function filesEquivalent(left, right) {
+  if (!exists(left) || !exists(right)) return false;
+  if (sha1(left) === sha1(right)) return true;
+  if (isTextResource(left) && isTextResource(right)) {
+    return normalizedTextBytes(left) === normalizedTextBytes(right);
+  }
+  return false;
+}
+
 function normalize(relativePath) {
   return relativePath.replace(/\\/g, '/');
 }
@@ -107,9 +124,7 @@ function verifySourceCoverage(requiredRows) {
       errors.push(`missing resource: ${row.resourcePath}`);
       continue;
     }
-    const sourceHash = sha1(row.sourceFile);
-    const destinationHash = sha1(destination);
-    if (sourceHash !== destinationHash) {
+    if (!filesEquivalent(row.sourceFile, destination)) {
       errors.push(`hash mismatch: ${row.resourcePath}`);
     }
   }
@@ -139,7 +154,7 @@ function verifyManifest() {
       const resourceFile = path.join(resourceRoot, entry.path);
       if (!exists(sourceFile)) {
         errors.push(`manifest sourcePath missing file: ${entry.path} -> ${entry.sourcePath}`);
-      } else if (entry.sourceRelation !== 'converted' && exists(resourceFile) && sha1(sourceFile) !== sha1(resourceFile)) {
+      } else if (entry.sourceRelation !== 'converted' && exists(resourceFile) && !filesEquivalent(sourceFile, resourceFile)) {
         errors.push(`manifest sourcePath hash mismatch: ${entry.path} -> ${entry.sourcePath}`);
       }
     }

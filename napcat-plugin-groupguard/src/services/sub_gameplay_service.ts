@@ -2,7 +2,7 @@ import { configStateService } from '../core/state-services/config_state_service'
 import { storageAdapter } from '../storage_adapter';
 import type { SubGameplaySettings } from '../types';
 import type { UnifiedCommandNormalizedInput } from '../dynamic-commands/types';
-import { getLightEntertainmentImage, getModuleRepresentativeImage, toLocalFileUrl } from './sub_gameplay_resources';
+import { getLightEntertainmentImage, getModuleRepresentativeImage, toOneBotImageSource } from './sub_gameplay_resources';
 
 type SubModule = 'master_servant' | 'racing' | 'light';
 type MasterRank = 'gold' | 'value' | 'level';
@@ -126,7 +126,9 @@ function withLightImages(settings: SubGameplaySettings, text: string, keys: Ligh
   const imageSegments = keys
     .map(key => getLightEntertainmentImage(key))
     .filter((filePath): filePath is string => !!filePath)
-    .map(filePath => ({ type: 'image', data: { file: toLocalFileUrl(filePath) } }));
+    .map(filePath => toOneBotImageSource(filePath))
+    .filter((source): source is string => !!source)
+    .map(source => ({ type: 'image', data: { file: source } }));
   if (!imageSegments.length) return text;
   return {
     text,
@@ -141,11 +143,13 @@ function withModuleRepresentativeImage(settings: SubGameplaySettings, module: Su
   if (settings.resourceMode !== 'all') return text;
   const filePath = getModuleRepresentativeImage(module);
   if (!filePath) return text;
+  const source = toOneBotImageSource(filePath);
+  if (!source) return text;
   return {
     text,
     segments: [
       { type: 'text', data: { text: `${text}\n` } },
-      { type: 'image', data: { file: toLocalFileUrl(filePath) } }
+      { type: 'image', data: { file: source } }
     ]
   };
 }

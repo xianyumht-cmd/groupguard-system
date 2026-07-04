@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-04T04:48:21.592Z",
+  "generatedAt": "2026-07-04T05:10:26.622Z",
   "sourceRoot": "D:/project2/unpackage/recovered",
   "modules": [
     "core",
@@ -3638,9 +3638,9 @@
       "semanticKey": "",
       "sourcePath": "D:/project2/unpackage/recovered/deep_dive/resources/RESOURCE_RECOVERY_NOTES.md",
       "sourceRelation": "direct",
-      "size": 2330,
+      "size": 2376,
       "extension": ".md",
-      "sha1": "9447e59d4a146b1958e08c907d581a650d3be9c0"
+      "sha1": "bc6153fdfe941cb24c1f3418cce4b0c3e1db7eb6"
     },
     {
       "resourceId": "sub.shared.root.resource_text_pack_no_auth_md",
@@ -3652,9 +3652,9 @@
       "semanticKey": "",
       "sourcePath": "D:/project2/unpackage/recovered/snowluma_ready/resource_text_pack.no_auth.md",
       "sourceRelation": "direct",
-      "size": 6926,
+      "size": 7186,
       "extension": ".md",
-      "sha1": "a4e116d66fd36c735470087715d358b05289b92e"
+      "sha1": "4c3c6658717d6bf43e77e4ea4917009706a635bd"
     },
     {
       "resourceId": "sub.light_entertainment.dice_1",

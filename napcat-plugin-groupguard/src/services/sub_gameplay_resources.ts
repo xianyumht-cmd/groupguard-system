@@ -227,3 +227,11 @@ export function verifySubGameplayResourceIntegrity(): {
 export function toLocalFileUrl(filePath: string): string {
   return `file:///${path.resolve(filePath).replace(/\\/g, '/')}`;
 }
+
+export function toOneBotImageSource(filePath: string): string | null {
+  try {
+    return `base64://${fs.readFileSync(filePath).toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
