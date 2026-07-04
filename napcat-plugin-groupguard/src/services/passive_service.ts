@@ -1,4 +1,5 @@
 ﻿import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardSettings, QAEntry } from '../types';
 import { isQueryOnlyBotRole, shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { cacheStateService } from '../core/state-services/cache_state_service';
@@ -14,6 +15,7 @@ import { processRiskSignal } from '../risk/policy_engine';
 import { countUrlsInText } from './outgoing_risk_packager';
 import { enqueueMiscAction } from './action_queue_service';
 import { handleContentRiskFilter, recordContentRiskAudit } from './content_risk_service';
+import { storageAdapter } from '../storage_adapter';
 
 const antiRecallDigest = new Map<string, Map<string, { count: number; lastUserId: string; }>>();
 let antiRecallDigestTimerReady = false;
@@ -25,6 +27,40 @@ let activityFlushTimerReady = false;
 let activityFlushTimer: NodeJS.Timeout | null = null;
 const MAX_ACTIVITY_MEM = 2000;
 const ACTIVITY_TTL_MS = 24 * 60 * 60 * 1000;
+
+function loadStoredGroupSettings(groupId: string): GroupGuardSettings | null {
+  try {
+    const stored = storageAdapter.loadAllGroupConfigs()[groupId];
+    return stored || null;
+  } catch (error) {
+    loggingStateService.debug(`问答读取分群存储失败: group=${groupId} error=${String(error)}`);
+    return null;
+  }
+}
+
+function resolveQaRuntime(
+  groupId: string,
+  config: ReturnType<typeof configStateService.getConfig>,
+  settings: GroupGuardSettings
+): { settings: GroupGuardSettings; qaList: QAEntry[]; source: string } {
+  const configuredGroup = config.groups[groupId];
+  if (configuredGroup && !configuredGroup.useGlobal) {
+    return { settings, qaList: settings.qaList || [], source: 'runtime_group' };
+  }
+
+  if (!configuredGroup) {
+    const stored = loadStoredGroupSettings(groupId);
+    if (stored && stored.useGlobal === false) {
+      return {
+        settings: { ...settings, ...stored },
+        qaList: Array.isArray(stored.qaList) ? stored.qaList : [],
+        source: 'stored_group'
+      };
+    }
+  }
+
+  return { settings, qaList: config.qaList || [], source: 'global' };
+}
 
 function blockPassiveByRole(source: string, rawMessage: string, intent: BotRoleIntent): boolean {
   const block = shouldBlockByBotRole({ source, rawMessage, intent, featureType: intent === 'qa_like' ? 'qa' : 'passive' });
@@ -376,11 +412,11 @@ export async function executeHandleSpamDetect(groupId: string, userId: string, r
 }
 
 export async function executeHandleQA(groupId: string, userId: string, raw: string): Promise<boolean> {
-  const settings = configStateService.resolveGroupSettings(groupId);
-  if (settings.disableQA) return false;
   const config = configStateService.getConfig();
-  const isGroupCustom = config.groups[groupId] && !config.groups[groupId].useGlobal;
-  const qaList = isGroupCustom ? (settings.qaList || []) : (config.qaList || []);
+  const runtime = resolveQaRuntime(groupId, config, configStateService.resolveGroupSettings(groupId));
+  const settings = runtime.settings;
+  if (settings.disableQA) return false;
+  const qaList = runtime.qaList;
   if (!qaList.length) return false;
 
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
@@ -474,7 +510,7 @@ export async function executeHandleQA(groupId: string, userId: string, raw: stri
     if (finalReply.includes('[CQ:')) await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [{ type: 'text', data: { text: finalReply } }], force: false, applyTemplate: true, skipProbability: true });
     else await send({ channel: 'group', targetId: groupId, scene: 'raw_text', message: finalReply, force: false, applyTemplate: true, skipProbability: true });
     
-    loggingStateService.debug(`闂瓟瑙﹀彂: 缇?${groupId} 鐢ㄦ埛 ${userId} 鍖归厤 [${qa.mode}]${qa.keyword}`);
+    loggingStateService.debug(`问答触发: 群 ${groupId} 用户 ${userId} 来源 ${runtime.source} 匹配 [${qa.mode}]${qa.keyword}`);
     return true;
   }
   return false;
