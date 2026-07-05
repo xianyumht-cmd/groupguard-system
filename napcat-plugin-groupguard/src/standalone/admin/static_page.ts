@@ -29,6 +29,12 @@ label{display:block;margin-bottom:10px}
 label span{display:block;font-size:13px;color:#9ca3af;margin-bottom:5px}
 .switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#0f172a;border:1px solid #263349;border-radius:10px;padding:10px}
 .switch-row input{width:auto}
+.switch-row .switch-copy{flex:1}
+.switch-row .switch-title{display:block;color:#dbeafe;font-size:13px;margin-bottom:3px}
+.switch-row .switch-path{display:block;color:#64748b;font-size:11px;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+.field-title{display:block;color:#dbeafe;font-size:13px;margin-bottom:3px}
+.field-path{display:block;color:#64748b;font-size:11px;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+.field-desc{display:block;color:#94a3b8;font-size:12px;margin-top:3px}
 .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .tab,.tablink{background:#1f2937}
 .tab.active{background:#2563eb}
@@ -87,6 +93,7 @@ th{color:#93c5fd;background:#111827}
 
   <section id="tab-switches" class="card hidden">
     <h2>全局开关</h2>
+    <p class="hint">这里是日常使用入口。页面显示为正向中文开关；保存时仍写入现有配置字段，例如“签到功能开启”会保存为 disableSignin=false。</p>
     <div id="switchForm" class="grid"></div>
     <button data-save-form="switchForm">保存全局开关</button>
   </section>
@@ -187,8 +194,8 @@ th{color:#93c5fd;background:#111827}
 
   <section id="tab-advanced" class="card hidden">
     <h2>全量配置面板</h2>
-    <p class="hint">这里会把当前 config.json 的所有字段展平成表单。布尔值用勾选框，数字用数字框，数组和对象用 JSON 文本框。</p>
-    <div class="row"><label><span>筛选字段</span><input id="advancedFilter" placeholder="例如 selfRecall、replyProbability、contentRisk"></label></div>
+    <p class="hint">这里保留全部 config.json 字段，但显示为中文名称、英文路径和说明。搜索支持中文名、英文路径和说明。</p>
+    <div class="row"><label><span>筛选字段</span><input id="advancedFilter" placeholder="例如 战绩、签到、selfRecall、contentRisk"></label></div>
     <div id="advancedForm" class="grid"></div>
     <button data-save-form="advancedForm">保存全量配置面板</button>
   </section>
@@ -226,6 +233,95 @@ var actionOptions = [
   ['recall_kick','撤回并踢出'],
   ['recall_blacklist','撤回并拉黑']
 ];
+var selectOptionsByKey = {
+  'global.silentMode': [['off','关闭'],['noPassiveReply','不被动回复'],['noBotSend','不由机器人发送']],
+  'silentMode': [['off','关闭'],['noPassiveReply','不被动回复'],['noBotSend','不由机器人发送']],
+  'global.lolQueryOutputFormat': [['forward','合并转发'],['text','文本'],['image','图片'],['card','卡片']],
+  'lolQueryOutputFormat': [['forward','合并转发'],['text','文本'],['image','图片'],['card','卡片']],
+  'shardQueryOutputFormat': [['image','图片'],['text','文本'],['forward','合并转发']],
+  'global.banQueryResultMode': [['short','短文本'],['image','图片优先'],['text','完整文本']],
+  'banQueryResultMode': [['short','短文本'],['image','图片优先'],['text','完整文本']],
+  'global.queueMode': [['group','分群队列'],['global','全局队列']],
+  'global.botAntiRiskSuffixMode': [['mixed','混合'],['punctuation','标点'],['none','关闭'],['global','跟随全局']],
+  'global.botAntiRiskLimitFallbackMode': [['drop','丢弃'],['forward','合并转发']],
+  'global.outgoingRisk.urlMode': [['off','关闭'],['number','编号化'],['mask','隐藏'],['drop','整条拦截']],
+  'global.riskPresetLevel': [['conservative','保守'],['balanced','平衡'],['aggressive','激进']],
+  'global.selfRecall.mode': [['fixed','固定延迟'],['random','随机延迟']],
+  'selfRecall.mode': [['fixed','固定延迟'],['random','随机延迟']],
+  'global.subGameplay.resourceMode': [['off','关闭'],['light','仅轻娱乐图片'],['all','全部资源可用']],
+  'subGameplay.resourceMode': [['off','关闭'],['light','仅轻娱乐图片'],['all','全部资源可用']]
+};
+var fieldMeta = {
+  licenseKey:['授权密钥','专业版/企业版授权密钥。','基础'],
+  ownerQQs:['主人QQ号','拥有最高权限的 QQ，多个用逗号分隔。','基础'],
+  debug:['调试模式','开启后输出更详细日志。','基础'],
+  'global.masterEnabled':['插件总开关','关闭后本插件主要功能停止响应。','基础总控'],
+  'global.silentMode':['静默模式','控制被动回复或机器人发送是否静默。','基础总控'],
+  'global.activeReplyEnabled':['主动发送','关闭后需要机器人发送的回复会被拦截。','基础总控'],
+  'global.queryEnabled':['查询总开关','控制查战绩、查封号、查骗子等查询类功能。','查询功能'],
+  'global.qaEnabled':['问答总开关','控制问答自动回复功能。','问答功能'],
+  'global.dynamicCommandEnabled':['动态命令','控制 commands.json 动态命令。','基础总控'],
+  'global.disableQA':['问答功能','开启表示允许问答；保存时写入 disableQA=false。','问答功能'],
+  'global.disableLolQuery':['LOL查询功能','开启表示允许旧 LOL 查询链路；保存时写入 disableLolQuery=false。','查询功能'],
+  'global.disableSignin':['签到功能','开启表示允许群员签到；保存时写入 disableSignin=false。','娱乐统计'],
+  'global.disableLottery':['抽奖功能','开启表示允许积分抽奖；保存时写入 disableLottery=false。','娱乐统计'],
+  'global.disableInvite':['邀请统计','开启表示记录和查询邀请统计；保存时写入 disableInvite=false。','娱乐统计'],
+  'global.disableActivity':['活跃统计','开启表示记录群员活跃度；保存时写入 disableActivity=false。','娱乐统计'],
+  'global.enableVerify':['入群验证','控制入群验证答案处理。','群管安全'],
+  'global.autoApprove':['自动同意入群','控制入群申请是否自动同意。','群管安全'],
+  'global.disableWelcome':['入群欢迎','开启表示发送入群欢迎；保存时写入 disableWelcome=false。','群管安全'],
+  'global.joinPrivateEnabled':['入群后私聊欢迎','新成员入群后私聊发送欢迎/提示。','群管安全'],
+  'global.spamDetect':['刷屏检测','控制同一用户短时间高频发言检测。','群管安全'],
+  'global.repeatThreshold':['复读检测阈值','连续重复消息达到该次数后触发处理，0 表示关闭。','群管安全'],
+  'global.blacklistCheckBeforeCommand':['黑名单前置检测','开启后先处理黑名单，再处理命令。','群管安全'],
+  'global.protectAdminActions':['保护管理员','开启后自动处罚尽量不作用于管理员。','群管安全'],
+  'global.protectOwnerActions':['保护群主','开启后自动处罚尽量不作用于群主。','群管安全'],
+  'global.allowRecallAdminMessage':['允许处理管理员消息','高风险项。开启后允许自动撤回/处理管理员消息。','高风险项'],
+  'global.allowRecallOwnerMessage':['允许处理群主消息','高风险项。开启后允许自动撤回/处理群主消息。','高风险项'],
+  globalAntiRecall:['防撤回通知','开启所有群的防撤回聚合通知。','娱乐统计'],
+  globalEmojiReact:['自动回应表情','开启所有群的自动表情回应。','娱乐统计'],
+  'global.featureSwitches.query.lol_ban':['查封号','控制查封号查询入口。','查询功能'],
+  'global.featureSwitches.query.lol_battle':['查战绩','控制查战绩查询入口。','查询功能'],
+  'global.featureSwitches.query.lol_hidden':['查隐藏','控制查隐藏查询入口。','查询功能'],
+  'global.featureSwitches.query.lol_shard':['查合集','控制查合集查询入口。','查询功能'],
+  'global.featureSwitches.query.scammer':['查骗子','控制骗子查询入口。','查询功能'],
+  'global.featureSwitches.query.peer':['查同行','控制同行查询入口。','查询功能'],
+  'global.featureSwitches.query.video':['视频接口','控制视频查询入口。','查询功能'],
+  'global.lolQueryCommandSwitch.battleQuery':['查战绩旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
+  'global.lolQueryCommandSwitch.banQuery':['查封号旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
+  'global.lolQueryCommandSwitch.hiddenQuery':['查隐藏旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
+  'global.replyProbability':['回复概率','机器人回复触发概率，0-100。','发送与风控'],
+  'global.randomDelayMin':['最小随机延迟','机器人发送前的最小随机延迟毫秒。','发送与风控'],
+  'global.randomDelayMax':['最大随机延迟','机器人发送前的最大随机延迟毫秒。','发送与风控'],
+  'global.lolQueryOutputFormat':['战绩输出格式','查战绩/查隐藏默认输出格式。','查询功能'],
+  shardQueryOutputFormat:['查合集输出格式','查合集默认输出格式。','查询功能'],
+  lolApiBaseUrl:['LOL API Base','本地 LOL 查询服务根地址。','接口地址'],
+  lolQueryUrl:['自定义战绩查询 URL','旧自定义战绩接口地址。','接口地址'],
+  lolAuthKey:['战绩授权 Key','旧自定义战绩接口授权码。','接口地址'],
+  lolBanPrimaryUrl:['查封号主接口','查封号主查询接口。','接口地址'],
+  eleBuildApiBaseUrl:['ELE API Base','ELE 构建/下载接口根地址。','接口地址'],
+  shardDataUrl:['合集数据 URL','英雄合集数据 JSON 地址。','接口地址'],
+  shardHeroListUrl:['英雄列表 URL','LOL 英雄列表数据地址。','接口地址'],
+  shardImageUrlTemplate:['合集图片模板','查合集图片输出接口模板。','接口地址'],
+  scammerReportUrl:['骗子举报接口','骗子举报提交接口。','接口地址'],
+  scammerQueryUrls:['骗子查询接口列表','骗子查询 URL 列表。','接口地址']
+};
+var invertBooleanKeys = {
+  'global.disableQA': true,
+  'global.disableLolQuery': true,
+  'global.disableSignin': true,
+  'global.disableLottery': true,
+  'global.disableInvite': true,
+  'global.disableActivity': true,
+  'global.disableWelcome': true,
+  disableQA: true,
+  disableLolQuery: true,
+  disableSignin: true,
+  disableLottery: true,
+  disableInvite: true,
+  disableActivity: true,
+  disableWelcome: true
+};
 function el(id){ return document.getElementById(id); }
 function show(msg, ok){ var n=el('notice'); n.className='card ' + (ok === false ? 'error' : 'ok'); n.textContent=String(msg || ''); }
 window.addEventListener('error', function(e){ show('页面脚本错误：' + e.message + ' @' + e.lineno + ':' + e.colno, false); });
@@ -260,103 +356,112 @@ function get(obj, p, fallback){
   return cur;
 }
 function esc(v){ return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
-function inputHtml(label,key,value,type,extra){ return '<label '+(extra&&extra.full?'class="full"':'')+'><span>'+label+'</span><input data-config-key="'+key+'" type="'+(type||'text')+'" value="'+esc(value)+'"></label>'; }
-function textareaHtml(label,key,value){ return '<label class="full"><span>'+label+'</span><textarea data-config-key="'+key+'">'+esc(JSON.stringify(value == null ? null : value,null,2))+'</textarea></label>'; }
-function selectHtml(label,key,value,opts){
-  var s='<label><span>'+label+'</span><select data-config-key="'+key+'">';
+function metaForKey(key){
+  if(fieldMeta[key]) return fieldMeta[key];
+  var parts=String(key).split('.');
+  var last=parts[parts.length-1] || key;
+  var group='其他';
+  if(key.indexOf('contentRisk')>=0) group='内容风险';
+  else if(key.indexOf('subGameplay')>=0) group='SUB玩法';
+  else if(key.indexOf('qa')>=0 || key.indexOf('QA')>=0) group='问答功能';
+  else if(key.indexOf('lol')>=0 || key.indexOf('Query')>=0 || key.indexOf('query')>=0 || key.indexOf('scammer')>=0 || key.indexOf('shard')>=0) group='查询功能';
+  else if(key.indexOf('selfRecall')>=0 || key.indexOf('Recall')>=0 || key.indexOf('risk')>=0 || key.indexOf('Risk')>=0 || key.indexOf('queue')>=0 || key.indexOf('Queue')>=0) group='发送与风控';
+  else if(key.indexOf('license')>=0 || key.indexOf('owner')>=0) group='基础';
+  return [last, '', group];
+}
+function labelHtml(title,key,desc){
+  return '<span class="field-title">'+esc(title)+'</span><span class="field-path">'+esc(key)+'</span>'+(desc?'<span class="field-desc">'+esc(desc)+'</span>':'');
+}
+function inputHtml(label,key,value,type,extra){
+  var title=label, desc='';
+  if(extra && extra.meta){ title=extra.meta[0]; desc=extra.meta[1]||''; }
+  return '<label '+(extra&&extra.full?'class="full"':'')+'><span>'+labelHtml(title,key,desc)+'</span><input data-config-key="'+esc(key)+'" type="'+(type||'text')+'" value="'+esc(value)+'"></label>';
+}
+function textareaHtml(label,key,value,extra){
+  var title=label, desc='';
+  if(extra && extra.meta){ title=extra.meta[0]; desc=extra.meta[1]||''; }
+  return '<label class="full"><span>'+labelHtml(title,key,desc)+'</span><textarea data-config-key="'+esc(key)+'">'+esc(JSON.stringify(value == null ? null : value,null,2))+'</textarea></label>';
+}
+function selectHtml(label,key,value,opts,extra){
+  var title=label, desc='';
+  if(extra && extra.meta){ title=extra.meta[0]; desc=extra.meta[1]||''; }
+  var s='<label><span>'+labelHtml(title,key,desc)+'</span><select data-config-key="'+esc(key)+'">';
   opts.forEach(function(o){ var valueText=Array.isArray(o)?o[0]:o; var labelText=Array.isArray(o)?o[1]:o; s+='<option value="'+esc(valueText)+'" '+(String(value)===String(valueText)?'selected':'')+'>'+esc(labelText)+'</option>'; });
   return s+'</select></label>';
 }
-function switchHtml(label,key,value){ return '<label class="switch-row"><span>'+label+'</span><input data-config-key="'+key+'" type="checkbox" '+(value?'checked':'')+'></label>'; }
+function switchHtml(label,key,value,extra){
+  var title=label, desc='', invert=false;
+  if(extra && extra.meta){ title=extra.meta[0]; desc=extra.meta[1]||''; }
+  if(extra && extra.invert) invert=true;
+  var checked=invert ? !value : !!value;
+  return '<label class="switch-row"><span class="switch-copy"><span class="switch-title">'+esc(title)+'</span><span class="switch-path">'+esc(key)+(invert?'（界面已转成正向开关）':'')+'</span>'+(desc?'<span class="field-desc">'+esc(desc)+'</span>':'')+'</span><input data-config-key="'+esc(key)+'" '+(invert?'data-invert="true" ':'')+'type="checkbox" '+(checked?'checked':'')+'></label>';
+}
+function positiveSwitchHtml(label,key,disabledValue,desc){ return switchHtml(label,key,!!disabledValue,{invert:true,meta:[label,desc||'']}); }
 function riskActionHtml(label,key,value){ return selectHtml(label,key,value||'recall',actionOptions); }
-function numberHtml(label,key,value){ return inputHtml(label,key,value,'number'); }
+function numberHtml(label,key,value,extra){ return inputHtml(label,key,value,'number',extra); }
 function jsonInputHtml(label,key,value){ return textareaHtml(label,key,value || []); }
 function sectionTitle(text){ return '<div class="section-title">'+text+'</div>'; }
 function selfRecallForm(prefix, src){
   return sectionTitle('自撤回')
-    + switchHtml('启用自撤回 selfRecall.enabled',prefix+'selfRecall.enabled',get(src,'selfRecall.enabled',get(src,'autoRecallSelf',false)))
-    + numberHtml('自撤回几率 selfRecall.probability（0-100）',prefix+'selfRecall.probability',get(src,'selfRecall.probability',get(src,'autoRecallSelfProbability',100)))
-    + selectHtml('延迟模式 selfRecall.mode',prefix+'selfRecall.mode',get(src,'selfRecall.mode','fixed'),[['fixed','固定延迟'],['random','随机延迟']])
-    + numberHtml('固定延迟秒 selfRecall.fixedDelay',prefix+'selfRecall.fixedDelay',get(src,'selfRecall.fixedDelay',get(src,'autoRecallSelfDelay',60)))
-    + numberHtml('随机最小延迟秒 selfRecall.minDelay',prefix+'selfRecall.minDelay',get(src,'selfRecall.minDelay',45))
-    + numberHtml('随机最大延迟秒 selfRecall.maxDelay',prefix+'selfRecall.maxDelay',get(src,'selfRecall.maxDelay',90))
-    + numberHtml('额外抖动秒 selfRecall.jitter',prefix+'selfRecall.jitter',get(src,'selfRecall.jitter',0));
-}
-function subGameplayFormLegacy(prefix, src){
-  var resourceModeHtml = selectHtml('资源发送模式 resourceMode',prefix+'subGameplay.resourceMode',get(src,'subGameplay.resourceMode','off'),[['off','关闭'],['light','仅轻娱乐图片'],['all','全部资源可用']]);
-  return switchHtml('SUB总开关 subGameplay.enabled',prefix+'subGameplay.enabled',get(src,'subGameplay.enabled',false))
-    + switchHtml('主仆契约 masterServantEnabled',prefix+'subGameplay.masterServantEnabled',get(src,'subGameplay.masterServantEnabled',true))
-    + switchHtml('竞速赛车 racingEnabled',prefix+'subGameplay.racingEnabled',get(src,'subGameplay.racingEnabled',true))
-    + switchHtml('轻娱乐 lightEntertainmentEnabled',prefix+'subGameplay.lightEntertainmentEnabled',get(src,'subGameplay.lightEntertainmentEnabled',true))
-    + inputHtml('命令前缀 commandPrefix',prefix+'subGameplay.commandPrefix',get(src,'subGameplay.commandPrefix',''))
-    + numberHtml('每日福利黄金 dailyWelfareGold',prefix+'subGameplay.dailyWelfareGold',get(src,'subGameplay.dailyWelfareGold',1000))
-    + numberHtml('初始黄金 initialGold',prefix+'subGameplay.initialGold',get(src,'subGameplay.initialGold',500))
-    + numberHtml('初始车币 initialRacingCoins',prefix+'subGameplay.initialRacingCoins',get(src,'subGameplay.initialRacingCoins',0))
-    + numberHtml('初始汽油 initialFuel',prefix+'subGameplay.initialFuel',get(src,'subGameplay.initialFuel',100))
-    + numberHtml('汽油上限 maxFuel',prefix+'subGameplay.maxFuel',get(src,'subGameplay.maxFuel',100))
-    + numberHtml('对决耗油 duelCostFuel',prefix+'subGameplay.duelCostFuel',get(src,'subGameplay.duelCostFuel',10))
-    + numberHtml('参赛耗油 raceCostFuel',prefix+'subGameplay.raceCostFuel',get(src,'subGameplay.raceCostFuel',15))
-    + numberHtml('车币兑换率 carCoinExchangeRate',prefix+'subGameplay.carCoinExchangeRate',get(src,'subGameplay.carCoinExchangeRate',10))
-    + numberHtml('汽油兑换率 fuelExchangeRate',prefix+'subGameplay.fuelExchangeRate',get(src,'subGameplay.fuelExchangeRate',5))
-    + numberHtml('PK冷却秒 pkCooldownSeconds',prefix+'subGameplay.pkCooldownSeconds',get(src,'subGameplay.pkCooldownSeconds',30))
-    + numberHtml('逃跑成功率 escapeSuccessRate',prefix+'subGameplay.escapeSuccessRate',get(src,'subGameplay.escapeSuccessRate',18))
-    + numberHtml('抢走成功率 snatchSuccessRate',prefix+'subGameplay.snatchSuccessRate',get(src,'subGameplay.snatchSuccessRate',45))
-    + numberHtml('契约税率 contractTaxRate',prefix+'subGameplay.contractTaxRate',get(src,'subGameplay.contractTaxRate',10))
-    + numberHtml('排行条数 rankLimit',prefix+'subGameplay.rankLimit',get(src,'subGameplay.rankLimit',10))
-    + jsonInputHtml('文本模板 textTemplates',prefix+'subGameplay.textTemplates',get(src,'subGameplay.textTemplates',{}))
-    + jsonInputHtml('命令别名 commandAliases',prefix+'subGameplay.commandAliases',get(src,'subGameplay.commandAliases',{}));
+    + switchHtml('启用自撤回',prefix+'selfRecall.enabled',get(src,'selfRecall.enabled',get(src,'autoRecallSelf',false)),{meta:['启用自撤回','机器人自己发出的消息按策略自动撤回。']})
+    + numberHtml('自撤回几率',prefix+'selfRecall.probability',get(src,'selfRecall.probability',get(src,'autoRecallSelfProbability',100)),{meta:['自撤回几率','0-100。']})
+    + selectHtml('延迟模式',prefix+'selfRecall.mode',get(src,'selfRecall.mode','fixed'),[['fixed','固定延迟'],['random','随机延迟']],{meta:['延迟模式','固定或随机延迟。']})
+    + numberHtml('固定延迟秒',prefix+'selfRecall.fixedDelay',get(src,'selfRecall.fixedDelay',get(src,'autoRecallSelfDelay',60)))
+    + numberHtml('随机最小延迟秒',prefix+'selfRecall.minDelay',get(src,'selfRecall.minDelay',45))
+    + numberHtml('随机最大延迟秒',prefix+'selfRecall.maxDelay',get(src,'selfRecall.maxDelay',90))
+    + numberHtml('额外抖动秒',prefix+'selfRecall.jitter',get(src,'selfRecall.jitter',0));
 }
 function subGameplayForm(prefix, src){
-  var resourceModeHtml = selectHtml('资源发送模式 resourceMode',prefix+'subGameplay.resourceMode',get(src,'subGameplay.resourceMode','off'),[['off','关闭'],['light','仅轻娱乐图片'],['all','全部资源可用']]);
-  return switchHtml('SUB总开关 subGameplay.enabled',prefix+'subGameplay.enabled',get(src,'subGameplay.enabled',false))
-    + switchHtml('主仆契约 masterServantEnabled',prefix+'subGameplay.masterServantEnabled',get(src,'subGameplay.masterServantEnabled',true))
-    + switchHtml('竞速赛车 racingEnabled',prefix+'subGameplay.racingEnabled',get(src,'subGameplay.racingEnabled',true))
-    + switchHtml('轻娱乐 lightEntertainmentEnabled',prefix+'subGameplay.lightEntertainmentEnabled',get(src,'subGameplay.lightEntertainmentEnabled',true))
+  var resourceModeHtml = selectHtml('资源发送模式',prefix+'subGameplay.resourceMode',get(src,'subGameplay.resourceMode','off'),[['off','关闭'],['light','仅轻娱乐图片'],['all','全部资源可用']]);
+  return switchHtml('SUB总开关',prefix+'subGameplay.enabled',get(src,'subGameplay.enabled',false))
+    + switchHtml('主仆契约',prefix+'subGameplay.masterServantEnabled',get(src,'subGameplay.masterServantEnabled',true))
+    + switchHtml('竞速赛车',prefix+'subGameplay.racingEnabled',get(src,'subGameplay.racingEnabled',true))
+    + switchHtml('轻娱乐',prefix+'subGameplay.lightEntertainmentEnabled',get(src,'subGameplay.lightEntertainmentEnabled',true))
     + resourceModeHtml
-    + inputHtml('命令前缀 commandPrefix',prefix+'subGameplay.commandPrefix',get(src,'subGameplay.commandPrefix',''))
-    + numberHtml('每日福利黄金 dailyWelfareGold',prefix+'subGameplay.dailyWelfareGold',get(src,'subGameplay.dailyWelfareGold',1000))
-    + numberHtml('初始黄金 initialGold',prefix+'subGameplay.initialGold',get(src,'subGameplay.initialGold',500))
-    + numberHtml('初始车币 initialRacingCoins',prefix+'subGameplay.initialRacingCoins',get(src,'subGameplay.initialRacingCoins',0))
-    + numberHtml('初始汽油 initialFuel',prefix+'subGameplay.initialFuel',get(src,'subGameplay.initialFuel',100))
-    + numberHtml('汽油上限 maxFuel',prefix+'subGameplay.maxFuel',get(src,'subGameplay.maxFuel',100))
-    + numberHtml('对决耗油 duelCostFuel',prefix+'subGameplay.duelCostFuel',get(src,'subGameplay.duelCostFuel',10))
-    + numberHtml('参赛耗油 raceCostFuel',prefix+'subGameplay.raceCostFuel',get(src,'subGameplay.raceCostFuel',15))
-    + numberHtml('车币兑换率 carCoinExchangeRate',prefix+'subGameplay.carCoinExchangeRate',get(src,'subGameplay.carCoinExchangeRate',10))
-    + numberHtml('汽油兑换率 fuelExchangeRate',prefix+'subGameplay.fuelExchangeRate',get(src,'subGameplay.fuelExchangeRate',5))
-    + numberHtml('PK冷却秒 pkCooldownSeconds',prefix+'subGameplay.pkCooldownSeconds',get(src,'subGameplay.pkCooldownSeconds',30))
-    + numberHtml('逃跑成功率 escapeSuccessRate',prefix+'subGameplay.escapeSuccessRate',get(src,'subGameplay.escapeSuccessRate',18))
-    + numberHtml('抢走成功率 snatchSuccessRate',prefix+'subGameplay.snatchSuccessRate',get(src,'subGameplay.snatchSuccessRate',45))
-    + numberHtml('契约税率 contractTaxRate',prefix+'subGameplay.contractTaxRate',get(src,'subGameplay.contractTaxRate',10))
-    + numberHtml('排行条数 rankLimit',prefix+'subGameplay.rankLimit',get(src,'subGameplay.rankLimit',10))
-    + jsonInputHtml('文本模板 textTemplates',prefix+'subGameplay.textTemplates',get(src,'subGameplay.textTemplates',{}))
-    + jsonInputHtml('命令别名 commandAliases',prefix+'subGameplay.commandAliases',get(src,'subGameplay.commandAliases',{}));
+    + inputHtml('命令前缀',prefix+'subGameplay.commandPrefix',get(src,'subGameplay.commandPrefix',''))
+    + numberHtml('每日福利黄金',prefix+'subGameplay.dailyWelfareGold',get(src,'subGameplay.dailyWelfareGold',1000))
+    + numberHtml('初始黄金',prefix+'subGameplay.initialGold',get(src,'subGameplay.initialGold',500))
+    + numberHtml('初始车币',prefix+'subGameplay.initialRacingCoins',get(src,'subGameplay.initialRacingCoins',0))
+    + numberHtml('初始汽油',prefix+'subGameplay.initialFuel',get(src,'subGameplay.initialFuel',100))
+    + numberHtml('汽油上限',prefix+'subGameplay.maxFuel',get(src,'subGameplay.maxFuel',100))
+    + numberHtml('对决耗油',prefix+'subGameplay.duelCostFuel',get(src,'subGameplay.duelCostFuel',10))
+    + numberHtml('参赛耗油',prefix+'subGameplay.raceCostFuel',get(src,'subGameplay.raceCostFuel',15))
+    + numberHtml('车币兑换率',prefix+'subGameplay.carCoinExchangeRate',get(src,'subGameplay.carCoinExchangeRate',10))
+    + numberHtml('汽油兑换率',prefix+'subGameplay.fuelExchangeRate',get(src,'subGameplay.fuelExchangeRate',5))
+    + numberHtml('PK冷却秒',prefix+'subGameplay.pkCooldownSeconds',get(src,'subGameplay.pkCooldownSeconds',30))
+    + numberHtml('逃跑成功率',prefix+'subGameplay.escapeSuccessRate',get(src,'subGameplay.escapeSuccessRate',18))
+    + numberHtml('抢走成功率',prefix+'subGameplay.snatchSuccessRate',get(src,'subGameplay.snatchSuccessRate',45))
+    + numberHtml('契约税率',prefix+'subGameplay.contractTaxRate',get(src,'subGameplay.contractTaxRate',10))
+    + numberHtml('排行条数',prefix+'subGameplay.rankLimit',get(src,'subGameplay.rankLimit',10))
+    + jsonInputHtml('文本模板',prefix+'subGameplay.textTemplates',get(src,'subGameplay.textTemplates',{}))
+    + jsonInputHtml('命令别名',prefix+'subGameplay.commandAliases',get(src,'subGameplay.commandAliases',{}));
 }
 function contentRiskForm(prefix, src){
   var p=prefix+'contentRisk.';
-  var html=switchHtml('内容风险总开关 enabled',p+'enabled',get(src,'contentRisk.enabled',false))
-    + switchHtml('仅记录不处理 logOnly',p+'logOnly',get(src,'contentRisk.logOnly',false))
-    + switchHtml('群内通知 notifyGroup',p+'notifyGroup',get(src,'contentRisk.notifyGroup',false));
+  var html=switchHtml('内容风险总开关',p+'enabled',get(src,'contentRisk.enabled',false))
+    + switchHtml('仅记录不处理',p+'logOnly',get(src,'contentRisk.logOnly',false))
+    + switchHtml('群内通知',p+'notifyGroup',get(src,'contentRisk.notifyGroup',false));
   [
     ['url','链接'],['qr','二维码'],['lightApp','小程序卡片'],['forward','合并转发'],['contact','名片分享'],
     ['groupInvite','群邀请'],['image','图片'],['video','视频'],['record','语音']
   ].forEach(function(item){
     var t=item[0], name=item[1];
     html += sectionTitle(name)
-      + switchHtml('拦截 '+name+' rules.'+t+'.enabled',p+'rules.'+t+'.enabled',get(src,'contentRisk.rules.'+t+'.enabled',false))
-      + riskActionHtml(name+'处理动作 action',p+'rules.'+t+'.action',get(src,'contentRisk.rules.'+t+'.action','recall'))
-      + numberHtml(name+'禁言分钟 banMinutes',p+'rules.'+t+'.banMinutes',get(src,'contentRisk.rules.'+t+'.banMinutes',10))
-      + inputHtml(name+'原因 reason',p+'rules.'+t+'.reason',get(src,'contentRisk.rules.'+t+'.reason',''));
+      + switchHtml('拦截 '+name,p+'rules.'+t+'.enabled',get(src,'contentRisk.rules.'+t+'.enabled',false))
+      + riskActionHtml(name+'处理动作',p+'rules.'+t+'.action',get(src,'contentRisk.rules.'+t+'.action','recall'))
+      + numberHtml(name+'禁言分钟',p+'rules.'+t+'.banMinutes',get(src,'contentRisk.rules.'+t+'.banMinutes',10))
+      + inputHtml(name+'原因',p+'rules.'+t+'.reason',get(src,'contentRisk.rules.'+t+'.reason',''));
   });
   html += sectionTitle('名单和二维码检测')
-    + jsonInputHtml('URL白名单 urlAllowlist',p+'urlAllowlist',get(src,'contentRisk.urlAllowlist',[]))
-    + jsonInputHtml('URL黑名单 urlBlocklist',p+'urlBlocklist',get(src,'contentRisk.urlBlocklist',[]))
-    + numberHtml('二维码检测超时毫秒 qrDetectTimeoutMs',p+'qrDetectTimeoutMs',get(src,'contentRisk.qrDetectTimeoutMs',3000))
-    + numberHtml('二维码最大字节 qrDetectMaxBytes',p+'qrDetectMaxBytes',get(src,'contentRisk.qrDetectMaxBytes',5242880))
-    + numberHtml('二维码检测并发 qrDetectConcurrency',p+'qrDetectConcurrency',get(src,'contentRisk.qrDetectConcurrency',2))
-    + numberHtml('二维码缓存秒 qrCacheSeconds',p+'qrCacheSeconds',get(src,'contentRisk.qrCacheSeconds',300))
-    + switchHtml('群邀请URL检测 groupInviteDetectUrl',p+'groupInviteDetectUrl',get(src,'contentRisk.groupInviteDetectUrl',true))
-    + switchHtml('群邀请卡片检测 groupInviteDetectCard',p+'groupInviteDetectCard',get(src,'contentRisk.groupInviteDetectCard',true))
-    + switchHtml('群邀请合并转发检测 groupInviteDetectForward',p+'groupInviteDetectForward',get(src,'contentRisk.groupInviteDetectForward',true));
+    + jsonInputHtml('URL白名单',p+'urlAllowlist',get(src,'contentRisk.urlAllowlist',[]))
+    + jsonInputHtml('URL黑名单',p+'urlBlocklist',get(src,'contentRisk.urlBlocklist',[]))
+    + numberHtml('二维码检测超时毫秒',p+'qrDetectTimeoutMs',get(src,'contentRisk.qrDetectTimeoutMs',3000))
+    + numberHtml('二维码最大字节',p+'qrDetectMaxBytes',get(src,'contentRisk.qrDetectMaxBytes',5242880))
+    + numberHtml('二维码检测并发',p+'qrDetectConcurrency',get(src,'contentRisk.qrDetectConcurrency',2))
+    + numberHtml('二维码缓存秒',p+'qrCacheSeconds',get(src,'contentRisk.qrCacheSeconds',300))
+    + switchHtml('群邀请URL检测',p+'groupInviteDetectUrl',get(src,'contentRisk.groupInviteDetectUrl',true))
+    + switchHtml('群邀请卡片检测',p+'groupInviteDetectCard',get(src,'contentRisk.groupInviteDetectCard',true))
+    + switchHtml('群邀请合并转发检测',p+'groupInviteDetectForward',get(src,'contentRisk.groupInviteDetectForward',true));
   return html;
 }
 function mergedGroupSettings(e,g){
@@ -370,12 +475,12 @@ function mergedGroupSettings(e,g){
   return out;
 }
 function fieldValue(input){
-  if(input.type==='checkbox') return input.checked;
+  if(input.type==='checkbox') return input.dataset.invert === 'true' ? !input.checked : input.checked;
   var v=input.value.trim();
   if(v==='true') return true;
   if(v==='false') return false;
   if(v==='null') return null;
-  if(/^-?\\d+(\\.\\d+)?$/.test(v)) return Number(v);
+  if(/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
   if((v.startsWith('[')&&v.endsWith(']'))||(v.startsWith('{')&&v.endsWith('}'))) return JSON.parse(v);
   return input.value;
 }
@@ -394,77 +499,102 @@ function renderStatus(status){
 }
 function renderForms(){
   el('switchForm').innerHTML =
-    switchHtml('总开关 masterEnabled','global.masterEnabled',get(config,'global.masterEnabled',true))
-    + selectHtml('静默模式 silentMode','global.silentMode',get(config,'global.silentMode','off'),[['off','关闭'],['noPassiveReply','不被动回复'],['noBotSend','不由机器人发送']])
-    + switchHtml('主动发送 activeReplyEnabled','global.activeReplyEnabled',get(config,'global.activeReplyEnabled',true))
-    + switchHtml('查询总开关 queryEnabled','global.queryEnabled',get(config,'global.queryEnabled',true))
-    + switchHtml('问答总开关 qaEnabled','global.qaEnabled',get(config,'global.qaEnabled',true))
-    + switchHtml('动态命令 dynamicCommandEnabled','global.dynamicCommandEnabled',get(config,'global.dynamicCommandEnabled',true))
-    + switchHtml('禁用旧问答 disableQA','global.disableQA',get(config,'global.disableQA',false))
-    + switchHtml('禁用旧LOL查询 disableLolQuery','global.disableLolQuery',get(config,'global.disableLolQuery',false))
-    + switchHtml('禁用签到 disableSignin','global.disableSignin',get(config,'global.disableSignin',false))
-    + switchHtml('禁用抽奖 disableLottery','global.disableLottery',get(config,'global.disableLottery',false))
-    + switchHtml('禁用邀请统计 disableInvite','global.disableInvite',get(config,'global.disableInvite',false))
-    + switchHtml('禁用活跃统计 disableActivity','global.disableActivity',get(config,'global.disableActivity',false))
-    + switchHtml('查封号 query.lol_ban','global.featureSwitches.query.lol_ban',get(config,'global.featureSwitches.query.lol_ban',true))
-    + switchHtml('查战绩 query.lol_battle','global.featureSwitches.query.lol_battle',get(config,'global.featureSwitches.query.lol_battle',true))
-    + switchHtml('查隐藏 query.lol_hidden','global.featureSwitches.query.lol_hidden',get(config,'global.featureSwitches.query.lol_hidden',true))
-    + switchHtml('查合集 query.lol_shard','global.featureSwitches.query.lol_shard',get(config,'global.featureSwitches.query.lol_shard',true));
+    sectionTitle('基础总控')
+    + switchHtml('插件总开关','global.masterEnabled',get(config,'global.masterEnabled',true),{meta:fieldMeta['global.masterEnabled']})
+    + selectHtml('静默模式','global.silentMode',get(config,'global.silentMode','off'),selectOptionsByKey['global.silentMode'],{meta:fieldMeta['global.silentMode']})
+    + switchHtml('主动发送','global.activeReplyEnabled',get(config,'global.activeReplyEnabled',true),{meta:fieldMeta['global.activeReplyEnabled']})
+    + switchHtml('查询总开关','global.queryEnabled',get(config,'global.queryEnabled',true),{meta:fieldMeta['global.queryEnabled']})
+    + switchHtml('问答总开关','global.qaEnabled',get(config,'global.qaEnabled',true),{meta:fieldMeta['global.qaEnabled']})
+    + switchHtml('动态命令','global.dynamicCommandEnabled',get(config,'global.dynamicCommandEnabled',true),{meta:fieldMeta['global.dynamicCommandEnabled']})
+    + sectionTitle('群管安全')
+    + switchHtml('入群验证','global.enableVerify',get(config,'global.enableVerify',true),{meta:fieldMeta['global.enableVerify']})
+    + switchHtml('自动同意入群','global.autoApprove',get(config,'global.autoApprove',true),{meta:fieldMeta['global.autoApprove']})
+    + positiveSwitchHtml('入群欢迎','global.disableWelcome',get(config,'global.disableWelcome',false),'开启表示允许发送入群欢迎；保存时写入 disableWelcome=false。')
+    + switchHtml('入群后私聊欢迎','global.joinPrivateEnabled',get(config,'global.joinPrivateEnabled',false),{meta:fieldMeta['global.joinPrivateEnabled']})
+    + switchHtml('刷屏检测','global.spamDetect',get(config,'global.spamDetect',false),{meta:fieldMeta['global.spamDetect']})
+    + numberHtml('复读检测阈值','global.repeatThreshold',get(config,'global.repeatThreshold',0),{meta:fieldMeta['global.repeatThreshold']})
+    + switchHtml('黑名单前置检测','global.blacklistCheckBeforeCommand',get(config,'global.blacklistCheckBeforeCommand',true),{meta:fieldMeta['global.blacklistCheckBeforeCommand']})
+    + switchHtml('保护管理员','global.protectAdminActions',get(config,'global.protectAdminActions',true),{meta:fieldMeta['global.protectAdminActions']})
+    + switchHtml('保护群主','global.protectOwnerActions',get(config,'global.protectOwnerActions',true),{meta:fieldMeta['global.protectOwnerActions']})
+    + sectionTitle('查询功能')
+    + positiveSwitchHtml('LOL查询功能','global.disableLolQuery',get(config,'global.disableLolQuery',false),'开启表示允许旧 LOL 查询链路；保存时写入 disableLolQuery=false。')
+    + switchHtml('查封号','global.featureSwitches.query.lol_ban',get(config,'global.featureSwitches.query.lol_ban',true),{meta:fieldMeta['global.featureSwitches.query.lol_ban']})
+    + switchHtml('查战绩','global.featureSwitches.query.lol_battle',get(config,'global.featureSwitches.query.lol_battle',true),{meta:fieldMeta['global.featureSwitches.query.lol_battle']})
+    + switchHtml('查隐藏','global.featureSwitches.query.lol_hidden',get(config,'global.featureSwitches.query.lol_hidden',true),{meta:fieldMeta['global.featureSwitches.query.lol_hidden']})
+    + switchHtml('查合集','global.featureSwitches.query.lol_shard',get(config,'global.featureSwitches.query.lol_shard',true),{meta:fieldMeta['global.featureSwitches.query.lol_shard']})
+    + switchHtml('查骗子','global.featureSwitches.query.scammer',get(config,'global.featureSwitches.query.scammer',true),{meta:fieldMeta['global.featureSwitches.query.scammer']})
+    + switchHtml('查同行','global.featureSwitches.query.peer',get(config,'global.featureSwitches.query.peer',true),{meta:fieldMeta['global.featureSwitches.query.peer']})
+    + switchHtml('视频接口','global.featureSwitches.query.video',get(config,'global.featureSwitches.query.video',true),{meta:fieldMeta['global.featureSwitches.query.video']})
+    + switchHtml('查战绩旧指令','global.lolQueryCommandSwitch.battleQuery',get(config,'global.lolQueryCommandSwitch.battleQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.battleQuery']})
+    + switchHtml('查封号旧指令','global.lolQueryCommandSwitch.banQuery',get(config,'global.lolQueryCommandSwitch.banQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.banQuery']})
+    + switchHtml('查隐藏旧指令','global.lolQueryCommandSwitch.hiddenQuery',get(config,'global.lolQueryCommandSwitch.hiddenQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.hiddenQuery']})
+    + sectionTitle('问答功能')
+    + positiveSwitchHtml('问答功能','global.disableQA',get(config,'global.disableQA',false),'开启表示允许问答；保存时写入 disableQA=false。')
+    + sectionTitle('娱乐统计')
+    + positiveSwitchHtml('签到功能','global.disableSignin',get(config,'global.disableSignin',false),'开启表示允许签到；保存时写入 disableSignin=false。')
+    + positiveSwitchHtml('抽奖功能','global.disableLottery',get(config,'global.disableLottery',false),'开启表示允许抽奖；保存时写入 disableLottery=false。')
+    + positiveSwitchHtml('邀请统计','global.disableInvite',get(config,'global.disableInvite',false),'开启表示允许邀请统计；保存时写入 disableInvite=false。')
+    + positiveSwitchHtml('活跃统计','global.disableActivity',get(config,'global.disableActivity',false),'开启表示允许活跃统计；保存时写入 disableActivity=false。')
+    + switchHtml('防撤回通知','globalAntiRecall',get(config,'globalAntiRecall',false),{meta:fieldMeta.globalAntiRecall})
+    + switchHtml('自动回应表情','globalEmojiReact',get(config,'globalEmojiReact',false),{meta:fieldMeta.globalEmojiReact})
+    + sectionTitle('高风险项')
+    + switchHtml('允许处理管理员消息','global.allowRecallAdminMessage',get(config,'global.allowRecallAdminMessage',false),{meta:fieldMeta['global.allowRecallAdminMessage']})
+    + switchHtml('允许处理群主消息','global.allowRecallOwnerMessage',get(config,'global.allowRecallOwnerMessage',false),{meta:fieldMeta['global.allowRecallOwnerMessage']});
   el('sendForm').innerHTML =
     sectionTitle('回复控制')
-    + numberHtml('回复消息几率 replyProbability（0-100）','global.replyProbability',get(config,'global.replyProbability',100))
+    + numberHtml('回复消息几率','global.replyProbability',get(config,'global.replyProbability',100),{meta:fieldMeta['global.replyProbability']})
     + sectionTitle('问答冷却')
-    + numberHtml('问答关键词冷却秒 qaCooldownSeconds','global.qaCooldownSeconds',get(config,'global.qaCooldownSeconds',30))
-    + numberHtml('同用户问答冷却秒 qaUserCooldownSeconds','global.qaUserCooldownSeconds',get(config,'global.qaUserCooldownSeconds',12))
-    + numberHtml('低风险问答冷却秒 qaTierCooldownLow','global.qaTierCooldownLow',get(config,'global.qaTierCooldownLow',15))
-    + numberHtml('中风险问答冷却秒 qaTierCooldownMedium','global.qaTierCooldownMedium',get(config,'global.qaTierCooldownMedium',30))
-    + numberHtml('高风险问答冷却秒 qaTierCooldownHigh','global.qaTierCooldownHigh',get(config,'global.qaTierCooldownHigh',60))
-    + numberHtml('最小随机延迟 ms randomDelayMin','global.randomDelayMin',get(config,'global.randomDelayMin',500))
-    + numberHtml('最大随机延迟 ms randomDelayMax','global.randomDelayMax',get(config,'global.randomDelayMax',1500))
-    + selectHtml('随机后缀模式 botAntiRiskSuffixMode','global.botAntiRiskSuffixMode',get(config,'global.botAntiRiskSuffixMode','mixed'),[['mixed','混合'],['punctuation','标点'],['none','关闭'],['global','跟随全局']])
-    + jsonInputHtml('场景策略 botAntiRiskScenePolicies','global.botAntiRiskScenePolicies',get(config,'global.botAntiRiskScenePolicies',{}))
+    + numberHtml('问答关键词冷却秒','global.qaCooldownSeconds',get(config,'global.qaCooldownSeconds',30))
+    + numberHtml('同用户问答冷却秒','global.qaUserCooldownSeconds',get(config,'global.qaUserCooldownSeconds',12))
+    + numberHtml('低风险问答冷却秒','global.qaTierCooldownLow',get(config,'global.qaTierCooldownLow',15))
+    + numberHtml('中风险问答冷却秒','global.qaTierCooldownMedium',get(config,'global.qaTierCooldownMedium',30))
+    + numberHtml('高风险问答冷却秒','global.qaTierCooldownHigh',get(config,'global.qaTierCooldownHigh',60))
+    + numberHtml('最小随机延迟 ms','global.randomDelayMin',get(config,'global.randomDelayMin',500),{meta:fieldMeta['global.randomDelayMin']})
+    + numberHtml('最大随机延迟 ms','global.randomDelayMax',get(config,'global.randomDelayMax',1500),{meta:fieldMeta['global.randomDelayMax']})
+    + selectHtml('随机后缀模式','global.botAntiRiskSuffixMode',get(config,'global.botAntiRiskSuffixMode','mixed'),selectOptionsByKey['global.botAntiRiskSuffixMode'])
+    + jsonInputHtml('场景策略','global.botAntiRiskScenePolicies',get(config,'global.botAntiRiskScenePolicies',{}))
     + sectionTitle('问答链接二段发送')
-    + switchHtml('启用问答链接先提示 qaLinkDelivery.enabled','global.qaLinkDelivery.enabled',get(config,'global.qaLinkDelivery.enabled',false))
-    + inputHtml('提示文本 qaLinkDelivery.noticeText','global.qaLinkDelivery.noticeText',get(config,'global.qaLinkDelivery.noticeText','已找到资源，稍后发送链接。请不要连续重复触发。'), 'text', {full:true})
-    + numberHtml('链接最小延迟 ms qaLinkDelivery.delayMinMs','global.qaLinkDelivery.delayMinMs',get(config,'global.qaLinkDelivery.delayMinMs',1000))
-    + numberHtml('链接最大延迟 ms qaLinkDelivery.delayMaxMs','global.qaLinkDelivery.delayMaxMs',get(config,'global.qaLinkDelivery.delayMaxMs',3000))
-    + switchHtml('第二条用代码块包裹 qaLinkDelivery.wrapInCodeBlock','global.qaLinkDelivery.wrapInCodeBlock',get(config,'global.qaLinkDelivery.wrapInCodeBlock',false))
+    + switchHtml('启用问答链接先提示','global.qaLinkDelivery.enabled',get(config,'global.qaLinkDelivery.enabled',false))
+    + inputHtml('提示文本','global.qaLinkDelivery.noticeText',get(config,'global.qaLinkDelivery.noticeText','已找到资源，稍后发送链接。请不要连续重复触发。'), 'text', {full:true})
+    + numberHtml('链接最小延迟 ms','global.qaLinkDelivery.delayMinMs',get(config,'global.qaLinkDelivery.delayMinMs',1000))
+    + numberHtml('链接最大延迟 ms','global.qaLinkDelivery.delayMaxMs',get(config,'global.qaLinkDelivery.delayMaxMs',3000))
+    + switchHtml('第二条用代码块包裹','global.qaLinkDelivery.wrapInCodeBlock',get(config,'global.qaLinkDelivery.wrapInCodeBlock',false))
     + sectionTitle('发送包装')
-    + switchHtml('发送包装总开关 botSendWrapperEnabled','global.botSendWrapperEnabled',get(config,'global.botSendWrapperEnabled',false))
-    + selectHtml('包装模式 botSendWrapperMode','global.botSendWrapperMode',get(config,'global.botSendWrapperMode','normal'),[['normal','普通发送'],['forward','合并转发']])
-    + switchHtml('问答包装 botSendWrapperQaEnabled','global.botSendWrapperQaEnabled',get(config,'global.botSendWrapperQaEnabled',false))
-    + switchHtml('查询包装 botSendWrapperQueryEnabled','global.botSendWrapperQueryEnabled',get(config,'global.botSendWrapperQueryEnabled',false))
-    + switchHtml('全局包装 botSendWrapperAllEnabled','global.botSendWrapperAllEnabled',get(config,'global.botSendWrapperAllEnabled',false))
+    + switchHtml('发送包装总开关','global.botSendWrapperEnabled',get(config,'global.botSendWrapperEnabled',false))
+    + selectHtml('包装模式','global.botSendWrapperMode',get(config,'global.botSendWrapperMode','normal'),[['normal','普通发送'],['forward','合并转发']])
+    + switchHtml('问答包装','global.botSendWrapperQaEnabled',get(config,'global.botSendWrapperQaEnabled',false))
+    + switchHtml('查询包装','global.botSendWrapperQueryEnabled',get(config,'global.botSendWrapperQueryEnabled',false))
+    + switchHtml('全局包装','global.botSendWrapperAllEnabled',get(config,'global.botSendWrapperAllEnabled',false))
     + sectionTitle('自身 URL 包装')
-    + switchHtml('启用自身 URL 包装 outgoingRisk.enabled','global.outgoingRisk.enabled',get(config,'global.outgoingRisk.enabled',false))
-    + selectHtml('URL处理模式 outgoingRisk.urlMode','global.outgoingRisk.urlMode',get(config,'global.outgoingRisk.urlMode','number'),[['off','关闭'],['number','编号化'],['mask','隐藏'],['drop','整条拦截']])
-    + inputHtml('URL包装提示 outgoingRisk.urlNotice','global.outgoingRisk.urlNotice',get(config,'global.outgoingRisk.urlNotice','链接已做编号化处理，原始地址不由机器人直接发送。'), 'text', {full:true})
-    + numberHtml('单条最多编号数 outgoingRisk.urlMaxPerMessage','global.outgoingRisk.urlMaxPerMessage',get(config,'global.outgoingRisk.urlMaxPerMessage',20))
-    + switchHtml('私聊也包装 outgoingRisk.applyToPrivate','global.outgoingRisk.applyToPrivate',get(config,'global.outgoingRisk.applyToPrivate',true))
-    + switchHtml('合并转发也包装 outgoingRisk.applyToForward','global.outgoingRisk.applyToForward',get(config,'global.outgoingRisk.applyToForward',true))
-    + jsonInputHtml('高风险场景 outgoingRisk.highRiskScenes','global.outgoingRisk.highRiskScenes',get(config,'global.outgoingRisk.highRiskScenes',['qa','qa_reply','query','external_query','video_query','raw_text']))
-    + switchHtml('仅记录不处理 outgoingRisk.logOnly','global.outgoingRisk.logOnly',get(config,'global.outgoingRisk.logOnly',false))
+    + switchHtml('启用自身 URL 包装','global.outgoingRisk.enabled',get(config,'global.outgoingRisk.enabled',false))
+    + selectHtml('URL处理模式','global.outgoingRisk.urlMode',get(config,'global.outgoingRisk.urlMode','number'),selectOptionsByKey['global.outgoingRisk.urlMode'])
+    + inputHtml('URL包装提示','global.outgoingRisk.urlNotice',get(config,'global.outgoingRisk.urlNotice','链接已做编号化处理，原始地址不由机器人直接发送。'), 'text', {full:true})
+    + numberHtml('单条最多编号数','global.outgoingRisk.urlMaxPerMessage',get(config,'global.outgoingRisk.urlMaxPerMessage',20))
+    + switchHtml('私聊也包装','global.outgoingRisk.applyToPrivate',get(config,'global.outgoingRisk.applyToPrivate',true))
+    + switchHtml('合并转发也包装','global.outgoingRisk.applyToForward',get(config,'global.outgoingRisk.applyToForward',true))
+    + jsonInputHtml('高风险场景','global.outgoingRisk.highRiskScenes',get(config,'global.outgoingRisk.highRiskScenes',['qa','qa_reply','query','external_query','video_query','raw_text']))
+    + switchHtml('仅记录不处理','global.outgoingRisk.logOnly',get(config,'global.outgoingRisk.logOnly',false))
     + sectionTitle('查封号结果策略')
-    + selectHtml('查封号结果模式 banQueryResultMode','global.banQueryResultMode',get(config,'global.banQueryResultMode','short'),[['short','短文本'],['image','图片优先'],['text','完整文本']])
+    + selectHtml('查封号结果模式','global.banQueryResultMode',get(config,'global.banQueryResultMode','short'),selectOptionsByKey['global.banQueryResultMode'])
     + selfRecallForm('global.', config.global || {})
     + sectionTitle('队列和限流')
-    + selectHtml('发送队列模式 queueMode','global.queueMode',get(config,'global.queueMode','group'),[['group','分群队列'],['global','全局队列']])
-    + numberHtml('发送并发 queueConcurrency','global.queueConcurrency',get(config,'global.queueConcurrency',1))
-    + numberHtml('全局每分钟上限 globalMaxPerMinute','global.globalMaxPerMinute',get(config,'global.globalMaxPerMinute',60))
-    + switchHtml('超限后排队 rateLimitEnqueue','global.rateLimitEnqueue',get(config,'global.rateLimitEnqueue',true))
-    + numberHtml('全局队列上限 maxQueueSizeGlobal','global.maxQueueSizeGlobal',get(config,'global.maxQueueSizeGlobal',3000))
-    + numberHtml('单群队列上限 maxQueueSizePerGroup','global.maxQueueSizePerGroup',get(config,'global.maxQueueSizePerGroup',120))
-    + numberHtml('群熔断窗口秒 groupFuseWindowSeconds','global.groupFuseWindowSeconds',get(config,'global.groupFuseWindowSeconds',60))
-    + numberHtml('群熔断阈值 groupFuseThreshold','global.groupFuseThreshold',get(config,'global.groupFuseThreshold',45))
-    + numberHtml('群熔断冷却秒 groupFuseCooldownSeconds','global.groupFuseCooldownSeconds',get(config,'global.groupFuseCooldownSeconds',90))
+    + selectHtml('发送队列模式','global.queueMode',get(config,'global.queueMode','group'),selectOptionsByKey['global.queueMode'])
+    + numberHtml('发送并发','global.queueConcurrency',get(config,'global.queueConcurrency',1))
+    + numberHtml('全局每分钟上限','global.globalMaxPerMinute',get(config,'global.globalMaxPerMinute',60))
+    + switchHtml('超限后排队','global.rateLimitEnqueue',get(config,'global.rateLimitEnqueue',true))
+    + numberHtml('全局队列上限','global.maxQueueSizeGlobal',get(config,'global.maxQueueSizeGlobal',3000))
+    + numberHtml('单群队列上限','global.maxQueueSizePerGroup',get(config,'global.maxQueueSizePerGroup',120))
+    + numberHtml('群熔断窗口秒','global.groupFuseWindowSeconds',get(config,'global.groupFuseWindowSeconds',60))
+    + numberHtml('群熔断阈值','global.groupFuseThreshold',get(config,'global.groupFuseThreshold',45))
+    + numberHtml('群熔断冷却秒','global.groupFuseCooldownSeconds',get(config,'global.groupFuseCooldownSeconds',90))
     + sectionTitle('动作队列')
-    + numberHtml('每分钟撤回上限 maxRecallPerMinute','global.maxRecallPerMinute',get(config,'global.maxRecallPerMinute',60))
-    + numberHtml('每分钟禁言上限 maxBanPerMinute','global.maxBanPerMinute',get(config,'global.maxBanPerMinute',5))
-    + numberHtml('每分钟踢出上限 maxKickPerMinute','global.maxKickPerMinute',get(config,'global.maxKickPerMinute',3))
-    + numberHtml('撤回去重秒 recallDedupSeconds','global.recallDedupSeconds',get(config,'global.recallDedupSeconds',20));
+    + numberHtml('每分钟撤回上限','global.maxRecallPerMinute',get(config,'global.maxRecallPerMinute',60))
+    + numberHtml('每分钟禁言上限','global.maxBanPerMinute',get(config,'global.maxBanPerMinute',5))
+    + numberHtml('每分钟踢出上限','global.maxKickPerMinute',get(config,'global.maxKickPerMinute',3))
+    + numberHtml('撤回去重秒','global.recallDedupSeconds',get(config,'global.recallDedupSeconds',20));
   el('gameplayForm').innerHTML = subGameplayForm('global.', config.global || {});
   el('contentRiskForm').innerHTML = contentRiskForm('global.', config.global || {});
-  el('eleForm').innerHTML = inputHtml('ELE API Base URL','eleBuildApiBaseUrl',get(config,'eleBuildApiBaseUrl',''));
+  el('eleForm').innerHTML = inputHtml('ELE API Base URL','eleBuildApiBaseUrl',get(config,'eleBuildApiBaseUrl',''), 'text', {meta:fieldMeta.eleBuildApiBaseUrl});
   renderAdvancedForm();
 }
 function flattenConfig(obj, prefix, out){
@@ -478,19 +608,32 @@ function flattenConfig(obj, prefix, out){
   keys.sort().forEach(function(k){ flattenConfig(obj[k], prefix ? prefix+'.'+k : k, out); });
   return out;
 }
+function advancedFieldHtml(row){
+  var key=row.key, v=row.value, meta=metaForKey(key), title=meta[0], desc=meta[1];
+  var opts=selectOptionsByKey[key];
+  if(typeof v === 'boolean') return switchHtml(title,key,v,{meta:meta,invert:!!invertBooleanKeys[key]});
+  if(opts) return selectHtml(title,key,v,opts,{meta:meta});
+  if(typeof v === 'number') return numberHtml(title,key,v,{meta:meta});
+  if(v === null || Array.isArray(v) || typeof v === 'object') return textareaHtml(title,key,v,{meta:meta});
+  return inputHtml(title,key,v,'text',{meta:meta});
+}
 function renderAdvancedForm(){
   var box=el('advancedForm');
   if(!box) return;
   var filter=(el('advancedFilter') && el('advancedFilter').value || '').trim().toLowerCase();
-  var rows=flattenConfig(config,'').filter(function(row){ return !filter || row.key.toLowerCase().indexOf(filter)>=0; });
+  var rows=flattenConfig(config,'').map(function(row){
+    var meta=metaForKey(row.key);
+    row.title=meta[0]; row.desc=meta[1]; row.group=meta[2] || '其他';
+    row.search=[row.key,row.title,row.desc,row.group].join(' ').toLowerCase();
+    return row;
+  }).filter(function(row){ return !filter || row.search.indexOf(filter)>=0; });
+  var groups={}, order=['基础','基础总控','群管安全','查询功能','问答功能','娱乐统计','高风险项','发送与风控','内容风险','SUB玩法','接口地址','其他'];
+  rows.forEach(function(row){ if(!row.key) return; (groups[row.group]=groups[row.group]||[]).push(row); });
   var html='';
-  rows.forEach(function(row){
-    if(!row.key) return;
-    var v=row.value;
-    if(typeof v === 'boolean') html += switchHtml(row.key,row.key,v);
-    else if(typeof v === 'number') html += numberHtml(row.key,row.key,v);
-    else if(v === null || Array.isArray(v) || typeof v === 'object') html += textareaHtml(row.key,row.key,v);
-    else html += inputHtml(row.key,row.key,v);
+  order.forEach(function(group){
+    if(!groups[group] || !groups[group].length) return;
+    html += sectionTitle(group);
+    groups[group].forEach(function(row){ html += advancedFieldHtml(row); });
   });
   box.innerHTML = html || '<p class="hint">没有匹配的字段。</p>';
 }
@@ -498,7 +641,7 @@ function renderGroupList(groups){
   var sel=el('groupSelect'); sel.innerHTML='<option value="">选择群号</option>';
   (groups||[]).forEach(function(g){
     var tag=(g.licensed?'已授权':'未授权')+(g.configured?' / 已配置':' / 走全局');
-    sel.innerHTML+='<option value="'+g.groupId+'">'+g.groupId+' - '+tag+'</option>';
+    sel.innerHTML+='<option value="'+esc(g.groupId)+'">'+esc(g.groupId+' - '+tag)+'</option>';
   });
 }
 function renderGroupForm(data){
@@ -507,36 +650,40 @@ function renderGroupForm(data){
   el('groupMeta').textContent='群 '+data.groupId+'：'+(data.licensed?'已授权':'未授权')+'，'+(data.configured?'存在专属配置':'当前走全局/默认配置');
   var g=data.group||{}; var e=data.effective||{}; var groupSrc=mergedGroupSettings(e,g);
   el('groupForm').innerHTML =
-    switchHtml('使用全局配置 useGlobal','useGlobal',get(g,'useGlobal',false))
-    + switchHtml('总开关 masterEnabled','masterEnabled',get(groupSrc,'masterEnabled',true))
-    + selectHtml('静默模式 silentMode','silentMode',get(groupSrc,'silentMode','off'),[['off','关闭'],['noPassiveReply','不被动回复'],['noBotSend','不由机器人发送']])
-    + switchHtml('主动发送 activeReplyEnabled','activeReplyEnabled',get(groupSrc,'activeReplyEnabled',true))
-    + switchHtml('查询总开关 queryEnabled','queryEnabled',get(groupSrc,'queryEnabled',true))
-    + switchHtml('问答总开关 qaEnabled','qaEnabled',get(groupSrc,'qaEnabled',true))
-    + switchHtml('动态命令 dynamicCommandEnabled','dynamicCommandEnabled',get(groupSrc,'dynamicCommandEnabled',true))
-    + numberHtml('回复消息几率 replyProbability（0-100）','replyProbability',get(groupSrc,'replyProbability',100))
+    switchHtml('使用全局配置','useGlobal',get(g,'useGlobal',false))
+    + switchHtml('总开关','masterEnabled',get(groupSrc,'masterEnabled',true))
+    + selectHtml('静默模式','silentMode',get(groupSrc,'silentMode','off'),selectOptionsByKey.silentMode)
+    + switchHtml('主动发送','activeReplyEnabled',get(groupSrc,'activeReplyEnabled',true))
+    + switchHtml('查询总开关','queryEnabled',get(groupSrc,'queryEnabled',true))
+    + switchHtml('问答总开关','qaEnabled',get(groupSrc,'qaEnabled',true))
+    + switchHtml('动态命令','dynamicCommandEnabled',get(groupSrc,'dynamicCommandEnabled',true))
+    + numberHtml('回复消息几率','replyProbability',get(groupSrc,'replyProbability',100))
     + sectionTitle('本群问答冷却')
-    + numberHtml('问答关键词冷却秒 qaCooldownSeconds','qaCooldownSeconds',get(groupSrc,'qaCooldownSeconds',30))
-    + numberHtml('同用户问答冷却秒 qaUserCooldownSeconds','qaUserCooldownSeconds',get(groupSrc,'qaUserCooldownSeconds',12))
-    + numberHtml('低风险问答冷却秒 qaTierCooldownLow','qaTierCooldownLow',get(groupSrc,'qaTierCooldownLow',15))
-    + numberHtml('中风险问答冷却秒 qaTierCooldownMedium','qaTierCooldownMedium',get(groupSrc,'qaTierCooldownMedium',30))
-    + numberHtml('高风险问答冷却秒 qaTierCooldownHigh','qaTierCooldownHigh',get(groupSrc,'qaTierCooldownHigh',60))
+    + numberHtml('问答关键词冷却秒','qaCooldownSeconds',get(groupSrc,'qaCooldownSeconds',30))
+    + numberHtml('同用户问答冷却秒','qaUserCooldownSeconds',get(groupSrc,'qaUserCooldownSeconds',12))
+    + numberHtml('低风险问答冷却秒','qaTierCooldownLow',get(groupSrc,'qaTierCooldownLow',15))
+    + numberHtml('中风险问答冷却秒','qaTierCooldownMedium',get(groupSrc,'qaTierCooldownMedium',30))
+    + numberHtml('高风险问答冷却秒','qaTierCooldownHigh',get(groupSrc,'qaTierCooldownHigh',60))
     + sectionTitle('本群问答链接二段发送')
-    + switchHtml('启用问答链接先提示 qaLinkDelivery.enabled','qaLinkDelivery.enabled',get(groupSrc,'qaLinkDelivery.enabled',false))
-    + inputHtml('提示文本 qaLinkDelivery.noticeText','qaLinkDelivery.noticeText',get(groupSrc,'qaLinkDelivery.noticeText','已找到资源，稍后发送链接。请不要连续重复触发。'), 'text', {full:true})
-    + numberHtml('链接最小延迟 ms qaLinkDelivery.delayMinMs','qaLinkDelivery.delayMinMs',get(groupSrc,'qaLinkDelivery.delayMinMs',1000))
-    + numberHtml('链接最大延迟 ms qaLinkDelivery.delayMaxMs','qaLinkDelivery.delayMaxMs',get(groupSrc,'qaLinkDelivery.delayMaxMs',3000))
-    + switchHtml('第二条用代码块包裹 qaLinkDelivery.wrapInCodeBlock','qaLinkDelivery.wrapInCodeBlock',get(groupSrc,'qaLinkDelivery.wrapInCodeBlock',false))
-    + switchHtml('查封号 query.lol_ban','featureSwitches.query.lol_ban',get(groupSrc,'featureSwitches.query.lol_ban',true))
-    + switchHtml('查战绩 query.lol_battle','featureSwitches.query.lol_battle',get(groupSrc,'featureSwitches.query.lol_battle',true))
-    + switchHtml('查隐藏 query.lol_hidden','featureSwitches.query.lol_hidden',get(groupSrc,'featureSwitches.query.lol_hidden',true))
-    + switchHtml('查合集 query.lol_shard','featureSwitches.query.lol_shard',get(groupSrc,'featureSwitches.query.lol_shard',true))
-    + switchHtml('问答包装 botSendWrapperQaEnabled','botSendWrapperQaEnabled',get(groupSrc,'botSendWrapperQaEnabled',false))
-    + switchHtml('查询包装 botSendWrapperQueryEnabled','botSendWrapperQueryEnabled',get(groupSrc,'botSendWrapperQueryEnabled',false))
-    + switchHtml('全局包装 botSendWrapperAllEnabled','botSendWrapperAllEnabled',get(groupSrc,'botSendWrapperAllEnabled',false))
-    + selectHtml('战绩输出格式 lolQueryOutputFormat','lolQueryOutputFormat',get(groupSrc,'lolQueryOutputFormat','forward'),['forward','text','image','card'])
+    + switchHtml('启用问答链接先提示','qaLinkDelivery.enabled',get(groupSrc,'qaLinkDelivery.enabled',false))
+    + inputHtml('提示文本','qaLinkDelivery.noticeText',get(groupSrc,'qaLinkDelivery.noticeText','已找到资源，稍后发送链接。请不要连续重复触发。'), 'text', {full:true})
+    + numberHtml('链接最小延迟 ms','qaLinkDelivery.delayMinMs',get(groupSrc,'qaLinkDelivery.delayMinMs',1000))
+    + numberHtml('链接最大延迟 ms','qaLinkDelivery.delayMaxMs',get(groupSrc,'qaLinkDelivery.delayMaxMs',3000))
+    + switchHtml('第二条用代码块包裹','qaLinkDelivery.wrapInCodeBlock',get(groupSrc,'qaLinkDelivery.wrapInCodeBlock',false))
+    + sectionTitle('本群查询开关')
+    + switchHtml('查封号','featureSwitches.query.lol_ban',get(groupSrc,'featureSwitches.query.lol_ban',true))
+    + switchHtml('查战绩','featureSwitches.query.lol_battle',get(groupSrc,'featureSwitches.query.lol_battle',true))
+    + switchHtml('查隐藏','featureSwitches.query.lol_hidden',get(groupSrc,'featureSwitches.query.lol_hidden',true))
+    + switchHtml('查合集','featureSwitches.query.lol_shard',get(groupSrc,'featureSwitches.query.lol_shard',true))
+    + switchHtml('查骗子','featureSwitches.query.scammer',get(groupSrc,'featureSwitches.query.scammer',true))
+    + switchHtml('查同行','featureSwitches.query.peer',get(groupSrc,'featureSwitches.query.peer',true))
+    + switchHtml('视频接口','featureSwitches.query.video',get(groupSrc,'featureSwitches.query.video',true))
+    + switchHtml('问答包装','botSendWrapperQaEnabled',get(groupSrc,'botSendWrapperQaEnabled',false))
+    + switchHtml('查询包装','botSendWrapperQueryEnabled',get(groupSrc,'botSendWrapperQueryEnabled',false))
+    + switchHtml('全局包装','botSendWrapperAllEnabled',get(groupSrc,'botSendWrapperAllEnabled',false))
+    + selectHtml('战绩输出格式','lolQueryOutputFormat',get(groupSrc,'lolQueryOutputFormat','forward'),selectOptionsByKey.lolQueryOutputFormat)
     + sectionTitle('本群查封号结果策略')
-    + selectHtml('查封号结果模式 banQueryResultMode','banQueryResultMode',get(groupSrc,'banQueryResultMode','short'),[['short','短文本'],['image','图片优先'],['text','完整文本']])
+    + selectHtml('查封号结果模式','banQueryResultMode',get(groupSrc,'banQueryResultMode','short'),selectOptionsByKey.banQueryResultMode)
     + selfRecallForm('', groupSrc)
     + sectionTitle('SUB玩法')
     + subGameplayForm('', groupSrc)
@@ -548,7 +695,7 @@ function renderLicenses(list){
   var box=el('licenseBox');
   if(!list||!list.length){ box.innerHTML='<p class="hint">暂无授权记录</p>'; return; }
   var html='<table><thead><tr><th>群号</th><th>等级</th><th>到期</th><th>剩余</th><th>状态</th><th>操作</th></tr></thead><tbody>';
-  list.forEach(function(x){ html+='<tr><td>'+x.groupId+'</td><td>'+x.level+'</td><td>'+esc(x.expireAt)+'</td><td>'+(x.permanent?'永久':x.remainingDays+'天')+'</td><td><span class="pill">'+(x.expired?'已过期':'有效')+'</span></td><td><button class="secondary" data-license-group="'+x.groupId+'" data-license-level="'+x.level+'">填入</button></td></tr>'; });
+  list.forEach(function(x){ html+='<tr><td>'+esc(x.groupId)+'</td><td>'+esc(x.level)+'</td><td>'+esc(x.expireAt)+'</td><td>'+(x.permanent?'永久':esc(x.remainingDays)+'天')+'</td><td><span class="pill">'+(x.expired?'已过期':'有效')+'</span></td><td><button class="secondary" data-license-group="'+esc(x.groupId)+'" data-license-level="'+esc(x.level)+'">填入</button></td></tr>'; });
   box.innerHTML=html+'</tbody></table>';
 }
 function renderBackups(list){
@@ -617,9 +764,7 @@ function ensureSubResourceUi(){
     gameplay.parentNode.insertBefore(section, gameplay.nextSibling);
   }
 }
-function resourceFileUrl(path){
-  return '/api/sub-gameplay/resource-file?token='+encodeURIComponent(token)+'&id='+encodeURIComponent(path);
-}
+function resourceFileUrl(path){ return '/api/sub-gameplay/resource-file?token='+encodeURIComponent(token)+'&id='+encodeURIComponent(path); }
 function renderSubResources(data){
   var summary=data.summary||{};
   var integrity=data.integrity||{};
