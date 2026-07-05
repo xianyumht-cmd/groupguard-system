@@ -77,6 +77,11 @@ type QueryCommandType = 'lol_battle' | 'lol_hidden' | 'lol_shard';
 type QueryOutputFormat = 'forward' | 'text' | 'image' | 'card';
 type QueryWrapperMode = 'global' | 'none' | 'forward';
 
+async function sendQueryRateLimitNotice(groupId: string, rateCheck: { ok: false; reason: string; notify?: boolean }): Promise<void> {
+  if (rateCheck.notify === false) return;
+  await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+}
+
 function getQueryCommandProfiles(): Record<string, any> {
   const profiles = (getConfig() as any).queryCommandProfiles;
   return profiles && typeof profiles === 'object' && !Array.isArray(profiles) ? profiles : {};
@@ -1509,7 +1514,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     const identifier = parsed.identifier;
     const rateCheck = checkAndConsumeQueryRate(groupId, queryDef.command);
     if (!rateCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      await sendQueryRateLimitNotice(groupId, rateCheck);
       return true;
     }
     let local = storageAdapter.getContactRiskRecord(queryDef.category, identifier.type, identifier.value);
@@ -1694,7 +1699,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     }
     const rateCheck = checkAndConsumeQueryRate(groupId, '查封号');
     if (!rateCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      await sendQueryRateLimitNotice(groupId, rateCheck);
       return true;
     }
     const rest = text.slice(3).trim();
@@ -1752,7 +1757,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     }
     const rateCheck = checkAndConsumeQueryRate(groupId, '查战绩');
     if (!rateCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      await sendQueryRateLimitNotice(groupId, rateCheck);
       return true;
     }
     const rest = text.replace('查战绩', '').trim();
@@ -1797,7 +1802,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     }
     const rateCheck = checkAndConsumeQueryRate(groupId, '查合集');
     if (!rateCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      await sendQueryRateLimitNotice(groupId, rateCheck);
       return true;
     }
     const urls = resolveShardDataUrls(groupId);
@@ -1854,7 +1859,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     }
     const rateCheck = checkAndConsumeQueryRate(groupId, '海符榜');
     if (!rateCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      await sendQueryRateLimitNotice(groupId, rateCheck);
       return true;
     }
     const baseUrl = resolveLolApiBaseUrl();
@@ -2179,7 +2184,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     if (!await allowGroupFeature(input, 'query.video', '本群视频查询功能已关闭')) return true;
     const rateCheck = checkAndConsumeQueryRate(groupId, '视频接口');
     if (!rateCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      await sendQueryRateLimitNotice(groupId, rateCheck);
       return true;
     }
     const category = text.replace('我要看', '').trim() || '热门';
@@ -2250,7 +2255,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     }
     const rateCheck = checkAndConsumeQueryRate(groupId, '查隐藏');
     if (!rateCheck.ok) {
-      await sendGroupScene(groupId, 'invalid_range', rateCheck.reason);
+      await sendQueryRateLimitNotice(groupId, rateCheck);
       return true;
     }
     const rest = text.replace('查隐藏', '').trim();
