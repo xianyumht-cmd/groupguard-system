@@ -6,6 +6,7 @@ import { readBody, send, sendBuffer, sendJson } from './http';
 import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
 import { renderQueryPage } from './query_page';
+import { renderQunGuanjiaPage } from './qun_guanjia_page';
 import { getStatus } from './status_api';
 import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
@@ -17,6 +18,7 @@ import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_c
 import { handleLanzouUpdateEvent } from './lanzou_update_api';
 import { applyRiskPreset, getHealthDashboard, getRiskDashboard } from './risk_ops_api';
 import { getSubGameplayResourceFile, getSubGameplayResourceOverview, verifySubGameplayResourceIntegrity } from '../../services/sub_gameplay_resources';
+import { qunGuanjiaService } from '../../services/qun_guanjia_service';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 
 function contentTypeForResource(filePath: string): string {
@@ -58,6 +60,19 @@ function parseQaPath(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function requireNumericGroupId(value: unknown): string {
+  const groupId = String(value ?? '').trim();
+  if (!/^\d+$/.test(groupId)) throw new Error('请输入有效群号');
+  return groupId;
+}
+
+function renderMainPage(): string {
+  return renderHomePage().replace(
+    '<button class="tab" data-tab="send">发送与风控</button>',
+    '<button class="tab" data-tab="send">发送与风控</button>\n    <a class="tablink" id="qunGuanjiaLink" href="/qun-guanjia.html">Q群管家通道</a>'
+  );
+}
+
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
   const logger = options.logger || console;
   const { host, port, token, tokenFromEnv } = resolveServerConfig(options);
@@ -66,7 +81,7 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
     const url = new URL(req.url || '/', `http://${host}:${port}`);
     try {
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-        send(res, 200, renderHomePage(), 'text/html; charset=utf-8');
+        send(res, 200, renderMainPage(), 'text/html; charset=utf-8');
         return;
       }
 
@@ -77,6 +92,11 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       if (req.method === 'GET' && url.pathname === '/query.html') {
         send(res, 200, renderQueryPage(), 'text/html; charset=utf-8');
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/qun-guanjia.html') {
+        send(res, 200, renderQunGuanjiaPage(), 'text/html; charset=utf-8');
         return;
       }
 
@@ -107,6 +127,38 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       if (req.method === 'POST' && url.pathname === '/api/risk/preset') {
         const payload = JSON.parse(await readBody(req) || '{}');
         sendJson(res, 200, { message: '风险推荐档位已应用。', ...applyRiskPreset(options, payload.level) });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/qun-guanjia/status') {
+        const groupId = requireNumericGroupId(url.searchParams.get('groupId'));
+        sendJson(res, 200, { ok: true, status: qunGuanjiaService.getStatus(groupId) });
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/qun-guanjia/token/clear') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        const groupId = requireNumericGroupId(payload.groupId);
+        sendJson(res, 200, {
+          ok: true,
+          message: '本群 Q群管家 token 已清除。',
+          status: qunGuanjiaService.clearToken(groupId)
+        });
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/qun-guanjia/test') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        const groupId = requireNumericGroupId(payload.groupId);
+        const text = String(payload.text || '').trim();
+        if (!text) throw new Error('测试文本不能为空');
+        const result = await qunGuanjiaService.sendText(groupId, text);
+        sendJson(res, 200, {
+          ok: true,
+          message: 'Q群管家测试代发成功。',
+          result,
+          status: qunGuanjiaService.getStatus(groupId)
+        });
         return;
       }
 
