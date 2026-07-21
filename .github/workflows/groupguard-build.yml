@@ -27,10 +27,23 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: napcat-plugin-groupguard/package.json
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Build
-        run: npm run build
+        shell: bash
+        run: |
+          set +e
+          npm run build > build.log 2>&1
+          code=$?
+          cat build.log
+          exit $code
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-build-log
+          path: napcat-plugin-groupguard/build.log
+          if-no-files-found: error
