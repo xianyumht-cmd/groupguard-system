@@ -1,15 +1,13 @@
 name: GroupGuard Build
 
 on:
+  push:
+    paths:
+      - 'onebot-plugin-groupguard/**'
+      - '.github/workflows/groupguard-build.yml'
   pull_request:
     paths:
-      - 'napcat-plugin-groupguard/**'
-      - '.github/workflows/groupguard-build.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'napcat-plugin-groupguard/**'
+      - 'onebot-plugin-groupguard/**'
       - '.github/workflows/groupguard-build.yml'
 
 permissions:
@@ -20,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: napcat-plugin-groupguard
+        working-directory: onebot-plugin-groupguard
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,9 +27,9 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: napcat-plugin-groupguard/package.json
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Build
         shell: bash
         run: |
@@ -45,5 +43,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: groupguard-build-log
-          path: napcat-plugin-groupguard/build.log
+          path: onebot-plugin-groupguard/build.log
           if-no-files-found: error

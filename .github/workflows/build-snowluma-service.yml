@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'napcat-plugin-groupguard/**'
+      - 'onebot-plugin-groupguard/**'
       - '.github/workflows/build-snowluma-service.yml'
 
 permissions:
@@ -27,18 +27,18 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        working-directory: napcat-plugin-groupguard
-        run: npm install
+        working-directory: onebot-plugin-groupguard
+        run: npm ci
 
       - name: Build SnowLuma service
-        working-directory: napcat-plugin-groupguard
+        working-directory: onebot-plugin-groupguard
         run: npm run build:snowluma
 
       - name: Prepare package
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="napcat-plugin-groupguard"
+          ROOT="onebot-plugin-groupguard"
           OUT="groupguard-snowluma-service"
           rm -rf "$OUT"
           mkdir -p "$OUT"
