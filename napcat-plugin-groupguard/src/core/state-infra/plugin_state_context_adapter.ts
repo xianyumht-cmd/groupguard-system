@@ -2,6 +2,7 @@ import { GROUPGUARD_SEND_SCENE_KEY } from '../send_wrapper_constants';
 import { loggingStateService } from '../state-services/logging_state_service';
 import { pluginState } from '../../state';
 import { packageForwardMessages, packageOutgoingSegments } from '../../services/outgoing_risk_packager';
+import { qunGuanjiaService } from '../../services/qun_guanjia_service';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,6 +78,11 @@ export class PluginStateContextAdapter {
     return pluginState.actions;
   }
 
+  private getSendScene(params: unknown): string {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) return 'raw_text';
+    return String((params as any)[GROUPGUARD_SEND_SCENE_KEY] || getSceneFromMessage((params as any).message) || 'raw_text');
+  }
+
   private shouldWrapGroupSend(actionName: string, params: unknown): boolean {
     if (actionName !== 'send_group_msg') return false;
     if (!params || typeof params !== 'object') return false;
@@ -84,7 +90,7 @@ export class PluginStateContextAdapter {
     const groupId = (params as any).group_id ?? (params as any).groupId;
     if (groupId === undefined || groupId === null || String(groupId) === '') return false;
 
-    const scene = String((params as any)[GROUPGUARD_SEND_SCENE_KEY] || getSceneFromMessage((params as any).message) || 'raw_text');
+    const scene = this.getSendScene(params);
     const masterEnabled = global.botSendWrapperEnabled === true;
     const mode = String(global.botSendWrapperMode || 'normal');
     if (!masterEnabled || mode !== 'forward') return false;
@@ -100,7 +106,7 @@ export class PluginStateContextAdapter {
     const nickname = String(global.botSendForwardNickname || 'GroupGuard').trim() || 'GroupGuard';
     const userId = String(global.botSendForwardUserId || pluginState.botId || '0');
     const groupId = params?.group_id ?? params?.groupId;
-    const scene = String(params?.[GROUPGUARD_SEND_SCENE_KEY] || getSceneFromMessage(params?.message) || 'raw_text');
+    const scene = this.getSendScene(params);
     const settings = pluginState.getGroupSettings(String(groupId || ''));
     const content = packageOutgoingSegments(normalizeForwardContent(params?.message), settings, scene, 'forward').message;
     return {
@@ -121,7 +127,7 @@ export class PluginStateContextAdapter {
     const next = stripWrapperMeta(params) as any;
     if (actionName === 'send_group_msg' && Array.isArray(next.message)) {
       const groupId = String(next.group_id ?? next.groupId ?? '');
-      const scene = String((params as any)[GROUPGUARD_SEND_SCENE_KEY] || getSceneFromMessage((params as any).message) || 'raw_text');
+      const scene = this.getSendScene(params);
       next.message = packageOutgoingSegments(next.message, pluginState.getGroupSettings(groupId), scene, 'group').message;
     }
     if (actionName === 'send_group_forward_msg' && Array.isArray(next.messages)) {
@@ -141,16 +147,30 @@ export class PluginStateContextAdapter {
       return;
     }
     const rawCall = actions.call.bind(actions);
+    qunGuanjiaService.bindRuntime({
+      rawCall,
+      getAdapterName: () => pluginState.adapterName,
+      getNetworkConfig: () => pluginState.networkConfig,
+      getDataDir: () => pluginState.dataDir,
+      getGroupSettings: (groupId: string) => pluginState.getGroupSettings(groupId),
+      log: (level, message) => pluginState.log(level, message)
+    });
     pluginState.actions = {
       ...actions,
       __groupGuardSendWrapper: true,
       call: async (actionName: string, params: unknown, adapter: string, config: any): Promise<any> => {
+        const sanitizedParams = this.sanitizeSendParams(actionName, params);
+        if (actionName === 'send_group_msg') {
+          const route = await qunGuanjiaService.routeGroupMessage(sanitizedParams as any, this.getSendScene(params));
+          if (route.ok) return route.response;
+          if (route.handled && !route.fallback) throw new Error(route.error || 'Q群管家代发失败');
+        }
         if (this.shouldWrapGroupSend(actionName, params)) {
           const wrappedParams = this.buildForwardGroupMessageParams(params as any);
           loggingStateService.warn(`forward_send_direct source=send_wrapper group=${String((wrappedParams as any).group_id || '')}`);
           return rawCall('send_group_forward_msg', wrappedParams, adapter, config);
         }
-        return rawCall(actionName, this.sanitizeSendParams(actionName, params), adapter, config);
+        return rawCall(actionName, sanitizedParams, adapter, config);
       }
     };
   }
