@@ -162,7 +162,17 @@ export class PluginStateContextAdapter {
         const sanitizedParams = this.sanitizeSendParams(actionName, params);
         if (actionName === 'send_group_msg') {
           const route = await qunGuanjiaService.routeGroupMessage(sanitizedParams as any, this.getSendScene(params));
-          if (route.ok) return route.response;
+          if (route.ok) {
+            const groupId = String((sanitizedParams as any)?.group_id ?? (sanitizedParams as any)?.groupId ?? '');
+            return {
+              status: 'ok',
+              retcode: 0,
+              data: {
+                channel: 'qun_guanjia',
+                group_id: /^\d+$/.test(groupId) ? Number(groupId) : groupId
+              }
+            };
+          }
           if (route.handled && !route.fallback) throw new Error(route.error || 'Q群管家代发失败');
         }
         if (this.shouldWrapGroupSend(actionName, params)) {
