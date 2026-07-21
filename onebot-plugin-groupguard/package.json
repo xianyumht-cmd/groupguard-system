@@ -1,0 +1,58 @@
+{
+  "name": "onebot-plugin-groupguard",
+  "plugin": "群管插件",
+  "version": "1.2.14",
+  "type": "module",
+  "main": "index.mjs",
+  "description": "Group Guard plugin for OneBot and SnowLuma, comprehensive group management and risk control",
+  "author": "冷曦",
+  "license": "MIT",
+  "napcat": {
+    "tags": [
+      "群管",
+      "工具"
+    ],
+    "minVersion": "4.14.0"
+  },
+  "dependencies": {
+    "jimp": "^1.6.0",
+    "jsqr": "^1.4.0",
+    "napcat-types": "0.0.17",
+    "undici": "^7.28.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@types/node": "^22.10.7",
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0"
+  },
+  "scripts": {
+    "arch:check:system-write": "npm run arch:check:system-write:strict",
+    "arch:check:system-write:strict": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=strict",
+    "arch:check:system-write:dev": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=development",
+    "arch:check:system-write:migration": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=migration",
+    "arch:check:system-write:learning": "node --experimental-strip-types scripts/arch-check-system-write.ts --mode=learning",
+    "arch:check:risk-policy": "node scripts/arch-check-risk-policy.mjs",
+    "arch:hints:system-write": "node --experimental-strip-types scripts/arch-hints-system-write.ts",
+    "arch:help": "node --experimental-strip-types scripts/arch-help-system-write.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run arch:check:system-write:strict && npm run arch:check:risk-policy && npm run verify:action-queue && npm run verify:core-stability && npm run verify:lanzou-update && npm run verify:content-risk",
+    "build": "npm run build:release",
+    "build:napcat": "npm run build:release",
+    "build:release": "npm run typecheck && npm run arch:check:system-write:strict && npm run arch:check:risk-policy && vite build --mode release",
+    "build:debug": "npm run typecheck && npm run arch:check:system-write:strict && npm run arch:check:risk-policy && vite build --mode debug",
+    "build:snowluma": "npm run typecheck && npm run arch:check:system-write:strict && npm run arch:check:risk-policy && vite build --mode snowluma",
+    "build:all": "npm run build:release && npm run build:snowluma",
+    "resources:sub-gameplay": "node scripts/generate-sub-gameplay-resource-manifest.mjs",
+    "verify:sub-gameplay-resources": "node scripts/verify-sub-gameplay-resources.mjs",
+    "verify:sub-gameplay-webui": "node --experimental-strip-types scripts/verify-sub-gameplay-webui.mjs",
+    "config:migrate:snowluma": "node scripts/migrate-snowluma-config.mjs",
+    "verify:content-risk": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-content-risk.ts",
+    "verify:action-queue": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/action_queue_regression_test.ts",
+    "verify:core-stability": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-core-stability.ts",
+    "verify:lanzou-update": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-lanzou-update.ts",
+    "start:snowluma": "node dist/snowluma-service.mjs",
+    "report:scene": "node scene_coverage_report.mjs",
+    "report:commands": "node scripts/command_coverage_report.mjs"
+  }
+}
