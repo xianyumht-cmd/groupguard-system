@@ -6,6 +6,10 @@ import { createStandaloneContext } from './standalone_context';
 import { startSnowLumaAdminServer, type SnowLumaAdminServerRuntime } from './snowluma_admin_server';
 import { plugin_init, plugin_onmessage, plugin_onevent, plugin_cleanup } from '../index';
 import { getGroupGuardBotRole } from '../core/bot_role';
+import {
+  installQunGuanjiaRealtimeCapture,
+  observeQunGuanjiaRealtimeMessage
+} from '../services/qun_guanjia_realtime_capture';
 
 type RuntimeState = {
   ctx: any;
@@ -75,9 +79,12 @@ async function start(): Promise<RuntimeState> {
     logger: console
   });
 
+  installQunGuanjiaRealtimeCapture();
+
   client.onEvent(async (event) => {
     if (!event || typeof event !== 'object') return;
     if (isMessageEvent(event)) {
+      observeQunGuanjiaRealtimeMessage(event);
       await plugin_onmessage(ctx, event as any);
       return;
     }
