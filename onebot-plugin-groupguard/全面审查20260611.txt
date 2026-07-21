@@ -1,0 +1,138 @@
+已完成全面评审，没有修改代码。结论先说：这个项目已经不是“简单群管插件”，而是一个带 WebUI、SQLite、动作队列、动态命令、授权和运行态观测的综合系统；基础能力很丰富，但现在最大短板集中在 **WebUI 安全、配置治理、规则体系抽象、审计持久化、风险用户画像** 这几块。
+
+**1. 功能完整性**
+
+现有功能主要分布在这些模块：
+
+- 消息处理主链路：[runtime_message_pipeline.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/runtime/runtime_message_pipeline.ts)
+- 群事件处理：[runtime_event_pipeline.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/runtime/runtime_event_pipeline.ts)
+- 被动风控：[passive_service.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/services/passive_service.ts)
+- 管理动作：[moderation_service.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/services/moderation_service.ts)
+- 抗风控动作队列：[action_queue_service.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/services/action_queue_service.ts)
+- 安全动作保护：[action_guard_service.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/services/action_guard_service.ts)
+- 入群申请审核：[join_verifier.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/join_verifier.ts)
+- 入群后数学验证：[verify.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/verify.ts)
+- WebUI/API：[runtime_routes.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/runtime/runtime_routes.ts)、[config.html](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/webui/config.html)
+
+比较成熟的是：禁言/踢出/警告/全体禁言、黑白名单、关键词处罚、媒体类型撤回、刷屏/复读检测、入群暗号与数学验证、动作队列、撤回任务持久化、签到/积分/邀请/活跃统计、WebUI 基础配置和运行态查看。
+
+设计不完整的是：风险用户识别还停留在规则命中和手工名单，没有形成用户风险画像；审核系统只覆盖入群申请，没有管理员操作审批流；关键词系统只是简单 contains/regex 问答，缺少分级规则、命中解释、测试沙盒；自定义规则系统目前更像 QA + 动态 HTTP 命令，不是群管规则 DSL。
+
+明显缺失的是：完整配置备份/恢复、配置版本迁移、WebUI 权限认证、持久化审计日志、误操作回滚、规则模拟器、批量群策略管理、风险用户分层处置。
+
+**2. 群管理能力**
+
+抗风控系统是项目亮点。它不只是“随机延迟”，而是包括发送队列、TokenBucket、群熔断、随机后缀、动作限速、动作去重、优先级、重试、超时、撤回补偿、管理员/群主保护和失败后风险分收敛。尤其 [action_guard_service.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/services/action_guard_service.ts) 里的 `skip_risk_protect`、`skip_rate_limited`、`skip_target_protected` 这类 code 已经有工程化雏形。
+
+但它主要保护“机器人动作不被平台风控”，不是完整的“群成员风险识别”。建议增强：
+
+- 增加用户风险画像：短时发言频率、重复率、链接/二维码/敏感词命中、入群时间、邀请来源、历史处罚、退群再入等。
+- 增加风险分层动作：观察、撤回、警告、临时禁言、长禁言、踢出、拉黑。
+- 增加规则命中审计：每次为什么处理、命中哪条规则、使用哪个配置来源。
+- 增加灰度模式：只记录不处罚，用于测试新规则。
+- 增加入群风险：新号、无验证信息、拒绝词、同邀请人批量拉人、频繁申请。
+
+审核系统现在集中在 [join_verifier.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/join_verifier.ts)：黑名单优先、5 分钟 3 次防刷、暗号验证、拒绝词、自动同意回落。入群后还有 [verify.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/verify.ts) 的数学题验证。可增强点是：支持人工审核队列、审核原因模板、审核日志检索、批量同意/拒绝、按群不同策略。
+
+自动撤回、自动禁言、黑白名单、关键词系统都可用；白名单是全局绕过型，建议增加“白名单范围”：免撤回、免关键词、免刷屏、免入群验证分别控制。
+
+**3. WebUI**
+
+优点：页面功能很全，已经有仪表盘、群管设置、互动设置、人格模板、运行态、工具、授权、活跃统计、验证状态、日志；支持分群配置导入导出、人格模板导入导出、运行态/Guard 统计展示。
+
+缺点和风险很集中：
+
+- API 大量使用 `getNoAuth/postNoAuth`，包括 `/config`、`/logs/clear`、`/runtime/risk-toggle`、`/group-config/import`。见 [runtime_routes.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/runtime/runtime_routes.ts:107)。
+- WebUI 保存是整份配置 POST，容易出现并发覆盖。
+- 单文件 `config.html` 接近 2000 行，维护成本高。
+- 配置项很多但缺少搜索、变更预览、脏状态提示、危险操作二次确认分级。
+- 只有分群配置导入导出和人格模板导入导出，没有完整配置备份/恢复中心。
+
+建议：先补 WebUI 登录/token 或绑定 NapCat 管理权限；增加“保存前 diff”；增加完整配置导出、导入校验、自动备份列表、一键回滚；把 WebUI 拆成模块化页面或至少拆 JS/CSS。
+
+**4. 配置系统**
+
+配置结构现在已经膨胀。[GroupGuardSettings](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/types.ts:86) 同时承载入群、关键词、风控、发送队列、互动、LOL 查询、人格模板、动作队列、黑名单策略，长期会越来越难维护。
+
+已有优点：默认值完整、`normalizePluginConfig` 和 `normalizeGroupSettings` 能修复很多空值；分群配置已迁移到 SQLite；旧 JSON 有迁移逻辑。
+
+建议拆分为：
+
+- `security`: 黑白名单、关键词、媒体过滤、刷屏、风险分。
+- `join`: 入群审核、暗号、数学验证、欢迎/私信。
+- `actions`: ban/kick/recall 队列、限速、延迟、保护。
+- `interaction`: 签到、抽奖、邀请、活跃。
+- `reply`: QA、人格模板、回复策略。
+- `integrations`: LOL、视频、动态命令。
+
+必须增加 `configVersion`、迁移脚本、保存前自动备份、导入校验报告。
+
+**5. 性能与稳定性**
+
+大群/高频消息下的潜在瓶颈：
+
+- 每条群消息会按顺序跑黑名单、命令、QA、自动撤回、关键词、媒体过滤、刷屏、活跃、表情、验证、名片锁定。
+- QR 检测会对图片做识别，若高频图片较多会拖慢链路。
+- `node:sqlite` 是同步接口，虽然简单稳定，但大批量读写可能阻塞事件循环。
+- 活跃统计有 5 秒批量刷新，这是好的；但部分缓存仍在内存，重启后短时状态丢失。
+- 动态命令系统每次调度会做初始化/刷新检查，已有 5 秒 reload 间隔，但仍建议将“热路径”再减轻。
+- `/activity` 全量查询多群时会遍历配置群和授权群，规模变大后 WebUI 会慢。
+
+建议：把高成本检测异步化或限并发；对 QR/外部 HTTP 命令加全局预算；WebUI 列表分页；风险与审计写入使用批量队列；给 action queue 增加更明确的 per-group 公平调度指标。
+
+**6. 日志系统**
+
+当前日志有内存 buffer，最多约 500 条；WebUI 可查看、过滤、清空。ActionQueue 和 Guard 有结构化日志，入群审核写入 `join_logs`，撤回任务有持久化状态。
+
+不足：普通管理操作、配置变更、WebUI 操作、规则命中没有统一审计表；日志清空无权限保护；日志主要是排错，不足以做追责和回放。
+
+建议增加 `audit_events` 表：操作者、来源、群、动作、目标、规则、结果、配置 diff、时间。日志和审计分离：日志用于排错，审计用于安全追踪。
+
+**7. 权限与安全**
+
+最大风险是 WebUI 无认证 API。其次是完整配置可被读取，里面包含 ownerQQs、licenseKey、外部接口 key、授权信息。配置 POST 也没有操作者身份和 CSRF 防护概念。
+
+群内权限方面做得不错：管理员/主人检查较多，自动动作保护管理员/群主。但仍建议加：
+
+- 危险命令二次确认：清空配置、全体禁言、批量拉黑、删除授权。
+- WebUI 写操作 token。
+- 配置敏感字段脱敏展示。
+- 配置导入白名单字段校验。
+- 管理员操作审计。
+
+**8. 技术债务**
+
+主要债务：
+
+- [state.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/state.ts) 仍然是大而全状态中心，承担配置、缓存、发送队列、自撤回、日志、权限判断。
+- [passive_service.ts](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/src/services/passive_service.ts) 把多类被动规则放在一起，后续应拆成 `blacklist_rule`、`keyword_rule`、`media_filter_rule`、`spam_rule`、`qa_responder`。
+- [config.html](D:/project2/napcatplugin/lengxi_repo/onebot-plugin-groupguard/webui/config.html) 单文件过大。
+- 配置字段散落在类型、默认值、WebUI、命令、normalize 中，新增功能容易漏字段。
+- 动态命令系统与群管主系统边界还不够清晰，建议隔离成插件子系统。
+
+**9. 路线图**
+
+P0（必须做）
+
+- WebUI/API 鉴权：否则 `/config`、`/logs/clear`、运行态开关都是高风险入口。
+- 完整配置备份/恢复：每次保存前自动快照，支持一键回滚。
+- 配置版本迁移：加入 `configVersion`，把 normalize 和迁移职责分开。
+- 持久化审计日志：记录配置变更、管理动作、规则命中、WebUI 操作。
+- 敏感配置脱敏：licenseKey、接口 key、ownerQQs 至少在 WebUI/API 输出侧做控制。
+
+P1（强烈建议）
+
+- 拆分配置域，降低 `GroupGuardSettings` 膨胀。
+- 风险用户画像：从“命中即处罚”升级到“累计风险分 + 分层处置”。
+- 自定义规则系统：条件、动作、例外、冷却、测试模式、灰度模式。
+- WebUI 配置 diff、搜索、危险项提示、批量群策略。
+- 日志/审计查询能力：按群、用户、动作、结果筛选。
+- 高成本检测限流：二维码识别、外部 HTTP 动态命令、批量消息场景。
+
+P2（锦上添花）
+
+- 规则市场/预设模板：新群、严管群、游戏群、公告群等策略模板。
+- 风控看板：今日处罚、误伤率、命中规则排行、失败原因排行。
+- 配置健康检查：发现无效正则、过高限流、冲突开关。
+- 自动生成群策略报告。
+- WebUI 模块化重构，支持更好的移动端和大规模群列表。

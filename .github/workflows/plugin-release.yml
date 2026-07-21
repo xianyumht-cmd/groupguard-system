@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'napcat-plugin-*/**'
+      - 'onebot-plugin-*/**'
       - '.github/**'
   workflow_dispatch:
 
@@ -74,7 +75,7 @@ jobs:
 
           # 只上传本次构建产生的 zip（增量）
           shopt -s nullglob
-          zips=(.plugin-zips/napcat-plugin-*.zip)
+          zips=(.plugin-zips/napcat-plugin-*.zip .plugin-zips/onebot-plugin-*.zip)
           if [ ${#zips[@]} -eq 0 ]; then
             echo "📦 本次无新构建的 zip，跳过上传"
           else

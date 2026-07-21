@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate" />
+  <title>全局消息包装 · GroupGuard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #eff6ff, #f8fafc);
+      color: #0f172a;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 28px 18px; }
+    .card {
+      background: rgba(255,255,255,.88);
+      border: 1px solid rgba(59,130,246,.16);
+      border-radius: 18px;
+      box-shadow: 0 12px 36px rgba(15,23,42,.08);
+      padding: 22px;
+      backdrop-filter: blur(16px);
+    }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .sub { margin: 0 0 22px; color: #64748b; font-size: 13px; line-height: 1.7; }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+      gap: 14px;
+      align-items: center;
+      padding: 14px 0;
+      border-top: 1px solid rgba(59,130,246,.1);
+    }
+    .row:first-of-type { border-top: 0; }
+    label { font-weight: 650; font-size: 14px; }
+    .hint { margin-top: 5px; color: #64748b; font-size: 12px; line-height: 1.6; }
+    .ipt, select {
+      width: 100%;
+      border: 1px solid rgba(59,130,246,.22);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 14px;
+      background: #fff;
+      color: #0f172a;
+      outline: none;
+    }
+    .ipt:focus, select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
+    .toggle {
+      width: 52px;
+      height: 28px;
+      border-radius: 999px;
+      background: #cbd5e1;
+      position: relative;
+      cursor: pointer;
+      transition: .2s;
+      border: none;
+    }
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      transition: .2s;
+      box-shadow: 0 2px 6px rgba(0,0,0,.18);
+    }
+    .toggle.on { background: linear-gradient(135deg, #60a5fa, #2563eb); }
+    .toggle.on::after { transform: translateX(24px); }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+    button.btn {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-weight: 650;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .primary { background: linear-gradient(135deg, #60a5fa, #2563eb); color: #fff; }
+    .secondary { background: rgba(59,130,246,.1); color: #1d4ed8; border: 1px solid rgba(59,130,246,.18) !important; }
+    .status { margin-top: 14px; font-size: 13px; color: #475569; min-height: 20px; }
+    .warn {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(245,158,11,.12);
+      border: 1px solid rgba(245,158,11,.24);
+      color: #92400e;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    code { background: rgba(15,23,42,.06); padding: 2px 5px; border-radius: 6px; }
+    @media (max-width: 680px) { .row { grid-template-columns: 1fr; gap: 8px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>全局消息包装</h1>
+      <p class="sub">控制机器人所有群消息的最终发送形态。开启后，原本走 <code>send_group_msg</code> 的群回复会被包装成 <code>send_group_forward_msg</code> 合并转发；原有队列、随机延迟、限流和自撤回链路继续保留。</p>
+
+      <div class="row">
+        <div>
+          <label>启用包装</label>
+          <div class="hint">关闭时保持普通群消息发送。</div>
+        </div>
+        <button id="enabled" class="toggle" type="button" aria-label="启用包装"></button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="mode">包装模式</label>
+          <div class="hint">当前只开放合并转发，后续可扩展图片/卡片。</div>
+        </div>
+        <select id="mode">
+          <option value="normal">普通消息</option>
+          <option value="forward">合并转发</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="nickname">合并转发昵称</label>
+          <div class="hint">显示在合并转发节点里的名字。</div>
+        </div>
+        <input id="nickname" class="ipt" placeholder="GroupGuard" />
+      </div>
+
+      <div class="warn">建议先在一个测试群开启。合并转发发送失败时不会再自动补发普通消息，避免接口状态不明导致重复消息。</div>
+
+      <div class="actions">
+        <button class="btn primary" onclick="saveConfig()">保存配置</button>
+        <button class="btn secondary" onclick="loadConfig()">重新读取</button>
+        <button class="btn secondary" onclick="openMainConfig()">打开主配置页</button>
+      </div>
+      <div id="status" class="status">准备加载配置...</div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const basePath = (() => {
+      const marker = '/webui/';
+      if (location.pathname.includes(marker)) return location.pathname.split(marker)[0];
+      return '/plugin/onebot-plugin-groupguard';
+    })();
+    let enabled = false;
+
+    function setStatus(text, isError = false) {
+      $('status').textContent = text;
+      $('status').style.color = isError ? '#dc2626' : '#475569';
+    }
+
+    function syncToggle() {
+      $('enabled').classList.toggle('on', enabled);
+      $('enabled').textContent = '';
+    }
+
+    $('enabled').addEventListener('click', () => {
+      enabled = !enabled;
+      syncToggle();
+      if (enabled && $('mode').value === 'normal') $('mode').value = 'forward';
+    });
+
+    $('mode').addEventListener('change', () => {
+      if ($('mode').value === 'forward') enabled = true;
+      if ($('mode').value === 'normal') enabled = false;
+      syncToggle();
+    });
+
+    async function loadConfig() {
+      try {
+        setStatus('正在读取配置...');
+        const res = await fetch(`${basePath}/config`, { cache: 'no-store' });
+        const json = await res.json();
+        if (json.code !== 0) throw new Error(json.message || '读取失败');
+        const g = (json.data && json.data.global) || {};
+        enabled = g.botSendWrapperEnabled === true;
+        $('mode').value = g.botSendWrapperMode === 'forward' ? 'forward' : 'normal';
+        $('nickname').value = g.botSendForwardNickname || 'GroupGuard';
+        syncToggle();
+        setStatus(`已读取配置：${enabled && $('mode').value === 'forward' ? '合并转发发送' : '普通发送'}`);
+      } catch (err) {
+        setStatus(`读取失败：${err && err.message ? err.message : err}`, true);
+      }
+    }
+
+    async function saveConfig() {
+      try {
+        const mode = $('mode').value === 'forward' ? 'forward' : 'normal';
+        const body = {
+          global: {
+            botSendWrapperEnabled: enabled && mode === 'forward',
+            botSendWrapperMode: mode,
+            botSendForwardNickname: ($('nickname').value || 'GroupGuard').trim() || 'GroupGuard'
+          }
+        };
+        setStatus('正在保存配置...');
+        const res = await fetch(`${basePath}/config/patch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const json = await res.json();
+        if (json.code !== 0) throw new Error(json.message || '保存失败');
+        setStatus('配置已保存，下一条机器人群消息开始生效。');
+      } catch (err) {
+        setStatus(`保存失败：${err && err.message ? err.message : err}`, true);
+      }
+    }
+
+    function openMainConfig() {
+      window.open(`${basePath}/page/config`, '_blank');
+    }
+
+    loadConfig();
+  </script>
+</body>
+</html>

@@ -8,11 +8,12 @@
 
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, rmSync } from 'fs';
 import { join } from 'path';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 
 const REPO_URL = process.argv[2] || 'https://github.com/user/repo';
 const RELEASE_TAG = process.argv[3] || 'plugins';
 const FORCE_ALL = process.argv.includes('--all');
+const SKIP_INSTALL = process.argv.includes('--skip-install');
 const ROOT = process.cwd();
 const OUT_DIR = join(ROOT, '.plugin-zips');
 
@@ -36,7 +37,7 @@ function getChangedPlugins () {
     if (!diff) return new Set();
     const changed = new Set();
     for (const file of diff.split('\n')) {
-      const match = file.match(/^(napcat-plugin-[^/]+)\//);
+      const match = file.match(/^((?:napcat|onebot)-plugin-[^/]+)\//);
       if (match) changed.add(match[1]);
     }
     return changed;
@@ -49,9 +50,9 @@ function getChangedPlugins () {
 function installDependencies(pluginPath, pkgName) {
   try {
     if (existsSync(join(pluginPath, 'pnpm-lock.yaml'))) {
-      execSync('pnpm install', { cwd: pluginPath, stdio: 'inherit' });
+      execSync('pnpm install --frozen-lockfile', { cwd: pluginPath, stdio: 'inherit' });
     } else if (existsSync(join(pluginPath, 'package-lock.json'))) {
-      execSync('npm install', { cwd: pluginPath, stdio: 'inherit' });
+      execSync('npm ci', { cwd: pluginPath, stdio: 'inherit' });
     } else {
       execSync('npm install', { cwd: pluginPath, stdio: 'inherit' });
     }
@@ -94,6 +95,7 @@ function packageDist(pluginPath, pkg, zipName, label) {
       main: (pkg.main || 'index.mjs').replace(/^dist\//, ''),
       description: pkg.description,
       author: pkg.author,
+      license: pkg.license,
       napcat: pkg.napcat,
       dependencies: pkg.dependencies,
     };
@@ -112,16 +114,30 @@ function packageDist(pluginPath, pkg, zipName, label) {
     cpSync(resSrc, join(stagingDir, 'resources'), { recursive: true });
   }
 
+  for (const fileName of ['README.md', 'LICENSE']) {
+    const source = join(pluginPath, fileName);
+    const destination = join(stagingDir, fileName);
+    if (existsSync(source) && !existsSync(destination)) cpSync(source, destination);
+  }
+
   const zipPath = join(OUT_DIR, zipName);
   const stagingParent = join(OUT_DIR, `staging-${zipName}`);
-  execSync(`zip -r "${zipPath}" "${pkg.name}"`, { cwd: stagingParent, stdio: 'inherit' });
+  if (process.platform === 'win32') {
+    // Windows ships bsdtar; -a selects ZIP from the output extension and writes
+    // portable forward-slash entry names, unlike Compress-Archive backslashes.
+    execFileSync('tar', ['-a', '-c', '-f', zipPath, pkg.name], { cwd: stagingParent, stdio: 'inherit' });
+  } else {
+    execFileSync('zip', ['-r', zipPath, pkg.name], { cwd: stagingParent, stdio: 'inherit' });
+  }
   rmSync(stagingParent, { recursive: true });
   console.log(`✅ ${label} 打包完成: ${zipName}\n`);
 }
 
 // 扫描所有插件目录
 const pluginDirs = readdirSync(ROOT, { withFileTypes: true })
-  .filter(d => d.isDirectory() && d.name.startsWith('napcat-plugin-'))
+  .filter(d => d.isDirectory()
+    && /^(?:napcat|onebot)-plugin-/.test(d.name)
+    && existsSync(join(ROOT, d.name, 'package.json')))
   .map(d => d.name);
 
 const changedSet = FORCE_ALL ? null : getChangedPlugins();
@@ -182,7 +198,7 @@ for (const dirName of pluginDirs) {
   console.log(`🔨 构建: ${pkg.name} v${pkg.version}`);
   console.log(`==========================================`);
 
-  installDependencies(pluginPath, pkg.name);
+  if (!SKIP_INSTALL) installDependencies(pluginPath, pkg.name);
 
   const releaseScript = pkg.scripts?.['build:release'] ? 'build:release' : 'build';
   runBuild(pluginPath, pkg, releaseScript, 'release');
