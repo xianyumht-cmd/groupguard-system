@@ -37,6 +37,8 @@ for (const marker of [
   'test -d config',
   'test -d data',
   'test -d dist',
+  'set -- config data dist',
+  'if [ -f package.json ]',
   'umask 077',
   'tar -tzf',
   'chmod 600',

@@ -34,22 +34,27 @@ test -f config/config.json
 test -d config
 test -d data
 test -d dist
-test -f package.json
 command -v sha256sum >/dev/null
 command -v tar >/dev/null
 mkdir -p backups
 umask 077
 test ! -e "$archive_name"
 rm -f -- "$temporary_name"
-tar -czf "$temporary_name" -- config data dist package.json
+set -- config data dist
+package_present=false
+if [ -f package.json ]; then
+  set -- "$@" package.json
+  package_present=true
+fi
+tar -czf "$temporary_name" -- "$@"
 tar -tzf "$temporary_name" >/dev/null
 tar -tzf "$temporary_name" | grep -q '^config/config.json$'
 tar -tzf "$temporary_name" | grep -q '^data/'
 tar -tzf "$temporary_name" | grep -q '^dist/'
-tar -tzf "$temporary_name" | grep -q '^package.json$'
 chmod 600 "$temporary_name"
 mv -- "$temporary_name" "$archive_name"
 sha256sum "$archive_name" | awk '{print "backup_sha256=" $1}'
+printf 'backup_package_json_present=%s\n' "$package_present"
 '@
 $normalizedScript = $script.Replace("`r`n", "`n")
 $scriptBase64 = [Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($normalizedScript))
@@ -60,4 +65,4 @@ Write-Host "Creating verified remote backup: $RemoteAppDir/$archiveName"
 if ($LASTEXITCODE -ne 0) {
   throw "SnowLuma backup failed with exit code $LASTEXITCODE."
 }
-Write-Host "Backup complete: $RemoteAppDir/$archiveName (config, data, dist, package.json; mode 0600)"
+Write-Host "Backup complete: $RemoteAppDir/$archiveName (config, data, dist, and package.json when present; mode 0600)"
