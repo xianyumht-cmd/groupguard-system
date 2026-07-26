@@ -93,13 +93,15 @@ export const DEFAULT_QA_LINK_DELIVERY: QaLinkDeliverySettings = {
   wrapInCodeBlock: false
 };
 
+export const DEFAULT_LANZOU_MESSAGE_TEMPLATE = '检测到网盘更新：{title}\n{url}';
+
 export const DEFAULT_LANZOU_UPDATE_PUSH: LanzouUpdatePushSettings = {
   enabled: false,
-  monitorBaseUrl: 'http://192.168.3.100:6178',
+  monitorBaseUrl: '',
   groupIds: [],
   privateUserIds: [],
   targets: [],
-  messageTemplate: '{message}',
+  messageTemplate: DEFAULT_LANZOU_MESSAGE_TEMPLATE,
   includeDiffSummary: true
 };
 
@@ -588,7 +590,7 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
 }
 
 export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
-  configVersion: 7,
+  configVersion: 8,
   licenseKey: '',
   debug: false,
   ownerQQs: '',
@@ -616,7 +618,7 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   lolAuthKey: '',
   lolBanPrimaryUrl: '',
   lolBanBackupUrls: [],
-  lolApiBaseUrl: 'http://192.168.3.94:5000',
+  lolApiBaseUrl: '',
   eleBuildApiBaseUrl: '',
   shardDataUrl: 'https://raw.githubusercontent.com/badspacebar/release/master/files/shards.json',
   shardHeroListUrl: 'https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js',
@@ -689,7 +691,7 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
   if (!(input as any)?.global?.contentRisk && ((input as any)?.contentRisk || (input as any)?.msgFilter)) {
     merged.global = { ...(merged.global || {}), contentRisk: merged.contentRisk };
   }
-  merged.configVersion = 7;
+  merged.configVersion = 8;
   const normalizedQaList: QAEntry[] = Array.isArray(merged.qaList)
     ? merged.qaList
       .filter((qa: any) => qa && typeof qa.keyword === 'string' && typeof qa.reply === 'string')

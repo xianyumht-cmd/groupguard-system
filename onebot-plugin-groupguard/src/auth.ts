@@ -1,4 +1,4 @@
-import { GroupLicense } from './types';
+import type { GroupLicense } from './types';
 import { configStateService } from './core/state-services/config_state_service';
 import { loggingStateService } from './core/state-services/logging_state_service';
 import { send } from './dynamic-commands/response_capture_runtime';

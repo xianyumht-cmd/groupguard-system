@@ -8,6 +8,9 @@ import { groupguardRepository } from '../../repositories/groupguard_repository';
 import { applyPatch } from './object_patch';
 import type { RiskPresetLevel } from '../../types';
 import type { SnowLumaAdminServerOptions } from './types';
+import { getBuildInfo } from '../../build_info';
+import { redactWebSocketUrl } from '../redact_url';
+import { getLanzouDeliveryStoreStatus } from './lanzou_update_api';
 
 function sinceFromHours(hours: any): number {
   const n = Number(hours);
@@ -65,7 +68,7 @@ function getLanzouMonitorSettings(): Record<string, any> {
 }
 
 function getLanzouMonitorBaseUrl(settings: Record<string, any>): string {
-  return String(settings.monitorBaseUrl || settings.monitor_base_url || 'http://192.168.3.100:6178').trim().replace(/\/+$/, '') || 'http://192.168.3.100:6178';
+  return String(settings.monitorBaseUrl || settings.monitor_base_url || '').trim().replace(/\/+$/, '');
 }
 
 export function getLatestLanzouScanAt(lastScan: any): string {
@@ -134,6 +137,19 @@ export async function getLanzouMonitorStatus() {
       checkedAt
     };
   }
+  if (!baseUrl) {
+    return {
+      baseUrl: '',
+      enabled: true,
+      applicable: true,
+      connected: false,
+      status: 'misconfigured',
+      ok: false,
+      running: false,
+      checkedAt,
+      error: 'monitor_base_url_missing'
+    };
+  }
   try {
     const health = await fetchJsonWithTimeout(`${baseUrl}/health`);
     let watchersData: any = {};
@@ -145,25 +161,58 @@ export async function getLanzouMonitorStatus() {
     const watchers = Array.isArray(watchersData?.watchers) ? watchersData.watchers : Array.isArray(watchersData) ? watchersData : [];
     const healthOk = health?.ok === true;
     const running = health?.running === true;
-    const ok = healthOk && running;
+    const monitorStatus = String(health?.status || '').trim().toLowerCase();
+    const failedWatcherCount = Math.max(0, Number(health?.failed_watcher_count || 0));
+    const pendingWatcherCount = Math.max(0, Number(health?.pending_watcher_count || 0));
+    const neverScannedWatcherCount = Math.max(0, Number(health?.never_scanned_watcher_count || 0));
+    const orphanWatcherCount = Math.max(0, Number(health?.orphan_watcher_count || 0));
+    const hasWatcherDegradation = [
+      failedWatcherCount,
+      pendingWatcherCount,
+      neverScannedWatcherCount,
+      orphanWatcherCount
+    ].some((count) => Number.isFinite(count) && count > 0);
+    const explicitlyDegraded = health?.ready === false
+      || health?.degraded === true
+      || ['degraded', 'unhealthy', 'failed'].includes(monitorStatus)
+      || hasWatcherDegradation;
+    const ok = healthOk && running && !explicitlyDegraded;
     const lastScan = getLatestLanzouScanAt(health?.last_scan || health?.lastScan)
       || getLatestLanzouScanAt(watchers);
+    const status = !running
+      ? 'stopped'
+      : explicitlyDegraded
+        ? 'degraded'
+        : healthOk
+          ? 'healthy'
+          : 'unhealthy';
     return {
       baseUrl,
       enabled: true,
       applicable: true,
       connected: true,
-      status: ok ? 'healthy' : healthOk ? 'stopped' : 'unhealthy',
+      status,
       ok,
       running,
+      ready: ok,
       checkedAt,
       health,
       watcherCount: Number.isFinite(Number(health?.watcher_count)) ? Number(health.watcher_count) : watchers.length,
       enabledWatcherCount: Number.isFinite(Number(health?.enabled_watcher_count))
         ? Number(health.enabled_watcher_count)
         : watchers.filter((item: any) => item?.enabled !== false).length,
+      failedWatcherCount,
+      pendingWatcherCount,
+      neverScannedWatcherCount,
+      orphanWatcherCount,
       lastScan,
-      error: ok ? '' : healthOk ? 'monitor_not_running' : 'monitor_health_check_failed'
+      error: ok
+        ? ''
+        : !running
+          ? 'monitor_not_running'
+          : explicitlyDegraded
+            ? 'monitor_not_ready'
+            : 'monitor_health_check_failed'
     };
   } catch (error: any) {
     return {
@@ -182,16 +231,26 @@ export async function getLanzouMonitorStatus() {
 
 export async function getHealthDashboard(options: SnowLumaAdminServerOptions) {
   const now = Date.now();
+  const safeWsUrl = redactWebSocketUrl(options.wsUrl);
   const botId = identityStateService.getBotId() || '';
   const adapterName = contextStateService.getAdapterName() || '';
+  const oneBot = options.getOneBotStatus?.() || {
+    status: 'unknown',
+    connected: false,
+    started: false,
+    reconnectScheduled: false,
+    lastError: 'connection_status_unavailable'
+  };
   const previous = readHealthState(options.dataDir);
   const botChanged = Boolean(previous.botId && botId && previous.botId !== botId);
   const [botSend, lanzouMonitor] = await Promise.all([
     groupguardRepository.getBotSendStats({ sinceMs: now - 10 * 60 * 1000, limit: 10 }),
     getLanzouMonitorStatus()
   ]);
+  const lanzouDeliveryStore = getLanzouDeliveryStoreStatus(options);
   const warnings: string[] = [];
-  if (!botId) warnings.push('未检测到当前账号，可能尚未连接或账号已掉线。');
+  if (oneBot.connected !== true) warnings.push('OneBot 传输连接未就绪，消息收发暂不可用。');
+  if (!botId && oneBot.connected === true) warnings.push('OneBot 已连接，但机器人账号身份尚未刷新。');
   if (!adapterName) warnings.push('适配器为空，OneBot/SnowLuma 连接可能未初始化。');
   if (botChanged) warnings.push(`账号发生切换：${previous.botId} -> ${botId}`);
   if (botSend.failed > 0) warnings.push(`最近10分钟发送失败 ${botSend.failed} 次。`);
@@ -199,23 +258,63 @@ export async function getHealthDashboard(options: SnowLumaAdminServerOptions) {
   if (lanzouMonitor.applicable && !lanzouMonitor.ok) {
     warnings.push(`Lanzou monitor unhealthy: ${lanzouMonitor.error || lanzouMonitor.baseUrl}`);
   }
-  writeHealthState(options.dataDir, { botId, adapterName, wsUrl: options.wsUrl, checkedAt: now });
+  if (!lanzouDeliveryStore.ok) {
+    warnings.push(`Lanzou delivery store degraded: ${lanzouDeliveryStore.error || 'unknown'}`);
+  }
+  const status = oneBot.connected !== true
+    ? 'unhealthy'
+    : warnings.length > 0
+      ? 'degraded'
+      : 'healthy';
+  const ready = oneBot.connected === true;
+  writeHealthState(options.dataDir, { botId, adapterName, wsUrl: safeWsUrl, checkedAt: now, status });
   return {
     ok: true,
-    healthy: warnings.length === 0,
+    status,
+    healthy: status === 'healthy',
+    ready,
     checkedAt: now,
+    build: getBuildInfo(),
     warnings,
+    checks: {
+      oneBotTransport: {
+        status: oneBot.connected === true ? 'up' : 'down',
+        required: true,
+        ...oneBot
+      },
+      identity: {
+        status: botId ? 'up' : 'degraded',
+        required: false,
+        botIdKnown: Boolean(botId)
+      },
+      lanzouMonitor: {
+        status: !lanzouMonitor.applicable ? 'not_applicable' : lanzouMonitor.ok ? 'up' : 'degraded',
+        required: false
+      },
+      lanzouDeliveryStore: {
+        ...lanzouDeliveryStore,
+        status: lanzouDeliveryStore.ok ? 'up' : 'degraded',
+        required: false
+      }
+    },
+    capabilities: {
+      messagingReady: ready,
+      identityKnown: Boolean(botId),
+      updatePushReady: (!lanzouMonitor.applicable || lanzouMonitor.ok === true) && lanzouDeliveryStore.ok
+    },
     runtime: {
       uptimeSeconds: Math.floor(process.uptime()),
       botId,
       previousBotId: previous.botId || '',
       botChanged,
       adapterName,
-      wsUrl: options.wsUrl,
-      processCwd: process.cwd()
+      wsUrl: safeWsUrl,
+      processCwd: process.cwd(),
+      oneBot
     },
     recentSend: botSend,
-    lanzouMonitor
+    lanzouMonitor,
+    lanzouDeliveryStore
   };
 }
 

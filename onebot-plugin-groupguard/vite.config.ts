@@ -3,8 +3,22 @@ import { resolve } from 'path';
 import { defineConfig } from 'vite';
 import nodeResolve from '@rollup/plugin-node-resolve';
 import { builtinModules } from 'module';
+import { execFileSync } from 'node:child_process';
 
 const nodeModules = [...builtinModules, builtinModules.map((m) => `node:${m}`)].flat();
+const packageJson = JSON.parse(fs.readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
+
+function gitOutput(args: string[]): string {
+  try {
+    return execFileSync('git', args, {
+      cwd: __dirname,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).trim();
+  } catch {
+    return '';
+  }
+}
 
 function normalizeId(id: string): string {
   return id.replace(/\\/g, '/');
@@ -31,9 +45,24 @@ export default defineConfig(({ mode }) => {
   const isSnowLuma = mode === 'snowluma';
   const entryName = isSnowLuma ? 'snowluma-service.mjs' : 'index.mjs';
   const subGameplayResourcesDir = resolve(__dirname, 'resources/sub-gameplay');
+  const commitSha = process.env.GROUPGUARD_COMMIT_SHA || gitOutput(['rev-parse', 'HEAD']) || 'unknown';
+  const dirty = gitOutput(['status', '--porcelain', '--', '.']).length > 0;
+  const buildInfo = {
+    service: 'groupguard',
+    version: String(packageJson.version || 'unknown'),
+    commit_sha: commitSha,
+    build_time_utc: process.env.GROUPGUARD_BUILD_TIME_UTC || new Date().toISOString(),
+    contract_version: 'groupguard-lol-api.v2',
+    config_schema_version: 8,
+    dirty,
+    artifact: entryName
+  };
 
   return {
     resolve: { conditions: ['node', 'default'] },
+    define: {
+      __GROUPGUARD_BUILD_INFO__: JSON.stringify(buildInfo)
+    },
     build: {
       sourcemap: isDebug,
       target: 'esnext',
@@ -66,6 +95,16 @@ export default defineConfig(({ mode }) => {
           fs.cpSync(subGameplayResourcesDir, target, { recursive: true });
         },
       },
+      {
+        name: 'write-build-info',
+        closeBundle() {
+          fs.writeFileSync(
+            resolve(__dirname, 'dist/build-info.json'),
+            `${JSON.stringify(buildInfo, null, 2)}\n`,
+            'utf-8'
+          );
+        }
+      }
     ],
   };
 });

@@ -191,7 +191,7 @@ export interface PluginConfig {
   lolBanPrimaryUrl?: string;
   /** LOL封号备用查询接口地址列表 */
   lolBanBackupUrls?: string[];
-  /** 本地 LOL 战绩查询服务地址（如 http://192.168.3.94:5000） */
+  /** 本地 LOL API 服务根地址（如 http://127.0.0.1:5001） */
   lolApiBaseUrl?: string;
   eleBuildApiBaseUrl?: string;
   shardDataUrl?: string;

@@ -20,6 +20,7 @@ import { applyRiskPreset, getHealthDashboard, getRiskDashboard } from './risk_op
 import { getSubGameplayResourceFile, getSubGameplayResourceOverview, verifySubGameplayResourceIntegrity } from '../../services/sub_gameplay_resources';
 import { qunGuanjiaService } from '../../services/qun_guanjia_service';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
+import { getBuildInfo } from '../../build_info';
 
 function contentTypeForResource(filePath: string): string {
   const lower = filePath.toLowerCase();
@@ -107,15 +108,60 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/build-info') {
+        sendJson(res, 200, getBuildInfo());
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/livez') {
+        sendJson(res, 200, {
+          ok: true,
+          status: 'alive',
+          liveness: 'up',
+          checkedAt: Date.now(),
+          build: getBuildInfo()
+        });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/readyz') {
+        const health = await getHealthDashboard(options);
+        const ready = health.ready === true;
+        sendJson(res, ready ? 200 : 503, {
+          ...health,
+          ok: ready,
+          readiness: ready ? 'ready' : 'not_ready'
+        });
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/health') {
         sendJson(res, 200, await getHealthDashboard(options));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/health/recover-onebot') {
+        if (!options.recoverOneBot) {
+          sendJson(res, 501, { ok: false, error: 'onebot_recovery_unavailable' });
+          return;
+        }
+        try {
+          const oneBot = await options.recoverOneBot();
+          sendJson(res, 200, { ok: true, oneBot, health: await getHealthDashboard(options) });
+        } catch (error) {
+          sendJson(res, 503, {
+            ok: false,
+            error: 'onebot_recovery_failed',
+            detail: String((error as Error)?.message || error).slice(0, 300)
+          });
+        }
         return;
       }
 
       if (req.method === 'POST' && url.pathname === '/api/lanzou-update/event') {
         const payload = JSON.parse(await readBody(req) || '{}');
         const result = await handleLanzouUpdateEvent(options, payload);
-        sendJson(res, result.ok ? 200 : 400, result);
+        sendJson(res, result.ok ? 200 : result.degraded ? 503 : 400, result);
         return;
       }
 
@@ -277,7 +323,8 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       if (req.method === 'POST' && url.pathname === '/api/query/test') {
         const payload = JSON.parse(await readBody(req) || '{}');
-        sendJson(res, 200, await testQueryEndpoint(payload));
+        const result = await testQueryEndpoint(payload);
+        sendJson(res, result.ok ? 200 : 502, result);
         return;
       }
 
@@ -342,10 +389,12 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
   });
 
   server.listen(port, host, () => {
-    const displayHost = host === '0.0.0.0' ? '127.0.0.1' : host;
     logger.info(`[GroupGuard:SnowLumaWebUI] listening http://${host}:${port}`);
-    logger.info(`[GroupGuard:SnowLumaWebUI] open http://${displayHost}:${port}/?token=${token}`);
-    if (!tokenFromEnv) logger.warn(`[GroupGuard:SnowLumaWebUI] GROUPGUARD_WEBUI_TOKEN 未设置，已生成临时 token=${token}`);
+    if (tokenFromEnv) {
+      logger.info('[GroupGuard:SnowLumaWebUI] authentication token loaded from configuration');
+    } else {
+      logger.warn('[GroupGuard:SnowLumaWebUI] GROUPGUARD_WEBUI_TOKEN is not configured; using an ephemeral token that is intentionally not logged');
+    }
   });
 
   return {

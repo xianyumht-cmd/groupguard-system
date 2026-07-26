@@ -6,8 +6,64 @@ import { DEFAULT_PLUGIN_CONFIG } from '../src/config.ts';
 import { configStateService } from '../src/core/state-services/config_state_service.ts';
 import { saveConfigStrict } from '../src/commands/common.ts';
 import { OneBotWsClient } from '../src/standalone/onebot_ws_client.ts';
+import { redactSensitiveText, redactWebSocketUrl } from '../src/standalone/redact_url.ts';
 import { pluginState } from '../src/state.ts';
 import { storageAdapter } from '../src/storage_adapter.ts';
+
+class FakeWebSocket {
+  readyState = 0;
+  readonly sent: string[] = [];
+  private readonly listeners = new Map<string, Array<{ handler: (event: any) => void; once: boolean }>>();
+
+  addEventListener(type: string, handler: (event: any) => void, options?: { once?: boolean }): void {
+    const entries = this.listeners.get(type) || [];
+    entries.push({ handler, once: options?.once === true });
+    this.listeners.set(type, entries);
+  }
+
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
+  close(): void {
+    if (this.readyState === 3) return;
+    this.emit('close', {});
+  }
+
+  open(): void {
+    this.readyState = 1;
+    this.emit('open', {});
+  }
+
+  emitError(error: Error): void {
+    this.emit('error', { error });
+  }
+
+  emitClose(): void {
+    this.emit('close', {});
+  }
+
+  respond(echo: string, data: any): void {
+    this.emit('message', {
+      data: JSON.stringify({ status: 'ok', retcode: 0, echo, data })
+    });
+  }
+
+  private emit(type: string, event: any): void {
+    if (type === 'close') this.readyState = 3;
+    const entries = [...(this.listeners.get(type) || [])];
+    this.listeners.set(type, entries.filter((entry) => !entry.once));
+    for (const entry of entries) entry.handler(event);
+  }
+}
+
+async function waitFor(predicate: () => boolean, message: string): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
 
 function createQueuedTask(groupId: string, onResolve: () => void) {
   return {
@@ -166,11 +222,92 @@ async function verifyRecoverableInitialWebSocketFailure(): Promise<void> {
   }
 }
 
+async function verifyWebSocketRecoveryIsolation(): Promise<void> {
+  const sockets: FakeWebSocket[] = [];
+  const logs: string[] = [];
+  const secretUrl = 'ws://alice:password@example.invalid/onebot?Access_Token=url-secret&plain=ok';
+  const client = new OneBotWsClient({
+    url: secretUrl,
+    accessToken: 'option-secret',
+    reconnectDelayMs: 1000,
+    logger: {
+      info: (message) => logs.push(message),
+      warn: (message) => logs.push(message),
+      error: (message) => logs.push(message)
+    },
+    webSocketFactory: () => {
+      const socket = new FakeWebSocket();
+      sockets.push(socket);
+      return socket;
+    }
+  });
+
+  try {
+    const started = client.start();
+    await waitFor(() => sockets.length === 1, 'initial fake socket was not created');
+    sockets[0].open();
+    await started;
+    assert.equal(client.getConnectionStatus().connected, true);
+    assert.equal(logs.join('\n').includes('alice'), false);
+    assert.equal(logs.join('\n').includes('password'), false);
+    assert.equal(logs.join('\n').includes('url-secret'), false);
+    assert.equal(logs.join('\n').includes('option-secret'), false);
+
+    sockets[0].emitError(new Error(`failed ${secretUrl} token=bare-secret`));
+    const sanitizedError = client.getConnectionStatus().lastError;
+    assert.equal(sanitizedError.includes('alice'), false);
+    assert.equal(sanitizedError.includes('password'), false);
+    assert.equal(sanitizedError.includes('url-secret'), false);
+    assert.equal(sanitizedError.includes('bare-secret'), false);
+
+    sockets[0].readyState = 2;
+    const firstRecovery = client.recover();
+    await waitFor(() => sockets.length === 2, 'replacement fake socket was not created');
+    sockets[1].open();
+    assert.equal((await firstRecovery).connected, true);
+
+    const pendingCall = client.call('get_status', {});
+    const pendingPayload = JSON.parse(sockets[1].sent.at(-1) || '{}');
+    sockets[0].emitClose();
+    sockets[1].respond(pendingPayload.echo, { pong: true });
+    assert.deepEqual(await pendingCall, { pong: true }, 'stale socket close must not reject calls on the replacement socket');
+    assert.equal(client.getConnectionStatus().connected, true);
+
+    sockets[1].emitClose();
+    const recoveryA = client.recover();
+    const recoveryB = client.recover();
+    await waitFor(() => sockets.length === 3, 'shared recovery socket was not created');
+    assert.equal(sockets.length, 3, 'concurrent recover calls must share one connection attempt');
+    sockets[2].open();
+    const [statusA, statusB] = await Promise.all([recoveryA, recoveryB]);
+    assert.equal(statusA.connected, true);
+    assert.equal(statusB.connected, true);
+    assert.equal(sockets.length, 3);
+  } finally {
+    client.close();
+  }
+}
+
+function verifyWebSocketUrlRedaction(): void {
+  const raw = 'wss://alice-private:credential-zeta@example.invalid/ws?Access_Token=alpha&ToKeN=beta&Api_Key=gamma&plain=visible#secret-fragment';
+  const redacted = redactWebSocketUrl(raw);
+  for (const secret of ['alice-private', 'credential-zeta', 'alpha', 'beta', 'gamma', 'secret-fragment']) {
+    assert.equal(redacted.includes(secret), false);
+  }
+  assert.match(redacted, /plain=visible/);
+  const text = redactSensitiveText(`connect failed ${raw} ACCESS_TOKEN=delta password=epsilon`);
+  for (const secret of ['alice-private', 'credential-zeta', 'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'secret-fragment']) {
+    assert.equal(text.includes(secret), false);
+  }
+}
+
 async function main(): Promise<void> {
   await verifyTokenBucket();
   await verifySendQueueSettlement();
   verifyAtomicConfigSave();
   await verifyRecoverableInitialWebSocketFailure();
+  await verifyWebSocketRecoveryIsolation();
+  verifyWebSocketUrlRedaction();
   console.info('core stability verification passed');
 }
 

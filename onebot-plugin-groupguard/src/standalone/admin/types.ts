@@ -11,6 +11,8 @@ export interface SnowLumaAdminServerOptions {
   host?: string;
   port?: number;
   token?: string;
+  getOneBotStatus?: () => Record<string, any>;
+  recoverOneBot?: () => Promise<Record<string, any>>;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
 }
 

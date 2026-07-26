@@ -6,6 +6,8 @@ import { createStandaloneContext } from './standalone_context';
 import { startSnowLumaAdminServer, type SnowLumaAdminServerRuntime } from './snowluma_admin_server';
 import { plugin_init, plugin_onmessage, plugin_onevent, plugin_cleanup } from '../index';
 import { getGroupGuardBotRole } from '../core/bot_role';
+import { contextStateService } from '../core/state-services/context_state_service';
+import { identityStateService } from '../core/state-services/identity_state_service';
 import {
   installQunGuanjiaRealtimeCapture,
   observeQunGuanjiaRealtimeMessage
@@ -83,6 +85,10 @@ async function start(): Promise<RuntimeState> {
 
   client.onEvent(async (event) => {
     if (!event || typeof event !== 'object') return;
+    const eventSelfId = String(event.self_id || '').trim();
+    if (eventSelfId && eventSelfId !== identityStateService.getBotId()) {
+      contextStateService.setBotId(eventSelfId);
+    }
     if (isMessageEvent(event)) {
       observeQunGuanjiaRealtimeMessage(event);
       await plugin_onmessage(ctx, event as any);
@@ -90,6 +96,22 @@ async function start(): Promise<RuntimeState> {
     }
     await plugin_onevent(ctx, event);
   });
+
+  const refreshBotIdentity = async (): Promise<void> => {
+    try {
+      const loginInfo = await client.call('get_login_info', {});
+      const botId = String(loginInfo?.user_id || '').trim();
+      if (botId) {
+        contextStateService.setBotId(botId);
+        logger.info(`OneBot identity refreshed: ${botId}`);
+      } else {
+        logger.warn('OneBot identity refresh returned an empty user_id');
+      }
+    } catch (error) {
+      logger.warn(`OneBot identity refresh failed: ${String((error as Error)?.message || error)}`);
+    }
+  };
+  client.onConnected(refreshBotIdentity);
 
   await client.start();
   await plugin_init(ctx);
@@ -102,6 +124,12 @@ async function start(): Promise<RuntimeState> {
     backupDir,
     dynamicCommandsConfigPath,
     wsUrl,
+    getOneBotStatus: () => client.getConnectionStatus(),
+    recoverOneBot: async () => {
+      const status = await client.recover();
+      await refreshBotIdentity();
+      return status;
+    },
     logger: console
   });
 

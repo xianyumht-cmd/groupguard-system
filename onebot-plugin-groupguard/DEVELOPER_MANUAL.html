@@ -153,7 +153,7 @@ sequenceDiagram
     <li><strong>Debug Mode</strong>: Send <code>开启调试</code> to the bot (Private Chat, Owner only) to enable verbose logging in <code>pluginState.logBuffer</code>.</li>
     <li><strong>WebUI Dev</strong>: The WebUI is served statically. You can edit <code>webui/config.html</code> directly and refresh the browser (no rebuild needed for UI changes).</li>
     <li><strong>Adding Commands</strong>: Add new logic in <code>src/commands.ts</code> inside <code>handleCommand</code>. Ensure you return <code>true</code> if the command is handled to stop further processing.</li>
-    <li><strong>LOL API Integration</strong>: Use <code>设置战绩接口 http://192.168.3.94:5000</code> to point plugin to the local <code>/query</code> + <code>/hidden_query</code> service, and call <code>查战绩张三#12345</code> to return forward messages.</li>
+    <li><strong>LOL API Integration</strong>: Configure the current intranet service base URL (for example <code>http://127.0.0.1:5001</code> when co-located), then call <code>查战绩张三#12345</code> to return forward messages.</li>
 </ul>
 
 </body>

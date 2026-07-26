@@ -1,0 +1,160 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import { normalizePluginConfig } from '../src/config.ts';
+import { configStateService } from '../src/core/state-services/config_state_service.ts';
+import { groupguardRepository } from '../src/repositories/groupguard_repository.ts';
+import { startSnowLumaAdminServer } from '../src/standalone/admin/server.ts';
+
+async function findAvailablePort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = probe.address();
+  assert.ok(address && typeof address === 'object');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
+}
+
+async function fetchWithStartupRetry(url: string, init?: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
+}
+
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-admin-health-'));
+const originalConfig = configStateService.getConfig();
+const originalGetBotSendStats = groupguardRepository.getBotSendStats;
+let runtime: ReturnType<typeof startSnowLumaAdminServer> | null = null;
+
+try {
+  configStateService.setConfig(normalizePluginConfig({
+    lanzouUpdatePush: { enabled: false, monitorBaseUrl: '' }
+  } as any));
+  (groupguardRepository as any).getBotSendStats = async () => ({
+    total: 0,
+    sent: 0,
+    failed: 0,
+    dropped: 0,
+    selfRecallFailed: 0,
+    messageIdMissing: 0,
+    topGroups: [],
+    byScene: []
+  });
+
+  const configPath = path.join(tempDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    lanzouUpdatePush: {
+      enabled: true,
+      groupIds: ['805402626'],
+      messageTemplate: '{title}',
+      includeDiffSummary: false
+    }
+  }), 'utf-8');
+  fs.writeFileSync(
+    path.join(tempDir, 'lanzou-update-deliveries.json.corrupt-20260726T000000000Z'),
+    '{"version":1,"events":',
+    'utf-8'
+  );
+
+  const connection = {
+    status: 'disconnected',
+    connected: false,
+    started: true,
+    reconnectScheduled: true,
+    lastError: 'test_transport_down'
+  };
+  const token = 'admin-health-regression-token';
+  const port = await findAvailablePort();
+  runtime = startSnowLumaAdminServer({
+    ctx: {} as any,
+    workDir: tempDir,
+    dataDir: tempDir,
+    configPath,
+    backupDir: path.join(tempDir, 'backups'),
+    dynamicCommandsConfigPath: path.join(tempDir, 'dynamic-commands.json'),
+    wsUrl: 'ws://127.0.0.1:3001',
+    host: '127.0.0.1',
+    port,
+    token,
+    getOneBotStatus: () => ({ ...connection }),
+    logger: { info: () => undefined, warn: () => undefined, error: () => undefined }
+  });
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const authorizedHeaders = { 'x-groupguard-token': token };
+
+  const unauthorizedLive = await fetchWithStartupRetry(`${baseUrl}/api/livez`);
+  assert.equal(unauthorizedLive.status, 401);
+  const unauthorizedReady = await fetch(`${baseUrl}/api/readyz`);
+  assert.equal(unauthorizedReady.status, 401);
+
+  const live = await fetch(`${baseUrl}/api/livez`, { headers: authorizedHeaders });
+  assert.equal(live.status, 200);
+  const liveBody = await live.json();
+  assert.equal(liveBody.ok, true);
+  assert.equal(liveBody.liveness, 'up');
+  assert.equal(liveBody.build?.service, 'groupguard');
+
+  const notReady = await fetch(`${baseUrl}/api/readyz`, { headers: authorizedHeaders });
+  assert.equal(notReady.status, 503);
+  const notReadyBody = await notReady.json();
+  assert.equal(notReadyBody.ok, false);
+  assert.equal(notReadyBody.ready, false);
+  assert.equal(notReadyBody.readiness, 'not_ready');
+
+  const legacyHealth = await fetch(`${baseUrl}/api/health`, { headers: authorizedHeaders });
+  assert.equal(legacyHealth.status, 200);
+  const legacyHealthBody = await legacyHealth.json();
+  assert.equal(legacyHealthBody.ok, true);
+  assert.equal(legacyHealthBody.ready, false);
+
+  connection.status = 'connected';
+  connection.connected = true;
+  connection.reconnectScheduled = false;
+  connection.lastError = '';
+  const ready = await fetch(`${baseUrl}/api/readyz`, { headers: authorizedHeaders });
+  assert.equal(ready.status, 200);
+  const readyBody = await ready.json();
+  assert.equal(readyBody.ok, true);
+  assert.equal(readyBody.ready, true);
+  assert.equal(readyBody.readiness, 'ready');
+  assert.equal(readyBody.status, 'degraded');
+  assert.equal(readyBody.checks?.lanzouDeliveryStore?.status, 'degraded');
+  assert.equal(readyBody.capabilities?.updatePushReady, false);
+
+  const degradedCallback = await fetch(`${baseUrl}/api/lanzou-update/event`, {
+    method: 'POST',
+    headers: { ...authorizedHeaders, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      event_id: 'admin-health-corrupt-store',
+      type: 'lanzou_update.changed',
+      title: 'corrupt store callback'
+    })
+  });
+  assert.equal(degradedCallback.status, 503);
+  const degradedCallbackBody = await degradedCallback.json();
+  assert.equal(degradedCallbackBody.ok, false);
+  assert.equal(degradedCallbackBody.degraded, true);
+  assert.equal(degradedCallbackBody.error, 'lanzou_delivery_store_quarantined');
+
+  console.info('admin health endpoint verification passed');
+} finally {
+  if (runtime) await runtime.close();
+  groupguardRepository.getBotSendStats = originalGetBotSendStats;
+  configStateService.setConfig(originalConfig);
+  fs.rmSync(tempDir, { recursive: true, force: true });
+}
