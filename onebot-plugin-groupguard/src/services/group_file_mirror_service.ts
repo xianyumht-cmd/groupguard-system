@@ -61,7 +61,6 @@ interface MirrorStateStore {
 
 interface RuntimeBinding {
   callAction: (action: string, params: unknown) => Promise<any>;
-  recallManagedForwardMessage: (messageId: string | number) => Promise<any>;
   workDir: string;
   dataDir: string;
   configPath: string;
@@ -533,20 +532,12 @@ export class GroupFileMirrorService {
     rule: GroupFileMirrorRule,
     messageId: string,
   ): Promise<any> {
-    if (!this.runtime) throw new Error('group_file_mirror_runtime_not_bound');
-    let lastError: unknown = null;
-    for (let attempt = 0; attempt <= rule.retryCount; attempt += 1) {
-      try {
-        return await this.runtime.recallManagedForwardMessage(messageParam(messageId));
-      } catch (error) {
-        lastError = error;
-        if (attempt >= rule.retryCount) break;
-        await sleep(rule.retryDelayMs * (attempt + 1));
-      }
-    }
-    throw lastError instanceof Error
-      ? lastError
-      : new Error(String(lastError || 'managed_forward_recall_failed'));
+    // Dedicated mirror recall path: this direct OneBot delete_msg call is owned
+    // by the mirror's own per-rule queue/state/retry lifecycle. It never enters
+    // runtimeControlService.scheduleSelfRecall, PolicyEngine, or action_queue_service.
+    return this.callWithRetry(rule, 'delete_msg', {
+      message_id: messageParam(messageId),
+    });
   }
 
   private async forwardMessage(
