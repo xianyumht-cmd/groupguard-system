@@ -92,7 +92,8 @@ jobs:
             exit 0
           fi
           git commit -m "docs: update Feishu sync status [skip ci]"
-          git push
+          git pull --rebase origin main
+          git push origin HEAD:main
 
       - name: Mark workflow as failed
         if: steps.sync.outcome != 'success'
