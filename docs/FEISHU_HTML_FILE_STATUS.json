@@ -2,10 +2,10 @@
   "ok": true,
   "mode": "raw_html_file_upload",
   "source_file": "USER_MANUAL.html",
-  "source_size": 35416,
+  "source_size": 41115,
   "folder_token_suffix": "KJF5Eb",
-  "file_token": "JgfHb8ueBoz5LSxcBc7czfDCnQc",
-  "file_url": "https://tcnnh75d6cqg.feishu.cn/file/JgfHb8ueBoz5LSxcBc7czfDCnQc",
+  "file_token": "CS6kbiQHloGaADx4QTScbCmEnCc",
+  "file_url": "https://tcnnh75d6cqg.feishu.cn/file/CS6kbiQHloGaADx4QTScbCmEnCc",
   "public_update": {
     "api": "v2",
     "response": {
@@ -31,7 +31,7 @@
     }
   },
   "note": "Raw HTML file uploaded without conversion.",
-  "executed_at": "2026-07-27 13:30:17 +0000",
-  "source_commit": "e2d7e039f174b81cdb68fd827739f47f69cd6466",
-  "workflow_url": "https://github.com/xianyumht-cmd/groupguard-system/actions/runs/30270561581"
+  "executed_at": "2026-07-27 13:48:02 +0000",
+  "source_commit": "b273fbc214629c8fa9d05e6e54998570407fca56",
+  "workflow_url": "https://github.com/xianyumht-cmd/groupguard-system/actions/runs/30271958669"
 }
