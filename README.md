@@ -63,7 +63,7 @@
 | `兑换 <物品>` | 兑换商城物品 |
 | `活跃统计` | 查看本群发言排行 |
 
-> 完整指令列表与详细说明请参阅插件目录下的 [USER_MANUAL.html](USER_MANUAL.html)。
+> 完整指令列表与详细说明请参阅插件目录下的 [USER_MANUAL.md](USER_MANUAL.md)。
 
 ## 📂 安装部署
 
