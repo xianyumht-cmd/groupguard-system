@@ -36,13 +36,23 @@ get_group_msg_history
 → 清理上一份目标文件与消息
 ```
 
+GroupGuard 会忽略自己在接收群产生的 `group_upload` 事件，防止 A→B、B→A 或多规则串联导致循环上传。
+
 ## 配置文件
 
-默认路径由主配置文件位置决定。生产环境主配置通常是 `/app/config.json`，所以群文件搬运配置默认位于：
+当前生产环境的主配置位于：
+
+```text
+/app/config/config.json
+```
+
+群文件搬运配置与主配置放在同一目录：
 
 ```text
 /app/config/group-file-mirror.json
 ```
+
+代码同时兼容主配置直接位于 `/app/config.json` 的旧布局；无论哪种布局，默认搬运配置都会落到应用的 `config` 目录。
 
 也可以使用环境变量指定其他位置：
 
@@ -156,28 +166,41 @@ SnowLuma 的 `group_upload` 事件本身不包含聊天消息 ID，因此 GroupG
 
 即使偶尔没有取得来源消息 ID，下一次新文件上传成功时，“只保留最新文件”仍会清理接收群上一份文件。来源撤回同步属于额外保险，不是唯一清理机制。
 
-## 生产部署顺序
+## 一键写入生产配置
 
-代码合并并完成构建后：
+代码部署完成后，在 Windows 仓库的核心程序目录运行：
 
-```bash
-cd /mnt/sda1/groupguard/app
-mkdir -p config data
-cp config/group-file-mirror.example.json config/group-file-mirror.json
+```powershell
+cd D:\project2\napcatplugin\lengxi_repo\onebot-plugin-groupguard
+powershell -ExecutionPolicy Bypass -File .\scripts\ops\Configure-GroupFileMirror.ps1 `
+  -SourceGroupId 1334664 `
+  -TargetGroupId 16461612 `
+  -SourceUploaderId 上传文件机器人的QQ号 `
+  -Enable
 ```
 
-然后编辑：
+脚本会：
 
-```text
-/mnt/sda1/groupguard/app/config/group-file-mirror.json
+- 校验群号、上传者 QQ 和文件名正则；
+- 备份服务器原配置；
+- 原子写入 `/mnt/sda1/groupguard/app/config/group-file-mirror.json`；
+- 使用 `jq` 再次验证 JSON；
+- 默认不重启容器，服务会在下一个事件到来时热加载新配置。
+
+需要同时重启容器时增加：
+
+```powershell
+-RestartContainer
 ```
 
-确认群号、上传者 QQ 和文件名规则正确后，把最外层 `enabled` 改为 `true`，再重启 `groupguard-snowluma`。
+首次配置建议先不写 `-Enable`，确认脚本输出的来源群、接收群和上传者 QQ 正确后，再带 `-Enable` 执行一次。
 
-上线前先在测试群验证：
+## 上线验证
 
 1. 新文件能上传到接收群；
 2. 下一份文件出现后，上一份文件消息被撤回；
 3. 接收群文件库中上一份实体文件被删除；
-4. 服务重启后不会重复搬运当前文件；
-5. 失败日志不会持续无限重试。
+4. 来源群撤回当前文件时，接收群对应文件被同步清理；
+5. 服务重启后不会重复搬运当前文件；
+6. 失败日志不会持续无限重试；
+7. GroupGuard 自己上传到接收群的文件不会再次触发搬运。
