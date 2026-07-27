@@ -40,6 +40,16 @@ function generatedUploadKey(groupId: unknown, fileName: unknown): string {
   return group && name ? `${group}\n${name}` : '';
 }
 
+function resolveGroupFileMirrorConfigPath(configPath: string): string {
+  const configured = String(process.env.GROUP_FILE_MIRROR_CONFIG_PATH || '').trim();
+  if (configured) return path.resolve(configured);
+  const mainConfigDir = path.dirname(configPath);
+  const targetDir = path.basename(mainConfigDir).toLowerCase() === 'config'
+    ? mainConfigDir
+    : path.join(mainConfigDir, 'config');
+  return path.join(targetDir, 'group-file-mirror.json');
+}
+
 function createLogger() {
   const prefix = '[GroupGuard:SnowLuma]';
   return {
@@ -61,12 +71,20 @@ async function start(): Promise<RuntimeState> {
   const accessToken = env('SNOWLUMA_ACCESS_TOKEN', env('ONEBOT_ACCESS_TOKEN', ''));
   const dataDir = path.resolve(env('GROUPGUARD_DATA_DIR', path.join(workDir, 'data')));
   const configPath = path.resolve(env('GROUPGUARD_CONFIG_PATH', path.join(workDir, 'config.json')));
+  const groupFileMirrorConfigPath = resolveGroupFileMirrorConfigPath(configPath);
   const backupDir = path.resolve(env('GROUPGUARD_BACKUP_DIR', path.join(workDir, 'backups')));
   const dynamicCommandsConfigPath = path.resolve(env('DYNAMIC_COMMANDS_CONFIG_PATH', path.join(workDir, 'config', 'dynamic-commands', 'commands.json')));
   const timeoutMs = numberEnv('ONEBOT_ACTION_TIMEOUT_MS', 10000);
   const reconnectDelayMs = numberEnv('ONEBOT_RECONNECT_DELAY_MS', 3000);
   const botRole = getGroupGuardBotRole();
   logger.info(`GroupGuard bot role: ${botRole}`);
+
+  // The mirror service supports an explicit env override. Populate it with a
+  // production-safe default so both /app/config.json and
+  // /app/config/config.json layouts resolve to /app/config/group-file-mirror.json.
+  if (!String(process.env.GROUP_FILE_MIRROR_CONFIG_PATH || '').trim()) {
+    process.env.GROUP_FILE_MIRROR_CONFIG_PATH = groupFileMirrorConfigPath;
+  }
 
   const client = new OneBotWsClient({
     url: wsUrl,
@@ -165,7 +183,7 @@ async function start(): Promise<RuntimeState> {
     logger: console
   });
 
-  logger.info(`service started workDir=${workDir} config=${configPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
+  logger.info(`service started workDir=${workDir} config=${configPath} fileMirrorConfig=${groupFileMirrorConfigPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
   logger.info('SnowLuma reminder: enable reportSelfMessage if you need message_sent events from host side. GroupGuard also schedules self-recall from send_group_msg responses.');
   return { ctx, client, adminServer };
 }
