@@ -1,6 +1,6 @@
 # 🛡️ NapCat GroupGuard Plugin
 
-[![Version](https://img.shields.io/badge/version-1.0.23-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-1.2.14-blue.svg)](onebot-plugin-groupguard/package.json)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 全功能企业级群管理插件，专为 NapCat/OneBot11 设计。集成风控防护、商业授权、互动娱乐、入群验证、自动问答等核心模块。
@@ -12,7 +12,7 @@
 - **违禁词过滤**：多级惩罚机制（撤回/禁言/踢出/拉黑），支持正则匹配。
 - **防刷屏/复读**：自定义刷屏窗口与复读阈值，自动禁言恶意用户。
 - **媒体屏蔽**：支持屏蔽图片、视频、语音、链接、二维码、名片、小程序等。
-- **防撤回**：自动转发撤回消息（支持图片/语音），留存证据。
+- **防撤回**：记录撤回事件，具体呈现方式以当前服务设置为准。
 
 ### 💼 商业授权
 - **分级授权**：支持免费版、专业版、企业版差异化功能控制。
@@ -63,7 +63,7 @@
 | `兑换 <物品>` | 兑换商城物品 |
 | `活跃统计` | 查看本群发言排行 |
 
-> 正式内容以 [USER_MANUAL.md](USER_MANUAL.md) 为准。需要输入式搜索时，可使用 [USER_MANUAL_SEARCH.html](USER_MANUAL_SEARCH.html)；通过网页服务打开会自动载入手册，直接双击打开时可手动选择 `USER_MANUAL.md`。
+> 客户优先使用 [玻璃主题网页手册](USER_MANUAL.html)，支持搜索、分类和一键复制。飞书同步及纯文本备份使用 [Markdown 手册](USER_MANUAL.md)。
 
 ## 📂 安装部署
 
