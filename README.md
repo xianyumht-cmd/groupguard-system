@@ -63,7 +63,7 @@
 | `兑换 <物品>` | 兑换商城物品 |
 | `活跃统计` | 查看本群发言排行 |
 
-> 完整指令列表与详细说明请参阅插件目录下的 [USER_MANUAL.md](USER_MANUAL.md)。
+> 正式内容以 [USER_MANUAL.md](USER_MANUAL.md) 为准。需要输入式搜索时，可使用 [USER_MANUAL_SEARCH.html](USER_MANUAL_SEARCH.html)；通过网页服务打开会自动载入手册，直接双击打开时可手动选择 `USER_MANUAL.md`。
 
 ## 📂 安装部署
 
