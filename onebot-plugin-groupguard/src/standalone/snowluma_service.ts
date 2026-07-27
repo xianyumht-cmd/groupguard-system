@@ -8,6 +8,7 @@ import { plugin_init, plugin_onmessage, plugin_onevent, plugin_cleanup } from '.
 import { getGroupGuardBotRole } from '../core/bot_role';
 import { contextStateService } from '../core/state-services/context_state_service';
 import { identityStateService } from '../core/state-services/identity_state_service';
+import { groupFileMirrorService } from '../services/group_file_mirror_service';
 import {
   installQunGuanjiaRealtimeCapture,
   observeQunGuanjiaRealtimeMessage
@@ -18,6 +19,8 @@ type RuntimeState = {
   client: OneBotWsClient;
   adminServer?: SnowLumaAdminServerRuntime;
 };
+
+const GENERATED_FILE_UPLOAD_TTL_MS = 2 * 60 * 1000;
 
 function env(name: string, fallback = ''): string {
   const value = process.env[name];
@@ -31,6 +34,22 @@ function numberEnv(name: string, fallback: number): number {
 
 function isMessageEvent(event: any): boolean {
   return event?.post_type === 'message' || event?.post_type === 'message_sent';
+}
+
+function generatedUploadKey(groupId: unknown, fileName: unknown): string {
+  const group = String(groupId ?? '').trim();
+  const name = String(fileName ?? '').trim();
+  return group && name ? `${group}\n${name}` : '';
+}
+
+function resolveGroupFileMirrorConfigPath(configPath: string): string {
+  const configured = String(process.env.GROUP_FILE_MIRROR_CONFIG_PATH || '').trim();
+  if (configured) return path.resolve(configured);
+  const mainConfigDir = path.dirname(configPath);
+  const targetDir = path.basename(mainConfigDir).toLowerCase() === 'config'
+    ? mainConfigDir
+    : path.join(mainConfigDir, 'config');
+  return path.join(targetDir, 'group-file-mirror.json');
 }
 
 function createLogger() {
@@ -54,12 +73,20 @@ async function start(): Promise<RuntimeState> {
   const accessToken = env('SNOWLUMA_ACCESS_TOKEN', env('ONEBOT_ACCESS_TOKEN', ''));
   const dataDir = path.resolve(env('GROUPGUARD_DATA_DIR', path.join(workDir, 'data')));
   const configPath = path.resolve(env('GROUPGUARD_CONFIG_PATH', path.join(workDir, 'config.json')));
+  const groupFileMirrorConfigPath = resolveGroupFileMirrorConfigPath(configPath);
   const backupDir = path.resolve(env('GROUPGUARD_BACKUP_DIR', path.join(workDir, 'backups')));
   const dynamicCommandsConfigPath = path.resolve(env('DYNAMIC_COMMANDS_CONFIG_PATH', path.join(workDir, 'config', 'dynamic-commands', 'commands.json')));
   const timeoutMs = numberEnv('ONEBOT_ACTION_TIMEOUT_MS', 10000);
   const reconnectDelayMs = numberEnv('ONEBOT_RECONNECT_DELAY_MS', 3000);
   const botRole = getGroupGuardBotRole();
   logger.info(`GroupGuard bot role: ${botRole}`);
+
+  // Production currently stores the main config at /app/config/config.json.
+  // This default also supports the legacy /app/config.json layout while keeping
+  // the independent mirror config at /app/config/group-file-mirror.json.
+  if (!String(process.env.GROUP_FILE_MIRROR_CONFIG_PATH || '').trim()) {
+    process.env.GROUP_FILE_MIRROR_CONFIG_PATH = groupFileMirrorConfigPath;
+  }
 
   const client = new OneBotWsClient({
     url: wsUrl,
@@ -81,6 +108,48 @@ async function start(): Promise<RuntimeState> {
     logger: console
   });
 
+  // Prevent mirror-created uploads from triggering another mirror rule.
+  const generatedFileUploads = new Map<string, number>();
+  const pruneGeneratedUploads = () => {
+    const now = Date.now();
+    for (const [key, expiresAt] of generatedFileUploads.entries()) {
+      if (expiresAt <= now) generatedFileUploads.delete(key);
+    }
+  };
+  const consumeGeneratedUploadEvent = (event: any): boolean => {
+    if (event?.post_type !== 'notice' || event?.notice_type !== 'group_upload') return false;
+    pruneGeneratedUploads();
+    const key = generatedUploadKey(event?.group_id, event?.file?.name ?? event?.file?.file_name);
+    if (!key || !generatedFileUploads.has(key)) return false;
+    generatedFileUploads.delete(key);
+    logger.debug(`ignored mirror-generated group_upload group=${String(event?.group_id || '')} file=${String(event?.file?.name || event?.file?.file_name || '')}`);
+    return true;
+  };
+
+  groupFileMirrorService.bindRuntime({
+    callAction: async (action, params) => {
+      if (action !== 'upload_group_file') return actions.call(action, params);
+      const raw = params && typeof params === 'object' ? params as Record<string, any> : {};
+      const key = generatedUploadKey(raw.group_id ?? raw.groupId, raw.name);
+      if (key) generatedFileUploads.set(key, Date.now() + GENERATED_FILE_UPLOAD_TTL_MS);
+      try {
+        return await actions.call(action, params);
+      } catch (error) {
+        if (key) generatedFileUploads.delete(key);
+        throw error;
+      }
+    },
+    workDir,
+    dataDir,
+    configPath,
+    log: (level, message) => {
+      if (level === 'error') logger.error(message);
+      else if (level === 'warn') logger.warn(message);
+      else if (level === 'debug') logger.debug(message);
+      else logger.info(message);
+    }
+  });
+
   installQunGuanjiaRealtimeCapture();
 
   client.onEvent(async (event) => {
@@ -89,6 +158,11 @@ async function start(): Promise<RuntimeState> {
     if (eventSelfId && eventSelfId !== identityStateService.getBotId()) {
       contextStateService.setBotId(eventSelfId);
     }
+
+    // Observe before the licensed group-management pipeline, because a source
+    // group used only for file mirroring may intentionally have no GroupGuard license.
+    if (!consumeGeneratedUploadEvent(event)) groupFileMirrorService.observeEvent(event);
+
     if (isMessageEvent(event)) {
       observeQunGuanjiaRealtimeMessage(event);
       await plugin_onmessage(ctx, event as any);
@@ -133,7 +207,7 @@ async function start(): Promise<RuntimeState> {
     logger: console
   });
 
-  logger.info(`service started workDir=${workDir} config=${configPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
+  logger.info(`service started workDir=${workDir} config=${configPath} fileMirrorConfig=${groupFileMirrorConfigPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
   logger.info('SnowLuma reminder: enable reportSelfMessage if you need message_sent events from host side. GroupGuard also schedules self-recall from send_group_msg responses.');
   return { ctx, client, adminServer };
 }
