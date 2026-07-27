@@ -24,7 +24,7 @@ import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_c
 import { handleLanzouUpdateEvent } from './lanzou_update_api';
 import { applyRiskPreset, getHealthDashboard, getRiskDashboard } from './risk_ops_api';
 import { getSubGameplayResourceFile, getSubGameplayResourceOverview, verifySubGameplayResourceIntegrity } from '../../services/sub_gameplay_resources';
-import { qunGuanjiaService } from '../../services/qun_guanjjia_service';
+import { qunGuanjiaService } from '../../services/qun_guanjia_service';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 import { getBuildInfo } from '../../build_info';
 
@@ -279,7 +279,7 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       }
 
       if (req.method === 'GET' && url.pathname === '/api/licenses') {
-        sendJson(res, 200, { ok: true, licenses: listLicenses(options) });
+        sendJson(res, 200, { ok: true, licenses: listLicenses() });
         return;
       }
 
