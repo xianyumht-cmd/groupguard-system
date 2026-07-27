@@ -14,6 +14,7 @@ import {
 } from '../commands';
 import { handleVerifyAnswer } from '../verify';
 import { runWithForcedResponseScene } from '../dynamic-commands/response_capture_runtime';
+import { groupFileMirrorService } from '../services/group_file_mirror_service';
 
 export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11Message): Promise<void> {
   if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
@@ -37,6 +38,17 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
     }
 
     if (userId === selfId) {
+      // Group-file forwarding owns its target-message lifecycle. These messages
+      // must never enter the existing global risk/self-recall scheduler; the
+      // mirror recalls them through its dedicated direct OneBot path only when
+      // a newer file replaces them or the source message is recalled.
+      if (groupFileMirrorService.shouldBypassGlobalSelfRecall(event)) {
+        loggingStateService.debug(
+          `[GroupFileMirror] 已绕过全局风控撤回 group=${groupId} message=${messageId}`,
+        );
+        return;
+      }
+
       if (isQueryOnlyBotRole()) {
         const block = shouldBlockByBotRole({ source: 'runtime_message_pipeline', rawMessage: raw, intent: 'self_recall_like', actionType: 'self_recall' });
         if (block.blocked) loggingStateService.info(block.logLine || `bot_role_blocked role=query intent=self_recall_like rawMessage=${raw} source=runtime_message_pipeline`);
