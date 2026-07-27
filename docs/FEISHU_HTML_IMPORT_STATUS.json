@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "mode": "html_import",
+  "source_file": "USER_MANUAL.html",
+  "source_size": 35416,
+  "ticket": "7667197210748620063",
+  "job_status": 0,
+  "job_error_msg": "success",
+  "document_token": "MLe6dFfXZoJjAHxhpWwcFjbznAg",
+  "document_url": "https://tcnnh75d6cqg.feishu.cn/docx/MLe6dFfXZoJjAHxhpWwcFjbznAg",
+  "document_title": "GroupGuard 群管理网页手册",
+  "extra": [
+    "_pod_name"
+  ],
+  "executed_at": "2026-07-27 13:21:14 +0000",
+  "source_commit": "947bed0415bb8371dcea17d9980febde0c04fbca",
+  "workflow_url": "https://github.com/xianyumht-cmd/groupguard-system/actions/runs/30269850245"
+}
