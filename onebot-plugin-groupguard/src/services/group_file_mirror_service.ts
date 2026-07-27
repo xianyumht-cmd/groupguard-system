@@ -61,16 +61,27 @@ interface MirrorStateStore {
 
 interface RuntimeBinding {
   callAction: (action: string, params: unknown) => Promise<any>;
+  recallManagedForwardMessage: (messageId: string | number) => Promise<any>;
   workDir: string;
   dataDir: string;
   configPath: string;
   log: (level: 'info' | 'warn' | 'error' | 'debug', message: string) => void;
 }
 
+interface PendingForwardGuard {
+  targetGroupId: string;
+  expiresAt: number;
+}
+
 const DEFAULT_CONFIG: GroupFileMirrorConfig = {
   enabled: false,
   rules: [],
 };
+
+const PENDING_FORWARD_GUARD_TTL_MS = 2 * 60 * 1000;
+const MANAGED_TARGET_MESSAGE_TTL_MS = 10 * 60 * 1000;
+const MAX_PENDING_FORWARD_GUARDS = 100;
+const MAX_MANAGED_TARGET_MESSAGES = 2000;
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -128,7 +139,8 @@ export function normalizeGroupFileMirrorConfig(value: unknown): GroupFileMirrorC
       fileNamePattern: isValidPattern(fileNamePattern) ? fileNamePattern : '',
       maxFileSizeMb: clampNumber(raw.maxFileSizeMb ?? raw.max_file_size_mb, 512, 1, 4096),
       keepLatestOnly: raw.keepLatestOnly !== false && raw.keep_latest_only !== false,
-      recallPreviousTargetMessage: raw.recallPreviousTargetMessage !== false && raw.recall_previous_target_message !== false,
+      recallPreviousTargetMessage: raw.recallPreviousTargetMessage !== false
+        && raw.recall_previous_target_message !== false,
       syncSourceRecall: raw.syncSourceRecall !== false && raw.sync_source_recall !== false,
       retryCount: clampNumber(raw.retryCount ?? raw.retry_count, 2, 0, 10),
       retryDelayMs: clampNumber(raw.retryDelayMs ?? raw.retry_delay_ms, 1500, 100, 30000),
@@ -172,6 +184,11 @@ function extractSenderId(message: any): string {
     ?? message?.sender?.uin
     ?? message?.sender_uin,
   );
+}
+
+function containsForwardSegment(message: any): boolean {
+  const segments = Array.isArray(message?.message) ? message.message : [];
+  return segments.some((segment: unknown) => isRecord(segment) && String(segment.type || '') === 'forward');
 }
 
 export function extractFileSegmentsFromMessage(message: any): FileMessageDescriptor[] {
@@ -225,6 +242,9 @@ export class GroupFileMirrorService {
   private state: MirrorStateStore = { version: 1, rules: {} };
   private loadedStatePath = '';
   private readonly ruleTails = new Map<string, Promise<void>>();
+  private readonly pendingForwardGuards = new Map<string, PendingForwardGuard>();
+  private readonly managedTargetMessages = new Map<string, number>();
+  private nextForwardGuardId = 0;
 
   bindRuntime(runtime: RuntimeBinding): void {
     this.runtime = runtime;
@@ -319,6 +339,115 @@ export class GroupFileMirrorService {
     return this.state.rules[ruleId];
   }
 
+  private targetMessageKey(groupId: string, messageId: string): string {
+    return `${groupId}:${messageId}`;
+  }
+
+  private capMap<T>(map: Map<string, T>, maxSize: number): void {
+    while (map.size > maxSize) {
+      const oldestKey = map.keys().next().value;
+      if (oldestKey === undefined) return;
+      map.delete(oldestKey);
+    }
+  }
+
+  private pruneRecallGuards(now = Date.now()): void {
+    for (const [token, guard] of this.pendingForwardGuards.entries()) {
+      if (guard.expiresAt <= now) this.pendingForwardGuards.delete(token);
+    }
+    for (const [key, expiresAt] of this.managedTargetMessages.entries()) {
+      if (expiresAt <= now) this.managedTargetMessages.delete(key);
+    }
+  }
+
+  private registerManagedTargetMessage(groupId: string, messageId: string): void {
+    if (!groupId || !messageId) return;
+    this.pruneRecallGuards();
+    this.managedTargetMessages.set(
+      this.targetMessageKey(groupId, messageId),
+      Date.now() + MANAGED_TARGET_MESSAGE_TTL_MS,
+    );
+    this.capMap(this.managedTargetMessages, MAX_MANAGED_TARGET_MESSAGES);
+  }
+
+  private unregisterManagedTargetMessage(groupId: string, messageId: string): void {
+    if (!groupId || !messageId) return;
+    this.managedTargetMessages.delete(this.targetMessageKey(groupId, messageId));
+  }
+
+  private beginPendingForward(targetGroupId: string): string {
+    this.pruneRecallGuards();
+    this.nextForwardGuardId += 1;
+    const token = `${Date.now().toString(36)}-${this.nextForwardGuardId.toString(36)}`;
+    this.pendingForwardGuards.set(token, {
+      targetGroupId,
+      expiresAt: Date.now() + PENDING_FORWARD_GUARD_TTL_MS,
+    });
+    this.capMap(this.pendingForwardGuards, MAX_PENDING_FORWARD_GUARDS);
+    return token;
+  }
+
+  private completePendingForward(token: string, targetGroupId: string, targetMessageId: string): void {
+    this.pendingForwardGuards.delete(token);
+    this.registerManagedTargetMessage(targetGroupId, targetMessageId);
+  }
+
+  private cancelPendingForward(token: string): void {
+    this.pendingForwardGuards.delete(token);
+  }
+
+  private stateOwnsTargetMessage(groupId: string, messageId: string): boolean {
+    this.ensureStateLoaded();
+    for (const state of Object.values(this.state.rules)) {
+      if (state.current?.targetGroupId === groupId && state.current.targetMessageId === messageId) {
+        return true;
+      }
+      if (Array.isArray(state.pendingCleanup)
+        && state.pendingCleanup.some(item => item.targetGroupId === groupId
+          && item.targetMessageId === messageId
+          && !item.messageRecalled)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * File-forward messages are outside the normal GroupGuard risk/self-recall
+   * pipeline. The mirror owns their lifecycle and recalls them directly only
+   * when a newer file replaces them or the source message is recalled.
+   *
+   * The pending-forward guard handles the race where SnowLuma emits
+   * message_sent before send_group_forward_msg returns its target message_id.
+   */
+  shouldBypassGlobalSelfRecall(event: unknown): boolean {
+    if (!this.runtime || !isRecord(event)) return false;
+    const postType = String(event.post_type || '');
+    if (postType !== 'message' && postType !== 'message_sent') return false;
+
+    const groupId = normalizeId(event.group_id);
+    const messageId = extractMessageId(event);
+    if (!groupId || !messageId) return false;
+
+    this.pruneRecallGuards();
+    const key = this.targetMessageKey(groupId, messageId);
+    if (this.managedTargetMessages.has(key) || this.stateOwnsTargetMessage(groupId, messageId)) {
+      this.registerManagedTargetMessage(groupId, messageId);
+      return true;
+    }
+
+    if (!containsForwardSegment(event)) return false;
+
+    const pending = Array.from(this.pendingForwardGuards.entries())
+      .find(([, guard]) => guard.targetGroupId === groupId);
+    if (!pending) return false;
+
+    this.pendingForwardGuards.delete(pending[0]);
+    this.registerManagedTargetMessage(groupId, messageId);
+    this.log('debug', `已从全局风控撤回中隔离文件转发消息 group=${groupId} message=${messageId}`);
+    return true;
+  }
+
   observeEvent(event: unknown): void {
     if (!this.runtime || !isRecord(event)) return;
     this.ensureConfigLoaded();
@@ -400,6 +529,26 @@ export class GroupFileMirrorService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError || `action_failed:${action}`));
   }
 
+  private async recallManagedMessageWithRetry(
+    rule: GroupFileMirrorRule,
+    messageId: string,
+  ): Promise<any> {
+    if (!this.runtime) throw new Error('group_file_mirror_runtime_not_bound');
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= rule.retryCount; attempt += 1) {
+      try {
+        return await this.runtime.recallManagedForwardMessage(messageParam(messageId));
+      } catch (error) {
+        lastError = error;
+        if (attempt >= rule.retryCount) break;
+        await sleep(rule.retryDelayMs * (attempt + 1));
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(String(lastError || 'managed_forward_recall_failed'));
+  }
+
   private async forwardMessage(
     rule: GroupFileMirrorRule,
     uploaderId: string,
@@ -414,13 +563,37 @@ export class GroupFileMirrorService {
 
     await this.cleanupPending(rule, state);
 
-    const result = await this.callWithRetry(rule, 'forward_group_single_msg', {
-      message_id: messageParam(sourceMessageId),
-      group_id: groupParam(rule.targetGroupId),
-    });
-    const data = unwrapActionData(result);
-    const targetMessageId = normalizeId(data?.message_id ?? data?.messageId ?? result?.message_id ?? result?.messageId);
-    if (!targetMessageId) throw new Error(`文件消息已请求转发但未返回目标 message_id: ${file.fileName}`);
+    const guardToken = this.beginPendingForward(rule.targetGroupId);
+    let targetMessageId = '';
+    try {
+      const result = await this.callWithRetry(rule, 'send_group_forward_msg', {
+        group_id: groupParam(rule.targetGroupId),
+        messages: [{
+          type: 'node',
+          data: {
+            id: messageParam(sourceMessageId),
+          },
+        }],
+        source: '群文件消息',
+        summary: '查看文件消息',
+        prompt: '[文件消息]',
+        news: [{ text: file.fileName || '[文件]' }],
+      });
+      const data = unwrapActionData(result);
+      targetMessageId = normalizeId(
+        data?.message_id
+        ?? data?.messageId
+        ?? result?.message_id
+        ?? result?.messageId,
+      );
+      if (!targetMessageId) {
+        throw new Error(`文件消息已请求合并转发但未返回目标 message_id: ${file.fileName}`);
+      }
+      this.completePendingForward(guardToken, rule.targetGroupId, targetMessageId);
+    } catch (error) {
+      this.cancelPendingForward(guardToken);
+      throw error;
+    }
 
     const previous = state.current;
     state.current = {
@@ -443,11 +616,15 @@ export class GroupFileMirrorService {
     this.saveState();
 
     await this.cleanupPending(rule, state);
-    this.log('info', `规则 ${rule.id} 已转发文件消息 ${file.fileName} ${rule.sourceGroupId} -> ${rule.targetGroupId}`);
+    this.log(
+      'info',
+      `规则 ${rule.id} 已合并转发文件消息 ${file.fileName} ${rule.sourceGroupId} -> ${rule.targetGroupId}`,
+    );
   }
 
   private queueCleanup(state: MirrorRuleState, record: ForwardRecord): void {
-    if (state.pendingCleanup.some(item => item.targetGroupId === record.targetGroupId && item.targetMessageId === record.targetMessageId)) return;
+    if (state.pendingCleanup.some(item => item.targetGroupId === record.targetGroupId
+      && item.targetMessageId === record.targetMessageId)) return;
     state.pendingCleanup.push({
       targetGroupId: record.targetGroupId,
       targetMessageId: record.targetMessageId,
@@ -471,15 +648,30 @@ export class GroupFileMirrorService {
   private async cleanupTargetMessage(rule: GroupFileMirrorRule, item: CleanupRecord): Promise<void> {
     if (!rule.recallPreviousTargetMessage || !item.targetMessageId || item.messageRecalled) return;
     try {
-      await this.callWithRetry(rule, 'delete_msg', { message_id: messageParam(item.targetMessageId) });
+      await this.recallManagedMessageWithRetry(rule, item.targetMessageId);
       item.messageRecalled = true;
+      this.unregisterManagedTargetMessage(item.targetGroupId, item.targetMessageId);
+      this.log(
+        'info',
+        `规则 ${rule.id} 已通过文件转发专用撤回通道清理旧消息 message=${item.targetMessageId}`,
+      );
     } catch (error) {
-      if (isAlreadyGoneError(error)) item.messageRecalled = true;
-      else this.log('warn', `规则 ${rule.id} 撤回旧转发消息失败 message=${item.targetMessageId}: ${String(error)}`);
+      if (isAlreadyGoneError(error)) {
+        item.messageRecalled = true;
+        this.unregisterManagedTargetMessage(item.targetGroupId, item.targetMessageId);
+      } else {
+        this.log(
+          'warn',
+          `规则 ${rule.id} 专用撤回旧转发消息失败 message=${item.targetMessageId}: ${String(error)}`,
+        );
+      }
     }
   }
 
-  private async cleanupCurrentAfterSourceRecall(rule: GroupFileMirrorRule, sourceMessageId: string): Promise<void> {
+  private async cleanupCurrentAfterSourceRecall(
+    rule: GroupFileMirrorRule,
+    sourceMessageId: string,
+  ): Promise<void> {
     const state = this.getRuleState(rule.id);
     const current = state.current;
     if (!current || current.sourceMessageId !== sourceMessageId) return;
