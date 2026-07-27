@@ -1,9 +1,9 @@
 # 飞书手册同步状态
 
 - 结果：**成功**
-- 执行时间：`2026-07-27 12:39:03 +0000`
-- 来源提交：`9e217a379f93c30af653b445881fa7670a4f1fc6`
-- 工作流：https://github.com/xianyumht-cmd/my-napcat-sys/actions/runs/30266753920
+- 执行时间：`2026-07-27 13:04:21 +0000`
+- 来源提交：`9e0e353e9c1d31fa81f46d95ac47e4bf0523bb64`
+- 工作流：https://github.com/xianyumht-cmd/my-napcat-sys/actions/runs/30268557828
 
 ## 执行输出
 
@@ -14,8 +14,8 @@
   "document_id_suffix": "vGunwd",
   "document_title": "GroupGuard 群管理员使用手册",
   "existing_root_blocks": 350,
-  "prepared_blocks": 350,
-  "final_root_blocks": 350
+  "prepared_blocks": 169,
+  "final_root_blocks": 169
 }
 
 ```
