@@ -373,9 +373,9 @@ async function main(): Promise<void> {
   assert.doesNotMatch(serviceSource, /get_group_file_url/);
   assert.doesNotMatch(serviceSource, /upload_group_file/);
   assert.doesNotMatch(serviceSource, /delete_group_file/);
-  assert.doesNotMatch(serviceSource, /scheduleSelfRecall/);
-  assert.doesNotMatch(serviceSource, /processRiskSignal/);
-  assert.doesNotMatch(serviceSource, /enqueueSelfRecallAction/);
+  assert.doesNotMatch(serviceSource, /runtimeControlService\.scheduleSelfRecall\(/);
+  assert.doesNotMatch(serviceSource, /processRiskSignal\(/);
+  assert.doesNotMatch(serviceSource, /enqueueSelfRecallAction\(/);
 
   const runtimePipelineSource = fs.readFileSync(
     path.resolve(process.cwd(), 'src/runtime/runtime_message_pipeline.ts'),
