@@ -15,7 +15,7 @@ import {
 } from '../src/standalone/admin/group_file_mirror_api.ts';
 import { renderGroupFileMirrorPage } from '../src/standalone/admin/group_file_mirror_page.ts';
 
-async function waitFor(predicate: () => boolean, message: string, timeoutMs = 2000): Promise<void> {
+async function waitFor(predicate: () => boolean, message: string, timeoutMs = 3000): Promise<void> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (predicate()) return;
@@ -29,7 +29,11 @@ async function verifyRuntimeForwarding(rule: GroupFileMirrorRule): Promise<void>
   const configPath = path.join(tempDir, 'config', 'group-file-mirror.json');
   const statePath = path.join(tempDir, 'data', 'group-file-mirror-state.json');
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, `${JSON.stringify({ enabled: true, rules: [rule] }, null, 2)}\n`, 'utf-8');
+  fs.writeFileSync(
+    configPath,
+    `${JSON.stringify({ enabled: true, rules: [rule] }, null, 2)}\n`,
+    'utf-8',
+  );
 
   const previousConfigPath = process.env.GROUP_FILE_MIRROR_CONFIG_PATH;
   const previousStatePath = process.env.GROUP_FILE_MIRROR_STATE_PATH;
@@ -38,13 +42,25 @@ async function verifyRuntimeForwarding(rule: GroupFileMirrorRule): Promise<void>
 
   const calls: Array<{ action: string; params: any }> = [];
   let forwardedSequence = 0;
+  let resolveFirstForward!: (value: any) => void;
+  const firstForwardResponse = new Promise<any>(resolve => {
+    resolveFirstForward = resolve;
+  });
+
   const service = new GroupFileMirrorService();
   service.bindRuntime({
     callAction: async (action, params) => {
       calls.push({ action, params });
-      if (action === 'forward_group_single_msg') {
+      if (action === 'send_group_forward_msg') {
         forwardedSequence += 1;
-        return { data: { message_id: -2000 - forwardedSequence } };
+        if (forwardedSequence === 1) return firstForwardResponse;
+        return {
+          data: {
+            message_id: -2000 - forwardedSequence,
+            res_id: `forward-${forwardedSequence}`,
+            forward_id: `forward-${forwardedSequence}`,
+          },
+        };
       }
       if (action === 'delete_msg') return { data: {} };
       throw new Error(`unexpected action: ${action}`);
@@ -68,17 +84,69 @@ async function verifyRuntimeForwarding(rule: GroupFileMirrorRule): Promise<void>
       }],
     });
 
-    await waitFor(() => fs.existsSync(statePath), 'first forwarded state is persisted');
-    await waitFor(() => calls.some(item => item.action === 'forward_group_single_msg'), 'forward action is called');
-    assert.deepEqual(calls[0], {
-      action: 'forward_group_single_msg',
-      params: { message_id: -1001, group_id: 16461612 },
-    }, 'the original file message is forwarded directly');
+    await waitFor(
+      () => calls.some(item => item.action === 'send_group_forward_msg'),
+      'first merged-forward action is called',
+    );
 
+    assert.deepEqual(calls[0], {
+      action: 'send_group_forward_msg',
+      params: {
+        group_id: 16461612,
+        messages: [{
+          type: 'node',
+          data: { id: -1001 },
+        }],
+        source: '群文件消息',
+        summary: '查看文件消息',
+        prompt: '[文件消息]',
+        news: [{ text: 'first.7z' }],
+      },
+    }, 'the original file message is referenced through one-node merged forwarding');
+
+    assert.equal(service.shouldBypassGlobalSelfRecall({
+      post_type: 'message_sent',
+      message_type: 'group',
+      group_id: 16461612,
+      user_id: 755396669,
+      self_id: 755396669,
+      message_id: -2001,
+      message: [{ type: 'forward', data: { id: 'forward-1' } }],
+    }), true, 'a target message_sent racing ahead of the action response bypasses global self-recall');
+
+    assert.equal(service.shouldBypassGlobalSelfRecall({
+      post_type: 'message_sent',
+      message_type: 'group',
+      group_id: 999999,
+      user_id: 755396669,
+      self_id: 755396669,
+      message_id: -9001,
+      message: [{ type: 'forward', data: { id: 'unrelated' } }],
+    }), false, 'unrelated merged-forward messages are not exempted');
+
+    resolveFirstForward({
+      data: {
+        message_id: -2001,
+        res_id: 'forward-1',
+        forward_id: 'forward-1',
+      },
+    });
+
+    await waitFor(() => fs.existsSync(statePath), 'first forwarded state is persisted');
     let state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
     assert.equal(state.rules['mirror-a'].current.sourceMessageId, '-1001');
     assert.equal(state.rules['mirror-a'].current.targetMessageId, '-2001');
     assert.equal(state.rules['mirror-a'].current.sourceFileName, 'first.7z');
+
+    assert.equal(service.shouldBypassGlobalSelfRecall({
+      post_type: 'message_sent',
+      message_type: 'group',
+      group_id: 16461612,
+      user_id: 755396669,
+      self_id: 755396669,
+      message_id: -2001,
+      message: [{ type: 'forward', data: { id: 'forward-1' } }],
+    }), true, 'persisted current file-forward messages remain outside global self-recall');
 
     service.observeEvent({
       post_type: 'message',
@@ -94,8 +162,9 @@ async function verifyRuntimeForwarding(rule: GroupFileMirrorRule): Promise<void>
 
     await waitFor(
       () => calls.some(item => item.action === 'delete_msg' && item.params?.message_id === -2001),
-      'previous forwarded message is recalled',
+      'previous file-forward message is recalled by the mirror-owned path',
     );
+
     state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
     assert.equal(state.rules['mirror-a'].current.sourceMessageId, '-1002');
     assert.equal(state.rules['mirror-a'].current.targetMessageId, '-2002');
@@ -110,12 +179,14 @@ async function verifyRuntimeForwarding(rule: GroupFileMirrorRule): Promise<void>
 
     await waitFor(
       () => calls.some(item => item.action === 'delete_msg' && item.params?.message_id === -2002),
-      'source recall removes the current forwarded message',
+      'source recall removes the current target message through the mirror-owned path',
     );
+
     state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
     assert.equal(state.rules['mirror-a'].current, undefined);
     assert.deepEqual(state.rules['mirror-a'].pendingCleanup, []);
 
+    assert.equal(calls.some(item => item.action === 'forward_group_single_msg'), false);
     assert.equal(calls.some(item => item.action === 'get_group_file_url'), false);
     assert.equal(calls.some(item => item.action === 'upload_group_file'), false);
     assert.equal(calls.some(item => item.action === 'delete_group_file'), false);
@@ -294,13 +365,31 @@ async function main(): Promise<void> {
     path.resolve(process.cwd(), 'src/services/group_file_mirror_service.ts'),
     'utf-8',
   );
-  assert.match(serviceSource, /forward_group_single_msg/);
+  assert.match(serviceSource, /send_group_forward_msg/);
+  assert.match(serviceSource, /shouldBypassGlobalSelfRecall/);
+  assert.match(serviceSource, /文件转发专用撤回通道/);
+  assert.match(serviceSource, /'delete_msg'/);
+  assert.doesNotMatch(serviceSource, /forward_group_single_msg/);
   assert.doesNotMatch(serviceSource, /get_group_file_url/);
   assert.doesNotMatch(serviceSource, /upload_group_file/);
   assert.doesNotMatch(serviceSource, /delete_group_file/);
+  assert.doesNotMatch(serviceSource, /scheduleSelfRecall/);
+  assert.doesNotMatch(serviceSource, /processRiskSignal/);
+  assert.doesNotMatch(serviceSource, /enqueueSelfRecallAction/);
+
+  const runtimePipelineSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/runtime/runtime_message_pipeline.ts'),
+    'utf-8',
+  );
+  const bypassIndex = runtimePipelineSource.indexOf('groupFileMirrorService.shouldBypassGlobalSelfRecall(event)');
+  const globalRecallIndex = runtimePipelineSource.indexOf(
+    "runtimeControlService.scheduleSelfRecall(groupId, messageId, 'message_event')",
+  );
+  assert.ok(bypassIndex >= 0, 'runtime message pipeline checks mirror ownership');
+  assert.ok(globalRecallIndex > bypassIndex, 'mirror bypass happens before global self-recall scheduling');
 
   await verifyRuntimeForwarding(rule);
-  console.log('group file message forwarding verification passed');
+  console.log('group file merged forwarding and dedicated recall verification passed');
 }
 
 main().catch(error => {
