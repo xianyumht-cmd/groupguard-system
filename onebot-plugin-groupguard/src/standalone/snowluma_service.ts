@@ -6,6 +6,7 @@ import { createStandaloneContext } from './standalone_context';
 import { startSnowLumaAdminServer, type SnowLumaAdminServerRuntime } from './snowluma_admin_server';
 import { plugin_init, plugin_onmessage, plugin_onevent, plugin_cleanup } from '../index';
 import { getGroupGuardBotRole } from '../core/bot_role';
+import { groupFileMirrorService } from '../services/group_file_mirror_service';
 import {
   installQunGuanjiaRealtimeCapture,
   observeQunGuanjiaRealtimeMessage
@@ -79,10 +80,28 @@ async function start(): Promise<RuntimeState> {
     logger: console
   });
 
+  groupFileMirrorService.bindRuntime({
+    callAction: (action, params) => actions.call(action, params),
+    workDir,
+    dataDir,
+    configPath,
+    log: (level, message) => {
+      if (level === 'error') logger.error(message);
+      else if (level === 'warn') logger.warn(message);
+      else if (level === 'debug') logger.debug(message);
+      else logger.info(message);
+    }
+  });
+
   installQunGuanjiaRealtimeCapture();
 
   client.onEvent(async (event) => {
     if (!event || typeof event !== 'object') return;
+
+    // File mirroring is a host-level automation and must observe events before
+    // the licensed group-management pipeline can return early for source groups.
+    groupFileMirrorService.observeEvent(event);
+
     if (isMessageEvent(event)) {
       observeQunGuanjiaRealtimeMessage(event);
       await plugin_onmessage(ctx, event as any);
