@@ -7,6 +7,12 @@ import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
 import { renderQueryPage } from './query_page';
 import { renderQunGuanjiaPage } from './qun_guanjia_page';
+import { renderGroupFileMirrorPage } from './group_file_mirror_page';
+import {
+  getGroupFileMirrorOverview,
+  saveGroupFileMirrorFromWeb,
+  GroupFileMirrorConfigError,
+} from './group_file_mirror_api';
 import { getStatus } from './status_api';
 import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
@@ -18,7 +24,7 @@ import { getDynamicCommandsConfig, saveDynamicCommandsConfig } from './dynamic_c
 import { handleLanzouUpdateEvent } from './lanzou_update_api';
 import { applyRiskPreset, getHealthDashboard, getRiskDashboard } from './risk_ops_api';
 import { getSubGameplayResourceFile, getSubGameplayResourceOverview, verifySubGameplayResourceIntegrity } from '../../services/sub_gameplay_resources';
-import { qunGuanjiaService } from '../../services/qun_guanjia_service';
+import { qunGuanjiaService } from '../../services/qun_guanjjia_service';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 import { getBuildInfo } from '../../build_info';
 
@@ -68,10 +74,13 @@ function requireNumericGroupId(value: unknown): string {
 }
 
 function renderMainPage(): string {
-  return renderHomePage().replace(
-    '<button class="tab" data-tab="send">发送与风控</button>',
-    '<button class="tab" data-tab="send">发送与风控</button>\n    <a class="tablink" id="qunGuanjiaLink" href="/qun-guanjia.html">Q群管家通道</a>'
-  );
+  return renderHomePage()
+    .replaceAll('GroupGuard SnowLuma 控制台', '群管系统控制台')
+    .replace('用于修改 SnowLuma 独立版群管配置。保存前会自动备份，并刷新运行时配置。', '用于管理机器人群管功能。保存前会自动备份，并立即刷新运行设置。')
+    .replace('<button class="tab" data-tab="send">发送与风控</button>', '<button class="tab" data-tab="send">发送与风控</button>\n    <a class="tablink" id="groupFileMirrorLink" href="/group-file-mirror.html">群文件搬运</a>\n    <a class="tablink" id="qunGuanjiaLink" href="/qun-guanjia.html">Q群管家通道</a>')
+    .replaceAll('SUB玩法', '娱乐玩法')
+    .replaceAll('ELE构建', '构建工具')
+    .replace('<option value="free">free</option><option value="pro" selected>pro</option><option value="enterprise">enterprise</option>', '<option value="free">免费版</option><option value="pro" selected>专业版</option><option value="enterprise">企业版</option>');
 }
 
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
@@ -101,7 +110,23 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/group-file-mirror.html') {
+        send(res, 200, renderGroupFileMirrorPage(), 'text/html; charset=utf-8');
+        return;
+      }
+
       if (!requireAuth(req, res, url, token)) return;
+
+      if (req.method === 'GET' && url.pathname === '/api/group-file-mirror') {
+        sendJson(res, 200, getGroupFileMirrorOverview());
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/group-file-mirror') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, saveGroupFileMirrorFromWeb(payload));
+        return;
+      }
 
       if (req.method === 'GET' && url.pathname === '/api/status') {
         sendJson(res, 200, getStatus(options));
@@ -254,7 +279,7 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       }
 
       if (req.method === 'GET' && url.pathname === '/api/licenses') {
-        sendJson(res, 200, { ok: true, licenses: listLicenses() });
+        sendJson(res, 200, { ok: true, licenses: listLicenses(options) });
         return;
       }
 
@@ -375,16 +400,17 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         const resourcePath = String(url.searchParams.get('path') || url.searchParams.get('id') || '');
         const filePath = getSubGameplayResourceFile(resourcePath);
         if (!filePath) {
-          sendJson(res, 404, { ok: false, error: 'resource_not_found' });
+          sendJson(res, 404, { ok: false, error: '资源不存在' });
           return;
         }
         sendBuffer(res, 200, fs.readFileSync(filePath), contentTypeForResource(filePath));
         return;
       }
 
-      sendJson(res, 404, { ok: false, error: 'not found' });
+      sendJson(res, 404, { ok: false, error: '页面或接口不存在' });
     } catch (error) {
-      sendJson(res, 500, { ok: false, error: String((error as Error)?.message || error) });
+      const statusCode = error instanceof GroupFileMirrorConfigError ? 400 : 500;
+      sendJson(res, statusCode, { ok: false, error: String((error as Error)?.message || error) });
     }
   });
 
