@@ -1,0 +1,99 @@
+name: Sync user manual to Feishu
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - USER_MANUAL.md
+      - scripts/sync_user_manual_to_feishu.py
+      - .github/workflows/sync-user-manual-to-feishu.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: feishu-user-manual-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Synchronize USER_MANUAL.md
+        id: sync
+        continue-on-error: true
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_DOCUMENT_ID: ${{ secrets.FEISHU_DOCUMENT_ID }}
+        run: |
+          set -o pipefail
+          python scripts/sync_user_manual_to_feishu.py --mode sync 2>&1 | tee /tmp/feishu-sync.log
+
+      - name: Write synchronization status
+        if: always()
+        env:
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          outcome = os.environ.get("SYNC_OUTCOME", "unknown")
+          log_path = Path("/tmp/feishu-sync.log")
+          log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else "未生成执行日志。"
+          log = re.sub(r"(?i)(app_secret|tenant_access_token|authorization)([\"':=\s]+)[^,\s\"}]+", r"\1\2[REDACTED]", log)
+          log = log[-5000:]
+          status = "成功" if outcome == "success" else "失败"
+          now = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
+          content = f"""# 飞书手册同步状态
+
+          - 结果：**{status}**
+          - 执行时间：`{now}`
+          - 来源提交：`{os.environ.get('SOURCE_COMMIT', '')}`
+          - 工作流：{os.environ.get('RUN_URL', '')}
+
+          ## 执行输出
+
+          ```text
+          {log}
+          ```
+
+          > 本文件由 GitHub Actions 自动更新，不包含应用密钥或访问令牌。
+          """
+          lines = [line[10:] if line.startswith("          ") else line for line in content.splitlines()]
+          Path("docs").mkdir(exist_ok=True)
+          Path("docs/FEISHU_SYNC_STATUS.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+          PY
+
+      - name: Commit synchronization status
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/FEISHU_SYNC_STATUS.md
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "docs: update Feishu sync status [skip ci]"
+          git push
+
+      - name: Mark workflow as failed
+        if: steps.sync.outcome != 'success'
+        run: exit 1
