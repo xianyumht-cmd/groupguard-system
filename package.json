@@ -1,8 +1,8 @@
 {
-  "name": "onebot-plugins-repository",
+  "name": "groupguard-system",
   "private": true,
   "version": "1.0.0",
-  "description": "Repository command facade for OneBot plugins",
+  "description": "GroupGuard repository command facade for SnowLuma production and OneBot compatibility builds",
   "scripts": {
     "build": "npm --prefix onebot-plugin-groupguard run build",
     "build:all": "npm --prefix onebot-plugin-groupguard run build:all",
