@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updateTime": "2026-07-27T12:38:50Z",
+  "updateTime": "2026-07-27T13:20:56Z",
   "plugins": [
     {
       "id": "onebot-plugin-groupguard",
@@ -9,7 +9,7 @@
       "description": "Group Guard plugin for OneBot and SnowLuma, comprehensive group management and risk control",
       "author": "冷曦",
       "homepage": "",
-      "downloadUrl": "https://github.com/xianyumht-cmd/my-napcat-sys/releases/download/plugins/onebot-plugin-groupguard.zip",
+      "downloadUrl": "https://github.com/xianyumht-cmd/groupguard-system/releases/download/plugins/onebot-plugin-groupguard.zip",
       "tags": [
         "群管",
         "工具"
