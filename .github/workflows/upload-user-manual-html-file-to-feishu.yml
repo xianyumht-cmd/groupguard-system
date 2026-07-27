@@ -8,6 +8,7 @@ on:
       - USER_MANUAL.md
       - USER_MANUAL.html
       - scripts/build_user_manual_html.py
+      - scripts/patch_user_manual_html_for_feishu.py
       - scripts/upload_user_manual_html_file_to_feishu.py
       - .github/workflows/upload-user-manual-html-file-to-feishu.yml
   workflow_dispatch:
@@ -35,6 +36,9 @@ jobs:
 
       - name: Build static glass HTML from Markdown
         run: python scripts/build_user_manual_html.py
+
+      - name: Patch Feishu preview fallback
+        run: python scripts/patch_user_manual_html_for_feishu.py
 
       - name: Install requests
         run: python -m pip install --disable-pip-version-check requests
