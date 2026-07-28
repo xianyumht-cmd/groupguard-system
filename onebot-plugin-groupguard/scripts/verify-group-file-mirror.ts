@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   extractFileSegmentsFromMessage,
   fileEventMatchesRule,
   normalizeGroupFileMirrorConfig,
   type GroupFileMirrorRule,
 } from '../src/services/group_file_mirror_service.ts';
+import {
+  buildGroupFileUploadNoticesFromMessage,
+  shouldBypassGroupFileMirrorGlobalRecall,
+} from '../src/services/group_file_mirror_message_adapter.ts';
 import {
   GroupFileMirrorConfigError,
   normalizeGroupFileMirrorWebInput,
@@ -87,6 +94,38 @@ function main(): void {
     fileSize: 2048,
   }], 'legacy SnowLuma file fields are parsed');
 
+  const sourceMessage = {
+    time: 1785227509,
+    self_id: 755396669,
+    post_type: 'message',
+    message_type: 'group',
+    group_id: 1334664,
+    user_id: 2854196310,
+    message_id: 2107220832,
+    message: [{
+      type: 'file',
+      data: {
+        file_id: '/source-file-id',
+        name: 'live-package.7z',
+        size: 16979859,
+      },
+    }],
+  };
+  const synthetic = buildGroupFileUploadNoticesFromMessage(sourceMessage, '755396669');
+  assert.equal(synthetic.length, 1, 'ordinary file message produces one synthetic upload notice');
+  assert.equal(synthetic[0].notice_type, 'group_upload');
+  assert.equal(synthetic[0].group_id, 1334664);
+  assert.equal(synthetic[0].user_id, '2854196310');
+  assert.equal(synthetic[0].file.id, '/source-file-id');
+  assert.equal(synthetic[0].file.name, 'live-package.7z');
+  assert.equal(synthetic[0].file.size, 16979859);
+  assert.equal(synthetic[0].file.busid, 102);
+
+  assert.deepEqual(buildGroupFileUploadNoticesFromMessage({
+    ...sourceMessage,
+    user_id: 755396669,
+  }, '755396669'), [], 'mirror-created target files never trigger another source upload');
+
   assert.equal(fileEventMatchesRule(rule, '1334664', '2854196310', {
     name: 'gEKVklo-UtBeN.7z',
     size: 15 * 1024 * 1024,
@@ -154,6 +193,42 @@ function main(): void {
   assert.equal(webConfig.rules[0].recallPreviousTargetMessage, true, 'WebUI cannot disable old message recall');
   assert.equal(webConfig.rules[0].syncSourceRecall, true, 'WebUI cannot disable source recall sync');
 
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'group-file-mirror-bypass-'));
+  const tempConfig = path.join(tempDir, 'group-file-mirror.json');
+  const previousConfigPath = process.env.GROUP_FILE_MIRROR_CONFIG_PATH;
+  try {
+    fs.writeFileSync(tempConfig, `${JSON.stringify(webConfig, null, 2)}\n`, 'utf-8');
+    process.env.GROUP_FILE_MIRROR_CONFIG_PATH = tempConfig;
+
+    assert.equal(shouldBypassGroupFileMirrorGlobalRecall({
+      post_type: 'message_sent',
+      message_type: 'group',
+      group_id: 16461612,
+      user_id: 755396669,
+      self_id: 755396669,
+      message_id: 736612926,
+      message: [{
+        type: 'file',
+        data: {
+          file_id: '/target-file-id',
+          name: 'live-package.7z',
+          size: 16979859,
+        },
+      }],
+    }), true, 'native target file bypasses the global self-recall scheduler');
+
+    assert.equal(shouldBypassGroupFileMirrorGlobalRecall({
+      post_type: 'message_sent',
+      message_type: 'group',
+      group_id: 999999,
+      message: [{ type: 'file', data: { name: 'live-package.7z', size: 1024 } }],
+    }), false, 'unrelated target groups stay in the normal scheduler');
+  } finally {
+    if (previousConfigPath === undefined) delete process.env.GROUP_FILE_MIRROR_CONFIG_PATH;
+    else process.env.GROUP_FILE_MIRROR_CONFIG_PATH = previousConfigPath;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
   const archiveConfig = normalizeGroupFileMirrorWebInput({
     enabled: false,
     rules: [{
@@ -190,7 +265,17 @@ function main(): void {
   assert.doesNotMatch(html, />Target Group</);
   assert.doesNotMatch(html, />Save</);
 
-  console.log('group file mirror verification passed');
+  const serviceSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/services/group_file_mirror_service.ts'),
+    'utf-8',
+  );
+  assert.match(serviceSource, /get_group_file_url/);
+  assert.match(serviceSource, /upload_group_file/);
+  assert.match(serviceSource, /delete_group_file/);
+  assert.match(serviceSource, /delete_msg/);
+  assert.doesNotMatch(serviceSource, /send_group_forward_msg/);
+
+  console.log('group file native upload mirror verification passed');
 }
 
 try {
