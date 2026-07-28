@@ -14,7 +14,7 @@ import {
 } from '../commands';
 import { handleVerifyAnswer } from '../verify';
 import { runWithForcedResponseScene } from '../dynamic-commands/response_capture_runtime';
-import { groupFileMirrorService } from '../services/group_file_mirror_service';
+import { shouldBypassGroupFileMirrorGlobalRecall } from '../services/group_file_mirror_message_adapter';
 
 export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11Message): Promise<void> {
   if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
@@ -38,13 +38,12 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
     }
 
     if (userId === selfId) {
-      // Group-file forwarding owns its target-message lifecycle. These messages
-      // must never enter the existing global risk/self-recall scheduler; the
-      // mirror recalls them through its dedicated direct OneBot path only when
-      // a newer file replaces them or the source message is recalled.
-      if (groupFileMirrorService.shouldBypassGlobalSelfRecall(event)) {
+      // Native files uploaded by GroupFileMirror own their whole lifecycle.
+      // They bypass the existing global risk/self-recall scheduler and are
+      // cleaned only by the mirror's direct delete_msg + delete_group_file path.
+      if (shouldBypassGroupFileMirrorGlobalRecall(event)) {
         loggingStateService.debug(
-          `[GroupFileMirror] 已绕过全局风控撤回 group=${groupId} message=${messageId}`,
+          `[GroupFileMirror] 原生群文件消息已绕过全局风控撤回 group=${groupId} message=${messageId}`,
         );
         return;
       }
