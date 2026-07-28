@@ -68,18 +68,22 @@ $config = [ordered]@{
   enabled = [bool]$Enable
   rules = @(
     [ordered]@{
-      id = "forward-$SourceGroupId-to-$TargetGroupId"
+      id = "mirror-$SourceGroupId-to-$TargetGroupId"
       enabled = $true
       sourceGroupId = $SourceGroupId
       targetGroupId = $TargetGroupId
       sourceUploaderIds = $uploaderIds
       fileNamePattern = $FileNamePattern
       maxFileSizeMb = $MaxFileSizeMb
+      targetFolderId = "/"
       keepLatestOnly = $true
+      deletePreviousTargetFile = $true
       recallPreviousTargetMessage = $true
       syncSourceRecall = $true
       retryCount = 2
       retryDelayMs = 1500
+      messageLookupAttempts = 6
+      messageLookupDelayMs = 1000
     }
   )
 }
@@ -121,16 +125,15 @@ printf 'config_path=%s\n' "$file"
 printf 'enabled=%s\n' "$(jq -r '.enabled' "$file")"
 printf 'source_group=%s\n' "$(jq -r '.rules[0].sourceGroupId' "$file")"
 printf 'target_group=%s\n' "$(jq -r '.rules[0].targetGroupId' "$file")"
-printf 'sender_filter=%s\n' "$(jq -r '.rules[0].sourceUploaderIds | join(",")' "$file")"
+printf 'uploader_filter=%s\n' "$(jq -r '.rules[0].sourceUploaderIds | join(",")' "$file")"
 printf 'file_pattern=%s\n' "$(jq -r '.rules[0].fileNamePattern' "$file")"
-printf 'mode=forward_group_single_msg\n'
 if [ "$restart" = "1" ]; then
   command -v docker >/dev/null
   docker inspect --type container "$container" >/dev/null
   docker restart "$container" >/dev/null
   printf 'container_restarted=%s\n' "$container"
 else
-  printf 'container_restart=skipped (the service reloads this config on the next message)\n'
+  printf 'container_restart=skipped (the service reloads this config on the next event)\n'
 fi
 '@
 
@@ -140,14 +143,14 @@ $quotedContainer = Quote-RemoteArgument -Value $ContainerName
 $quotedRestart = Quote-RemoteArgument -Value $restartFlag
 $command = "printf '%s' '$scriptBase64' | base64 -d | sh -s -- $quotedApp $quotedContainer '$configBase64' $quotedRestart"
 
-Write-Host "Writing verified file-message forwarding config to $target..."
+Write-Host "Writing verified group-file mirror config to $target..."
 & ssh $target $command
 if ($LASTEXITCODE -ne 0) {
-  throw "Remote file-message forwarding configuration failed with exit code $LASTEXITCODE."
+  throw "Remote group-file mirror configuration failed with exit code $LASTEXITCODE."
 }
 
 if ($Enable) {
-  Write-Host "File-message forwarding is ENABLED. Wait for the next matching file message in the monitored group."
+  Write-Host "Group-file mirror is ENABLED. Wait for the next matching source upload and inspect GroupGuard logs."
 } else {
   Write-Host "Configuration was saved with the total switch DISABLED. Re-run with -Enable after checking the group IDs."
 }
