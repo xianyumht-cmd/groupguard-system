@@ -9,11 +9,15 @@ export interface GroupFileMirrorRule {
   sourceUploaderIds: string[];
   fileNamePattern: string;
   maxFileSizeMb: number;
+  targetFolderId: string;
   keepLatestOnly: boolean;
+  deletePreviousTargetFile: boolean;
   recallPreviousTargetMessage: boolean;
   syncSourceRecall: boolean;
   retryCount: number;
   retryDelayMs: number;
+  messageLookupAttempts: number;
+  messageLookupDelayMs: number;
 }
 
 export interface GroupFileMirrorConfig {
@@ -21,33 +25,45 @@ export interface GroupFileMirrorConfig {
   rules: GroupFileMirrorRule[];
 }
 
-export interface FileMessageDescriptor {
+interface GroupFileDescriptor {
+  id: string;
+  name: string;
+  size: number;
+  busid: number;
+}
+
+interface FileMessageDescriptor {
   fileId: string;
   fileName: string;
   fileSize: number;
 }
 
-interface ForwardRecord {
+interface MirrorRecord {
   sourceGroupId: string;
   sourceUploaderId: string;
-  sourceMessageId: string;
+  sourceFileId: string;
   sourceFileName: string;
   sourceFileSize: number;
+  sourceBusid: number;
+  sourceMessageId: string;
   targetGroupId: string;
+  targetFileId: string;
   targetMessageId: string;
   mirroredAt: number;
 }
 
 interface CleanupRecord {
   targetGroupId: string;
+  targetFileId: string;
   targetMessageId: string;
   sourceFileName: string;
   messageRecalled: boolean;
+  fileDeleted: boolean;
   queuedAt: number;
 }
 
 interface MirrorRuleState {
-  current?: ForwardRecord;
+  current?: MirrorRecord;
   pendingCleanup: CleanupRecord[];
   lastSuccessAt: number;
   lastErrorAt: number;
@@ -67,9 +83,14 @@ interface RuntimeBinding {
   log: (level: 'info' | 'warn' | 'error' | 'debug', message: string) => void;
 }
 
-interface PendingForwardGuard {
-  targetGroupId: string;
-  expiresAt: number;
+interface RecentFileMessage {
+  groupId: string;
+  messageId: string;
+  senderId: string;
+  fileId: string;
+  fileName: string;
+  fileSize: number;
+  observedAt: number;
 }
 
 const DEFAULT_CONFIG: GroupFileMirrorConfig = {
@@ -77,10 +98,7 @@ const DEFAULT_CONFIG: GroupFileMirrorConfig = {
   rules: [],
 };
 
-const PENDING_FORWARD_GUARD_TTL_MS = 2 * 60 * 1000;
-const MANAGED_TARGET_MESSAGE_TTL_MS = 10 * 60 * 1000;
-const MAX_PENDING_FORWARD_GUARDS = 100;
-const MAX_MANAGED_TARGET_MESSAGES = 2000;
+const RECENT_MESSAGE_TTL_MS = 10 * 60 * 1000;
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -137,12 +155,15 @@ export function normalizeGroupFileMirrorConfig(value: unknown): GroupFileMirrorC
       sourceUploaderIds: normalizeStringArray(raw.sourceUploaderIds ?? raw.source_uploader_ids),
       fileNamePattern: isValidPattern(fileNamePattern) ? fileNamePattern : '',
       maxFileSizeMb: clampNumber(raw.maxFileSizeMb ?? raw.max_file_size_mb, 512, 1, 4096),
+      targetFolderId: String(raw.targetFolderId ?? raw.target_folder_id ?? '/').trim() || '/',
       keepLatestOnly: raw.keepLatestOnly !== false && raw.keep_latest_only !== false,
-      recallPreviousTargetMessage: raw.recallPreviousTargetMessage !== false
-        && raw.recall_previous_target_message !== false,
+      deletePreviousTargetFile: raw.deletePreviousTargetFile !== false && raw.delete_previous_target_file !== false,
+      recallPreviousTargetMessage: raw.recallPreviousTargetMessage !== false && raw.recall_previous_target_message !== false,
       syncSourceRecall: raw.syncSourceRecall !== false && raw.sync_source_recall !== false,
       retryCount: clampNumber(raw.retryCount ?? raw.retry_count, 2, 0, 10),
       retryDelayMs: clampNumber(raw.retryDelayMs ?? raw.retry_delay_ms, 1500, 100, 30000),
+      messageLookupAttempts: clampNumber(raw.messageLookupAttempts ?? raw.message_lookup_attempts, 6, 0, 30),
+      messageLookupDelayMs: clampNumber(raw.messageLookupDelayMs ?? raw.message_lookup_delay_ms, 1000, 100, 10000),
     });
   }
 
@@ -159,11 +180,6 @@ function sleep(ms: number): Promise<void> {
 function groupParam(value: string): string | number {
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : value;
-}
-
-function messageParam(value: string): string | number {
-  const number = Number(value);
-  return Number.isSafeInteger(number) ? number : value;
 }
 
 function unwrapActionData(value: any): any {
@@ -185,11 +201,6 @@ function extractSenderId(message: any): string {
   );
 }
 
-function containsForwardSegment(message: any): boolean {
-  const segments = Array.isArray(message?.message) ? message.message : [];
-  return segments.some((segment: unknown) => isRecord(segment) && String(segment.type || '') === 'forward');
-}
-
 export function extractFileSegmentsFromMessage(message: any): FileMessageDescriptor[] {
   const segments = Array.isArray(message?.message) ? message.message : [];
   const output: FileMessageDescriptor[] = [];
@@ -209,7 +220,7 @@ export function fileEventMatchesRule(
   rule: GroupFileMirrorRule,
   groupId: string,
   uploaderId: string,
-  file: { name: string; size: number },
+  file: Pick<GroupFileDescriptor, 'name' | 'size'>,
 ): boolean {
   if (!rule.enabled || rule.sourceGroupId !== groupId) return false;
   if (rule.sourceUploaderIds.length && !rule.sourceUploaderIds.includes(uploaderId)) return false;
@@ -222,6 +233,12 @@ export function fileEventMatchesRule(
     }
   }
   return true;
+}
+
+function messageMatchesFile(message: RecentFileMessage, fileId: string, fileName: string, fileSize = 0): boolean {
+  if (fileId && message.fileId && fileId === message.fileId) return true;
+  if (!fileName || !message.fileName || fileName !== message.fileName) return false;
+  return fileSize <= 0 || message.fileSize <= 0 || fileSize === message.fileSize;
 }
 
 function isAlreadyGoneError(error: unknown): boolean {
@@ -240,10 +257,8 @@ export class GroupFileMirrorService {
   private configErrorSignature = '';
   private state: MirrorStateStore = { version: 1, rules: {} };
   private loadedStatePath = '';
+  private readonly recentMessages = new Map<string, RecentFileMessage>();
   private readonly ruleTails = new Map<string, Promise<void>>();
-  private readonly pendingForwardGuards = new Map<string, PendingForwardGuard>();
-  private readonly managedTargetMessages = new Map<string, number>();
-  private nextForwardGuardId = 0;
 
   bindRuntime(runtime: RuntimeBinding): void {
     this.runtime = runtime;
@@ -338,113 +353,25 @@ export class GroupFileMirrorService {
     return this.state.rules[ruleId];
   }
 
-  private targetMessageKey(groupId: string, messageId: string): string {
-    return `${groupId}:${messageId}`;
-  }
-
-  private capMap<T>(map: Map<string, T>, maxSize: number): void {
-    while (map.size > maxSize) {
-      const oldestKey = map.keys().next().value;
-      if (oldestKey === undefined) return;
-      map.delete(oldestKey);
+  private pruneRecentMessages(): void {
+    const cutoff = Date.now() - RECENT_MESSAGE_TTL_MS;
+    for (const [key, value] of this.recentMessages.entries()) {
+      if (value.observedAt < cutoff) this.recentMessages.delete(key);
     }
   }
 
-  private pruneRecallGuards(now = Date.now()): void {
-    for (const [token, guard] of this.pendingForwardGuards.entries()) {
-      if (guard.expiresAt <= now) this.pendingForwardGuards.delete(token);
-    }
-    for (const [key, expiresAt] of this.managedTargetMessages.entries()) {
-      if (expiresAt <= now) this.managedTargetMessages.delete(key);
-    }
+  private rememberRecentMessage(message: RecentFileMessage): void {
+    this.pruneRecentMessages();
+    if (message.fileId) this.recentMessages.set(`${message.groupId}:id:${message.fileId}`, message);
+    if (message.fileName) this.recentMessages.set(`${message.groupId}:name:${message.fileName}`, message);
   }
 
-  private registerManagedTargetMessage(groupId: string, messageId: string): void {
-    if (!groupId || !messageId) return;
-    this.pruneRecallGuards();
-    this.managedTargetMessages.set(
-      this.targetMessageKey(groupId, messageId),
-      Date.now() + MANAGED_TARGET_MESSAGE_TTL_MS,
-    );
-    this.capMap(this.managedTargetMessages, MAX_MANAGED_TARGET_MESSAGES);
-  }
-
-  private unregisterManagedTargetMessage(groupId: string, messageId: string): void {
-    if (!groupId || !messageId) return;
-    this.managedTargetMessages.delete(this.targetMessageKey(groupId, messageId));
-  }
-
-  private beginPendingForward(targetGroupId: string): string {
-    this.pruneRecallGuards();
-    this.nextForwardGuardId += 1;
-    const token = `${Date.now().toString(36)}-${this.nextForwardGuardId.toString(36)}`;
-    this.pendingForwardGuards.set(token, {
-      targetGroupId,
-      expiresAt: Date.now() + PENDING_FORWARD_GUARD_TTL_MS,
-    });
-    this.capMap(this.pendingForwardGuards, MAX_PENDING_FORWARD_GUARDS);
-    return token;
-  }
-
-  private completePendingForward(token: string, targetGroupId: string, targetMessageId: string): void {
-    this.pendingForwardGuards.delete(token);
-    this.registerManagedTargetMessage(targetGroupId, targetMessageId);
-  }
-
-  private cancelPendingForward(token: string): void {
-    this.pendingForwardGuards.delete(token);
-  }
-
-  private stateOwnsTargetMessage(groupId: string, messageId: string): boolean {
-    this.ensureStateLoaded();
-    for (const state of Object.values(this.state.rules)) {
-      if (state.current?.targetGroupId === groupId && state.current.targetMessageId === messageId) {
-        return true;
-      }
-      if (Array.isArray(state.pendingCleanup)
-        && state.pendingCleanup.some(item => item.targetGroupId === groupId
-          && item.targetMessageId === messageId
-          && !item.messageRecalled)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * File-forward messages are outside the normal GroupGuard risk/self-recall
-   * pipeline. The mirror owns their lifecycle and recalls them directly only
-   * when a newer file replaces them or the source message is recalled.
-   *
-   * The pending-forward guard handles the race where SnowLuma emits
-   * message_sent before send_group_forward_msg returns its target message_id.
-   */
-  shouldBypassGlobalSelfRecall(event: unknown): boolean {
-    if (!this.runtime || !isRecord(event)) return false;
-    const postType = String(event.post_type || '');
-    if (postType !== 'message' && postType !== 'message_sent') return false;
-
-    const groupId = normalizeId(event.group_id);
-    const messageId = extractMessageId(event);
-    if (!groupId || !messageId) return false;
-
-    this.pruneRecallGuards();
-    const key = this.targetMessageKey(groupId, messageId);
-    if (this.managedTargetMessages.has(key) || this.stateOwnsTargetMessage(groupId, messageId)) {
-      this.registerManagedTargetMessage(groupId, messageId);
-      return true;
-    }
-
-    if (!containsForwardSegment(event)) return false;
-
-    const pending = Array.from(this.pendingForwardGuards.entries())
-      .find(([, guard]) => guard.targetGroupId === groupId);
-    if (!pending) return false;
-
-    this.pendingForwardGuards.delete(pending[0]);
-    this.registerManagedTargetMessage(groupId, messageId);
-    this.log('debug', `已从全局风控撤回中隔离文件转发消息 group=${groupId} message=${messageId}`);
-    return true;
+  private findRecentMessage(groupId: string, fileId: string, fileName: string, fileSize = 0): RecentFileMessage | null {
+    this.pruneRecentMessages();
+    const byId = fileId ? this.recentMessages.get(`${groupId}:id:${fileId}`) : undefined;
+    if (byId && messageMatchesFile(byId, fileId, fileName, fileSize)) return byId;
+    const byName = fileName ? this.recentMessages.get(`${groupId}:name:${fileName}`) : undefined;
+    return byName && messageMatchesFile(byName, fileId, fileName, fileSize) ? byName : null;
   }
 
   observeEvent(event: unknown): void {
@@ -458,27 +385,72 @@ export class GroupFileMirrorService {
       return;
     }
 
-    if (postType === 'notice' && String(event.notice_type || '') === 'group_recall') {
-      this.observeGroupRecall(event);
+    if (postType !== 'notice') return;
+    const noticeType = String(event.notice_type || '');
+    if (noticeType === 'group_upload') {
+      this.observeGroupUpload(event);
+      return;
     }
+    if (noticeType === 'group_recall') this.observeGroupRecall(event);
   }
 
   private observeMessage(event: Record<string, any>): void {
     const groupId = normalizeId(event.group_id);
     const messageId = extractMessageId(event);
+    if (!groupId || !messageId) return;
     const senderId = extractSenderId(event);
-    if (!groupId || !messageId || !senderId) return;
-
     const files = extractFileSegmentsFromMessage(event);
     if (!files.length) return;
 
+    let changed = false;
+    for (const file of files) {
+      const recent: RecentFileMessage = {
+        groupId,
+        messageId,
+        senderId,
+        fileId: file.fileId,
+        fileName: file.fileName,
+        fileSize: file.fileSize,
+        observedAt: Date.now(),
+      };
+      this.rememberRecentMessage(recent);
+
+      for (const rule of this.config.rules) {
+        const state = this.getRuleState(rule.id);
+        const current = state.current;
+        if (!current) continue;
+        if (groupId === current.sourceGroupId
+          && messageMatchesFile(recent, current.sourceFileId, current.sourceFileName, current.sourceFileSize)
+          && current.sourceMessageId !== messageId) {
+          current.sourceMessageId = messageId;
+          changed = true;
+        }
+        if (groupId === current.targetGroupId
+          && messageMatchesFile(recent, current.targetFileId, current.sourceFileName, current.sourceFileSize)
+          && current.targetMessageId !== messageId) {
+          current.targetMessageId = messageId;
+          changed = true;
+        }
+      }
+    }
+    if (changed) this.saveState();
+  }
+
+  private observeGroupUpload(event: Record<string, any>): void {
+    const groupId = normalizeId(event.group_id);
+    const uploaderId = normalizeId(event.user_id);
+    const rawFile = isRecord(event.file) ? event.file : {};
+    const file: GroupFileDescriptor = {
+      id: normalizeId(rawFile.id ?? rawFile.file_id),
+      name: normalizeId(rawFile.name ?? rawFile.file_name),
+      size: Math.max(0, Number(rawFile.size ?? rawFile.file_size ?? 0) || 0),
+      busid: Math.max(0, Number(rawFile.busid ?? rawFile.bus_id ?? 102) || 102),
+    };
+    if (!groupId || !file.id || !file.name) return;
+
     for (const rule of this.config.rules) {
-      const file = files.find(item => fileEventMatchesRule(rule, groupId, senderId, {
-        name: item.fileName,
-        size: item.fileSize,
-      }));
-      if (!file) continue;
-      this.enqueue(rule.id, async () => this.forwardMessage(rule, senderId, messageId, file));
+      if (!fileEventMatchesRule(rule, groupId, uploaderId, file)) continue;
+      this.enqueue(rule.id, async () => this.mirrorUpload(rule, uploaderId, file));
     }
   }
 
@@ -528,99 +500,89 @@ export class GroupFileMirrorService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError || `action_failed:${action}`));
   }
 
-  private async recallManagedMessageWithRetry(
-    rule: GroupFileMirrorRule,
-    messageId: string,
-  ): Promise<any> {
-    // Dedicated mirror recall path: this direct OneBot delete_msg call is owned
-    // by the mirror's own per-rule queue/state/retry lifecycle. It never enters
-    // runtimeControlService.scheduleSelfRecall, PolicyEngine, or action_queue_service.
-    return this.callWithRetry(rule, 'delete_msg', {
-      message_id: messageParam(messageId),
-    });
-  }
-
-  private async forwardMessage(
-    rule: GroupFileMirrorRule,
-    uploaderId: string,
-    sourceMessageId: string,
-    file: FileMessageDescriptor,
-  ): Promise<void> {
+  private async mirrorUpload(rule: GroupFileMirrorRule, uploaderId: string, file: GroupFileDescriptor): Promise<void> {
     const state = this.getRuleState(rule.id);
-    if (state.current?.sourceMessageId === sourceMessageId) {
-      this.log('debug', `规则 ${rule.id} 跳过重复文件消息 ${sourceMessageId}`);
+    if (state.current?.sourceFileId === file.id && state.current.sourceGroupId === rule.sourceGroupId) {
+      this.log('debug', `规则 ${rule.id} 跳过重复文件 ${file.name} (${file.id})`);
       return;
     }
 
     await this.cleanupPending(rule, state);
 
-    const guardToken = this.beginPendingForward(rule.targetGroupId);
-    let targetMessageId = '';
-    try {
-      const result = await this.callWithRetry(rule, 'send_group_forward_msg', {
-        group_id: groupParam(rule.targetGroupId),
-        messages: [{
-          type: 'node',
-          data: {
-            id: messageParam(sourceMessageId),
-          },
-        }],
-        source: '群文件消息',
-        summary: '查看文件消息',
-        prompt: '[文件消息]',
-        news: [{ text: file.fileName || '[文件]' }],
-      });
-      const data = unwrapActionData(result);
-      targetMessageId = normalizeId(
-        data?.message_id
-        ?? data?.messageId
-        ?? result?.message_id
-        ?? result?.messageId,
-      );
-      if (!targetMessageId) {
-        throw new Error(`文件消息已请求合并转发但未返回目标 message_id: ${file.fileName}`);
+    const sourceUrlResult = await this.callWithRetry(rule, 'get_group_file_url', {
+      group_id: groupParam(rule.sourceGroupId),
+      file_id: file.id,
+      busid: file.busid,
+    });
+    const sourceUrlData = unwrapActionData(sourceUrlResult);
+    const sourceUrl = normalizeId(sourceUrlData?.url ?? sourceUrlResult?.url);
+    if (!/^https?:\/\//i.test(sourceUrl)) throw new Error(`未取得可用的群文件下载地址: ${file.name}`);
+
+    const uploadResult = await this.callWithRetry(rule, 'upload_group_file', {
+      group_id: groupParam(rule.targetGroupId),
+      file: sourceUrl,
+      name: file.name,
+      folder: rule.targetFolderId,
+      upload_file: true,
+    });
+    const uploadData = unwrapActionData(uploadResult);
+    const targetFileId = normalizeId(uploadData?.file_id ?? uploadData?.fileId ?? uploadResult?.file_id ?? uploadResult?.fileId);
+    if (!targetFileId) throw new Error(`目标群上传成功但未返回 file_id: ${file.name}`);
+
+    const sourceMessage = this.findRecentMessage(rule.sourceGroupId, file.id, file.name, file.size);
+    let targetMessage = this.findRecentMessage(rule.targetGroupId, targetFileId, file.name, file.size);
+    if (!targetMessage && rule.messageLookupAttempts > 0) {
+      const targetMessageId = await this.findMessageIdInHistory(rule, targetFileId, file.name, file.size);
+      if (targetMessageId) {
+        targetMessage = {
+          groupId: rule.targetGroupId,
+          messageId: targetMessageId,
+          senderId: '',
+          fileId: targetFileId,
+          fileName: file.name,
+          fileSize: file.size,
+          observedAt: Date.now(),
+        };
+        this.rememberRecentMessage(targetMessage);
       }
-      this.completePendingForward(guardToken, rule.targetGroupId, targetMessageId);
-    } catch (error) {
-      this.cancelPendingForward(guardToken);
-      throw error;
     }
 
     const previous = state.current;
     state.current = {
       sourceGroupId: rule.sourceGroupId,
       sourceUploaderId: uploaderId,
-      sourceMessageId,
-      sourceFileName: file.fileName,
-      sourceFileSize: file.fileSize,
+      sourceFileId: file.id,
+      sourceFileName: file.name,
+      sourceFileSize: file.size,
+      sourceBusid: file.busid,
+      sourceMessageId: sourceMessage?.messageId || '',
       targetGroupId: rule.targetGroupId,
-      targetMessageId,
+      targetFileId,
+      targetMessageId: targetMessage?.messageId || '',
       mirroredAt: Date.now(),
     };
     state.lastSuccessAt = Date.now();
     state.lastErrorAt = 0;
     state.lastError = '';
 
-    if (rule.keepLatestOnly && previous?.targetMessageId && previous.targetMessageId !== targetMessageId) {
+    if (rule.keepLatestOnly && previous?.targetFileId && previous.targetFileId !== targetFileId) {
       this.queueCleanup(state, previous);
     }
     this.saveState();
 
     await this.cleanupPending(rule, state);
-    this.log(
-      'info',
-      `规则 ${rule.id} 已合并转发文件消息 ${file.fileName} ${rule.sourceGroupId} -> ${rule.targetGroupId}`,
-    );
+    this.log('info', `规则 ${rule.id} 已搬运 ${file.name} (${Math.round(file.size / 1024 / 1024 * 100) / 100} MB) ${rule.sourceGroupId} -> ${rule.targetGroupId}`);
   }
 
-  private queueCleanup(state: MirrorRuleState, record: ForwardRecord): void {
-    if (state.pendingCleanup.some(item => item.targetGroupId === record.targetGroupId
-      && item.targetMessageId === record.targetMessageId)) return;
+  private queueCleanup(state: MirrorRuleState, record: MirrorRecord): void {
+    if (state.pendingCleanup.some(item => item.targetGroupId === record.targetGroupId && item.targetFileId === record.targetFileId)) return;
     state.pendingCleanup.push({
       targetGroupId: record.targetGroupId,
+      targetFileId: record.targetFileId,
       targetMessageId: record.targetMessageId,
       sourceFileName: record.sourceFileName,
       messageRecalled: !record.targetMessageId,
+      fileDeleted: !record.targetFileId,
       queuedAt: Date.now(),
     });
   }
@@ -629,40 +591,41 @@ export class GroupFileMirrorService {
     if (!state.pendingCleanup.length) return;
     const remaining: CleanupRecord[] = [];
     for (const item of state.pendingCleanup) {
-      await this.cleanupTargetMessage(rule, item);
-      if (rule.recallPreviousTargetMessage && !item.messageRecalled) remaining.push(item);
+      await this.cleanupTarget(rule, item);
+      const messageDone = !rule.recallPreviousTargetMessage || item.messageRecalled;
+      const fileDone = !rule.deletePreviousTargetFile || item.fileDeleted;
+      if (!messageDone || !fileDone) remaining.push(item);
     }
     state.pendingCleanup = remaining;
     this.saveState();
   }
 
-  private async cleanupTargetMessage(rule: GroupFileMirrorRule, item: CleanupRecord): Promise<void> {
-    if (!rule.recallPreviousTargetMessage || !item.targetMessageId || item.messageRecalled) return;
-    try {
-      await this.recallManagedMessageWithRetry(rule, item.targetMessageId);
-      item.messageRecalled = true;
-      this.unregisterManagedTargetMessage(item.targetGroupId, item.targetMessageId);
-      this.log(
-        'info',
-        `规则 ${rule.id} 已通过文件转发专用撤回通道清理旧消息 message=${item.targetMessageId}`,
-      );
-    } catch (error) {
-      if (isAlreadyGoneError(error)) {
+  private async cleanupTarget(rule: GroupFileMirrorRule, item: CleanupRecord): Promise<void> {
+    if (rule.recallPreviousTargetMessage && item.targetMessageId && !item.messageRecalled) {
+      try {
+        await this.callWithRetry(rule, 'delete_msg', { message_id: item.targetMessageId });
         item.messageRecalled = true;
-        this.unregisterManagedTargetMessage(item.targetGroupId, item.targetMessageId);
-      } else {
-        this.log(
-          'warn',
-          `规则 ${rule.id} 专用撤回旧转发消息失败 message=${item.targetMessageId}: ${String(error)}`,
-        );
+      } catch (error) {
+        if (isAlreadyGoneError(error)) item.messageRecalled = true;
+        else this.log('warn', `规则 ${rule.id} 撤回旧文件消息失败 message=${item.targetMessageId}: ${String(error)}`);
+      }
+    }
+
+    if (rule.deletePreviousTargetFile && item.targetFileId && !item.fileDeleted) {
+      try {
+        await this.callWithRetry(rule, 'delete_group_file', {
+          group_id: groupParam(item.targetGroupId),
+          file_id: item.targetFileId,
+        });
+        item.fileDeleted = true;
+      } catch (error) {
+        if (isAlreadyGoneError(error)) item.fileDeleted = true;
+        else this.log('warn', `规则 ${rule.id} 删除旧群文件失败 file=${item.targetFileId}: ${String(error)}`);
       }
     }
   }
 
-  private async cleanupCurrentAfterSourceRecall(
-    rule: GroupFileMirrorRule,
-    sourceMessageId: string,
-  ): Promise<void> {
+  private async cleanupCurrentAfterSourceRecall(rule: GroupFileMirrorRule, sourceMessageId: string): Promise<void> {
     const state = this.getRuleState(rule.id);
     const current = state.current;
     if (!current || current.sourceMessageId !== sourceMessageId) return;
@@ -670,7 +633,44 @@ export class GroupFileMirrorService {
     delete state.current;
     this.saveState();
     await this.cleanupPending(rule, state);
-    this.log('info', `规则 ${rule.id} 已同步来源消息撤回 message=${sourceMessageId}`);
+    this.log('info', `规则 ${rule.id} 已同步来源撤回 message=${sourceMessageId}`);
+  }
+
+  private async findMessageIdInHistory(
+    rule: GroupFileMirrorRule,
+    targetFileId: string,
+    fileName: string,
+    fileSize: number,
+  ): Promise<string> {
+    for (let attempt = 0; attempt < rule.messageLookupAttempts; attempt += 1) {
+      await sleep(rule.messageLookupDelayMs);
+      try {
+        const result = await this.callWithRetry(rule, 'get_group_msg_history', {
+          group_id: groupParam(rule.targetGroupId),
+          message_id: 0,
+          count: 50,
+        });
+        const data = unwrapActionData(result);
+        const messages = Array.isArray(data?.messages)
+          ? data.messages
+          : Array.isArray(result?.messages)
+            ? result.messages
+            : [];
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+          const message = messages[index];
+          const files = extractFileSegmentsFromMessage(message);
+          if (!files.some(file => {
+            if (targetFileId && file.fileId && targetFileId === file.fileId) return true;
+            return file.fileName === fileName && (fileSize <= 0 || file.fileSize <= 0 || file.fileSize === fileSize);
+          })) continue;
+          const messageId = extractMessageId(message);
+          if (messageId) return messageId;
+        }
+      } catch (error) {
+        this.log('debug', `规则 ${rule.id} 第 ${attempt + 1} 次查询目标文件消息失败: ${String(error)}`);
+      }
+    }
+    return '';
   }
 }
 

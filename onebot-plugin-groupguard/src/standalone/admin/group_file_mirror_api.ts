@@ -18,6 +18,7 @@ export interface GroupFileMirrorEditorRule {
   fileMode: GroupFileMirrorFileMode;
   customPattern: string;
   maxFileSizeMb: number;
+  targetFolderId: string;
 }
 
 export interface GroupFileMirrorEditorConfig {
@@ -65,7 +66,7 @@ function parseUploaderIds(value: unknown): string[] {
     : String(value ?? '').split(/[\s,，;；]+/g);
   const output = Array.from(new Set(items.map(item => String(item ?? '').trim()).filter(Boolean)));
   for (const id of output) {
-    if (!/^\d+$/.test(id)) throw new GroupFileMirrorConfigError(`发送者 QQ“${id}”格式不正确，只能填写数字。`);
+    if (!/^\d+$/.test(id)) throw new GroupFileMirrorConfigError(`上传者 QQ“${id}”格式不正确，只能填写数字。`);
   }
   return output;
 }
@@ -92,7 +93,7 @@ function fileModeForPattern(pattern: string): { mode: GroupFileMirrorFileMode; c
 }
 
 function createRuleName(value: unknown, index: number): string {
-  const name = String(value ?? '').trim() || `转发规则 ${index + 1}`;
+  const name = String(value ?? '').trim() || `搬运规则 ${index + 1}`;
   if (name.length > 80) throw new GroupFileMirrorConfigError(`第 ${index + 1} 条规则名称不能超过 80 个字。`);
   return name;
 }
@@ -101,7 +102,7 @@ export function normalizeGroupFileMirrorWebInput(value: unknown): GroupFileMirro
   const input = isRecord(value) && isRecord(value.config) ? value.config : value;
   const raw = isRecord(input) ? input : {};
   const rawRules = Array.isArray(raw.rules) ? raw.rules : [];
-  if (rawRules.length > 50) throw new GroupFileMirrorConfigError('转发规则最多只能添加 50 条。');
+  if (rawRules.length > 50) throw new GroupFileMirrorConfigError('搬运规则最多只能添加 50 条。');
 
   const names = new Set<string>();
   const pairs = new Set<string>();
@@ -111,14 +112,14 @@ export function normalizeGroupFileMirrorWebInput(value: unknown): GroupFileMirro
     if (names.has(name)) throw new GroupFileMirrorConfigError(`规则名称“${name}”重复，请修改后再保存。`);
     names.add(name);
 
-    const sourceGroupId = requireNumericId(`第 ${index + 1} 条规则的监控群号`, rule.sourceGroupId ?? rule.source_group_id);
+    const sourceGroupId = requireNumericId(`第 ${index + 1} 条规则的来源群号`, rule.sourceGroupId ?? rule.source_group_id);
     const targetGroupId = requireNumericId(`第 ${index + 1} 条规则的接收群号`, rule.targetGroupId ?? rule.target_group_id);
-    if (sourceGroupId === targetGroupId) throw new GroupFileMirrorConfigError(`规则“${name}”的监控群和接收群不能相同。`);
+    if (sourceGroupId === targetGroupId) throw new GroupFileMirrorConfigError(`规则“${name}”的来源群和接收群不能相同。`);
 
     const pair = `${sourceGroupId}->${targetGroupId}`;
-    if (pairs.has(pair)) throw new GroupFileMirrorConfigError(`监控群 ${sourceGroupId} 到接收群 ${targetGroupId} 的规则重复。`);
+    if (pairs.has(pair)) throw new GroupFileMirrorConfigError(`来源群 ${sourceGroupId} 到接收群 ${targetGroupId} 的规则重复。`);
     if (pairs.has(`${targetGroupId}->${sourceGroupId}`)) {
-      throw new GroupFileMirrorConfigError(`检测到 ${sourceGroupId} 和 ${targetGroupId} 互相转发，为防止循环已拒绝保存。`);
+      throw new GroupFileMirrorConfigError(`检测到 ${sourceGroupId} 和 ${targetGroupId} 互相搬运，为防止循环已拒绝保存。`);
     }
     pairs.add(pair);
 
@@ -139,13 +140,18 @@ export function normalizeGroupFileMirrorWebInput(value: unknown): GroupFileMirro
       sourceUploaderIds: parseUploaderIds(rule.sourceUploaderText ?? rule.sourceUploaderIds ?? rule.source_uploader_ids),
       fileNamePattern: patternForMode(mode, customPattern),
       maxFileSizeMb: clampInteger(rule.maxFileSizeMb ?? rule.max_file_size_mb, 512, 1, 4096),
+      targetFolderId: String(rule.targetFolderId ?? rule.target_folder_id ?? '/').trim() || '/',
 
-      // 固定流程：原样转发新文件消息，只保留接收群最新一条，并同步来源撤回。
+      // 用户已确认的固定执行流程。WebUI 保存时始终开启，避免误操作关闭。
       keepLatestOnly: true,
+      deletePreviousTargetFile: true,
       recallPreviousTargetMessage: true,
       syncSourceRecall: true,
+
       retryCount: 2,
       retryDelayMs: 1500,
+      messageLookupAttempts: 6,
+      messageLookupDelayMs: 1000,
     };
   });
 
@@ -192,6 +198,7 @@ function toEditorRule(rule: GroupFileMirrorRule): GroupFileMirrorEditorRule {
     fileMode: fileMode.mode,
     customPattern: fileMode.customPattern,
     maxFileSizeMb: rule.maxFileSizeMb,
+    targetFolderId: rule.targetFolderId || '/',
   };
 }
 
@@ -221,11 +228,11 @@ export function getGroupFileMirrorOverview() {
     } satisfies GroupFileMirrorEditorConfig,
     statuses: config.rules.map(rule => toRuleStatus(rule, stateRules)),
     fixedFlow: [
-      '监控来源群的文件消息卡片',
-      '匹配发送者 QQ、文件名和大小',
-      '原样转发单条文件消息到接收群',
-      '新消息成功后撤回上一条转发',
-      '来源文件消息撤回时同步撤回接收群消息',
+      '新文件上传成功后再处理旧文件',
+      '撤回接收群上一份文件消息',
+      '删除接收群上一份群文件',
+      '接收群只保留最新文件',
+      '来源群撤回当前文件时同步清理接收群文件',
     ],
   };
 }
@@ -251,20 +258,15 @@ export function saveGroupFileMirrorFromWeb(value: unknown) {
 
   fs.copyFileSync(filePath, backupPath);
   try { fs.chmodSync(backupPath, 0o600); } catch { /* 非 POSIX 环境忽略 */ }
-
-  try {
-    fs.writeFileSync(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
-    JSON.parse(fs.readFileSync(temporaryPath, 'utf-8'));
-    fs.renameSync(temporaryPath, filePath);
-    try { fs.chmodSync(filePath, 0o600); } catch { /* 非 POSIX 环境忽略 */ }
-    pruneWebBackups(filePath);
-  } catch (error) {
-    try { if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath); } catch { /* 忽略清理失败 */ }
-    throw error;
-  }
+  fs.writeFileSync(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
+  fs.renameSync(temporaryPath, filePath);
+  try { fs.chmodSync(filePath, 0o600); } catch { /* 非 POSIX 环境忽略 */ }
+  pruneWebBackups(filePath);
 
   return {
     ...getGroupFileMirrorOverview(),
-    message: '文件消息转发设置已保存，将在下一条匹配的群文件消息到来时生效。',
+    message: config.enabled
+      ? `群文件搬运设置已保存并开启，共 ${config.rules.filter(rule => rule.enabled).length} 条启用规则。`
+      : '群文件搬运设置已保存，当前总开关处于关闭状态。',
   };
 }
