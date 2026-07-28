@@ -74,6 +74,27 @@ export function buildGroupFileUploadNoticesFromMessage(
     }));
 }
 
+let adapterInstalled = false;
+
+/**
+ * Install once at module load. snowluma_service already calls the singleton's
+ * observeEvent before the licensed GroupGuard pipeline. Wrapping that method
+ * keeps the source group license-independent and avoids another runtime hook.
+ */
+export function installGroupFileMessageUploadAdapter(): void {
+  if (adapterInstalled) return;
+  adapterInstalled = true;
+
+  const originalObserveEvent = groupFileMirrorService.observeEvent.bind(groupFileMirrorService);
+  groupFileMirrorService.observeEvent = ((event: unknown) => {
+    originalObserveEvent(event);
+    const botId = isRecord(event) ? normalizeId(event.self_id) : '';
+    for (const synthetic of buildGroupFileUploadNoticesFromMessage(event, botId)) {
+      originalObserveEvent(synthetic);
+    }
+  }) as typeof groupFileMirrorService.observeEvent;
+}
+
 let cachedConfigPath = '';
 let cachedConfigMtimeMs = -1;
 let cachedConfig: GroupFileMirrorConfig = { enabled: false, rules: [] };
@@ -138,3 +159,5 @@ export function shouldBypassGroupFileMirrorGlobalRecall(event: unknown): boolean
     && rule.targetGroupId === groupId
     && files.some(file => targetFileMatchesRule(rule, file)));
 }
+
+installGroupFileMessageUploadAdapter();
