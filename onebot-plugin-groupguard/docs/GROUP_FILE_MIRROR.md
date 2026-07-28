@@ -1,105 +1,74 @@
-# SnowLuma 群文件消息转发
+# SnowLuma 群文件搬运
 
 ## 目标
 
-当指定 QQ 在监控群发送文件消息卡片时，GroupGuard 直接调用 SnowLuma 的单条消息转发动作，把原消息转发到接收群。
+机器人同时加入来源群和接收群后，GroupGuard 可以监听来源群的新文件，并把文件重新上传到接收群。
 
-该功能不下载文件，也不重新上传群文件。监控机器人只需要：
+当规则开启“只保留最新文件”时，每次成功上传新文件后，会清理接收群中的上一份文件：
 
-- 已加入监控群；
-- 能正常接收群消息；
-- 已加入接收群；
-- 能在接收群正常发送消息。
+1. 撤回上一份文件对应的群消息；
+2. 删除接收群文件库中的上一份文件；
+3. 保存最新来源文件与接收文件的对应关系；
+4. 来源群撤回当前文件消息时，尽力同步清理接收群对应文件。
 
-监控机器人不需要在监控群拥有管理员身份，也不需要群文件上传权限。
+该功能直接运行在 SnowLuma 事件入口，不依赖来源群的 GroupGuard 商业授权。
 
-## 正确链路
-
-```text
-监控群收到普通群消息事件
-→ 消息发送者 QQ 匹配规则
-→ 消息中包含 file 文件段
-→ 文件名和大小匹配规则
-→ 调用 forward_group_single_msg
-→ 保存来源消息 ID 与接收群消息 ID
-→ 成功后撤回接收群上一条转发消息
-```
-
-该链路不依赖 `group_upload` 通知，因此外部机器人只要在聊天消息列表留下文件卡片即可。
-
-## 固定行为
-
-每条规则固定执行以下行为：
-
-1. 新文件消息成功转发后，才处理上一条转发；
-2. 接收群只保留最新一条转发消息；
-3. 来源文件消息被撤回时，同步撤回接收群对应消息；
-4. 失败动作按规则配置进行有限重试；
-5. 同一来源消息不会重复转发。
-
-不会执行以下动作：
-
-```text
-get_group_file_url
-upload_group_file
-delete_group_file
-```
-
-## SnowLuma 能力要求
+## SnowLuma 能力链路
 
 GroupGuard 使用以下 OneBot 事件和动作：
 
 ```text
-message / message_sent
-forward_group_single_msg
+group_upload
+get_group_file_url
+upload_group_file
+delete_group_file
 delete_msg
-group_recall
+get_group_msg_history
 ```
 
-核心动作参数：
+实际搬运流程：
 
-```json
-{
-  "action": "forward_group_single_msg",
-  "params": {
-    "message_id": "来源文件消息ID",
-    "group_id": "接收群号"
-  }
-}
+```text
+来源群 group_upload
+→ 获取来源文件下载地址
+→ SnowLuma 从下载地址上传到接收群
+→ 记录目标 file_id 和文件消息 ID
+→ 清理上一份目标文件与消息
 ```
 
-SnowLuma 成功后应返回接收群的新 `message_id`。GroupGuard 依靠这个 ID 实现“只保留最新”和来源撤回同步。
+GroupGuard 会忽略自己在接收群产生的 `group_upload` 事件，防止 A→B、B→A 或多规则串联导致循环上传。
 
 ## 配置文件
 
-生产环境配置：
+当前生产环境的主配置位于：
+
+```text
+/app/config/config.json
+```
+
+群文件搬运配置与主配置放在同一目录：
 
 ```text
 /app/config/group-file-mirror.json
 ```
 
-宿主机对应路径：
+代码同时兼容主配置直接位于 `/app/config.json` 的旧布局；无论哪种布局，默认搬运配置都会落到应用的 `config` 目录。
 
-```text
-/mnt/sda1/groupguard/app/config/group-file-mirror.json
-```
-
-状态文件：
-
-```text
-/app/data/group-file-mirror-state.json
-```
-
-也可以使用环境变量覆盖：
+也可以使用环境变量指定其他位置：
 
 ```text
 GROUP_FILE_MIRROR_CONFIG_PATH
-GROUP_FILE_MIRROR_STATE_PATH
 ```
 
-首次启动时，如果配置不存在，系统会创建关闭状态的空配置，不会自行开始转发。
+首次启动时，如果文件不存在，系统会自动创建一份关闭状态的空配置，不会自行开始搬运。
 
-## 示例配置
+仓库示例：
+
+```text
+config/group-file-mirror.example.json
+```
+
+示例配置：
 
 ```json
 {
@@ -110,134 +79,128 @@ GROUP_FILE_MIRROR_STATE_PATH
       "enabled": true,
       "sourceGroupId": "1334664",
       "targetGroupId": "16461612",
-      "sourceUploaderIds": ["上传文件消息的QQ号"],
+      "sourceUploaderIds": ["上传文件机器人的QQ号"],
       "fileNamePattern": "\\.7z$",
       "maxFileSizeMb": 512,
+      "targetFolderId": "/",
       "keepLatestOnly": true,
+      "deletePreviousTargetFile": true,
       "recallPreviousTargetMessage": true,
       "syncSourceRecall": true,
       "retryCount": 2,
-      "retryDelayMs": 1500
+      "retryDelayMs": 1500,
+      "messageLookupAttempts": 6,
+      "messageLookupDelayMs": 1000
     }
   ]
 }
 ```
 
+示例中的群号只用于说明，不会随程序自动启用。
+
 ## 配置字段
 
 | 字段 | 说明 |
 |---|---|
-| `enabled` | 总开关；必须为 `true` 才处理文件消息 |
+| `enabled` | 总开关；必须为 `true` 才处理文件 |
 | `rules[].enabled` | 单条规则开关 |
-| `sourceGroupId` | 监控群号 |
-| `targetGroupId` | 接收群号，不能和监控群相同 |
-| `sourceUploaderIds` | 仅转发这些 QQ 发送的文件消息；留空表示不限制发送者 |
+| `sourceGroupId` | 来源群号 |
+| `targetGroupId` | 接收群号，不能和来源群相同 |
+| `sourceUploaderIds` | 仅搬运这些 QQ 上传的文件；留空表示不限制上传者 |
 | `fileNamePattern` | 文件名正则；留空表示不限文件名 |
 | `maxFileSizeMb` | 单文件大小上限，范围 1–4096 MB |
-| `keepLatestOnly` | 新消息成功后是否清理上一条转发，WebUI 固定开启 |
-| `recallPreviousTargetMessage` | 是否撤回接收群上一条转发，WebUI 固定开启 |
-| `syncSourceRecall` | 是否在来源文件消息撤回时同步撤回，WebUI 固定开启 |
+| `targetFolderId` | 接收群目标文件夹，根目录使用 `/` |
+| `keepLatestOnly` | 新文件成功后是否清理上一份文件 |
+| `deletePreviousTargetFile` | 是否删除接收群文件库中的旧文件 |
+| `recallPreviousTargetMessage` | 是否撤回旧文件对应的聊天消息 |
+| `syncSourceRecall` | 是否在检测到来源群撤回时同步清理当前目标文件 |
 | `retryCount` | OneBot 动作失败后的重试次数 |
 | `retryDelayMs` | 重试基础间隔 |
-
-旧配置中的以下字段会被安全忽略：
-
-```text
-targetFolderId
-deletePreviousTargetFile
-messageLookupAttempts
-messageLookupDelayMs
-```
+| `messageLookupAttempts` | 上传后查询目标文件消息 ID 的次数 |
+| `messageLookupDelayMs` | 每次查询前等待时间 |
 
 ## 状态文件
 
-状态文件保存：
-
-- 当前来源群号；
-- 当前来源发送者 QQ；
-- 当前来源文件消息 ID；
-- 当前文件名与文件大小；
-- 当前接收群消息 ID；
-- 最近成功和失败信息；
-- 尚未撤回成功的旧消息。
-
-服务重启后会继续处理尚未完成的撤回，不应手动删除状态文件，除非明确要重置对应关系。
-
-## WebUI
-
-页面地址：
+默认状态文件：
 
 ```text
-/group-file-mirror.html
+/app/data/group-file-mirror-state.json
 ```
 
-页面只展示与消息转发有关的设置：
+也可以通过以下环境变量改路径：
 
-- 监控群号；
-- 接收群号；
-- 文件消息发送者 QQ；
-- 文件类型；
-- 文件大小上限；
-- 当前最新文件消息；
-- 最近成功、最近错误和待撤回数量。
+```text
+GROUP_FILE_MIRROR_STATE_PATH
+```
 
-页面不再展示目标群文件夹，因为新实现不会重新上传群文件。
+状态文件保存：
+
+- 当前来源文件；
+- 当前接收群文件；
+- 来源和目标消息 ID；
+- 尚未清理成功的旧文件；
+- 最近成功和失败信息。
+
+服务重启后会继续处理尚未完成的清理，不应手动删除状态文件，除非明确要重置对应关系。
+
+## 权限要求
+
+机器人必须：
+
+- 已加入来源群；
+- 已加入接收群；
+- 能读取来源群文件；
+- 能向接收群上传文件；
+- 需要清理目标文件时，具备删除目标群文件和撤回自身文件消息的权限。
+
+来源群通常不要求机器人是管理员。接收群是否需要管理员权限取决于群文件权限和 QQ 当前限制。
+
+## 撤回同步的可靠性
+
+SnowLuma 的 `group_upload` 事件本身不包含聊天消息 ID，因此 GroupGuard 会通过两种方式补齐：
+
+1. 观察来源群和接收群的文件消息事件；
+2. 上传后使用 `get_group_msg_history` 查询文件消息 ID。
+
+建议 SnowLuma 开启 `reportSelfMessage`，这样能直接接收到机器人自己的 `message_sent` 事件，目标消息撤回更及时。
+
+即使偶尔没有取得来源消息 ID，下一次新文件上传成功时，“只保留最新文件”仍会清理接收群上一份文件。来源撤回同步属于额外保险，不是唯一清理机制。
 
 ## 一键写入生产配置
 
-在 Windows 仓库核心目录运行：
+代码部署完成后，在 Windows 仓库的核心程序目录运行：
 
 ```powershell
 cd D:\project2\napcatplugin\lengxi_repo\onebot-plugin-groupguard
 powershell -ExecutionPolicy Bypass -File .\scripts\ops\Configure-GroupFileMirror.ps1 `
   -SourceGroupId 1334664 `
   -TargetGroupId 16461612 `
-  -SourceUploaderId 上传文件消息的QQ号 `
+  -SourceUploaderId 上传文件机器人的QQ号 `
   -Enable
 ```
 
 脚本会：
 
-- 校验群号、发送者 QQ 和文件名正则；
+- 校验群号、上传者 QQ 和文件名正则；
 - 备份服务器原配置；
-- 原子写入生产配置；
+- 原子写入 `/mnt/sda1/groupguard/app/config/group-file-mirror.json`；
 - 使用 `jq` 再次验证 JSON；
-- 默认不重启容器，服务会在下一条消息到来时热加载配置。
+- 默认不重启容器，服务会在下一个事件到来时热加载新配置。
+
+需要同时重启容器时增加：
+
+```powershell
+-RestartContainer
+```
+
+首次配置建议先不写 `-Enable`，确认脚本输出的来源群、接收群和上传者 QQ 正确后，再带 `-Enable` 执行一次。
 
 ## 上线验证
 
-1. 在 WebUI 保存并开启规则；
-2. 等指定 QQ 在监控群发送一条全新的匹配文件消息；
-3. 接收群出现原样转发的文件消息；
-4. WebUI 显示当前文件名和最近转发成功时间；
-5. 再发送一条新文件消息，上一条接收群转发被撤回；
-6. 撤回来源群当前文件消息，接收群对应消息被同步撤回；
-7. 服务重启后不会重复转发当前来源消息；
-8. 失败日志不会持续无限重试。
-
-## 故障判断
-
-### WebUI 一直显示“暂无”
-
-先检查来源群消息事件中是否包含：
-
-```text
-post_type=message
-message[].type=file
-message_id
-user_id
-```
-
-如果能收到普通群消息，但文件卡片没有被转换为 `file` 消息段，需要调查 SnowLuma 对该文件卡片格式的消息转换，而不是调查 `group_upload`。
-
-### 接收群没有消息
-
-查看最近错误是否包含：
-
-```text
-forward_group_single_msg
-message not found
-permission denied
-```
-
-监控群无需授权；接收群也不需要 GroupGuard 商业授权。QQ 侧只要求机器人能够在接收群正常发消息和执行该转发动作。
+1. 新文件能上传到接收群；
+2. 下一份文件出现后，上一份文件消息被撤回；
+3. 接收群文件库中上一份实体文件被删除；
+4. 来源群撤回当前文件时，接收群对应文件被同步清理；
+5. 服务重启后不会重复搬运当前文件；
+6. 失败日志不会持续无限重试；
+7. GroupGuard 自己上传到接收群的文件不会再次触发搬运。

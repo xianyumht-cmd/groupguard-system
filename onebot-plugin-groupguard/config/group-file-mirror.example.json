@@ -6,14 +6,18 @@
       "enabled": true,
       "sourceGroupId": "1334664",
       "targetGroupId": "16461612",
-      "sourceUploaderIds": ["上传文件消息的QQ号"],
+      "sourceUploaderIds": [],
       "fileNamePattern": "\\.7z$",
       "maxFileSizeMb": 512,
+      "targetFolderId": "/",
       "keepLatestOnly": true,
+      "deletePreviousTargetFile": true,
       "recallPreviousTargetMessage": true,
       "syncSourceRecall": true,
       "retryCount": 2,
-      "retryDelayMs": 1500
+      "retryDelayMs": 1500,
+      "messageLookupAttempts": 6,
+      "messageLookupDelayMs": 1000
     }
   ]
 }
