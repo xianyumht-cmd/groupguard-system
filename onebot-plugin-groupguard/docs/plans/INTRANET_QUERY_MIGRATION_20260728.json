@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "plan_id": "GGK-INTRANET-QUERY-20260728",
+  "repository": "xianyumht-cmd/groupguard-system",
+  "base_branch": "codex/production-integration-audit-20260726",
+  "document_branch": "docs/intranet-query-boundary-20260728",
+  "status": "planned",
+  "objective": "GroupGuard only handles command intake, intranet requests, protocol validation, and OneBot delivery. Public upstream access, business processing, rendering, caching, and degradation are owned by lolapisevers.",
+  "architecture_contract": "groupguard-query-delivery.v1",
+  "completed_steps": [
+    {
+      "id": "GG-DOC-001",
+      "status": "completed",
+      "outputs": [
+        "onebot-plugin-groupguard/docs/architecture/INTRANET_QUERY_BOUNDARY.md",
+        "onebot-plugin-groupguard/docs/plans/INTRANET_QUERY_MIGRATION_20260728.md",
+        "onebot-plugin-groupguard/docs/plans/INTRANET_QUERY_MIGRATION_20260728.json"
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "GG-CLIENT-001",
+      "status": "planned",
+      "depends_on": ["LAPI-DELIVERY-001"],
+      "summary": "Create one intranet query client shared by real commands and admin tests."
+    },
+    {
+      "id": "GG-SHARD-001",
+      "status": "blocked",
+      "depends_on": ["LAPI-SNAPSHOT-001", "LAPI-SHARD-001", "LAPI-DELIVERY-001", "GG-CLIENT-001"],
+      "summary": "Remove plugin-side shard data download, hero matching, sorting, rendering decisions, and public fallback."
+    },
+    {
+      "id": "GG-LOL-UNIFY-001",
+      "status": "planned",
+      "depends_on": ["GG-CLIENT-001", "LAPI-DELIVERY-001"],
+      "summary": "Move battle, ARAM, and ban commands to the final delivery envelope."
+    },
+    {
+      "id": "GG-CONFIG-001",
+      "status": "planned",
+      "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001"],
+      "summary": "Keep one intranet API base for built-in LoL queries and deprecate public upstream configuration."
+    },
+    {
+      "id": "GG-GATE-001",
+      "status": "planned",
+      "depends_on": ["GG-CLIENT-001"],
+      "summary": "Add an architecture test that rejects public upstream access from built-in query modules."
+    },
+    {
+      "id": "GG-DEPLOY-001",
+      "status": "blocked",
+      "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001", "GG-CONFIG-001", "GG-GATE-001", "LAPI-DEPLOY-001"],
+      "summary": "Deploy GroupGuard after the compatible service release and perform real-member acceptance tests."
+    }
+  ],
+  "current_findings": [
+    {
+      "severity": "P1",
+      "code": "PLUGIN_PUBLIC_SHARD_FETCH",
+      "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
+      "summary": "The shard command directly downloads public shard and hero JSON from the SnowLuma container."
+    },
+    {
+      "severity": "P1",
+      "code": "PLUGIN_LEGACY_BAN_PROVIDERS",
+      "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
+      "summary": "Built-in ban query still supports direct public primary and backup providers even though production uses the intranet service."
+    },
+    {
+      "severity": "P2",
+      "code": "PLUGIN_BUSINESS_FORMATTING",
+      "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
+      "summary": "The plugin still interprets and formats business data instead of consuming a final delivery payload."
+    }
+  ],
+  "next_recommended_action": {
+    "repository": "xianyumht-cmd/lolapisevers",
+    "step_id": "LAPI-SNAPSHOT-001",
+    "summary": "Implement an atomic persistent snapshot store before changing GroupGuard runtime code."
+  },
+  "production_rule": "Deploy lolapisevers first, verify backward compatibility, then deploy GroupGuard. Never restore plugin-side public fallback."
+}
