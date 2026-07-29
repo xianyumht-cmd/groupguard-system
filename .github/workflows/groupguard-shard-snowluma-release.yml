@@ -7,6 +7,12 @@ on:
     paths:
       - .github/workflows/groupguard-shard-snowluma-release.yml
       - onebot-plugin-groupguard/**
+  pull_request:
+    branches:
+      - feat/groupguard-contract-consumer-20260729
+    paths:
+      - .github/workflows/groupguard-shard-snowluma-release.yml
+      - onebot-plugin-groupguard/**
   workflow_dispatch:
 
 permissions:
