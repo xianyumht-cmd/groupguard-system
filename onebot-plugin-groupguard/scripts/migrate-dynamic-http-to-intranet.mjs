@@ -7,13 +7,7 @@ import process from 'node:process';
 const SERVICE_SCHEMA = 'lolapi-dynamic-query-providers.v1';
 
 function parseArgs(argv) {
-  const result = {
-    input: '',
-    clientOut: '',
-    serviceOut: '',
-    reportOut: '',
-    apply: false
-  };
+  const result = { input: '', clientOut: '', serviceOut: '', reportOut: '', apply: false };
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
     if (key === '--input') result.input = String(argv[++index] || '').trim();
@@ -96,7 +90,10 @@ function normalizeCommand(raw, seen) {
     }
     if (!method || !['http:', 'https:'].includes(parsed.protocol)) fail(`invalid provider definition: ${id}`);
     const response = isRecord(raw.response) ? raw.response : {};
-    const textPath = String(response.textPath || response.template || '').trim();
+    const textPath = String(response.textPath || '').trim();
+    const template = String(response.template || '').trim();
+    if (textPath && template) fail(`response selector conflict: ${id}`);
+    if (!textPath && !template) fail(`response selector missing: ${id}`);
     serviceCommand = {
       id,
       provider: {
@@ -107,7 +104,7 @@ function normalizeCommand(raw, seen) {
         ...(stringMap(provider.body) ? { body: stringMap(provider.body) } : {}),
         timeout_ms: Math.max(1000, Math.min(Number(provider.timeoutMs || 5000), 15000))
       },
-      response: { text_path: textPath },
+      response: template ? { template } : { text_path: textPath },
       fallback_text: clientCommand.fallbackText,
       snapshot_seconds: 3600
     };
@@ -139,14 +136,8 @@ export function migrateDynamicCommands(rawConfig) {
   const commands = Array.isArray(rawConfig.commands) ? rawConfig.commands : [];
   const seen = new Set();
   const migrated = commands.map((command) => normalizeCommand(command, seen));
-  const clientConfig = {
-    version: '2.0.0',
-    commands: migrated.map((item) => item.clientCommand)
-  };
-  const serviceCatalog = {
-    schema: SERVICE_SCHEMA,
-    commands: migrated.map((item) => item.serviceCommand).filter(Boolean)
-  };
+  const clientConfig = { version: '2.0.0', commands: migrated.map((item) => item.clientCommand) };
+  const serviceCatalog = { schema: SERVICE_SCHEMA, commands: migrated.map((item) => item.serviceCommand).filter(Boolean) };
   const report = {
     schema: 'groupguard-dynamic-http-migration-report.v1',
     generated_at: new Date().toISOString(),
