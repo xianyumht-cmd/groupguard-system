@@ -1,6 +1,5 @@
 import { configStateService } from '../core/state-services/config_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
-import { checkAndConsumeQueryRate } from '../services/query_rate_limit_service';
 import {
   normalizeShardPreferredOutput,
   requestShardDelivery,
@@ -189,8 +188,6 @@ function validateGroupInput(
   if (!groupId || input.messageType !== 'group') {
     return { error: textResult(`${commandName}仅支持群聊使用。`) };
   }
-  const rate = checkAndConsumeQueryRate(groupId, commandName);
-  if (!rate.ok) return { error: textResult(rate.reason) };
   return { groupId };
 }
 
