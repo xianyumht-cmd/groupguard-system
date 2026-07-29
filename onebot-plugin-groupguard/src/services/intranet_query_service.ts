@@ -13,7 +13,7 @@ export type IntranetQueryFeature =
   | 'video'
   | 'scammer'
   | 'peer';
-export type IntranetPreferredOutput = NonNullable<GroupGuardQueryRequest['preferred'];
+export type IntranetPreferredOutput = NonNullable<GroupGuardQueryRequest['preferred']>;
 export type IntranetDeliveryRequestFn = typeof requestGroupGuardQueryDelivery;
 
 export interface IntranetDeliveryRequestOptions {
