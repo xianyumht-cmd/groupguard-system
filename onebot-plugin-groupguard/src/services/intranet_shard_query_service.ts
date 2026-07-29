@@ -1,13 +1,13 @@
 import {
-  requestGroupGuardQueryDelivery,
-  toOneBotDeliveryPlan,
-  type GroupGuardQueryDeliveryEnvelope,
-  type GroupGuardQueryRequest,
-  type OneBotDeliveryPlan
-} from './groupguard_query_delivery_client';
+  normalizeIntranetPreferredOutput,
+  requestIntranetDelivery,
+  type IntranetDeliveryRequestFn,
+  type IntranetDeliveryRequestResult,
+  type IntranetPreferredOutput
+} from './intranet_query_service';
 
-export type ShardPreferredOutput = NonNullable<GroupGuardQueryRequest['preferred']>;
-export type ShardDeliveryRequestFn = typeof requestGroupGuardQueryDelivery;
+export type ShardPreferredOutput = IntranetPreferredOutput;
+export type ShardDeliveryRequestFn = IntranetDeliveryRequestFn;
 
 export interface ShardDeliveryRequestOptions {
   baseUrl: string;
@@ -18,38 +18,22 @@ export interface ShardDeliveryRequestOptions {
   requestFn?: ShardDeliveryRequestFn;
 }
 
-export interface ShardDeliveryRequestResult {
-  envelope: GroupGuardQueryDeliveryEnvelope;
-  plan: OneBotDeliveryPlan;
-}
+export type ShardDeliveryRequestResult = IntranetDeliveryRequestResult;
 
 export function normalizeShardPreferredOutput(value: unknown): ShardPreferredOutput {
-  if (value === 'text' || value === 'image' || value === 'forward') return value;
-  return 'auto';
+  return normalizeIntranetPreferredOutput(value);
 }
 
 export async function requestShardDelivery(options: ShardDeliveryRequestOptions): Promise<ShardDeliveryRequestResult> {
   const hero = String(options.hero || '').trim();
   if (!hero) throw new Error('shard_hero_required');
-  const requestFn = options.requestFn || requestGroupGuardQueryDelivery;
-  const envelope = await requestFn(
-    options.baseUrl,
-    {
-      feature: 'shard',
-      parameters: { hero },
-      preferred: options.preferred || 'auto',
-      capabilities: {
-        text: true,
-        image: true,
-        forward: true
-      },
-      ...(options.requestId ? { request_id: options.requestId } : {})
-    },
-    { timeoutMs: options.timeoutMs }
-  );
-  if (envelope.feature !== 'shard') throw new Error('delivery_feature_mismatch');
-  return {
-    envelope,
-    plan: toOneBotDeliveryPlan(envelope)
-  };
+  return requestIntranetDelivery({
+    baseUrl: options.baseUrl,
+    feature: 'shard',
+    parameters: { hero },
+    preferred: options.preferred || 'auto',
+    timeoutMs: options.timeoutMs,
+    requestId: options.requestId,
+    requestFn: options.requestFn
+  });
 }
