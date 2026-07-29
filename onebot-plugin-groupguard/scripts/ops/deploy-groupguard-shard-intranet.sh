@@ -4,8 +4,8 @@ set -Eeuo pipefail
 APP_DIR="${APP_DIR:-/mnt/sda1/groupguard/app}"
 CONTAINER_NAME="${CONTAINER_NAME:-groupguard-snowluma}"
 BACKUP_ROOT="${BACKUP_ROOT:-/mnt/sda1/groupguard/backups}"
-LOL_API_BASE="${LOL_API_BASE:-http://127.0.0.1:5001}"
-API_LIVE_URL="${API_LIVE_URL:-http://127.0.0.1:5001/livez}"
+LOL_API_BASE_OVERRIDE="${LOL_API_BASE:-}"
+API_LIVE_URL_OVERRIDE="${API_LIVE_URL:-}"
 WEBUI_URL="${WEBUI_URL:-http://127.0.0.1:6108/?token=gg6108}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RELEASE_DIST="$SCRIPT_DIR/dist"
@@ -15,6 +15,8 @@ TARGET_DIST="$APP_DIR/dist"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$BACKUP_ROOT/${TIMESTAMP}-groupguard-shard-intranet"
 DEPLOYMENT_STARTED=0
+RESOLVED_API_BASE=""
+RESOLVED_API_LIVE_URL=""
 
 log() {
   printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
@@ -42,6 +44,104 @@ clear_directory_contents() {
   local directory="$1"
   mkdir -p "$directory"
   find "$directory" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+}
+
+read_config_api_base() {
+  python3 - "$CONFIG_PATH" <<'PY'
+import json
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text(encoding='utf-8'))
+print(str(data.get('lolApiBaseUrl') or '').strip().rstrip('/'))
+PY
+}
+
+normalize_intranet_api_base() {
+  local value="$1"
+  python3 - "$value" <<'PY'
+import ipaddress
+import sys
+from urllib.parse import urlparse
+
+value = sys.argv[1].strip().rstrip('/')
+parsed = urlparse(value)
+if parsed.scheme not in {'http', 'https'} or not parsed.hostname:
+    raise SystemExit(1)
+if parsed.username or parsed.password or parsed.query or parsed.fragment:
+    raise SystemExit(1)
+host = parsed.hostname.lower()
+private = host in {'localhost', '::1'} or host.endswith('.local')
+try:
+    private = private or ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback
+except ValueError:
+    private = private or ('.' not in host)
+if not private:
+    raise SystemExit(1)
+print(value)
+PY
+}
+
+prompt_api_base() {
+  if [ ! -t 0 ]; then
+    fail '当前 LOL API Base 不可用。请重新运行并设置：LOL_API_BASE=http://Windows局域网IP:5001'
+  fi
+  printf '\n当前配置无法从 ARM 盒子访问 Windows 主接口。\n' >&2
+  printf '请输入 Windows 电脑的局域网接口地址，例如 http://192.168.3.100:5001\n' >&2
+  read -r -p 'LOL API Base: ' REPLY
+  printf '%s' "$REPLY"
+}
+
+resolve_api_base() {
+  local current candidate normalized live_url
+  current="$(read_config_api_base)"
+  candidate="$LOL_API_BASE_OVERRIDE"
+  if [ -z "$candidate" ]; then
+    candidate="$current"
+  fi
+
+  while true; do
+    if [ -z "$candidate" ]; then
+      candidate="$(prompt_api_base)"
+    fi
+    if ! normalized="$(normalize_intranet_api_base "$candidate")"; then
+      printf '[CONFIG] 地址格式无效或不是内网地址：%s\n' "$candidate" >&2
+      candidate=""
+      continue
+    fi
+    if [ -n "$API_LIVE_URL_OVERRIDE" ]; then
+      live_url="$API_LIVE_URL_OVERRIDE"
+    else
+      live_url="${normalized}/livez"
+    fi
+    log "Testing LOLDataSystem: $live_url"
+    if http_ok "$live_url"; then
+      RESOLVED_API_BASE="$normalized"
+      RESOLVED_API_LIVE_URL="$live_url"
+      printf '[CONFIG] 可用的 LOL API Base：%s\n' "$RESOLVED_API_BASE"
+      return
+    fi
+    printf '[CONFIG] 从 ARM 盒子无法访问：%s\n' "$live_url" >&2
+    candidate="$(prompt_api_base)"
+  done
+}
+
+write_config_api_base() {
+  python3 - "$CONFIG_PATH" "$RESOLVED_API_BASE" <<'PY'
+import json
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+base = sys.argv[2]
+data = json.loads(path.read_text(encoding='utf-8'))
+old = str(data.get('lolApiBaseUrl') or '').strip().rstrip('/')
+if old != base:
+    data['lolApiBaseUrl'] = base
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    print(f'[CONFIG] lolApiBaseUrl updated: {old or "<empty>"} -> {base}')
+else:
+    print(f'[CONFIG] lolApiBaseUrl unchanged: {base}')
+PY
 }
 
 restore_previous_release() {
@@ -81,7 +181,6 @@ printf '============================================================\n'
 printf 'GroupGuard SnowLuma shard intranet deployment\n'
 printf 'Container : %s\n' "$CONTAINER_NAME"
 printf 'App dir   : %s\n' "$APP_DIR"
-printf 'API       : %s\n' "$LOL_API_BASE"
 printf '============================================================\n'
 
 [ "$(id -u)" -eq 0 ] || fail 'Run this script as root.'
@@ -101,8 +200,8 @@ log 'Verifying release SHA-256 manifest...'
   sha256sum -c SHA256SUMS
 )
 
-log 'Checking LOLDataSystem port 5001 before touching GroupGuard...'
-http_ok "$API_LIVE_URL" || fail "LOLDataSystem is not healthy: $API_LIVE_URL"
+log 'Resolving and testing the Windows LOLDataSystem address before touching GroupGuard...'
+resolve_api_base
 
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
@@ -115,34 +214,7 @@ cp -a "$CONFIG_PATH" "$BACKUP_DIR/config.json"
 docker inspect "$CONTAINER_NAME" >"$BACKUP_DIR/container-inspect-before.json"
 docker logs --tail 200 "$CONTAINER_NAME" >"$BACKUP_DIR/container-before.log" 2>&1 || true
 
-log 'Validating GroupGuard intranet API configuration...'
-python3 - "$CONFIG_PATH" "$LOL_API_BASE" <<'PY'
-import json
-import pathlib
-import sys
-from urllib.parse import urlparse
-
-path = pathlib.Path(sys.argv[1])
-default_base = sys.argv[2].rstrip('/')
-data = json.loads(path.read_text(encoding='utf-8'))
-current = str(data.get('lolApiBaseUrl') or '').strip().rstrip('/')
-if not current:
-    data['lolApiBaseUrl'] = default_base
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    print(f'[CONFIG] lolApiBaseUrl was empty and is now {default_base}')
-    current = default_base
-parsed = urlparse(current)
-host = (parsed.hostname or '').lower()
-private = (
-    host in {'localhost', '127.0.0.1', '::1'}
-    or host.startswith('10.')
-    or host.startswith('192.168.')
-    or any(host.startswith(f'172.{n}.') for n in range(16, 32))
-)
-if parsed.scheme not in {'http', 'https'} or not private:
-    raise SystemExit(f'lolApiBaseUrl must be an intranet HTTP address, got: {current}')
-print(f'[CONFIG] lolApiBaseUrl={current}')
-PY
+write_config_api_base
 
 DIST_UID="$(stat -c '%u' "$TARGET_DIST" 2>/dev/null || stat -c '%u' "$APP_DIR")"
 DIST_GID="$(stat -c '%g' "$TARGET_DIST" 2>/dev/null || stat -c '%g' "$APP_DIR")"
@@ -187,13 +259,15 @@ status=completed
 completed_at=$(date -Iseconds)
 container=$CONTAINER_NAME
 app_dir=$APP_DIR
-api_live_url=$API_LIVE_URL
+lol_api_base=$RESOLVED_API_BASE
+api_live_url=$RESOLVED_API_LIVE_URL
 webui_url=$WEBUI_URL
 release_commit=$(cat "$SCRIPT_DIR/RELEASE_COMMIT.txt" 2>/dev/null || printf unknown)
 EOF
 
 printf '\n============================================================\n'
 printf 'GROUPGUARD DEPLOYMENT SUCCEEDED\n'
+printf 'LOL API: %s\n' "$RESOLVED_API_BASE"
 printf 'Backup : %s\n' "$BACKUP_DIR"
 printf 'Result : %s/deployment-result.txt\n' "$BACKUP_DIR"
 printf 'Next QQ test: 查合集 滑板鞋\n'
