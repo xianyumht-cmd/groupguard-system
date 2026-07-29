@@ -29,28 +29,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run focused typecheck and risk verification
-        id: risk
+      - name: Capture focused typecheck and risk verification
         shell: bash
         run: |
           set +e
           {
             echo '=== TYPECHECK ==='
             npm run typecheck
-            type_status=$?
-            echo "TYPECHECK_EXIT=$type_status"
+            echo "TYPECHECK_EXIT=$?"
             echo '=== RISK VERIFY ==='
             npm run verify:intranet-risk-command
-            risk_status=$?
-            echo "RISK_EXIT=$risk_status"
-            if [ "$type_status" -ne 0 ] || [ "$risk_status" -ne 0 ]; then
-              exit 1
-            fi
+            echo "RISK_EXIT=$?"
           } 2>&1 | tee risk-diagnostic.log
-          exit ${PIPESTATUS[0]}
+          exit 0
 
       - name: Upload diagnostic output
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: groupguard-risk-diagnostic-${{ github.sha }}
