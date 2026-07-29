@@ -16,7 +16,8 @@ export type IntranetQueryFeature =
   | 'hidden'
   | 'video'
   | 'scammer'
-  | 'peer';
+  | 'peer'
+  | 'dynamic';
 export type IntranetReportFeature = GroupGuardReportRequest['feature'];
 export type IntranetPreferredOutput = NonNullable<GroupGuardQueryRequest['preferred']>;
 export type IntranetDeliveryRequestFn = typeof requestGroupGuardQueryDelivery;
