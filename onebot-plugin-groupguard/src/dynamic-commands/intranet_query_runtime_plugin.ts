@@ -1,12 +1,12 @@
 import { configStateService } from '../core/state-services/config_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import {
-  requestGroupGuardQueryDelivery,
-  toOneBotDeliveryPlan,
-  type GroupGuardQueryDeliveryEnvelope,
-  type GroupGuardQueryRequest,
-  type OneBotDeliveryPlan
-} from '../services/groupguard_query_delivery_client';
+  normalizeShardPreferredOutput,
+  requestShardDelivery,
+  type ShardDeliveryRequestFn,
+  type ShardPreferredOutput
+} from '../services/intranet_shard_query_service';
+import type { OneBotDeliveryPlan } from '../services/groupguard_query_delivery_client';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
 import type {
@@ -20,37 +20,15 @@ const SHARD_TRIGGER = '查合集';
 const SHARD_PRIORITY = 90;
 const SHARD_FALLBACK_TEXT = '内网查询服务暂时不可用，请稍后再试。';
 
-type DeliveryRequestFn = typeof requestGroupGuardQueryDelivery;
-type ShardPreferredOutput = NonNullable<GroupGuardQueryRequest['preferred']>;
-
-export interface ShardDeliveryRequestOptions {
-  baseUrl: string;
-  hero: string;
-  preferred?: ShardPreferredOutput;
-  timeoutMs?: number;
-  requestId?: string;
-  requestFn?: DeliveryRequestFn;
-}
-
-export interface ShardDeliveryRequestResult {
-  envelope: GroupGuardQueryDeliveryEnvelope;
-  plan: OneBotDeliveryPlan;
-}
-
-function normalizeOutput(value: unknown): ShardPreferredOutput {
-  if (value === 'text' || value === 'image' || value === 'forward') return value;
-  return 'auto';
-}
-
 export function resolveShardPreferredOutput(groupId: string): ShardPreferredOutput {
   const config = configStateService.getConfig() as any;
   const group = configStateService.resolveGroupSettings(groupId) as any;
   if (group && Object.prototype.hasOwnProperty.call(group, 'shardQueryOutputFormat')) {
-    return normalizeOutput(group.shardQueryOutputFormat);
+    return normalizeShardPreferredOutput(group.shardQueryOutputFormat);
   }
   const profileValue = config?.queryCommandProfiles?.lol_shard?.outputFormat;
-  if (profileValue !== undefined && profileValue !== '') return normalizeOutput(profileValue);
-  return normalizeOutput(config?.shardQueryOutputFormat || 'image');
+  if (profileValue !== undefined && profileValue !== '') return normalizeShardPreferredOutput(profileValue);
+  return normalizeShardPreferredOutput(config?.shardQueryOutputFormat || 'image');
 }
 
 export function resolveShardQueryTimeoutMs(): number {
@@ -69,32 +47,6 @@ function requestIdFromContext(input: UnifiedCommandNormalizedInput, context: Uni
     .join('-')
     .replace(/[^A-Za-z0-9_.:-]/g, '_');
   return compact.slice(0, 128);
-}
-
-export async function requestShardDelivery(options: ShardDeliveryRequestOptions): Promise<ShardDeliveryRequestResult> {
-  const hero = String(options.hero || '').trim();
-  if (!hero) throw new Error('shard_hero_required');
-  const requestFn = options.requestFn || requestGroupGuardQueryDelivery;
-  const envelope = await requestFn(
-    options.baseUrl,
-    {
-      feature: 'shard',
-      parameters: { hero },
-      preferred: options.preferred || 'auto',
-      capabilities: {
-        text: true,
-        image: true,
-        forward: true
-      },
-      ...(options.requestId ? { request_id: options.requestId } : {})
-    },
-    { timeoutMs: options.timeoutMs }
-  );
-  if (envelope.feature !== 'shard') throw new Error('delivery_feature_mismatch');
-  return {
-    envelope,
-    plan: toOneBotDeliveryPlan(envelope)
-  };
 }
 
 function planText(plan: OneBotDeliveryPlan): string {
@@ -175,7 +127,7 @@ function safeErrorTag(error: unknown): string {
 export async function executeShardIntranetQuery(
   input: UnifiedCommandNormalizedInput,
   context: UnifiedCommandExecutionContext,
-  requestFn: DeliveryRequestFn = requestGroupGuardQueryDelivery
+  requestFn?: ShardDeliveryRequestFn
 ): Promise<UnifiedCommandExecutionResult> {
   const hero = String(input.rawArgument || input.cleanedText.slice(SHARD_TRIGGER.length)).trim();
   if (!hero) {
@@ -216,7 +168,7 @@ export async function executeShardIntranetQuery(
       preferred: resolveShardPreferredOutput(groupId),
       timeoutMs: resolveShardQueryTimeoutMs(),
       requestId: requestIdFromContext(input, context),
-      requestFn
+      ...(requestFn ? { requestFn } : {})
     });
     const selfId = String((context.event as any).self_id || '0');
     return buildShardStructuredResult(plan, groupId, selfId);
