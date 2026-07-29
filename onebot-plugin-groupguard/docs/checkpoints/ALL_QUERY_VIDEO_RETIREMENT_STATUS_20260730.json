@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema": "groupguard-all-query-video-retirement-status.v1",
+  "repository": "xianyumht-cmd/groupguard-system",
+  "status": "video_free_client_code_verified_waiting_for_video_free_service_deploy",
+  "runtime_commit": "8f37a02a7ac4fbe27dea7197b723d8d60a5b793e",
+  "service_runtime_commit": "f221b64649763eb8d325d87348fd2f42f48a6485",
+  "removed": {
+    "commands": ["我要看", "视频 "],
+    "features": ["video", "video.info"],
+    "runtime_file": "src/dynamic-commands/intranet_video_runtime_plugin.ts"
+  },
+  "verification": {
+    "one_shot_asserted_migration": "pass",
+    "npm_test": "pass",
+    "snowluma_build": "pass",
+    "video_retirement_gate": "verify:video-retired",
+    "all_query_boundary_gate": "verify:all-query-client-boundary",
+    "public_fallback_restored": false
+  },
+  "revoked_release": {
+    "groupguard_commit": "029118346adaa9232aeceeb283f5d243a407dc95",
+    "artifact_id": 8732028955,
+    "status": "do_not_deploy"
+  },
+  "deployment_gate": {
+    "video_free_windows_service_deployed": false,
+    "new_groupguard_dist_packaging_allowed": false,
+    "reason": "The Windows service must be deployed and directly accepted before a new dist is sealed."
+  },
+  "next_action": "Deploy and accept the video-free Windows API package, then seal a new GroupGuard dist from the runtime commit above.",
+  "pull_request": {
+    "number": 17,
+    "draft": true,
+    "merged": false
+  }
+}
