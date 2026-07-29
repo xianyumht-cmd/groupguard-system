@@ -17,8 +17,19 @@ const DELIVERY_KEYS = new Set([
   'meta'
 ]);
 
+export type GroupGuardQueryFeature =
+  | 'shard'
+  | 'aram'
+  | 'lolban'
+  | 'battle'
+  | 'hidden'
+  | 'video'
+  | 'scammer'
+  | 'peer'
+  | 'dynamic';
+
 export interface GroupGuardQueryRequest {
-  feature: 'shard' | 'aram' | 'lolban';
+  feature: GroupGuardQueryFeature;
   parameters: Record<string, string>;
   preferred?: 'auto' | 'text' | 'image' | 'forward';
   capabilities?: {
@@ -27,6 +38,7 @@ export interface GroupGuardQueryRequest {
     forward?: boolean;
   };
   request_id?: string;
+  client?: string;
 }
 
 export interface DeliveryTextSegment {
@@ -178,28 +190,28 @@ function parseTextSegment(segment: Record<string, unknown>): DeliveryTextSegment
 function parseForwardSegment(segment: Record<string, unknown>): DeliveryForwardSegment {
   assertExactKeys(segment, new Set(['type', 'nodes']), 'forward_segment');
   if (segment.type !== 'forward') throw new Error('forward_segment_type_invalid');
-  if (!Array.isArray(segment.nodes) || segment.nodes.length < 1 || segment.nodes.length > 32) {
+  if (!Array.isArray(segment.nodes) || segment.nodes.length === 0 || segment.nodes.length > 32) {
     throw new Error('forward_nodes_invalid');
   }
-  const nodes = segment.nodes.map((node, nodeIndex): DeliveryForwardNode => {
-    if (!isRecord(node)) throw new Error(`forward_node_${nodeIndex}_invalid`);
-    assertExactKeys(node, new Set(['segments']), `forward_node_${nodeIndex}`);
-    if (!Array.isArray(node.segments) || node.segments.length < 1 || node.segments.length > 8) {
-      throw new Error(`forward_node_${nodeIndex}_segments_invalid`);
+  const nodes = segment.nodes.map((node, index) => {
+    if (!isRecord(node)) throw new Error(`forward_node_${index}_invalid`);
+    assertExactKeys(node, new Set(['segments']), `forward_node_${index}`);
+    if (!Array.isArray(node.segments) || node.segments.length === 0 || node.segments.length > 32) {
+      throw new Error(`forward_node_${index}_segments_invalid`);
     }
     return {
-      segments: node.segments.map((child, childIndex) => {
-        if (!isRecord(child)) throw new Error(`forward_node_${nodeIndex}_segment_${childIndex}_invalid`);
-        if (child.type === 'text') return parseTextSegment(child);
-        if (child.type === 'image') return decodeAndVerifyImage(child);
-        throw new Error(`forward_node_${nodeIndex}_segment_${childIndex}_type_invalid`);
+      segments: node.segments.map((item, segmentIndex) => {
+        if (!isRecord(item)) throw new Error(`forward_node_${index}_segment_${segmentIndex}_invalid`);
+        if (item.type === 'text') return parseTextSegment(item);
+        if (item.type === 'image') return decodeAndVerifyImage(item);
+        throw new Error(`forward_node_${index}_segment_${segmentIndex}_type_invalid`);
       })
     };
   });
   return { type: 'forward', nodes };
 }
 
-function parseSegment(value: unknown, index: number): DeliverySegment {
+function parseDeliverySegment(value: unknown, index: number): DeliverySegment {
   if (!isRecord(value)) throw new Error(`delivery_segment_${index}_invalid`);
   if (value.type === 'text') return parseTextSegment(value);
   if (value.type === 'image') return decodeAndVerifyImage(value);
@@ -208,36 +220,34 @@ function parseSegment(value: unknown, index: number): DeliverySegment {
 }
 
 export function parseGroupGuardQueryDelivery(value: unknown): GroupGuardQueryDeliveryEnvelope {
-  if (!isRecord(value)) throw new Error('delivery_envelope_must_be_object');
+  if (!isRecord(value)) throw new Error('delivery_envelope_invalid');
   assertExactKeys(value, DELIVERY_KEYS, 'delivery_envelope');
-  if (value.protocol !== GROUPGUARD_QUERY_DELIVERY_PROTOCOL) {
-    throw new Error('delivery_protocol_unsupported');
-  }
+  if (value.protocol !== GROUPGUARD_QUERY_DELIVERY_PROTOCOL) throw new Error('delivery_protocol_mismatch');
   const ok = requiredBoolean(value.ok, 'delivery_ok');
-  const feature = requiredString(value.feature, 'delivery_feature', 64);
+  const feature = requiredString(value.feature, 'delivery_feature', 96);
   const requestId = requiredString(value.request_id, 'delivery_request_id', 128);
   const clientRequestId = requiredString(value.client_request_id, 'delivery_client_request_id', 128, true);
-
   if (!isRecord(value.delivery)) throw new Error('delivery_payload_invalid');
   assertExactKeys(value.delivery, new Set(['kind', 'segments']), 'delivery_payload');
-  const kind = value.delivery.kind;
-  if (kind !== 'segments' && kind !== 'forward') throw new Error('delivery_kind_invalid');
-  if (!Array.isArray(value.delivery.segments) || value.delivery.segments.length < 1 || value.delivery.segments.length > 16) {
+  if (value.delivery.kind !== 'segments' && value.delivery.kind !== 'forward') {
+    throw new Error('delivery_kind_invalid');
+  }
+  if (!Array.isArray(value.delivery.segments) || value.delivery.segments.length === 0 || value.delivery.segments.length > 64) {
     throw new Error('delivery_segments_invalid');
   }
-  const segments = value.delivery.segments.map(parseSegment);
-  if (kind === 'forward' && (segments.length !== 1 || segments[0]?.type !== 'forward')) {
+  const segments = value.delivery.segments.map(parseDeliverySegment);
+  if (value.delivery.kind === 'forward' && (segments.length !== 1 || segments[0].type !== 'forward')) {
     throw new Error('delivery_forward_shape_invalid');
   }
-  if (kind === 'segments' && segments.some((segment) => segment.type === 'forward')) {
+  if (value.delivery.kind === 'segments' && segments.some((segment) => segment.type === 'forward')) {
     throw new Error('delivery_segments_shape_invalid');
   }
-
   if (!isRecord(value.retry)) throw new Error('delivery_retry_invalid');
   assertExactKeys(value.retry, new Set(['allowed', 'after_seconds']), 'delivery_retry');
-  const retryAllowed = requiredBoolean(value.retry.allowed, 'delivery_retry_allowed');
-  const retryAfter = requiredInteger(value.retry.after_seconds, 'delivery_retry_after_seconds', 0, 3600);
-
+  const retry = {
+    allowed: requiredBoolean(value.retry.allowed, 'delivery_retry_allowed'),
+    after_seconds: requiredInteger(value.retry.after_seconds, 'delivery_retry_after_seconds', 0, 86_400)
+  };
   let error: GroupGuardQueryDeliveryEnvelope['error'] = null;
   if (value.error !== null) {
     if (!isRecord(value.error)) throw new Error('delivery_error_invalid');
@@ -248,52 +258,79 @@ export function parseGroupGuardQueryDelivery(value: unknown): GroupGuardQueryDel
       retryable: requiredBoolean(value.error.retryable, 'delivery_error_retryable')
     };
   }
-  if (ok && (error !== null || retryAllowed)) throw new Error('delivery_success_error_conflict');
-  if (!ok && (error === null || error.retryable !== retryAllowed)) {
-    throw new Error('delivery_error_retry_conflict');
-  }
+  if (ok && error !== null) throw new Error('delivery_success_has_error');
+  if (!ok && error === null) throw new Error('delivery_failure_missing_error');
   if (!isRecord(value.meta)) throw new Error('delivery_meta_invalid');
-
   return {
     protocol: GROUPGUARD_QUERY_DELIVERY_PROTOCOL,
     ok,
     feature,
     request_id: requestId,
     client_request_id: clientRequestId,
-    delivery: { kind, segments },
+    delivery: {
+      kind: value.delivery.kind,
+      segments
+    },
     error,
-    retry: { allowed: retryAllowed, after_seconds: retryAfter },
-    meta: { ...value.meta }
+    retry,
+    meta: value.meta
   };
 }
 
-function parseIpv4(hostname: string): number[] | null {
-  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return null;
-  const parts = hostname.split('.').map(Number);
-  return parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) ? parts : null;
+export function toOneBotDeliveryPlan(envelope: GroupGuardQueryDeliveryEnvelope): OneBotDeliveryPlan {
+  if (!envelope.ok) {
+    const message = envelope.error?.user_message || '查询失败，请稍后再试。';
+    return {
+      kind: 'segments',
+      segments: [{ type: 'text', data: { text: message } }]
+    };
+  }
+  if (envelope.delivery.kind === 'forward') {
+    const forward = envelope.delivery.segments[0];
+    if (forward.type !== 'forward') throw new Error('delivery_forward_shape_invalid');
+    return {
+      kind: 'forward',
+      nodes: forward.nodes.map((node) => ({
+        segments: node.segments.map((segment) => {
+          if (segment.type === 'text') {
+            return { type: 'text' as const, data: { text: segment.text } };
+          }
+          return {
+            type: 'image' as const,
+            data: { file: `base64://${segment.data}` }
+          };
+        })
+      }))
+    };
+  }
+  return {
+    kind: 'segments',
+    segments: envelope.delivery.segments.map((segment) => {
+      if (segment.type === 'text') {
+        return { type: 'text' as const, data: { text: segment.text } };
+      }
+      if (segment.type === 'image') {
+        return { type: 'image' as const, data: { file: `base64://${segment.data}` } };
+      }
+      throw new Error('delivery_nested_forward_invalid');
+    })
+  };
 }
 
-export function isIntranetHostname(value: string): boolean {
-  const hostname = String(value || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
-  if (!hostname) return false;
-  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) return true;
-  if (!hostname.includes('.') && !hostname.includes(':') && /^[a-z0-9-]+$/.test(hostname)) return true;
-  const ipv4 = parseIpv4(hostname);
-  if (ipv4) {
-    const [a, b] = ipv4;
-    return a === 10
-      || a === 127
-      || (a === 169 && b === 254)
-      || (a === 172 && b >= 16 && b <= 31)
-      || (a === 192 && b === 168);
+export function isIntranetHostname(hostname: string): boolean {
+  const host = String(hostname || '').trim().toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host === '::1' || host.endsWith('.local')) return true;
+  if (host === '127.0.0.1' || host.startsWith('127.')) return true;
+  if (host.startsWith('10.')) return true;
+  if (host.startsWith('192.168.')) return true;
+  const match172 = host.match(/^172\.(\d{1,3})\./);
+  if (match172) {
+    const second = Number(match172[1]);
+    if (second >= 16 && second <= 31) return true;
   }
-  return hostname === '::1'
-    || hostname.startsWith('fc')
-    || hostname.startsWith('fd')
-    || hostname.startsWith('fe8')
-    || hostname.startsWith('fe9')
-    || hostname.startsWith('fea')
-    || hostname.startsWith('feb');
+  if (/^[a-z0-9-]+$/i.test(host)) return true;
+  return false;
 }
 
 export function resolveGroupGuardQueryEndpoint(baseUrl: string): string {
@@ -358,31 +395,4 @@ export async function requestGroupGuardQueryDelivery(
   } finally {
     clearTimeout(timer);
   }
-}
-
-function toOneBotLeaf(segment: DeliveryTextSegment | DeliveryImageSegment):
-  | { type: 'text'; data: { text: string } }
-  | { type: 'image'; data: { file: string } } {
-  if (segment.type === 'text') return { type: 'text', data: { text: segment.text } };
-  return { type: 'image', data: { file: `base64://${segment.data}` } };
-}
-
-export function toOneBotDeliveryPlan(envelope: GroupGuardQueryDeliveryEnvelope): OneBotDeliveryPlan {
-  if (envelope.delivery.kind === 'segments') {
-    return {
-      kind: 'segments',
-      segments: envelope.delivery.segments.map((segment) => {
-        if (segment.type === 'forward') throw new Error('delivery_segments_contains_forward');
-        return toOneBotLeaf(segment);
-      })
-    };
-  }
-  const forward = envelope.delivery.segments[0];
-  if (!forward || forward.type !== 'forward') throw new Error('delivery_forward_missing');
-  return {
-    kind: 'forward',
-    nodes: forward.nodes.map((node) => ({
-      segments: node.segments.map(toOneBotLeaf)
-    }))
-  };
 }
