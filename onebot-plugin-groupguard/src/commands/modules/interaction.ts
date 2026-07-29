@@ -9,7 +9,6 @@ export const INTERACTION_PREFIXES = [
   '查来源',
   '查隐藏',
   '我要看',
-  '查战绩',
   '活跃统计',
   '设置战绩接口',
   '设置战绩全局开关',
