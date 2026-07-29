@@ -7,6 +7,7 @@ import { refreshDynamicCommandRegistry } from './dynamic-commands/command_regist
 import { initializeDynamicCommandMetrics } from './dynamic-commands/command_engine';
 import { registerEleBuildCommandPlugins } from './dynamic-commands/ele_build_runtime_plugin';
 import { registerIntranetBattleCommandPlugins } from './dynamic-commands/intranet_battle_runtime_plugin';
+import { registerIntranetHiddenCommandPlugins } from './dynamic-commands/intranet_hidden_runtime_plugin';
 import { registerIntranetQueryCommandPlugins } from './dynamic-commands/intranet_query_runtime_plugin';
 import { registerLegacyRuntimePlugins } from './dynamic-commands/legacy_runtime_plugins';
 import { registerSendWrapperCommandPlugins } from './dynamic-commands/send_wrapper_runtime_plugins';
@@ -35,6 +36,7 @@ export function initCommandValidation(): void {
   commandValidationRan = true;
   registerIntranetQueryCommandPlugins();
   registerIntranetBattleCommandPlugins();
+  registerIntranetHiddenCommandPlugins();
   registerLegacyRuntimePlugins();
   registerSendWrapperCommandPlugins();
   registerEleBuildCommandPlugins();
