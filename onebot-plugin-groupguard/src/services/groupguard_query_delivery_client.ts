@@ -222,7 +222,7 @@ function parseDeliverySegment(value: unknown, index: number): DeliverySegment {
 export function parseGroupGuardQueryDelivery(value: unknown): GroupGuardQueryDeliveryEnvelope {
   if (!isRecord(value)) throw new Error('delivery_envelope_invalid');
   assertExactKeys(value, DELIVERY_KEYS, 'delivery_envelope');
-  if (value.protocol !== GROUPGUARD_QUERY_DELIVERY_PROTOCOL) throw new Error('delivery_protocol_mismatch');
+  if (value.protocol !== GROUPGUARD_QUERY_DELIVERY_PROTOCOL) throw new Error('delivery_protocol_unsupported');
   const ok = requiredBoolean(value.ok, 'delivery_ok');
   const feature = requiredString(value.feature, 'delivery_feature', 96);
   const requestId = requiredString(value.request_id, 'delivery_request_id', 128);
