@@ -4,10 +4,35 @@
   "repository": "xianyumht-cmd/groupguard-system",
   "base_branch": "codex/production-integration-audit-20260726",
   "document_branch": "docs/intranet-query-boundary-20260728",
-  "status": "shard_migration_implemented_pending_ci_and_service_release",
+  "status": "shard_migration_ci_green_pending_service_release",
   "objective": "GroupGuard only handles command intake, intranet requests, protocol validation, and OneBot delivery. Public upstream access, business processing, rendering, caching, and degradation are owned by lolapisevers.",
   "architecture_contract": "groupguard-query-delivery.v1",
   "implementation_branch": "feat/groupguard-shard-intranet-migration-20260729",
+  "pull_request": 16,
+  "verified_head": "97372f1cac6236b1adaab0dfc5406bff1d001538",
+  "verification": {
+    "groupguard_ci": {
+      "run_id": 30444675739,
+      "run_number": 100,
+      "conclusion": "success",
+      "checks": [
+        "npm test",
+        "deployment PowerShell syntax",
+        "SnowLuma build",
+        "cross-repository local contract mocks"
+      ]
+    },
+    "groupguard_build": {
+      "run_id": 30444675748,
+      "run_number": 132,
+      "conclusion": "success"
+    },
+    "failed_attempt_fixed": {
+      "build_run_id": 30444549792,
+      "cause": "The shard release gate reused the ARAM forward fixture without changing feature=aram, and the production request helper correctly rejected it as delivery_feature_mismatch.",
+      "fix": "Use a cloned forward fixture with feature=shard while preserving the same validated forward delivery shape."
+    }
+  },
   "completed_steps": [
     {
       "id": "GG-DOC-001",
@@ -39,6 +64,15 @@
         "onebot-plugin-groupguard/docs/contracts/GROUPGUARD_QUERY_DELIVERY_CONSUMER_GATE.md",
         "onebot-plugin-groupguard/package.json"
       ]
+    },
+    {
+      "id": "GG-SHARD-CI-001",
+      "status": "completed",
+      "implementation_branch": "feat/groupguard-shard-intranet-migration-20260729",
+      "pull_request": 16,
+      "verified_head": "97372f1cac6236b1adaab0dfc5406bff1d001538",
+      "ci_run_id": 30444675739,
+      "build_run_id": 30444675748
     }
   ],
   "steps": [
@@ -51,7 +85,7 @@
     },
     {
       "id": "GG-CLIENT-001",
-      "status": "implemented_pending_ci",
+      "status": "code_and_ci_completed_for_shard_scope",
       "depends_on": ["LAPI-DEPLOY-001", "GG-CONTRACT-001"],
       "implementation_scope": "shard command and shard admin tester",
       "outputs": [
@@ -59,11 +93,11 @@
         "onebot-plugin-groupguard/src/dynamic-commands/intranet_query_runtime_plugin.ts",
         "onebot-plugin-groupguard/src/standalone/admin/query_api.ts"
       ],
-      "summary": "The real shard command and admin tester now share the strict delivery request path. The production rollout remains blocked until the compatible lolapisevers release exposes the contract on port 5001."
+      "summary": "The real shard command and admin tester share the strict delivery request path and passed the complete GroupGuard test and SnowLuma build gates. Production rollout remains blocked until the compatible lolapisevers release exposes the contract on port 5001."
     },
     {
       "id": "GG-SHARD-001",
-      "status": "implemented_pending_ci",
+      "status": "code_and_ci_completed_pending_production_dependency",
       "depends_on": ["LAPI-DEPLOY-001", "GG-CLIENT-001"],
       "outputs": [
         "onebot-plugin-groupguard/src/dynamic-commands/intranet_query_runtime_plugin.ts",
@@ -82,25 +116,25 @@
     },
     {
       "id": "GG-CONFIG-001",
-      "status": "partially_implemented_pending_ci",
+      "status": "shard_scope_code_and_ci_completed",
       "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001"],
-      "summary": "The shard overview and tester now use LOL API Base; public shard and hero URL fields remain visible only as deprecated legacy configuration until the wider LoL migration is complete."
+      "summary": "The shard overview and tester use LOL API Base; public shard and hero URL fields remain visible only as deprecated legacy configuration until the wider LoL migration is complete."
     },
     {
       "id": "GG-GATE-001",
-      "status": "partially_implemented_pending_ci",
+      "status": "shard_scope_completed",
       "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001"],
       "outputs": [
         "onebot-plugin-groupguard/scripts/verify-intranet-shard-command.ts",
         "onebot-plugin-groupguard/package.json"
       ],
-      "summary": "The new release gate proves one intranet request, no public fallback, raw nickname forwarding, strict image conversion, forward conversion, legacy trigger removal, and fixed transport failure handling. Repository-wide removal of all legacy LoL public providers remains part of GG-LOL-UNIFY-001."
+      "summary": "The green release gate proves one intranet request, no public fallback, raw nickname forwarding, strict image conversion, forward conversion, legacy trigger removal, fixed transport failure handling, SnowLuma build success, and cross-repository mock compatibility. Repository-wide removal of all legacy LoL public providers remains part of GG-LOL-UNIFY-001."
     },
     {
       "id": "GG-DEPLOY-001",
-      "status": "blocked",
+      "status": "blocked_by_lapi_deploy_001",
       "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001", "GG-CONFIG-001", "GG-GATE-001", "LAPI-DEPLOY-001"],
-      "summary": "Do not deploy this branch until its CI and SnowLuma build are green and production lolapisevers /build-info confirms the compatible release containing /api/v1/groupguard/query."
+      "summary": "The GroupGuard shard code is green but must not be deployed until production lolapisevers /build-info confirms the compatible release containing /api/v1/groupguard/query."
     }
   ],
   "current_findings": [
@@ -114,7 +148,7 @@
       "severity": "P2",
       "code": "LEGACY_SHARD_CODE_REMAINS_UNREACHABLE",
       "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
-      "summary": "The old public shard loader and local formatter remain as unreachable migration code after the legacy 查合集 trigger was removed. Delete them only after the new runtime path passes CI and production acceptance; they must never be re-registered as a fallback."
+      "summary": "The old public shard loader and local formatter remain as unreachable migration code after the legacy 查合集 trigger was removed. Delete them only after production acceptance; they must never be re-registered as a fallback."
     },
     {
       "severity": "P1",
@@ -137,9 +171,9 @@
     "strict_image_integrity": true
   },
   "next_recommended_action": {
-    "repository": "xianyumht-cmd/groupguard-system",
-    "step_id": "GG-SHARD-CI-001",
-    "summary": "Open a stacked draft pull request against feat/groupguard-contract-consumer-20260729, run GroupGuard CI and Build, fix every failure, then verify the lolapisevers production build before preparing SnowLuma deployment."
+    "repository": "xianyumht-cmd/lolapisevers",
+    "step_id": "LAPI-DEPLOY-001",
+    "summary": "Run the prepared v6 safe service deployment, obtain completed deployment and verification records, confirm /build-info reports 8de85a855b8338c3a9a69cbb2a937cd0a6ef8b82, and verify POST /api/v1/groupguard/query before preparing GroupGuard SnowLuma deployment."
   },
-  "production_rule": "Never deploy the migrated GroupGuard command before the compatible lolapisevers delivery endpoint is live. Never restore plugin-side public fallback."
+  "production_rule": "The GroupGuard shard implementation and CI are complete, but it must remain undeployed until the compatible lolapisevers delivery endpoint is live. Never restore plugin-side public fallback."
 }
