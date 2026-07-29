@@ -58,7 +58,36 @@ if (!fs.existsSync(oldVerifier)) throw new Error('expected old video verifier is
 fs.unlinkSync(oldVerifier);
 write(
   'scripts/verify-video-retired.ts',
-  `import assert from 'node:assert/strict';\nimport { access, readFile } from 'node:fs/promises';\nimport { constants } from 'node:fs';\nimport { fileURLToPath } from 'node:url';\nimport { INTERACTION_EXACT, INTERACTION_PREFIXES } from '../src/commands/modules/interaction.ts';\n\nconst commandsPath = fileURLToPath(new URL('../src/commands.ts', import.meta.url));\nconst runtimePath = fileURLToPath(new URL('../src/dynamic-commands/intranet_video_runtime_plugin.ts', import.meta.url));\nconst dynamicConfigPath = fileURLToPath(new URL('../config/dynamic-commands/commands.json', import.meta.url));\n\nconst commandsSource = await readFile(commandsPath, 'utf8');\nassert.doesNotMatch(commandsSource, /registerIntranetVideoCommandPlugins/);\nassert.doesNotMatch(commandsSource, /intranet_video_runtime_plugin/);\n\nawait assert.rejects(access(runtimePath, constants.F_OK), 'retired video runtime file must not exist');\n\nfor (const command of ['我要看', '设置看视频接口', '删除看视频接口']) {\n  assert.equal(INTERACTION_PREFIXES.includes(command), false, \\`legacy route still claims \\${command}\\`);\n  assert.equal(INTERACTION_EXACT.includes(command), false, \\`legacy exact route still claims \\${command}\\`);\n}\nassert.equal(INTERACTION_EXACT.includes('看视频接口列表'), false);\n\nconst dynamicConfig = JSON.parse(await readFile(dynamicConfigPath, 'utf8'));\nassert.equal(dynamicConfig.commands.some((command: any) => command.id === 'video.info'), false);\nassert.equal(dynamicConfig.commands.some((command: any) => String(command?.trigger?.value || '').startsWith('视频')), false);\n\nconsole.log('retired video command verification passed');\n`
+  [
+    "import assert from 'node:assert/strict';",
+    "import { access, readFile } from 'node:fs/promises';",
+    "import { constants } from 'node:fs';",
+    "import { fileURLToPath } from 'node:url';",
+    "import { INTERACTION_EXACT, INTERACTION_PREFIXES } from '../src/commands/modules/interaction.ts';",
+    '',
+    "const commandsPath = fileURLToPath(new URL('../src/commands.ts', import.meta.url));",
+    "const runtimePath = fileURLToPath(new URL('../src/dynamic-commands/intranet_video_runtime_plugin.ts', import.meta.url));",
+    "const dynamicConfigPath = fileURLToPath(new URL('../config/dynamic-commands/commands.json', import.meta.url));",
+    '',
+    "const commandsSource = await readFile(commandsPath, 'utf8');",
+    'assert.doesNotMatch(commandsSource, /registerIntranetVideoCommandPlugins/);',
+    'assert.doesNotMatch(commandsSource, /intranet_video_runtime_plugin/);',
+    '',
+    "await assert.rejects(access(runtimePath, constants.F_OK), 'retired video runtime file must not exist');",
+    '',
+    "for (const command of ['我要看', '设置看视频接口', '删除看视频接口']) {",
+    "  assert.equal(INTERACTION_PREFIXES.includes(command), false, `legacy route still claims ${command}`);",
+    "  assert.equal(INTERACTION_EXACT.includes(command), false, `legacy exact route still claims ${command}`);",
+    '}',
+    "assert.equal(INTERACTION_EXACT.includes('看视频接口列表'), false);",
+    '',
+    "const dynamicConfig = JSON.parse(await readFile(dynamicConfigPath, 'utf8'));",
+    "assert.equal(dynamicConfig.commands.some((command: any) => command.id === 'video.info'), false);",
+    "assert.equal(dynamicConfig.commands.some((command: any) => String(command?.trigger?.value || '').startsWith('视频')), false);",
+    '',
+    "console.log('retired video command verification passed');",
+    ''
+  ].join('\n')
 );
 
 // 3. Remove the default dynamic video command too.
@@ -166,12 +195,35 @@ for (const relative of [
 appendOnce(
   'docs/checkpoints/ALL_QUERY_RELEASE_VERIFICATION_20260730.md',
   '## 视频功能取消后的重新验证',
-  `## 视频功能取消后的重新验证\n\n- “我要看”内网运行插件和注册已删除；\n- 默认动态“视频 ”命令及 \\`video.info\\` 已删除；\n- 所有 test/build 路径改为运行 \\`verify:video-retired\\`；\n- 全查询边界门禁确认正式客户端不再存在 video 运行模块或触发器；\n- 旧封存 dist \\`029118346adaa9232aeceeb283f5d243a407dc95\\` 已作废，禁止部署。\n\n新无视频 dist 只能在 Windows 无视频 API 小版本部署并通过直接协议验收后重新构建。`
+  [
+    '## 视频功能取消后的重新验证',
+    '',
+    '- “我要看”内网运行插件和注册已删除；',
+    '- 默认动态“视频 ”命令及 `video.info` 已删除；',
+    '- 所有 test/build 路径改为运行 `verify:video-retired`；',
+    '- 全查询边界门禁确认正式客户端不再存在 video 运行模块或触发器；',
+    '- 旧封存 dist `029118346adaa9232aeceeb283f5d243a407dc95` 已作废，禁止部署。',
+    '',
+    '新无视频 dist 只能在 Windows 无视频 API 小版本部署并通过直接协议验收后重新构建。'
+  ].join('\n')
 );
 appendOnce(
   'docs/checkpoints/ALL_QUERY_NEXT_CHAT_HANDOFF_20260730.md',
   '## 2026-07-30 GroupGuard 视频移除代码阶段完成',
-  `## 2026-07-30 GroupGuard 视频移除代码阶段完成\n\n已完成并由一次性工作流全量验证后提交：\n\n- 删除 \\`registerIntranetVideoCommandPlugins\\`；\n- 删除 \\`intranet_video_runtime_plugin.ts\\`；\n- 删除“我要看”及默认动态“视频 ”正式入口；\n- 原视频正向门禁改为 \\`verify:video-retired\\`；\n- npm test、SnowLuma build 和全查询边界门禁均要求视频入口不存在；\n- 旧含视频 dist 继续保持作废。\n\n下一步必须先完成 Windows 无视频 API 部署与验收，再封存新的无视频 dist。`
+  [
+    '## 2026-07-30 GroupGuard 视频移除代码阶段完成',
+    '',
+    '已完成并由一次性工作流全量验证后提交：',
+    '',
+    '- 删除 `registerIntranetVideoCommandPlugins`；',
+    '- 删除 `intranet_video_runtime_plugin.ts`；',
+    '- 删除“我要看”及默认动态“视频 ”正式入口；',
+    '- 原视频正向门禁改为 `verify:video-retired`；',
+    '- npm test、SnowLuma build 和全查询边界门禁均要求视频入口不存在；',
+    '- 旧含视频 dist 继续保持作废。',
+    '',
+    '下一步必须先完成 Windows 无视频 API 部署与验收，再封存新的无视频 dist。'
+  ].join('\n')
 );
 
 console.log('retired GroupGuard video feature removal prepared successfully');
