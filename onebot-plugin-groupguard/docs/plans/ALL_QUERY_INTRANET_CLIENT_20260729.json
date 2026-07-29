@@ -5,42 +5,80 @@
   "service_repository": "xianyumht-cmd/lolapisevers",
   "status": "executing",
   "role": "platform_transport_adapter_only",
-  "contract": "groupguard-query-delivery.v1",
+  "contracts": {
+    "query_and_delivery": "groupguard-query-delivery.v1",
+    "query_endpoint": "/api/v1/groupguard/query",
+    "shared_write_endpoint": "/api/v1/groupguard/report"
+  },
   "production": {
     "service_commit": "8de85a855b8338c3a9a69cbb2a937cd0a6ef8b82",
     "shard_dist_deployed": true,
     "shard_acceptance": "查合集 滑板鞋",
     "shard_acceptance_result": "pass"
   },
+  "risk_data_decision": {
+    "source_database_has_records": false,
+    "migration_status": "skipped_empty_source",
+    "legacy_export_or_import_required": false
+  },
   "inventory": [
     {"feature": "shard", "command": "查合集", "status": "production_accepted"},
-    {"feature": "aram", "command": "海符榜", "status": "code_and_ci_completed_pending_client_deployment"},
-    {"feature": "lolban", "command": "查封号", "status": "code_and_ci_completed_pending_client_deployment"},
-    {"feature": "battle", "command": "查战绩", "status": "blocked_by_service_feature"},
-    {"feature": "hidden", "command": "查隐藏", "status": "blocked_by_service_feature"},
-    {"feature": "video", "command": "我要看", "status": "blocked_by_service_feature"},
-    {"feature": "scammer", "command": "查骗子", "status": "blocked_by_service_feature_and_data_migration"},
-    {"feature": "peer", "command": "查同行", "status": "blocked_by_service_feature_and_data_migration"},
-    {"feature": "scammer_report", "command": "举报骗子", "status": "blocked_by_shared_write_api"},
-    {"feature": "peer_report", "command": "举报同行", "status": "blocked_by_shared_write_api"}
+    {"feature": "aram", "command": "海符榜", "status": "code_and_ci_completed_pending_final_client_deployment"},
+    {"feature": "lolban", "command": "查封号", "status": "code_and_ci_completed_pending_final_client_deployment"},
+    {"feature": "battle", "command": "查战绩", "status": "code_and_ci_completed_pending_final_service_and_client_deployment"},
+    {"feature": "hidden", "command": "查隐藏", "status": "code_and_ci_completed_pending_final_service_and_client_deployment"},
+    {"feature": "video", "command": "我要看", "status": "code_and_ci_completed_pending_service_provider_configuration_and_final_deployment"},
+    {"feature": "scammer", "command": "查骗子", "status": "code_completed_latest_ci_pending"},
+    {"feature": "peer", "command": "查同行", "status": "code_completed_latest_ci_pending"},
+    {"feature": "scammer_report", "command": "举报骗子", "status": "code_completed_latest_ci_pending"},
+    {"feature": "peer_report", "command": "举报同行", "status": "code_completed_latest_ci_pending"}
   ],
   "steps": [
     {"id": "GG-AQ-DOC-001", "status": "completed"},
     {
       "id": "GG-AQ-FAST-001",
-      "status": "code_and_ci_completed_pending_client_deployment",
+      "status": "code_and_ci_completed_pending_final_client_deployment",
       "features": ["aram", "lolban"],
       "pull_request": 17,
-      "verified_head": "96c687c12d98e7fa97a1293870be1d4d4ebd524d",
       "ci_run_id": 30451834345,
       "build_run_id": 30451835809,
       "conclusion": "success"
     },
-    {"id": "GG-AQ-BATTLE-001", "status": "blocked_by_service_feature"},
-    {"id": "GG-AQ-HIDDEN-001", "status": "blocked_by_service_feature"},
-    {"id": "GG-AQ-VIDEO-001", "status": "blocked_by_service_feature"},
-    {"id": "GG-AQ-RISK-001", "status": "blocked_by_service_feature_and_data_migration"},
+    {
+      "id": "GG-AQ-BATTLE-001",
+      "status": "code_and_ci_completed_pending_final_deployment",
+      "ci_run_id": 30453026905,
+      "build_run_id": 30453031326,
+      "conclusion": "success"
+    },
+    {
+      "id": "GG-AQ-HIDDEN-001",
+      "status": "code_and_ci_completed_pending_final_deployment",
+      "ci_run_id": 30453920260,
+      "build_run_id": 30453920303,
+      "conclusion": "success"
+    },
+    {
+      "id": "GG-AQ-VIDEO-001",
+      "status": "code_and_ci_completed_pending_final_deployment",
+      "ci_run_id": 30454575054,
+      "build_run_id": 30454574921,
+      "conclusion": "success"
+    },
+    {
+      "id": "GG-AQ-RISK-DATA-001",
+      "status": "skipped_empty_source",
+      "reason": "Operator confirmed that the existing local scammer and peer databases contain no records."
+    },
+    {
+      "id": "GG-AQ-RISK-001",
+      "status": "code_completed_latest_ci_pending",
+      "features": ["scammer", "peer", "scammer_report", "peer_report"],
+      "latest_ci_run_id": 30458509481,
+      "latest_build_run_id": 30458509473
+    },
     {"id": "GG-AQ-DYNAMIC-001", "status": "planned"},
+    {"id": "GG-AQ-OFFICIAL-BOT-001", "status": "planned"},
     {"id": "GG-AQ-GATE-001", "status": "planned"}
   ],
   "allowed_responsibilities": [
@@ -64,10 +102,14 @@
     "public_fallback",
     "shared_business_database_source_of_truth"
   ],
+  "deployment_policy": {
+    "intermediate_deployments": false,
+    "service_first": true,
+    "final_client_artifact": "one SnowLuma dist replacement after all service features pass"
+  },
   "next_action": {
-    "repository": "xianyumht-cmd/lolapisevers",
-    "branch": "feat/all-query-delivery-hub-20260729",
-    "step_id": "AQ-BATTLE-001",
-    "summary": "Add battle final delivery by reusing query_cross and cross image rendering, then migrate 查战绩 without plugin-side parsing or fallback decisions."
+    "repository": "both",
+    "step_id": "GG-AQ-RISK-001",
+    "summary": "Complete latest risk CI, then audit dynamic external query commands and prepare one final service update plus one final dist replacement."
   }
 }
