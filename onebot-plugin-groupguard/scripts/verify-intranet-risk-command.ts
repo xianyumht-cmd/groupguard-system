@@ -47,6 +47,7 @@ assert.ok(plugins.every((plugin) => Number(plugin.definition.priority || 0) > 40
 assert.deepEqual(parseRiskIdentifier('123456789'), { type: 'qq', value: '123456789' });
 assert.deepEqual(parseRiskIdentifier('QQ:123456789'), { type: 'qq', value: '123456789' });
 assert.deepEqual(parseRiskIdentifier('微信:wx_peer_01'), { type: 'wechat', value: 'wx_peer_01' });
+assert.deepEqual(parseRiskIdentifier('wx_test'), { type: 'wechat', value: 'wx_test' });
 assert.equal(parseRiskIdentifier('12'), null);
 assert.equal(parseRiskQueryArgument('wx_test').ok, true);
 assert.equal(parseRiskReportArgument('123456789 收款后失联').ok, true);
@@ -215,7 +216,8 @@ assert.equal(/\bfetch\s*\(/.test(runtimeSource), false, 'risk runtime must not c
 const commandsSource = await readFile(commandsSourcePath, 'utf8');
 assert.match(commandsSource, /registerIntranetRiskCommandPlugins\(\)/);
 const legacySource = await readFile(legacySourcePath, 'utf8');
-assert.match(legacySource, /if \(text\.startsWith\('查骗子'\)\)/, 'legacy code remains reviewable but unreachable');
+assert.match(legacySource, /parseRiskQueryCommand\(text, queryDef\.command\)/, 'legacy query code remains reviewable but unreachable');
+assert.match(legacySource, /parseRiskReportCommand\(text, reportDef\.command\)/, 'legacy report code remains reviewable but unreachable');
 assert.match(legacySource, /storageAdapter\.upsertContactRiskReport/, 'legacy local write code remains reviewable during migration');
 
 console.log('intranet risk command verification passed');
