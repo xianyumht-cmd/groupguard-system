@@ -107,12 +107,8 @@ function normalizeParameters(value: unknown): Record<string, string> | undefined
 function normalizeParameterSchema(value: unknown, parameters: Record<string, string> | undefined) {
   const fallbackRequired = Object.keys(parameters || {});
   if (!isRecord(value)) {
-    return {
-      required: fallbackRequired,
-      optional: []
-    };
+    return { required: fallbackRequired, optional: [] };
   }
-
   const toNameList = (input: unknown): string[] => {
     if (!Array.isArray(input)) return [];
     return input
@@ -120,10 +116,8 @@ function normalizeParameterSchema(value: unknown, parameters: Record<string, str
       .map((item) => item.trim())
       .filter(Boolean);
   };
-
   const required = Array.from(new Set(toNameList(value.required)));
   const optional = Array.from(new Set(toNameList(value.optional).filter((name) => !required.includes(name))));
-
   return {
     required: required.length ? required : fallbackRequired,
     optional
@@ -163,19 +157,40 @@ function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | 
 
   const triggerType = trigger && (trigger.type === 'exact' || trigger.type === 'prefix') ? trigger.type : null;
   const triggerValue = trigger && typeof trigger.value === 'string' ? trigger.value.trim() : '';
-  const providerType = provider?.type === 'http' ? provider.type : null;
-  const providerMethod = provider && (provider.method === 'GET' || provider.method === 'POST') ? provider.method : null;
-  const providerUrl = provider && typeof provider.url === 'string' ? provider.url.trim() : '';
-  const responseType = response?.type === 'text' ? response.type : null;
-  const template = response && typeof response.template === 'string' ? response.template.trim() : undefined;
-  const textPath = template || (response && typeof response.textPath === 'string' ? response.textPath.trim() : undefined);
+  const providerType = provider?.type === 'intranet' || provider?.type === 'http' ? provider.type : null;
+  const responseType = response && ['text', 'link', 'media', 'structured'].includes(String(response.type || ''))
+    ? response.type as DynamicCommandDefinition['response']['type']
+    : null;
   const normalizedParameters = normalizeParameters(value.parameters);
 
-  if (!id || !triggerType || !triggerValue || !provider || !providerType || !providerMethod || !providerUrl || !responseType) {
+  if (!id || !triggerType || !triggerValue || !provider || !providerType || !responseType) {
     loggingStateService.warn(`[DynamicCommandLoader] 忽略无效命令定义: ${JSON.stringify(value)}`);
     return null;
   }
 
+  let normalizedProvider: DynamicCommandDefinition['provider'];
+  if (providerType === 'intranet') {
+    normalizedProvider = { type: 'intranet' };
+  } else {
+    const providerMethod = provider.method === 'GET' || provider.method === 'POST' ? provider.method : null;
+    const providerUrl = typeof provider.url === 'string' ? provider.url.trim() : '';
+    if (!providerMethod || !providerUrl) {
+      loggingStateService.warn(`[DynamicCommandLoader] 忽略缺少 HTTP Provider 配置的命令: ${id}`);
+      return null;
+    }
+    normalizedProvider = {
+      type: 'http',
+      method: providerMethod,
+      url: providerUrl,
+      headers: normalizeStringMap(provider.headers),
+      query: normalizeStringMap(provider.query),
+      body: normalizeStringMap(provider.body),
+      timeoutMs: typeof provider.timeoutMs === 'number' && Number.isFinite(provider.timeoutMs) ? provider.timeoutMs : undefined
+    };
+  }
+
+  const template = response && typeof response.template === 'string' ? response.template.trim() : undefined;
+  const textPath = response && typeof response.textPath === 'string' ? response.textPath.trim() : undefined;
   return {
     id,
     enabled,
@@ -189,26 +204,11 @@ function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | 
     blockedGroups: normalizeStringList(value.blockedGroups),
     requiresLicense: value.requiresLicense !== false,
     permission: normalizePermission(value.permission),
-    trigger: {
-      type: triggerType,
-      value: triggerValue
-    },
+    trigger: { type: triggerType, value: triggerValue },
     parameters: normalizedParameters,
     parameterSchema: normalizeParameterSchema(value.parameterSchema, normalizedParameters),
-    provider: {
-      type: providerType,
-      method: providerMethod,
-      url: providerUrl,
-      headers: normalizeStringMap(provider.headers),
-      query: normalizeStringMap(provider.query),
-      body: normalizeStringMap(provider.body),
-      timeoutMs: typeof provider.timeoutMs === 'number' && Number.isFinite(provider.timeoutMs) ? provider.timeoutMs : undefined
-    },
-    response: {
-      type: responseType,
-      textPath,
-      template
-    },
+    provider: normalizedProvider,
+    response: { type: responseType, textPath, template },
     fallbackText
   };
 }
