@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "plan_id": "GGK-ALL-QUERY-HUB-20260729",
+  "repository": "xianyumht-cmd/groupguard-system",
+  "service_repository": "xianyumht-cmd/lolapisevers",
+  "status": "executing",
+  "role": "platform_transport_adapter_only",
+  "contract": "groupguard-query-delivery.v1",
+  "production": {
+    "service_commit": "8de85a855b8338c3a9a69cbb2a937cd0a6ef8b82",
+    "shard_dist_deployed": true,
+    "shard_acceptance": "查合集 滑板鞋",
+    "shard_acceptance_result": "pass"
+  },
+  "inventory": [
+    {"feature": "shard", "command": "查合集", "status": "production_accepted"},
+    {"feature": "aram", "command": "海符榜", "status": "migration_in_progress"},
+    {"feature": "lolban", "command": "查封号", "status": "migration_in_progress"},
+    {"feature": "battle", "command": "查战绩", "status": "blocked_by_service_feature"},
+    {"feature": "hidden", "command": "查隐藏", "status": "blocked_by_service_feature"},
+    {"feature": "video", "command": "我要看", "status": "blocked_by_service_feature"},
+    {"feature": "scammer", "command": "查骗子", "status": "blocked_by_service_feature_and_data_migration"},
+    {"feature": "peer", "command": "查同行", "status": "blocked_by_service_feature_and_data_migration"},
+    {"feature": "scammer_report", "command": "举报骗子", "status": "blocked_by_shared_write_api"},
+    {"feature": "peer_report", "command": "举报同行", "status": "blocked_by_shared_write_api"}
+  ],
+  "steps": [
+    {"id": "GG-AQ-DOC-001", "status": "completed"},
+    {"id": "GG-AQ-FAST-001", "status": "in_progress", "features": ["aram", "lolban"]},
+    {"id": "GG-AQ-BATTLE-001", "status": "blocked_by_service_feature"},
+    {"id": "GG-AQ-HIDDEN-001", "status": "blocked_by_service_feature"},
+    {"id": "GG-AQ-VIDEO-001", "status": "blocked_by_service_feature"},
+    {"id": "GG-AQ-RISK-001", "status": "blocked_by_service_feature_and_data_migration"},
+    {"id": "GG-AQ-DYNAMIC-001", "status": "planned"},
+    {"id": "GG-AQ-GATE-001", "status": "planned"}
+  ],
+  "allowed_responsibilities": [
+    "command_matching",
+    "minimal_raw_parameter_extraction",
+    "platform_permissions",
+    "feature_gates",
+    "rate_limits",
+    "request_id_generation",
+    "intranet_request",
+    "strict_contract_validation",
+    "onebot_delivery"
+  ],
+  "forbidden_responsibilities": [
+    "public_business_upstream_access",
+    "provider_credentials",
+    "business_json_or_html_parsing",
+    "business_formatting",
+    "image_or_text_degradation_decisions",
+    "provider_result_merging",
+    "public_fallback",
+    "shared_business_database_source_of_truth"
+  ],
+  "next_action": {
+    "branch": "feat/all-query-intranet-client-20260729",
+    "step_id": "GG-AQ-FAST-001",
+    "summary": "Register aram and lolban intranet delivery plugins, remove legacy command claims, and add no-public-fallback gates."
+  }
+}
