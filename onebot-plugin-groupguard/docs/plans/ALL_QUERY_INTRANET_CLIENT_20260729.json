@@ -3,7 +3,7 @@
   "plan_id": "GGK-ALL-QUERY-HUB-20260729",
   "repository": "xianyumht-cmd/groupguard-system",
   "service_repository": "xianyumht-cmd/lolapisevers",
-  "status": "executing_verification_blocked_by_actions_runner",
+  "status": "verified_waiting_for_service_deployment",
   "role": "platform_transport_adapter_only",
   "contracts": {
     "query_and_delivery": "groupguard-query-delivery.v1",
@@ -15,6 +15,11 @@
     "shard_dist_deployed": true,
     "shard_acceptance": "查合集 滑板鞋",
     "shard_acceptance_result": "pass"
+  },
+  "release_candidate": {
+    "service_head_before_release_docs": "1780015c0c03e24b1184a2f2c0b3f266861e5ef0",
+    "groupguard_head": "8a9d3ccea7663282ca6a9be8a23662bc589bf356",
+    "dist_delivery_blocked_until_service_acceptance": true
   },
   "risk_data_decision": {
     "source_database_has_records": false,
@@ -29,29 +34,50 @@
     "migration_outputs": ["sanitized_client_commands", "windows_provider_catalog", "hash_report", "backup_when_apply"]
   },
   "inventory": [
-    {"feature": "shard", "command": "查合集", "status": "production_accepted"},
-    {"feature": "aram", "command": "海符榜", "status": "code_and_ci_completed_pending_final_client_deployment"},
-    {"feature": "lolban", "command": "查封号", "status": "code_and_ci_completed_pending_final_client_deployment"},
-    {"feature": "battle", "command": "查战绩", "status": "code_and_ci_completed_pending_final_service_and_client_deployment"},
-    {"feature": "hidden", "command": "查隐藏", "status": "code_and_ci_completed_pending_final_service_and_client_deployment"},
-    {"feature": "video", "command": "我要看", "status": "code_and_ci_completed_pending_service_provider_configuration_and_final_deployment"},
-    {"feature": "scammer", "command": "查骗子", "status": "code_completed_latest_full_ci_not_run"},
-    {"feature": "peer", "command": "查同行", "status": "code_completed_latest_full_ci_not_run"},
-    {"feature": "scammer_report", "command": "举报骗子", "status": "code_completed_latest_full_ci_not_run"},
-    {"feature": "peer_report", "command": "举报同行", "status": "code_completed_latest_full_ci_not_run"},
-    {"feature": "dynamic", "command": "quote/点歌/视频及自定义动态查询", "status": "intranet_shell_and_offline_migrator_completed_latest_full_ci_not_run"}
+    {"feature": "shard", "command": "查合集", "status": "production_accepted_baseline"},
+    {"feature": "aram", "command": "海符榜", "status": "verified_pending_final_client_deployment"},
+    {"feature": "lolban", "command": "查封号", "status": "verified_pending_final_client_deployment"},
+    {"feature": "battle", "command": "查战绩", "status": "verified_pending_service_then_client_deployment"},
+    {"feature": "hidden", "command": "查隐藏", "status": "verified_pending_service_then_client_deployment"},
+    {"feature": "video", "command": "我要看", "status": "verified_pending_service_provider_configuration_then_client_deployment"},
+    {"feature": "scammer", "command": "查骗子", "status": "verified_pending_service_then_client_deployment"},
+    {"feature": "peer", "command": "查同行", "status": "verified_pending_service_then_client_deployment"},
+    {"feature": "scammer_report", "command": "举报骗子", "status": "verified_pending_service_then_client_deployment"},
+    {"feature": "peer_report", "command": "举报同行", "status": "verified_pending_service_then_client_deployment"},
+    {"feature": "dynamic", "command": "quote/点歌/视频及自定义动态查询", "status": "verified_intranet_shell_pending_service_catalog_then_client_deployment"}
   ],
+  "verification": {
+    "runner_blocker_resolved": true,
+    "head": "8a9d3ccea7663282ca6a9be8a23662bc589bf356",
+    "ci_run_id": 30470186595,
+    "build_run_id": 30470186613,
+    "conclusion": "success",
+    "checks": [
+      "npm_ci",
+      "npm_test",
+      "deployment_powershell_syntax",
+      "build_snowluma",
+      "cross_repository_contracts",
+      "all_query_client_boundary",
+      "standalone_build"
+    ],
+    "final_ci_fixes": [
+      "preserve delivery_protocol_unsupported compatibility error code",
+      "accept IPv6 ULA and link-local intranet hosts"
+    ]
+  },
   "steps": [
     {"id": "GG-AQ-DOC-001", "status": "completed"},
-    {"id": "GG-AQ-FAST-001", "status": "code_and_ci_completed_pending_final_client_deployment", "features": ["aram", "lolban"], "ci_run_id": 30451834345, "build_run_id": 30451835809, "conclusion": "success"},
-    {"id": "GG-AQ-BATTLE-001", "status": "code_and_ci_completed_pending_final_deployment", "ci_run_id": 30453026905, "build_run_id": 30453031326, "conclusion": "success"},
-    {"id": "GG-AQ-HIDDEN-001", "status": "code_and_ci_completed_pending_final_deployment", "ci_run_id": 30453920260, "build_run_id": 30453920303, "conclusion": "success"},
-    {"id": "GG-AQ-VIDEO-001", "status": "code_and_ci_completed_pending_final_deployment", "ci_run_id": 30454575054, "build_run_id": 30454574921, "conclusion": "success"},
-    {"id": "GG-AQ-RISK-DATA-001", "status": "skipped_empty_source", "reason": "Operator confirmed that the existing local scammer and peer databases contain no records."},
-    {"id": "GG-AQ-RISK-001", "status": "code_completed_latest_full_ci_blocked", "features": ["scammer", "peer", "scammer_report", "peer_report"},
-    {"id": "GG-AQ-DYNAMIC-001", "status": "client_shell_migrator_and_gates_completed_latest_full_ci_blocked", "features": ["dynamic"], "runtime_plugin": "src/dynamic-commands/intranet_dynamic_command_plugin.ts"},
+    {"id": "GG-AQ-FAST-001", "status": "verified_pending_final_client_deployment", "features": ["aram", "lolban"]},
+    {"id": "GG-AQ-BATTLE-001", "status": "verified_pending_final_deployment"},
+    {"id": "GG-AQ-HIDDEN-001", "status": "verified_pending_final_deployment"},
+    {"id": "GG-AQ-VIDEO-001", "status": "verified_pending_provider_configuration_and_final_deployment"},
+    {"id": "GG-AQ-RISK-DATA-001", "status": "skipped_empty_source"},
+    {"id": "GG-AQ-RISK-001", "status": "verified_pending_final_deployment", "features": ["scammer", "peer", "scammer_report", "peer_report"]},
+    {"id": "GG-AQ-DYNAMIC-001", "status": "verified_pending_service_catalog_and_final_deployment", "features": ["dynamic"]},
     {"id": "GG-AQ-OFFICIAL-BOT-001", "status": "service_reference_client_completed_no_groupguard_runtime_dependency"},
-    {"id": "GG-AQ-GATE-001", "status": "architecture_gate_added_latest_full_ci_blocked", "gate": "verify:all-query-client-boundary"}
+    {"id": "GG-AQ-GATE-001", "status": "completed", "gate": "verify:all-query-client-boundary"},
+    {"id": "GG-AQ-RELEASE-001", "status": "dist_built_and_verified_held_until_service_acceptance"}
   ],
   "allowed_responsibilities": [
     "command_matching",
@@ -75,20 +101,16 @@
     "shared_business_database_source_of_truth",
     "runtime_http_dynamic_provider"
   ],
-  "verification_blocker": {
-    "kind": "github_actions_runner_not_allocated",
-    "observed_behavior": "workflow jobs complete as failure with steps=null and no logs or artifacts",
-    "policy": "Do not classify these runs as test failures; do not deploy until a real full run executes and passes."
-  },
   "deployment_policy": {
     "intermediate_deployments": false,
     "service_first": true,
     "dynamic_config_migration_before_dist_start": true,
-    "final_client_artifact": "one SnowLuma dist replacement after all service features pass"
+    "final_client_artifact": "one SnowLuma dist replacement after all service features pass",
+    "draft_pull_request_merge_before_acceptance": false
   },
   "next_action": {
-    "repository": "both",
-    "step_id": "GG-AQ-GATE-001",
-    "summary": "Complete isolated verification, restore full CI and SnowLuma build when Runner allocation resumes, then prepare one final service package and one final dist replacement."
+    "repository": "xianyumht-cmd/lolapisevers",
+    "step_id": "AQ-RELEASE-001",
+    "summary": "Deploy and directly accept the final Windows service package. Keep the verified GroupGuard dist sealed until service acceptance succeeds."
   }
 }
