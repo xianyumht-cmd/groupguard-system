@@ -58,7 +58,9 @@ export function parseRiskIdentifier(value: unknown): ParsedRiskIdentifier | null
   if (!raw || /\s/.test(raw)) return null;
   const qqPrefix = raw.match(/^qq[:：]?(\d+)$/i);
   if (qqPrefix) raw = qqPrefix[1];
-  const wechatPrefix = raw.match(/^(?:微信|wx|weixin)[:：]?(.+)$/i);
+  const chineseWechatPrefix = raw.match(/^微信[:：]?(.+)$/i);
+  const englishWechatPrefix = raw.match(/^(?:wx|weixin)[:：](.+)$/i);
+  const wechatPrefix = chineseWechatPrefix || englishWechatPrefix;
   if (wechatPrefix) raw = wechatPrefix[1].trim();
   if (/^\d+$/.test(raw)) {
     if (!/^\d{5,13}$/.test(raw)) return null;
