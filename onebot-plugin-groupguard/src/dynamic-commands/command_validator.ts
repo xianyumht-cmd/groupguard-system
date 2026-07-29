@@ -39,15 +39,6 @@ function isSafeResponseSelector(selector: string | undefined): boolean {
   return foundPlaceholder;
 }
 
-function hasValidHttpUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
 export function validateDynamicCommandDefinition(command: DynamicCommandDefinition): DynamicCommandValidationError[] {
   const errors: DynamicCommandValidationError[] = [];
 
@@ -72,31 +63,31 @@ export function validateDynamicCommandDefinition(command: DynamicCommandDefiniti
     });
   }
 
+  // Public Provider execution, response parsing, retry and cache now belong to
+  // the Windows intranet service. HTTP definitions may only be consumed by the
+  // one-time migration tool and are never valid runtime command definitions.
   if (command.provider.type === 'http') {
-    if (!hasValidHttpUrl(command.provider.url)) {
-      errors.push({
-        code: 'validation_error',
-        message: `invalid_url:${command.id}`
-      });
-    }
-
-    if (command.provider.timeoutMs !== undefined) {
-      const timeout = Number(command.provider.timeoutMs);
-      if (!Number.isFinite(timeout) || timeout < 100 || timeout > 10000) {
-        errors.push({
-          code: 'validation_error',
-          message: `invalid_timeout:${command.id}`
-        });
-      }
-    }
-  }
-
-  const responseSelector = command.response.template || command.response.textPath;
-  if (!isSafeResponseSelector(responseSelector)) {
     errors.push({
       code: 'validation_error',
-      message: `invalid_response_selector:${command.id}`
+      message: `legacy_http_provider_forbidden:${command.id}`
     });
+  }
+
+  if (command.provider.type === 'intranet') {
+    if (command.response.textPath || command.response.template) {
+      errors.push({
+        code: 'validation_error',
+        message: `client_response_selector_forbidden:${command.id}`
+      });
+    }
+  } else {
+    const responseSelector = command.response.template || command.response.textPath;
+    if (!isSafeResponseSelector(responseSelector)) {
+      errors.push({
+        code: 'validation_error',
+        message: `invalid_response_selector:${command.id}`
+      });
+    }
   }
 
   const schemaNames = new Set([
