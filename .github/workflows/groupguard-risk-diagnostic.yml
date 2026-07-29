@@ -1,0 +1,59 @@
+name: GroupGuard Risk Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - feat/groupguard-shard-intranet-migration-20260729
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onebot-plugin-groupguard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused typecheck and risk verification
+        id: risk
+        shell: bash
+        run: |
+          set +e
+          {
+            echo '=== TYPECHECK ==='
+            npm run typecheck
+            type_status=$?
+            echo "TYPECHECK_EXIT=$type_status"
+            echo '=== RISK VERIFY ==='
+            npm run verify:intranet-risk-command
+            risk_status=$?
+            echo "RISK_EXIT=$risk_status"
+            if [ "$type_status" -ne 0 ] || [ "$risk_status" -ne 0 ]; then
+              exit 1
+            fi
+          } 2>&1 | tee risk-diagnostic.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload diagnostic output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-risk-diagnostic-${{ github.sha }}
+          path: onebot-plugin-groupguard/risk-diagnostic.log
+          if-no-files-found: error
+          retention-days: 7
