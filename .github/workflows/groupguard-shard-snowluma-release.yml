@@ -1,0 +1,68 @@
+name: GroupGuard Shard SnowLuma Release
+
+on:
+  push:
+    branches:
+      - feat/groupguard-shard-intranet-migration-20260729
+    paths:
+      - .github/workflows/groupguard-shard-snowluma-release.yml
+      - onebot-plugin-groupguard/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onebot-plugin-groupguard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full verification
+        run: npm test
+
+      - name: Build SnowLuma release
+        run: npm run build:snowluma
+
+      - name: Package rollback-safe release
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/deploy-groupguard-shard-intranet.sh
+          rm -rf release-package
+          mkdir -p release-package/dist
+          cp -a dist/. release-package/dist/
+          cp scripts/ops/deploy-groupguard-shard-intranet.sh release-package/DEPLOY-GROUPGUARD-SHARD.sh
+          chmod +x release-package/DEPLOY-GROUPGUARD-SHARD.sh
+          printf '%s\n' '${{ github.sha }}' > release-package/RELEASE_COMMIT.txt
+          (
+            cd release-package
+            find dist -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+            sha256sum DEPLOY-GROUPGUARD-SHARD.sh RELEASE_COMMIT.txt >> SHA256SUMS
+          )
+          tar -czf "groupguard-shard-snowluma-${{ github.sha }}.tar.gz" -C release-package .
+          sha256sum "groupguard-shard-snowluma-${{ github.sha }}.tar.gz" > "groupguard-shard-snowluma-${{ github.sha }}.tar.gz.sha256"
+
+      - name: Upload SnowLuma release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-shard-snowluma-${{ github.sha }}
+          path: |
+            onebot-plugin-groupguard/groupguard-shard-snowluma-${{ github.sha }}.tar.gz
+            onebot-plugin-groupguard/groupguard-shard-snowluma-${{ github.sha }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
