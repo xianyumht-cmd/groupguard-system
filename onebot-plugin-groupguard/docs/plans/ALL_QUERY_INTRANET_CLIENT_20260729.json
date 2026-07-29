@@ -3,7 +3,7 @@
   "plan_id": "GGK-ALL-QUERY-HUB-20260729",
   "repository": "xianyumht-cmd/groupguard-system",
   "service_repository": "xianyumht-cmd/lolapisevers",
-  "status": "verified_waiting_for_service_deployment",
+  "status": "verified_waiting_for_service_protocol_acceptance",
   "role": "platform_transport_adapter_only",
   "contracts": {
     "query_and_delivery": "groupguard-query-delivery.v1",
@@ -11,14 +11,18 @@
     "shared_write_endpoint": "/api/v1/groupguard/report"
   },
   "production": {
-    "service_commit": "8de85a855b8338c3a9a69cbb2a937cd0a6ef8b82",
+    "service_commit": "ba54d83d7dd8cdbbb213b7bf38264655d671f134",
+    "service_deployment": "success_pending_direct_protocol_acceptance",
+    "service_backup": "D:\\project2\\lolapisevers.deploy-backups\\20260730-004927-lapi-all-query-hub",
     "shard_dist_deployed": true,
     "shard_acceptance": "查合集 滑板鞋",
-    "shard_acceptance_result": "pass"
+    "shard_acceptance_result": "previous_baseline_pass"
   },
   "release_candidate": {
-    "service_head_before_release_docs": "1780015c0c03e24b1184a2f2c0b3f266861e5ef0",
-    "groupguard_head": "8a9d3ccea7663282ca6a9be8a23662bc589bf356",
+    "service_head": "ba54d83d7dd8cdbbb213b7bf38264655d671f134",
+    "groupguard_head": "029118346adaa9232aeceeb283f5d243a407dc95",
+    "dist_artifact_id": 8732028955,
+    "dist_only_zip_sha256": "7b8b417bca07e36c207ecc79b9bb1290dcf8a4fdc2da510660e800733bcfd000",
     "dist_delivery_blocked_until_service_acceptance": true
   },
   "risk_data_decision": {
@@ -34,23 +38,24 @@
     "migration_outputs": ["sanitized_client_commands", "windows_provider_catalog", "hash_report", "backup_when_apply"]
   },
   "inventory": [
-    {"feature": "shard", "command": "查合集", "status": "production_accepted_baseline"},
-    {"feature": "aram", "command": "海符榜", "status": "verified_pending_final_client_deployment"},
-    {"feature": "lolban", "command": "查封号", "status": "verified_pending_final_client_deployment"},
-    {"feature": "battle", "command": "查战绩", "status": "verified_pending_service_then_client_deployment"},
-    {"feature": "hidden", "command": "查隐藏", "status": "verified_pending_service_then_client_deployment"},
-    {"feature": "video", "command": "我要看", "status": "verified_pending_service_provider_configuration_then_client_deployment"},
-    {"feature": "scammer", "command": "查骗子", "status": "verified_pending_service_then_client_deployment"},
-    {"feature": "peer", "command": "查同行", "status": "verified_pending_service_then_client_deployment"},
-    {"feature": "scammer_report", "command": "举报骗子", "status": "verified_pending_service_then_client_deployment"},
-    {"feature": "peer_report", "command": "举报同行", "status": "verified_pending_service_then_client_deployment"},
-    {"feature": "dynamic", "command": "quote/点歌/视频及自定义动态查询", "status": "verified_intranet_shell_pending_service_catalog_then_client_deployment"}
+    {"feature": "shard", "command": "查合集", "status": "service_deployed_pending_reacceptance_current_dist_baseline"},
+    {"feature": "aram", "command": "海符榜", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "lolban", "command": "查封号", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "battle", "command": "查战绩", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "hidden", "command": "查隐藏", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "video", "command": "我要看", "status": "service_deployed_pending_provider_configuration_acceptance_then_client_deployment"},
+    {"feature": "scammer", "command": "查骗子", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "peer", "command": "查同行", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "scammer_report", "command": "举报骗子", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "peer_report", "command": "举报同行", "status": "service_deployed_pending_acceptance_then_final_client_deployment"},
+    {"feature": "dynamic", "command": "quote/点歌/视频及自定义动态查询", "status": "service_deployed_pending_provider_catalog_acceptance_then_client_deployment"}
   ],
   "verification": {
     "runner_blocker_resolved": true,
-    "head": "8a9d3ccea7663282ca6a9be8a23662bc589bf356",
-    "ci_run_id": 30470186595,
-    "build_run_id": 30470186613,
+    "head": "029118346adaa9232aeceeb283f5d243a407dc95",
+    "ci_run_id": 30470811073,
+    "build_run_id": 30470810893,
+    "package_run_id": 30471928827,
     "conclusion": "success",
     "checks": [
       "npm_ci",
@@ -59,7 +64,8 @@
       "build_snowluma",
       "cross_repository_contracts",
       "all_query_client_boundary",
-      "standalone_build"
+      "standalone_build",
+      "sealed_dist_hash_manifest"
     ],
     "final_ci_fixes": [
       "preserve delivery_protocol_unsupported compatibility error code",
@@ -68,16 +74,16 @@
   },
   "steps": [
     {"id": "GG-AQ-DOC-001", "status": "completed"},
-    {"id": "GG-AQ-FAST-001", "status": "verified_pending_final_client_deployment", "features": ["aram", "lolban"]},
-    {"id": "GG-AQ-BATTLE-001", "status": "verified_pending_final_deployment"},
-    {"id": "GG-AQ-HIDDEN-001", "status": "verified_pending_final_deployment"},
-    {"id": "GG-AQ-VIDEO-001", "status": "verified_pending_provider_configuration_and_final_deployment"},
+    {"id": "GG-AQ-FAST-001", "status": "service_deployed_pending_acceptance_then_client_deployment", "features": ["aram", "lolban"]},
+    {"id": "GG-AQ-BATTLE-001", "status": "service_deployed_pending_acceptance_then_client_deployment"},
+    {"id": "GG-AQ-HIDDEN-001", "status": "service_deployed_pending_acceptance_then_client_deployment"},
+    {"id": "GG-AQ-VIDEO-001", "status": "service_deployed_pending_provider_configuration_acceptance_then_client_deployment"},
     {"id": "GG-AQ-RISK-DATA-001", "status": "skipped_empty_source"},
-    {"id": "GG-AQ-RISK-001", "status": "verified_pending_final_deployment", "features": ["scammer", "peer", "scammer_report", "peer_report"]},
-    {"id": "GG-AQ-DYNAMIC-001", "status": "verified_pending_service_catalog_and_final_deployment", "features": ["dynamic"]},
+    {"id": "GG-AQ-RISK-001", "status": "service_deployed_pending_acceptance_then_client_deployment", "features": ["scammer", "peer", "scammer_report", "peer_report"]},
+    {"id": "GG-AQ-DYNAMIC-001", "status": "service_deployed_pending_provider_catalog_acceptance_then_client_deployment", "features": ["dynamic"]},
     {"id": "GG-AQ-OFFICIAL-BOT-001", "status": "service_reference_client_completed_no_groupguard_runtime_dependency"},
     {"id": "GG-AQ-GATE-001", "status": "completed", "gate": "verify:all-query-client-boundary"},
-    {"id": "GG-AQ-RELEASE-001", "status": "dist_built_and_verified_held_until_service_acceptance"}
+    {"id": "GG-AQ-RELEASE-001", "status": "sealed_dist_held_until_service_acceptance"}
   ],
   "allowed_responsibilities": [
     "command_matching",
@@ -110,7 +116,7 @@
   },
   "next_action": {
     "repository": "xianyumht-cmd/lolapisevers",
-    "step_id": "AQ-RELEASE-001",
-    "summary": "Deploy and directly accept the final Windows service package. Keep the verified GroupGuard dist sealed until service acceptance succeeds."
+    "step_id": "AQ-ACCEPT-001",
+    "summary": "Run direct query/report acceptance against the deployed Windows service and migrate required Provider configuration. Keep the sealed GroupGuard dist undeployed until that acceptance succeeds."
   }
 }
