@@ -4,9 +4,10 @@
   "repository": "xianyumht-cmd/groupguard-system",
   "base_branch": "codex/production-integration-audit-20260726",
   "document_branch": "docs/intranet-query-boundary-20260728",
-  "status": "contract_consumer_ready_pending_service_deploy",
+  "status": "shard_migration_implemented_pending_ci_and_service_release",
   "objective": "GroupGuard only handles command intake, intranet requests, protocol validation, and OneBot delivery. Public upstream access, business processing, rendering, caching, and degradation are owned by lolapisevers.",
   "architecture_contract": "groupguard-query-delivery.v1",
+  "implementation_branch": "feat/groupguard-shard-intranet-migration-20260729",
   "completed_steps": [
     {
       "id": "GG-DOC-001",
@@ -50,15 +51,28 @@
     },
     {
       "id": "GG-CLIENT-001",
-      "status": "ready_after_service_deploy",
+      "status": "implemented_pending_ci",
       "depends_on": ["LAPI-DEPLOY-001", "GG-CONTRACT-001"],
-      "summary": "Wire the validated intranet client into real commands and the admin tester so both paths use one request implementation."
+      "implementation_scope": "shard command and shard admin tester",
+      "outputs": [
+        "onebot-plugin-groupguard/src/services/intranet_shard_query_service.ts",
+        "onebot-plugin-groupguard/src/dynamic-commands/intranet_query_runtime_plugin.ts",
+        "onebot-plugin-groupguard/src/standalone/admin/query_api.ts"
+      ],
+      "summary": "The real shard command and admin tester now share the strict delivery request path. The production rollout remains blocked until the compatible lolapisevers release exposes the contract on port 5001."
     },
     {
       "id": "GG-SHARD-001",
-      "status": "blocked",
+      "status": "implemented_pending_ci",
       "depends_on": ["LAPI-DEPLOY-001", "GG-CLIENT-001"],
-      "summary": "Remove plugin-side shard downloads, hero matching, sorting, formatting decisions and public fallback after the service release is accepted."
+      "outputs": [
+        "onebot-plugin-groupguard/src/dynamic-commands/intranet_query_runtime_plugin.ts",
+        "onebot-plugin-groupguard/src/commands.ts",
+        "onebot-plugin-groupguard/src/commands/modules/interaction.ts",
+        "onebot-plugin-groupguard/scripts/verify-intranet-shard-command.ts",
+        "onebot-plugin-groupguard/package.json"
+      ],
+      "summary": "A priority-90 native command plugin owns 查合集, sends the original hero text to the intranet delivery endpoint, validates the response, and sends final text, Base64 image, or forward nodes. The legacy interaction trigger no longer claims 查合集, so plugin-side public downloads and local hero matching are not reachable from the command dispatcher."
     },
     {
       "id": "GG-LOL-UNIFY-001",
@@ -68,47 +82,51 @@
     },
     {
       "id": "GG-CONFIG-001",
-      "status": "planned",
+      "status": "partially_implemented_pending_ci",
       "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001"],
-      "summary": "Keep one intranet API base for built-in LoL queries and deprecate public upstream configuration."
+      "summary": "The shard overview and tester now use LOL API Base; public shard and hero URL fields remain visible only as deprecated legacy configuration until the wider LoL migration is complete."
     },
     {
       "id": "GG-GATE-001",
-      "status": "planned",
+      "status": "partially_implemented_pending_ci",
       "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001"],
-      "summary": "Expand the current new-client gate into a repository architecture test that rejects public upstream access from all built-in LoL query modules."
+      "outputs": [
+        "onebot-plugin-groupguard/scripts/verify-intranet-shard-command.ts",
+        "onebot-plugin-groupguard/package.json"
+      ],
+      "summary": "The new release gate proves one intranet request, no public fallback, raw nickname forwarding, strict image conversion, forward conversion, legacy trigger removal, and fixed transport failure handling. Repository-wide removal of all legacy LoL public providers remains part of GG-LOL-UNIFY-001."
     },
     {
       "id": "GG-DEPLOY-001",
       "status": "blocked",
       "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001", "GG-CONFIG-001", "GG-GATE-001", "LAPI-DEPLOY-001"],
-      "summary": "Deploy GroupGuard only after the compatible service release and complete real-member acceptance tests."
+      "summary": "Do not deploy this branch until its CI and SnowLuma build are green and production lolapisevers /build-info confirms the compatible release containing /api/v1/groupguard/query."
     }
   ],
   "current_findings": [
     {
       "severity": "P1",
-      "code": "PLUGIN_PUBLIC_SHARD_FETCH",
+      "code": "SERVICE_RELEASE_NOT_CONFIRMED",
+      "path": "lolapisevers PR 17 / LAPI-DEPLOY-001",
+      "summary": "Repository evidence still reports production on bd2d92996f8c7af4e6fd51f021f1546bda250a8a while the compatible release target is 8de85a855b8338c3a9a69cbb2a937cd0a6ef8b82. GroupGuard production deployment is blocked until /build-info and the delivery endpoint confirm the target release."
+    },
+    {
+      "severity": "P2",
+      "code": "LEGACY_SHARD_CODE_REMAINS_UNREACHABLE",
       "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
-      "summary": "The current real shard command still downloads public shard and hero JSON from SnowLuma; the new strict client is not wired into commands yet."
+      "summary": "The old public shard loader and local formatter remain as unreachable migration code after the legacy 查合集 trigger was removed. Delete them only after the new runtime path passes CI and production acceptance; they must never be re-registered as a fallback."
     },
     {
       "severity": "P1",
       "code": "PLUGIN_LEGACY_BAN_PROVIDERS",
       "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
-      "summary": "The built-in ban path still supports direct public providers when the intranet base is absent; this migration fallback remains until command unification."
-    },
-    {
-      "severity": "P1",
-      "code": "SERVICE_NOT_DEPLOYED",
-      "path": "lolapisevers LAPI-DEPLOY-001",
-      "summary": "The compatible delivery service has not yet been integrated and deployed to the Windows intranet computer, so runtime command migration must not start."
+      "summary": "The built-in ban path still supports direct public providers when the intranet base is absent; this remains blocked work for GG-LOL-UNIFY-001."
     },
     {
       "severity": "P2",
-      "code": "PLUGIN_BUSINESS_FORMATTING",
+      "code": "PLUGIN_BUSINESS_FORMATTING_REMAINS_FOR_OTHER_COMMANDS",
       "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
-      "summary": "Legacy command handlers still interpret and format business data instead of consuming the final delivery payload."
+      "summary": "Battle, ARAM and ban legacy handlers still interpret or format business data. This shard PR intentionally does not broaden into those commands before the service release gate is satisfied."
     }
   ],
   "contract_fixture_bundle": {
@@ -119,9 +137,9 @@
     "strict_image_integrity": true
   },
   "next_recommended_action": {
-    "repository": "xianyumht-cmd/lolapisevers",
-    "step_id": "LAPI-DEPLOY-001",
-    "summary": "Integrate and deploy the green service stack first, warm snapshots, verify old-plugin compatibility and offline fallback, then return to GG-CLIENT-001."
+    "repository": "xianyumht-cmd/groupguard-system",
+    "step_id": "GG-SHARD-CI-001",
+    "summary": "Open a stacked draft pull request against feat/groupguard-contract-consumer-20260729, run GroupGuard CI and Build, fix every failure, then verify the lolapisevers production build before preparing SnowLuma deployment."
   },
-  "production_rule": "Deploy lolapisevers first, verify backward compatibility and restart/offline acceptance, then migrate GroupGuard. Never restore plugin-side public fallback."
+  "production_rule": "Never deploy the migrated GroupGuard command before the compatible lolapisevers delivery endpoint is live. Never restore plugin-side public fallback."
 }
