@@ -130,8 +130,8 @@ assert.match(migrationSource, /service_sha256/);
 assert.match(migrationSource, /provider:\s*\{ type: 'intranet' \}/);
 
 const architectureDoc = await text('docs/architecture/CHANNEL_NEUTRAL_QUERY_CLIENT_BOUNDARY.md');
-assert.match(architectureDoc, /official bot/i);
-assert.match(architectureDoc, /public fallback/i);
+assert.match(architectureDoc, /官方机器人|official bot/i);
+assert.match(architectureDoc, /内网接口失败时直连公网|公网.*备用|public fallback/i);
 
 // Legacy query implementations remain temporarily reviewable in
 // interaction_service.ts, but the active dispatcher must have no migrated
