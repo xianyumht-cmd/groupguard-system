@@ -6,8 +6,14 @@ import {
   type OneBotDeliveryPlan
 } from './groupguard_query_delivery_client';
 
-export type IntranetQueryFeature = GroupGuardQueryRequest['feature'];
-export type IntranetPreferredOutput = NonNullable<GroupGuardQueryRequest['preferred']>;
+export type IntranetQueryFeature =
+  | GroupGuardQueryRequest['feature']
+  | 'battle'
+  | 'hidden'
+  | 'video'
+  | 'scammer'
+  | 'peer';
+export type IntranetPreferredOutput = NonNullable<GroupGuardQueryRequest['preferred'];
 export type IntranetDeliveryRequestFn = typeof requestGroupGuardQueryDelivery;
 
 export interface IntranetDeliveryRequestOptions {
@@ -54,7 +60,7 @@ export async function requestIntranetDelivery(
         forward: true
       },
       ...(options.requestId ? { request_id: options.requestId } : {})
-    },
+    } as GroupGuardQueryRequest,
     { timeoutMs: options.timeoutMs }
   );
   if (envelope.feature !== feature) throw new Error('delivery_feature_mismatch');
