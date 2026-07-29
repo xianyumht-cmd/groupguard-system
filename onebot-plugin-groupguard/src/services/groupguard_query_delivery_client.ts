@@ -329,6 +329,8 @@ export function isIntranetHostname(hostname: string): boolean {
     const second = Number(match172[1]);
     if (second >= 16 && second <= 31) return true;
   }
+  if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
+  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true;
   if (/^[a-z0-9-]+$/i.test(host)) return true;
   return false;
 }
