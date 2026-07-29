@@ -183,7 +183,7 @@ const migrated = migrateDynamicCommands({
       trigger: { type: 'exact', value: '状态' },
       parameterSchema: { required: [], optional: [] },
       provider: {
-        type: 'POST',
+        type: 'http',
         method: 'POST',
         url: 'https://provider.example/status',
         body: { fixed: '1' }
