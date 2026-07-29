@@ -54,7 +54,6 @@ for (const registration of [
   'registerIntranetQueryCommandPlugins()',
   'registerIntranetBattleCommandPlugins()',
   'registerIntranetHiddenCommandPlugins()',
-  'registerIntranetVideoCommandPlugins()',
   'registerIntranetRiskCommandPlugins()'
 ]) {
   assert.ok(commandsSource.includes(registration), `missing query registration: ${registration}`);
@@ -63,7 +62,9 @@ for (const registration of [
 const activeRuntimeFiles = (await readdir(dynamicRoot))
   .filter((name) => /^intranet_.*(?:runtime_plugin|command_plugin)\.ts$/.test(name))
   .sort();
-assert.ok(activeRuntimeFiles.length >= 6, 'expected all intranet query runtime modules');
+assert.ok(activeRuntimeFiles.length >= 5, 'expected all retained intranet query runtime modules');
+assert.equal(activeRuntimeFiles.includes('intranet_video_runtime_plugin.ts'), false, 'retired video runtime must not exist');
+assert.doesNotMatch(commandsSource, /registerIntranetVideoCommandPlugins|intranet_video_runtime_plugin/);
 for (const name of activeRuntimeFiles) {
   const source = (await readFile(path.join(dynamicRoot, name), 'utf8')).toLowerCase();
   assert.equal(/\bfetch\s*\(/.test(source), false, `${name} must not call fetch directly`);
@@ -113,6 +114,8 @@ assert.match(validatorSource, /client_response_selector_forbidden/);
 const dynamicConfig = JSON.parse(await text('config/dynamic-commands/commands.json'));
 assert.equal(dynamicConfig.version, '2.0.0');
 assert.ok(Array.isArray(dynamicConfig.commands) && dynamicConfig.commands.length > 0);
+assert.equal(dynamicConfig.commands.some((command: any) => command.id === 'video.info'), false);
+assert.equal(dynamicConfig.commands.some((command: any) => String(command?.trigger?.value || '').startsWith('视频')), false);
 for (const command of dynamicConfig.commands) {
   assert.equal(command.featureType, 'query', `${command.id} must be a query feature`);
   assert.deepEqual(command.provider, { type: 'intranet' }, `${command.id} contains client provider configuration`);

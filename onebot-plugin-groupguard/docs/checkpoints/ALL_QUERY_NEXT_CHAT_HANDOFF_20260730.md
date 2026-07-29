@@ -198,3 +198,16 @@ API 删除 video 并部署小版本
 - 禁止在接口视频删除之前先替换 dist；
 - 禁止合并 Draft PR；
 - 禁止删除现有 ARM/Windows 回滚备份。
+
+## 2026-07-30 GroupGuard 视频移除代码阶段完成
+
+已完成并由一次性工作流全量验证后提交：
+
+- 删除 `registerIntranetVideoCommandPlugins`；
+- 删除 `intranet_video_runtime_plugin.ts`；
+- 删除“我要看”及默认动态“视频 ”正式入口；
+- 原视频正向门禁改为 `verify:video-retired`；
+- npm test、SnowLuma build 和全查询边界门禁均要求视频入口不存在；
+- 旧含视频 dist 继续保持作废。
+
+下一步必须先完成 Windows 无视频 API 部署与验收，再封存新的无视频 dist。

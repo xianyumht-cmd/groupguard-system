@@ -20,8 +20,7 @@ const defaultConfig = JSON.parse(await readFile(defaultConfigPath, 'utf8'));
 assert.equal(defaultConfig.version, '2.0.0');
 assert.deepEqual(defaultConfig.commands.map((command: any) => command.id), [
   'quote.daily',
-  'music.search',
-  'video.info'
+  'music.search'
 ]);
 for (const command of defaultConfig.commands) {
   assert.equal(command.featureType, 'query');

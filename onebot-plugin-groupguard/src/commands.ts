@@ -10,7 +10,6 @@ import { registerIntranetBattleCommandPlugins } from './dynamic-commands/intrane
 import { registerIntranetHiddenCommandPlugins } from './dynamic-commands/intranet_hidden_runtime_plugin';
 import { registerIntranetQueryCommandPlugins } from './dynamic-commands/intranet_query_runtime_plugin';
 import { registerIntranetRiskCommandPlugins } from './dynamic-commands/intranet_risk_runtime_plugin';
-import { registerIntranetVideoCommandPlugins } from './dynamic-commands/intranet_video_runtime_plugin';
 import { registerLegacyRuntimePlugins } from './dynamic-commands/legacy_runtime_plugins';
 import { registerSendWrapperCommandPlugins } from './dynamic-commands/send_wrapper_runtime_plugins';
 import { registerSubGameplayCommandPlugins } from './dynamic-commands/sub_gameplay_runtime_plugin';
@@ -39,7 +38,6 @@ export function initCommandValidation(): void {
   registerIntranetQueryCommandPlugins();
   registerIntranetBattleCommandPlugins();
   registerIntranetHiddenCommandPlugins();
-  registerIntranetVideoCommandPlugins();
   registerIntranetRiskCommandPlugins();
   registerLegacyRuntimePlugins();
   registerSendWrapperCommandPlugins();

@@ -39,7 +39,9 @@
         "keyword": "$1"
       },
       "parameterSchema": {
-        "required": ["keyword"],
+        "required": [
+          "keyword"
+        ],
         "optional": []
       },
       "provider": {
@@ -49,32 +51,6 @@
         "type": "structured"
       },
       "fallbackText": "music service unavailable"
-    },
-    {
-      "id": "video.info",
-      "enabled": true,
-      "priority": 80,
-      "featureType": "query",
-      "featureKey": "query.dynamic_video",
-      "scope": "group",
-      "trigger": {
-        "type": "prefix",
-        "value": "视频 "
-      },
-      "parameters": {
-        "keyword": "$1"
-      },
-      "parameterSchema": {
-        "required": ["keyword"],
-        "optional": []
-      },
-      "provider": {
-        "type": "intranet"
-      },
-      "response": {
-        "type": "structured"
-      },
-      "fallbackText": "video service unavailable"
     }
   ]
 }

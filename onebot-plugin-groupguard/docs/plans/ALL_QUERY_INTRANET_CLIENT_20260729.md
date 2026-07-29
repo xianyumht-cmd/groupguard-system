@@ -23,7 +23,6 @@
 | 查封号 | lolban | 插件维护 Provider 列表、解析状态和生成文案 | 改为一次内网最终交付请求 |
 | 查战绩 | battle | 插件读取 `/cross_query` pretty、分页、图片探测与降级 | 服务返回最终交付 |
 | 查隐藏 | hidden | 插件持有 Key/Token、访问公网、解析与格式化 | 全部迁入服务 |
-| 我要看 | video | 插件持有公网模板、请求并解析直链 | 全部迁入服务 |
 | 查骗子 | scammer | 插件合并本地库与第三方 Provider | 共享风险服务返回最终交付 |
 | 查同行 | peer | 插件本地库为唯一事实源 | 共享风险服务返回最终交付 |
 | 举报骗子 | scammer_report | 插件本地写入及可选公网同步 | 写入共享风险服务 |
@@ -88,7 +87,6 @@
 
 状态：`blocked_by_service_feature`
 
-等待接口提供 `video` 最终交付，然后移除插件视频 Provider 模板和直链解析。
 
 ### GG-AQ-RISK-001
 
