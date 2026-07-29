@@ -6,6 +6,7 @@ import { assertCommandPluginRegistryReady, refreshCommandPluginRegistry } from '
 import { refreshDynamicCommandRegistry } from './dynamic-commands/command_registry';
 import { initializeDynamicCommandMetrics } from './dynamic-commands/command_engine';
 import { registerEleBuildCommandPlugins } from './dynamic-commands/ele_build_runtime_plugin';
+import { registerIntranetQueryCommandPlugins } from './dynamic-commands/intranet_query_runtime_plugin';
 import { registerLegacyRuntimePlugins } from './dynamic-commands/legacy_runtime_plugins';
 import { registerSendWrapperCommandPlugins } from './dynamic-commands/send_wrapper_runtime_plugins';
 import { registerSubGameplayCommandPlugins } from './dynamic-commands/sub_gameplay_runtime_plugin';
@@ -31,6 +32,7 @@ let commandValidationRan = false;
 export function initCommandValidation(): void {
   if (commandValidationRan) return;
   commandValidationRan = true;
+  registerIntranetQueryCommandPlugins();
   registerLegacyRuntimePlugins();
   registerSendWrapperCommandPlugins();
   registerEleBuildCommandPlugins();
