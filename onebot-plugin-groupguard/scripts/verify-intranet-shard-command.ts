@@ -6,10 +6,10 @@ import { configStateService } from '../src/core/state-services/config_state_serv
 import {
   buildShardStructuredResult,
   createShardIntranetCommandPlugin,
-  executeShardIntranetQuery,
-  requestShardDelivery
+  executeShardIntranetQuery
 } from '../src/dynamic-commands/intranet_query_runtime_plugin.ts';
 import { parseGroupGuardQueryDelivery } from '../src/services/groupguard_query_delivery_client.ts';
+import { requestShardDelivery } from '../src/services/intranet_shard_query_service.ts';
 
 const fixtureRoot = fileURLToPath(new URL('../contracts/fixtures/groupguard-query-contracts/', import.meta.url));
 const pluginSourcePath = fileURLToPath(new URL('../src/dynamic-commands/intranet_query_runtime_plugin.ts', import.meta.url));
@@ -68,7 +68,8 @@ if (imageStructured.ok) {
   assert.equal(delivery.applyTemplate, false);
 }
 
-const forwardEnvelope = await loadEnvelope('delivery-success-forward.json');
+const forwardFixture = await loadEnvelope('delivery-success-forward.json');
+const forwardEnvelope = { ...forwardFixture, feature: 'shard' as const };
 const forwardResult = await requestShardDelivery({
   baseUrl: 'http://192.168.3.89:5001',
   hero: '滑板鞋',
