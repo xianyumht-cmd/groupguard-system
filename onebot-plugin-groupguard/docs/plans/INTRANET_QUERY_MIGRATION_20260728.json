@@ -4,7 +4,7 @@
   "repository": "xianyumht-cmd/groupguard-system",
   "base_branch": "codex/production-integration-audit-20260726",
   "document_branch": "docs/intranet-query-boundary-20260728",
-  "status": "planned",
+  "status": "contract_consumer_ready_pending_service_deploy",
   "objective": "GroupGuard only handles command intake, intranet requests, protocol validation, and OneBot delivery. Public upstream access, business processing, rendering, caching, and degradation are owned by lolapisevers.",
   "architecture_contract": "groupguard-query-delivery.v1",
   "completed_steps": [
@@ -16,26 +16,55 @@
         "onebot-plugin-groupguard/docs/plans/INTRANET_QUERY_MIGRATION_20260728.md",
         "onebot-plugin-groupguard/docs/plans/INTRANET_QUERY_MIGRATION_20260728.json"
       ]
+    },
+    {
+      "id": "GG-CONTRACT-001",
+      "status": "completed",
+      "implementation_branch": "feat/groupguard-contract-consumer-20260729",
+      "pull_request": 15,
+      "verification": {
+        "ci_run_id": 30429440769,
+        "build_run_id": 30429440764,
+        "conclusion": "success",
+        "service_repository": "xianyumht-cmd/lolapisevers",
+        "service_pull_request": 16,
+        "service_ci_run_id": 30429420936,
+        "service_commit": "7764dbec4854a7d39a194f6ec1802f0e8902ea9e"
+      },
+      "outputs": [
+        "onebot-plugin-groupguard/src/services/groupguard_query_delivery_client.ts",
+        "onebot-plugin-groupguard/scripts/verify-groupguard-query-delivery-contract.ts",
+        "onebot-plugin-groupguard/contracts/fixtures/groupguard-query-contracts/manifest.json",
+        "onebot-plugin-groupguard/docs/contracts/GROUPGUARD_QUERY_DELIVERY_CONSUMER_GATE.md",
+        "onebot-plugin-groupguard/package.json"
+      ]
     }
   ],
   "steps": [
     {
+      "id": "GG-CONTRACT-001",
+      "status": "completed",
+      "depends_on": ["LAPI-DELIVERY-001", "LAPI-OBS-001", "LAPI-CONTRACT-001"],
+      "pull_request": 15,
+      "summary": "Pinned the service fixtures, added strict delivery parsing and image integrity checks, converted validated payloads to OneBot plans, and proved the new client makes one intranet request with no public fallback."
+    },
+    {
       "id": "GG-CLIENT-001",
-      "status": "planned",
-      "depends_on": ["LAPI-DELIVERY-001"],
-      "summary": "Create one intranet query client shared by real commands and admin tests."
+      "status": "ready_after_service_deploy",
+      "depends_on": ["LAPI-DEPLOY-001", "GG-CONTRACT-001"],
+      "summary": "Wire the validated intranet client into real commands and the admin tester so both paths use one request implementation."
     },
     {
       "id": "GG-SHARD-001",
       "status": "blocked",
-      "depends_on": ["LAPI-SNAPSHOT-001", "LAPI-SHARD-001", "LAPI-DELIVERY-001", "GG-CLIENT-001"],
-      "summary": "Remove plugin-side shard data download, hero matching, sorting, rendering decisions, and public fallback."
+      "depends_on": ["LAPI-DEPLOY-001", "GG-CLIENT-001"],
+      "summary": "Remove plugin-side shard downloads, hero matching, sorting, formatting decisions and public fallback after the service release is accepted."
     },
     {
       "id": "GG-LOL-UNIFY-001",
-      "status": "planned",
-      "depends_on": ["GG-CLIENT-001", "LAPI-DELIVERY-001"],
-      "summary": "Move battle, ARAM, and ban commands to the final delivery envelope."
+      "status": "blocked",
+      "depends_on": ["LAPI-DEPLOY-001", "GG-CLIENT-001"],
+      "summary": "Move ARAM and ban commands to the final delivery envelope; battle-query migration is handled only after its delivery feature is defined."
     },
     {
       "id": "GG-CONFIG-001",
@@ -46,14 +75,14 @@
     {
       "id": "GG-GATE-001",
       "status": "planned",
-      "depends_on": ["GG-CLIENT-001"],
-      "summary": "Add an architecture test that rejects public upstream access from built-in query modules."
+      "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001"],
+      "summary": "Expand the current new-client gate into a repository architecture test that rejects public upstream access from all built-in LoL query modules."
     },
     {
       "id": "GG-DEPLOY-001",
       "status": "blocked",
       "depends_on": ["GG-SHARD-001", "GG-LOL-UNIFY-001", "GG-CONFIG-001", "GG-GATE-001", "LAPI-DEPLOY-001"],
-      "summary": "Deploy GroupGuard after the compatible service release and perform real-member acceptance tests."
+      "summary": "Deploy GroupGuard only after the compatible service release and complete real-member acceptance tests."
     }
   ],
   "current_findings": [
@@ -61,25 +90,38 @@
       "severity": "P1",
       "code": "PLUGIN_PUBLIC_SHARD_FETCH",
       "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
-      "summary": "The shard command directly downloads public shard and hero JSON from the SnowLuma container."
+      "summary": "The current real shard command still downloads public shard and hero JSON from SnowLuma; the new strict client is not wired into commands yet."
     },
     {
       "severity": "P1",
       "code": "PLUGIN_LEGACY_BAN_PROVIDERS",
       "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
-      "summary": "Built-in ban query still supports direct public primary and backup providers even though production uses the intranet service."
+      "summary": "The built-in ban path still supports direct public providers when the intranet base is absent; this migration fallback remains until command unification."
+    },
+    {
+      "severity": "P1",
+      "code": "SERVICE_NOT_DEPLOYED",
+      "path": "lolapisevers LAPI-DEPLOY-001",
+      "summary": "The compatible delivery service has not yet been integrated and deployed to the Windows intranet computer, so runtime command migration must not start."
     },
     {
       "severity": "P2",
       "code": "PLUGIN_BUSINESS_FORMATTING",
       "path": "onebot-plugin-groupguard/src/services/interaction_service.ts",
-      "summary": "The plugin still interprets and formats business data instead of consuming a final delivery payload."
+      "summary": "Legacy command handlers still interpret and format business data instead of consuming the final delivery payload."
     }
   ],
+  "contract_fixture_bundle": {
+    "version": "groupguard-query-contract-fixtures.v1",
+    "service_repository": "xianyumht-cmd/lolapisevers",
+    "service_commit": "7764dbec4854a7d39a194f6ec1802f0e8902ea9e",
+    "no_public_fallback": true,
+    "strict_image_integrity": true
+  },
   "next_recommended_action": {
     "repository": "xianyumht-cmd/lolapisevers",
-    "step_id": "LAPI-SNAPSHOT-001",
-    "summary": "Implement an atomic persistent snapshot store before changing GroupGuard runtime code."
+    "step_id": "LAPI-DEPLOY-001",
+    "summary": "Integrate and deploy the green service stack first, warm snapshots, verify old-plugin compatibility and offline fallback, then return to GG-CLIENT-001."
   },
-  "production_rule": "Deploy lolapisevers first, verify backward compatibility, then deploy GroupGuard. Never restore plugin-side public fallback."
+  "production_rule": "Deploy lolapisevers first, verify backward compatibility and restart/offline acceptance, then migrate GroupGuard. Never restore plugin-side public fallback."
 }
