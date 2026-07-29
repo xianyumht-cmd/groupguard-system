@@ -13,17 +13,7 @@ export const INTERACTION_PREFIXES = [
   '设置战绩全局限流',
   '设置战绩分群开关',
   '设置战绩分群限流',
-  '设置战绩指令开关',
-  '设置骗子查询接口',
-  '添加骗子查询接口',
-  '删除骗子查询接口',
-  '设置骗子举报接口',
-  '设置骗子库限制',
-  '设置骗子风控',
-  '查骗子',
-  '举报骗子',
-  '查同行',
-  '举报同行'
+  '设置战绩指令开关'
 ];
 
 export const INTERACTION_EXACT = [
@@ -39,8 +29,7 @@ export const INTERACTION_EXACT = [
   '商城',
   '关闭发言奖励',
   '战绩接口状态',
-  '战绩配置',
-  '骗子接口状态'
+  '战绩配置'
 ];
 
 export async function handleInteractionCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
