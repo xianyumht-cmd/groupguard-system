@@ -1,0 +1,81 @@
+name: GroupGuard All Query Dist Bundle
+
+on:
+  push:
+    branches:
+      - release/groupguard-all-query-dist-packaging-20260730
+  pull_request:
+    branches:
+      - feat/all-query-intranet-client-20260729
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_COMMIT: 029118346adaa9232aeceeb283f5d243a407dc95
+    defaults:
+      run:
+        working-directory: onebot-plugin-groupguard
+    steps:
+      - name: Checkout exact release target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_COMMIT }}
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full verification
+        run: npm test
+
+      - name: Build exact SnowLuma dist
+        run: npm run build:snowluma
+
+      - name: Package dist with internal hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
+          rm -rf release-package
+          mkdir -p release-package/dist
+          cp -a dist/. release-package/dist/
+          printf '%s\n' "$TARGET_COMMIT" > release-package/RELEASE_COMMIT.txt
+          cat > release-package/BUILD-METADATA.json <<JSON
+          {
+            "schema": "groupguard-all-query-dist.v1",
+            "target_commit": "$TARGET_COMMIT",
+            "source_pr": 17,
+            "npm_test": "pass",
+            "build_snowluma": "pass",
+            "deployment_status": "sealed_until_windows_service_acceptance"
+          }
+          JSON
+          (
+            cd release-package
+            find dist -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+            sha256sum RELEASE_COMMIT.txt BUILD-METADATA.json >> SHA256SUMS.txt
+          )
+          tar -czf "groupguard-all-query-dist-${TARGET_COMMIT}.tar.gz" -C release-package .
+          sha256sum "groupguard-all-query-dist-${TARGET_COMMIT}.tar.gz" > "groupguard-all-query-dist-${TARGET_COMMIT}.tar.gz.sha256"
+
+      - name: Upload sealed SnowLuma dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-all-query-dist-${{ env.TARGET_COMMIT }}
+          path: |
+            onebot-plugin-groupguard/groupguard-all-query-dist-${{ env.TARGET_COMMIT }}.tar.gz
+            onebot-plugin-groupguard/groupguard-all-query-dist-${{ env.TARGET_COMMIT }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 90
