@@ -14,8 +14,8 @@
   },
   "inventory": [
     {"feature": "shard", "command": "查合集", "status": "production_accepted"},
-    {"feature": "aram", "command": "海符榜", "status": "migration_in_progress"},
-    {"feature": "lolban", "command": "查封号", "status": "migration_in_progress"},
+    {"feature": "aram", "command": "海符榜", "status": "code_and_ci_completed_pending_client_deployment"},
+    {"feature": "lolban", "command": "查封号", "status": "code_and_ci_completed_pending_client_deployment"},
     {"feature": "battle", "command": "查战绩", "status": "blocked_by_service_feature"},
     {"feature": "hidden", "command": "查隐藏", "status": "blocked_by_service_feature"},
     {"feature": "video", "command": "我要看", "status": "blocked_by_service_feature"},
@@ -26,7 +26,16 @@
   ],
   "steps": [
     {"id": "GG-AQ-DOC-001", "status": "completed"},
-    {"id": "GG-AQ-FAST-001", "status": "in_progress", "features": ["aram", "lolban"]},
+    {
+      "id": "GG-AQ-FAST-001",
+      "status": "code_and_ci_completed_pending_client_deployment",
+      "features": ["aram", "lolban"],
+      "pull_request": 17,
+      "verified_head": "96c687c12d98e7fa97a1293870be1d4d4ebd524d",
+      "ci_run_id": 30451834345,
+      "build_run_id": 30451835809,
+      "conclusion": "success"
+    },
     {"id": "GG-AQ-BATTLE-001", "status": "blocked_by_service_feature"},
     {"id": "GG-AQ-HIDDEN-001", "status": "blocked_by_service_feature"},
     {"id": "GG-AQ-VIDEO-001", "status": "blocked_by_service_feature"},
@@ -56,8 +65,9 @@
     "shared_business_database_source_of_truth"
   ],
   "next_action": {
-    "branch": "feat/all-query-intranet-client-20260729",
-    "step_id": "GG-AQ-FAST-001",
-    "summary": "Register aram and lolban intranet delivery plugins, remove legacy command claims, and add no-public-fallback gates."
+    "repository": "xianyumht-cmd/lolapisevers",
+    "branch": "feat/all-query-delivery-hub-20260729",
+    "step_id": "AQ-BATTLE-001",
+    "summary": "Add battle final delivery by reusing query_cross and cross image rendering, then migrate 查战绩 without plugin-side parsing or fallback decisions."
   }
 }
