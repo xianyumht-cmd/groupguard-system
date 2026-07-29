@@ -15,6 +15,8 @@ import type {
   UnifiedCommandNormalizedInput
 } from './types';
 
+export { requestShardDelivery } from '../services/intranet_shard_query_service';
+
 const SHARD_COMMAND_ID = 'builtin.query.shard.intranet';
 const SHARD_TRIGGER = '查合集';
 const SHARD_PRIORITY = 90;
