@@ -100,8 +100,8 @@ export async function requestShardDelivery(options: ShardDeliveryRequestOptions)
 function planText(plan: OneBotDeliveryPlan): string {
   if (plan.kind === 'segments') {
     const text = plan.segments
-      .filter((segment) => segment.type === 'text')
-      .map((segment) => segment.data.text)
+      .map((segment) => segment.type === 'text' ? segment.data.text : '')
+      .filter(Boolean)
       .join('\n')
       .trim();
     return text || '查合集结果已生成。';
@@ -294,11 +294,11 @@ export function createShardIntranetCommandPlugin(): CommandPlugin {
     defaultConfig: {},
     validate: async () => null,
     execute: (input, context) => executeShardIntranetQuery(input, context),
-    fallback: async (_input, failure) => ({
+    fallback: async () => ({
       ok: true,
       response: {
         type: 'text',
-        text: failure.message || SHARD_FALLBACK_TEXT
+        text: SHARD_FALLBACK_TEXT
       }
     })
   };
