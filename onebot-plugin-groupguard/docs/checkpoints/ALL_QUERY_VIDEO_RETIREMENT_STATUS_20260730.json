@@ -1,22 +1,50 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "schema": "groupguard-all-query-video-retirement-status.v1",
+  "schema": "groupguard-all-query-video-retirement-status.v2",
   "repository": "xianyumht-cmd/groupguard-system",
-  "status": "video_free_client_code_verified_waiting_for_video_free_service_deploy",
-  "runtime_commit": "8f37a02a7ac4fbe27dea7197b723d8d60a5b793e",
+  "status": "snowluma_video_free_dist_sealed_waiting_for_arm_deployment",
+  "runtime_commit": "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2",
   "service_runtime_commit": "f221b64649763eb8d325d87348fd2f42f48a6485",
   "removed": {
-    "commands": ["我要看", "视频 "],
-    "features": ["video", "video.info"],
-    "runtime_file": "src/dynamic-commands/intranet_video_runtime_plugin.ts"
+    "commands": ["我要看", "设置看视频接口", "删除看视频接口", "看视频接口列表", "视频 "],
+    "features": ["video", "video.info", "query.video"],
+    "configuration": ["videoApiTemplates", "WebUI video switches", "WebUI video endpoint tester"],
+    "runtime_file": "src/dynamic-commands/intranet_video_runtime_plugin.ts",
+    "public_provider_fetch": true
+  },
+  "preserved": {
+    "video_message_moderation": true,
+    "content_risk_video_type": true,
+    "config_and_data_on_arm": true
   },
   "verification": {
-    "one_shot_asserted_migration": "pass",
+    "purge_checkpoint": "docs/checkpoints/RETIRED_VIDEO_RUNTIME_PURGE_20260730.json",
+    "purge_exit": 0,
     "npm_test": "pass",
+    "runtime_source_scan": "pass",
     "snowluma_build": "pass",
+    "snowluma_build_info_artifact": "snowluma-service.mjs",
+    "dist_scan": "pass",
     "video_retirement_gate": "verify:video-retired",
     "all_query_boundary_gate": "verify:all-query-client-boundary",
     "public_fallback_restored": false
+  },
+  "sealed_artifact": {
+    "workflow_run": 30517338525,
+    "artifact_id": 8749395781,
+    "artifact_name": "groupguard-snowluma-no-video-dist-3ea7af2c42de",
+    "artifact_digest": "sha256:82fc05dad0337edcfb4fb0652fa5c3e596e653f719b7d4cc30a0b7ef1c72374b",
+    "expires_at": "2026-10-28T05:41:43Z",
+    "entry_artifact": "snowluma-service.mjs",
+    "entry_sha256": "c4d0c3076195f8b6da92d40b896f322025e9c6582a674064c38903ee7bd23dd4"
+  },
+  "operator_package": {
+    "filename": "GroupGuard-SnowLuma-no-video-3ea7af2c-offline-deploy.zip",
+    "sha256": "537f9d7a512ae1ed659f12c8727c149159e0e9cf67d53c3a9821f703bdb9fa92",
+    "app_dir": "/mnt/sda1/groupguard/app",
+    "container": "groupguard-snowluma",
+    "modifies": ["dist"],
+    "preserves": ["config", "data"]
   },
   "revoked_release": {
     "groupguard_commit": "029118346adaa9232aeceeb283f5d243a407dc95",
@@ -24,11 +52,13 @@
     "status": "do_not_deploy"
   },
   "deployment_gate": {
-    "video_free_windows_service_deployed": false,
-    "new_groupguard_dist_packaging_allowed": false,
-    "reason": "The Windows service must be deployed and directly accepted before a new dist is sealed."
+    "video_free_windows_service_deployed": true,
+    "windows_service_accepted": true,
+    "new_groupguard_dist_sealed": true,
+    "arm_deployed": false,
+    "group_command_matrix_accepted": false
   },
-  "next_action": "Deploy and accept the video-free Windows API package, then seal a new GroupGuard dist from the runtime commit above.",
+  "next_action": "Deploy the sealed SnowLuma package once on the ARM host, then run the QQ group acceptance matrix before considering merge.",
   "pull_request": {
     "number": 17,
     "draft": true,
