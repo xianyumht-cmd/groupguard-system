@@ -4,8 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   extractFileSegmentsFromMessage,
+  extractListedGroupFiles,
   fileEventMatchesRule,
   normalizeGroupFileMirrorConfig,
+  selectListedGroupFileForUpload,
   type GroupFileMirrorRule,
 } from '../src/services/group_file_mirror_service.ts';
 import {
@@ -56,6 +58,36 @@ function main(): void {
   assert.equal(rule.recallPreviousTargetMessage, true, 'target message recall defaults on');
   assert.equal(rule.syncSourceRecall, true, 'source recall sync defaults on');
   assert.equal(rule.retryCount, 3);
+
+  const listedFiles = extractListedGroupFiles({
+    data: {
+      files: [
+        {
+          file_id: 'encoded-old-file-id',
+          file_name: 'same-package.7z',
+          file_size: 4096,
+          busid: 102,
+          upload_time: 1785400000,
+        },
+        {
+          file_id: 'encoded-new-file-id',
+          file_name: 'same-package.7z',
+          file_size: 4096,
+          busid: 102,
+          upload_time: 1785400060,
+        },
+      ],
+    },
+  });
+  assert.equal(listedFiles.length, 2, 'group file list response is normalized');
+  const selectedDeleteFile = selectListedGroupFileForUpload(
+    listedFiles,
+    'same-package.7z',
+    4096,
+    1785400060 * 1000,
+  );
+  assert.equal(selectedDeleteFile?.id, 'encoded-new-file-id', 'deletable encoded file ID is selected by upload time');
+  assert.equal(selectedDeleteFile?.busid, 102, 'delete_group_file busid is preserved');
 
   const canonical = extractFileSegmentsFromMessage({
     message: [
@@ -271,6 +303,9 @@ function main(): void {
   );
   assert.match(serviceSource, /get_group_file_url/);
   assert.match(serviceSource, /upload_group_file/);
+  assert.match(serviceSource, /get_group_root_files/);
+  assert.match(serviceSource, /get_group_files_by_folder/);
+  assert.match(serviceSource, /targetDeleteFileId/);
   assert.match(serviceSource, /delete_group_file/);
   assert.match(serviceSource, /delete_msg/);
   assert.doesNotMatch(serviceSource, /send_group_forward_msg/);

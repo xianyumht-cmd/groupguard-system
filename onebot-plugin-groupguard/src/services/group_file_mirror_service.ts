@@ -32,6 +32,14 @@ interface GroupFileDescriptor {
   busid: number;
 }
 
+export interface ListedGroupFileDescriptor {
+  id: string;
+  name: string;
+  size: number;
+  busid: number;
+  uploadTime: number;
+}
+
 interface FileMessageDescriptor {
   fileId: string;
   fileName: string;
@@ -48,6 +56,8 @@ interface MirrorRecord {
   sourceMessageId: string;
   targetGroupId: string;
   targetFileId: string;
+  targetDeleteFileId?: string;
+  targetBusid?: number;
   targetMessageId: string;
   mirroredAt: number;
 }
@@ -55,8 +65,12 @@ interface MirrorRecord {
 interface CleanupRecord {
   targetGroupId: string;
   targetFileId: string;
+  targetDeleteFileId?: string;
+  targetBusid?: number;
   targetMessageId: string;
   sourceFileName: string;
+  sourceFileSize?: number;
+  mirroredAt?: number;
   messageRecalled: boolean;
   fileDeleted: boolean;
   queuedAt: number;
@@ -184,6 +198,62 @@ function groupParam(value: string): string | number {
 
 function unwrapActionData(value: any): any {
   return value?.data ?? value?.result ?? value;
+}
+
+function normalizeUploadTime(value: unknown): number {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return number >= 1_000_000_000_000 ? number : number * 1000;
+}
+
+export function extractListedGroupFiles(value: unknown): ListedGroupFileDescriptor[] {
+  const data = unwrapActionData(value);
+  const rawFiles = Array.isArray(data?.files)
+    ? data.files
+    : Array.isArray((value as any)?.files)
+      ? (value as any).files
+      : [];
+
+  const files: ListedGroupFileDescriptor[] = [];
+  for (const rawValue of rawFiles) {
+    const raw = isRecord(rawValue) ? rawValue : {};
+    const id = normalizeId(raw.file_id ?? raw.fileId ?? raw.id);
+    const name = normalizeId(raw.file_name ?? raw.fileName ?? raw.name);
+    if (!id || !name) continue;
+    files.push({
+      id,
+      name,
+      size: Math.max(0, Number(raw.file_size ?? raw.fileSize ?? raw.size ?? 0) || 0),
+      busid: Math.max(0, Number(raw.busid ?? raw.bus_id ?? 0) || 0),
+      uploadTime: normalizeUploadTime(raw.upload_time ?? raw.uploadTime ?? raw.modify_time ?? raw.modifyTime),
+    });
+  }
+  return files;
+}
+
+export function selectListedGroupFileForUpload(
+  files: ListedGroupFileDescriptor[],
+  fileName: string,
+  fileSize: number,
+  uploadStartedAt: number,
+): ListedGroupFileDescriptor | null {
+  const matches = files.filter(file => file.name === fileName
+    && (fileSize <= 0 || file.size <= 0 || file.size === fileSize));
+  if (!matches.length) return null;
+
+  const timed = matches.filter(file => file.uploadTime > 0);
+  if (uploadStartedAt > 0 && timed.length) {
+    const withinWindow = timed.filter(file => Math.abs(file.uploadTime - uploadStartedAt) <= 5 * 60 * 1000);
+    const candidates = withinWindow.length ? withinWindow : timed;
+    return candidates.reduce((best, candidate) => (
+      Math.abs(candidate.uploadTime - uploadStartedAt) < Math.abs(best.uploadTime - uploadStartedAt)
+        ? candidate
+        : best
+    ));
+  }
+
+  if (matches.length === 1) return matches[0];
+  return timed.sort((left, right) => right.uploadTime - left.uploadTime)[0] || null;
 }
 
 function extractMessageId(message: any): string {
@@ -500,6 +570,45 @@ export class GroupFileMirrorService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError || `action_failed:${action}`));
   }
 
+  private async resolveTargetDeleteFile(
+    rule: GroupFileMirrorRule,
+    fileName: string,
+    fileSize: number,
+    uploadStartedAt: number,
+    requireUniqueWithoutTimestamp = false,
+  ): Promise<ListedGroupFileDescriptor | null> {
+    const attempts = Math.max(1, Math.min(rule.messageLookupAttempts || 1, 10));
+    const folderId = String(rule.targetFolderId || '/').trim() || '/';
+    const action = folderId === '/' ? 'get_group_root_files' : 'get_group_files_by_folder';
+    const params: Record<string, unknown> = {
+      group_id: groupParam(rule.targetGroupId),
+      file_count: 100,
+    };
+    if (folderId !== '/') {
+      params.folder_id = folderId;
+      params.folder = folderId;
+    }
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      await sleep(rule.messageLookupDelayMs);
+      try {
+        const result = await this.callWithRetry(rule, action, params);
+        const files = extractListedGroupFiles(result);
+        const matches = files.filter(item => item.name === fileName
+          && (fileSize <= 0 || item.size <= 0 || item.size === fileSize));
+        if (requireUniqueWithoutTimestamp && uploadStartedAt <= 0 && matches.length !== 1) {
+          this.log('warn', `规则 ${rule.id} 无法安全解析旧群文件：同名候选数量=${matches.length} file=${fileName}`);
+          return null;
+        }
+        const selected = selectListedGroupFileForUpload(matches, fileName, fileSize, uploadStartedAt);
+        if (selected) return selected;
+      } catch (error) {
+        this.log('debug', `规则 ${rule.id} 第 ${attempt + 1} 次解析目标群文件删除 ID 失败: ${String(error)}`);
+      }
+    }
+    return null;
+  }
+
   private async mirrorUpload(rule: GroupFileMirrorRule, uploaderId: string, file: GroupFileDescriptor): Promise<void> {
     const state = this.getRuleState(rule.id);
     if (state.current?.sourceFileId === file.id && state.current.sourceGroupId === rule.sourceGroupId) {
@@ -518,6 +627,7 @@ export class GroupFileMirrorService {
     const sourceUrl = normalizeId(sourceUrlData?.url ?? sourceUrlResult?.url);
     if (!/^https?:\/\//i.test(sourceUrl)) throw new Error(`未取得可用的群文件下载地址: ${file.name}`);
 
+    const uploadStartedAt = Date.now();
     const uploadResult = await this.callWithRetry(rule, 'upload_group_file', {
       group_id: groupParam(rule.targetGroupId),
       file: sourceUrl,
@@ -526,19 +636,24 @@ export class GroupFileMirrorService {
       upload_file: true,
     });
     const uploadData = unwrapActionData(uploadResult);
-    const targetFileId = normalizeId(uploadData?.file_id ?? uploadData?.fileId ?? uploadResult?.file_id ?? uploadResult?.fileId);
-    if (!targetFileId) throw new Error(`目标群上传成功但未返回 file_id: ${file.name}`);
+    const targetUploadFileId = normalizeId(uploadData?.file_id ?? uploadData?.fileId ?? uploadResult?.file_id ?? uploadResult?.fileId);
+    if (!targetUploadFileId) throw new Error(`目标群上传成功但未返回 file_id: ${file.name}`);
+
+    const targetDeleteFile = await this.resolveTargetDeleteFile(rule, file.name, file.size, uploadStartedAt);
+    if (!targetDeleteFile) {
+      this.log('warn', `规则 ${rule.id} 上传成功，但暂未解析到可用于 delete_group_file 的目标文件 ID: ${file.name}`);
+    }
 
     const sourceMessage = this.findRecentMessage(rule.sourceGroupId, file.id, file.name, file.size);
-    let targetMessage = this.findRecentMessage(rule.targetGroupId, targetFileId, file.name, file.size);
+    let targetMessage = this.findRecentMessage(rule.targetGroupId, targetUploadFileId, file.name, file.size);
     if (!targetMessage && rule.messageLookupAttempts > 0) {
-      const targetMessageId = await this.findMessageIdInHistory(rule, targetFileId, file.name, file.size);
+      const targetMessageId = await this.findMessageIdInHistory(rule, targetUploadFileId, file.name, file.size);
       if (targetMessageId) {
         targetMessage = {
           groupId: rule.targetGroupId,
           messageId: targetMessageId,
           senderId: '',
-          fileId: targetFileId,
+          fileId: targetUploadFileId,
           fileName: file.name,
           fileSize: file.size,
           observedAt: Date.now(),
@@ -557,7 +672,9 @@ export class GroupFileMirrorService {
       sourceBusid: file.busid,
       sourceMessageId: sourceMessage?.messageId || '',
       targetGroupId: rule.targetGroupId,
-      targetFileId,
+      targetFileId: targetUploadFileId,
+      targetDeleteFileId: targetDeleteFile?.id || '',
+      targetBusid: targetDeleteFile?.busid || 0,
       targetMessageId: targetMessage?.messageId || '',
       mirroredAt: Date.now(),
     };
@@ -565,7 +682,7 @@ export class GroupFileMirrorService {
     state.lastErrorAt = 0;
     state.lastError = '';
 
-    if (rule.keepLatestOnly && previous?.targetFileId && previous.targetFileId !== targetFileId) {
+    if (rule.keepLatestOnly && previous?.targetFileId && previous.targetFileId !== targetUploadFileId) {
       this.queueCleanup(state, previous);
     }
     this.saveState();
@@ -575,14 +692,20 @@ export class GroupFileMirrorService {
   }
 
   private queueCleanup(state: MirrorRuleState, record: MirrorRecord): void {
-    if (state.pendingCleanup.some(item => item.targetGroupId === record.targetGroupId && item.targetFileId === record.targetFileId)) return;
+    const cleanupFileId = record.targetDeleteFileId || record.targetFileId;
+    if (state.pendingCleanup.some(item => item.targetGroupId === record.targetGroupId
+      && (item.targetDeleteFileId || item.targetFileId) === cleanupFileId)) return;
     state.pendingCleanup.push({
       targetGroupId: record.targetGroupId,
       targetFileId: record.targetFileId,
+      targetDeleteFileId: record.targetDeleteFileId || '',
+      targetBusid: record.targetBusid || 0,
       targetMessageId: record.targetMessageId,
       sourceFileName: record.sourceFileName,
+      sourceFileSize: record.sourceFileSize,
+      mirroredAt: record.mirroredAt,
       messageRecalled: !record.targetMessageId,
-      fileDeleted: !record.targetFileId,
+      fileDeleted: !cleanupFileId,
       queuedAt: Date.now(),
     });
   }
@@ -611,16 +734,42 @@ export class GroupFileMirrorService {
       }
     }
 
-    if (rule.deletePreviousTargetFile && item.targetFileId && !item.fileDeleted) {
+    if (rule.deletePreviousTargetFile && !item.fileDeleted) {
+      let deleteFileId = normalizeId(item.targetDeleteFileId);
+      let deleteBusid = Math.max(0, Number(item.targetBusid || 0) || 0);
+      if (!deleteFileId) {
+        const resolved = await this.resolveTargetDeleteFile(
+          rule,
+          item.sourceFileName,
+          Math.max(0, Number(item.sourceFileSize || 0) || 0),
+          Math.max(0, Number(item.mirroredAt || 0) || 0),
+          true,
+        );
+        if (resolved) {
+          deleteFileId = resolved.id;
+          deleteBusid = resolved.busid;
+          item.targetDeleteFileId = resolved.id;
+          item.targetBusid = resolved.busid;
+        }
+      }
+
+      if (!deleteFileId) {
+        this.log('warn', `规则 ${rule.id} 暂缓删除旧群文件：无法安全解析 delete_group_file 文件 ID file=${item.sourceFileName}`);
+        return;
+      }
+
+      const params: Record<string, unknown> = {
+        group_id: groupParam(item.targetGroupId),
+        file_id: deleteFileId,
+      };
+      if (deleteBusid > 0) params.busid = deleteBusid;
+
       try {
-        await this.callWithRetry(rule, 'delete_group_file', {
-          group_id: groupParam(item.targetGroupId),
-          file_id: item.targetFileId,
-        });
+        await this.callWithRetry(rule, 'delete_group_file', params);
         item.fileDeleted = true;
       } catch (error) {
         if (isAlreadyGoneError(error)) item.fileDeleted = true;
-        else this.log('warn', `规则 ${rule.id} 删除旧群文件失败 file=${item.targetFileId}: ${String(error)}`);
+        else this.log('warn', `规则 ${rule.id} 删除旧群文件失败 file=${deleteFileId} busid=${deleteBusid}: ${String(error)}`);
       }
     }
   }
