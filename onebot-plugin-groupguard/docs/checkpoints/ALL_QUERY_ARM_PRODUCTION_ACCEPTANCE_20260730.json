@@ -1,0 +1,49 @@
+{
+  "schema": "groupguard-all-query-arm-production-acceptance.v1",
+  "status": "accepted",
+  "accepted_at_local": "2026-07-30T15:37:00+08:00",
+  "host": {
+    "address": "192.168.3.89",
+    "platform": "hi3798mv300_hi3798mv3dmf",
+    "architecture": "aarch64",
+    "os": "Ubuntu 20.04.6 LTS",
+    "temperature_c": 59
+  },
+  "container": "groupguard-snowluma",
+  "deployment": {
+    "method": "manual_dist_content_replacement",
+    "target_path": "/mnt/sda1/groupguard/app/dist",
+    "source_commit": "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2",
+    "api_commit": "f221b64649763eb8d325d87348fd2f42f48a6485",
+    "entrypoint": "snowluma-service.mjs",
+    "entrypoint_sha256": "c4d0c3076195f8b6da92d40b896f322025e9c6582a674064c38903ee7bd23dd4"
+  },
+  "operator_confirmation": "All requested QQ query tests were reported normal after dist replacement and container restart.",
+  "observed_runtime_logs": {
+    "lolban_intranet": {
+      "status": "success",
+      "latency_ms": 362
+    },
+    "battle_intranet_samples": [
+      {
+        "status": "success",
+        "latency_ms": 2749
+      },
+      {
+        "status": "success",
+        "latency_ms": 2640
+      }
+    ],
+    "module_load_error": false,
+    "syntax_error": false,
+    "restart_loop": false,
+    "retired_video_query_error": false
+  },
+  "non_blocking_observations": [
+    "self-recall actions are skipped in groups where the bot is not an administrator",
+    "content-risk URL rules are operating in log-only mode",
+    "one GroupFileMirror delete_group_file action returned OneBot error 100"
+  ],
+  "video_category": "retired",
+  "release_decision": "production accepted; keep PR draft/open until final documentation and merge review"
+}
