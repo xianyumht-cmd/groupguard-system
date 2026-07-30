@@ -49,6 +49,12 @@ class FakeWebSocket {
     });
   }
 
+  fail(echo: string, wording: string, retcode = 100): void {
+    this.emit('message', {
+      data: JSON.stringify({ status: 'failed', retcode, echo, wording, data: null })
+    });
+  }
+
   private emit(type: string, event: any): void {
     if (type === 'close') this.readyState = 3;
     const entries = [...(this.listeners.get(type) || [])];
@@ -252,6 +258,15 @@ async function verifyWebSocketRecoveryIsolation(): Promise<void> {
     assert.equal(logs.join('\n').includes('password'), false);
     assert.equal(logs.join('\n').includes('url-secret'), false);
     assert.equal(logs.join('\n').includes('option-secret'), false);
+
+    const failedAction = client.call('delete_group_file', { group_id: 10001, file_id: '/old-file' });
+    const failedPayload = JSON.parse(sockets[0].sent.at(-1) || '{}');
+    sockets[0].fail(failedPayload.echo, 'group file delete retCode=2 retMsg=no permission');
+    await assert.rejects(
+      failedAction,
+      /onebot_action_failed:delete_group_file:100:group file delete retCode=2 retMsg=no permission/,
+      'SnowLuma wording must survive the OneBot WebSocket boundary',
+    );
 
     sockets[0].emitError(new Error(`failed ${secretUrl} token=bare-secret`));
     const sanitizedError = client.getConnectionStatus().lastError;

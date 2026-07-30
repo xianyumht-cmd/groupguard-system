@@ -32,6 +32,12 @@ interface GroupFileDescriptor {
   busid: number;
 }
 
+export interface ListedGroupFileDescriptor {
+  id: string;
+  name: string;
+  size: number;
+}
+
 interface FileMessageDescriptor {
   fileId: string;
   fileName: string;
@@ -48,6 +54,7 @@ interface MirrorRecord {
   sourceMessageId: string;
   targetGroupId: string;
   targetFileId: string;
+  targetFolderId?: string;
   targetMessageId: string;
   mirroredAt: number;
 }
@@ -55,6 +62,7 @@ interface MirrorRecord {
 interface CleanupRecord {
   targetGroupId: string;
   targetFileId: string;
+  targetFolderId?: string;
   targetMessageId: string;
   sourceFileName: string;
   messageRecalled: boolean;
@@ -184,6 +192,33 @@ function groupParam(value: string): string | number {
 
 function unwrapActionData(value: any): any {
   return value?.data ?? value?.result ?? value;
+}
+
+export function extractListedGroupFiles(value: unknown): ListedGroupFileDescriptor[] {
+  const data = unwrapActionData(value);
+  const rawFiles = Array.isArray(data?.files)
+    ? data.files
+    : Array.isArray((value as any)?.files)
+      ? (value as any).files
+      : [];
+
+  const files: ListedGroupFileDescriptor[] = [];
+  for (const rawValue of rawFiles) {
+    const raw = isRecord(rawValue) ? rawValue : {};
+    const id = normalizeId(raw.file_id ?? raw.fileId ?? raw.id);
+    if (!id) continue;
+    files.push({
+      id,
+      name: normalizeId(raw.file_name ?? raw.fileName ?? raw.name),
+      size: Math.max(0, Number(raw.file_size ?? raw.fileSize ?? raw.size ?? 0) || 0),
+    });
+  }
+  return files;
+}
+
+export function listedGroupFileExists(value: unknown, fileId: string): boolean {
+  const normalized = normalizeId(fileId);
+  return Boolean(normalized) && extractListedGroupFiles(value).some(file => file.id === normalized);
 }
 
 function extractMessageId(message: any): string {
@@ -558,6 +593,7 @@ export class GroupFileMirrorService {
       sourceMessageId: sourceMessage?.messageId || '',
       targetGroupId: rule.targetGroupId,
       targetFileId,
+      targetFolderId: rule.targetFolderId,
       targetMessageId: targetMessage?.messageId || '',
       mirroredAt: Date.now(),
     };
@@ -579,6 +615,7 @@ export class GroupFileMirrorService {
     state.pendingCleanup.push({
       targetGroupId: record.targetGroupId,
       targetFileId: record.targetFileId,
+      targetFolderId: record.targetFolderId || '',
       targetMessageId: record.targetMessageId,
       sourceFileName: record.sourceFileName,
       messageRecalled: !record.targetMessageId,
@@ -600,6 +637,27 @@ export class GroupFileMirrorService {
     this.saveState();
   }
 
+  private async inspectTargetFilePresence(
+    rule: GroupFileMirrorRule,
+    item: CleanupRecord,
+  ): Promise<'present' | 'absent' | 'unknown'> {
+    const folderId = normalizeId(item.targetFolderId) || rule.targetFolderId || '/';
+    const action = folderId === '/' ? 'get_group_root_files' : 'get_group_files_by_folder';
+    const params: Record<string, unknown> = { group_id: groupParam(item.targetGroupId) };
+    if (folderId !== '/') {
+      params.folder_id = folderId;
+      params.folder = folderId;
+    }
+
+    try {
+      const result = await this.callWithRetry(rule, action, params);
+      return listedGroupFileExists(result, item.targetFileId) ? 'present' : 'absent';
+    } catch (error) {
+      this.log('debug', `规则 ${rule.id} 核验目标群文件状态失败 file=${item.targetFileId}: ${String(error)}`);
+      return 'unknown';
+    }
+  }
+
   private async cleanupTarget(rule: GroupFileMirrorRule, item: CleanupRecord): Promise<void> {
     if (rule.recallPreviousTargetMessage && item.targetMessageId && !item.messageRecalled) {
       try {
@@ -612,6 +670,13 @@ export class GroupFileMirrorService {
     }
 
     if (rule.deletePreviousTargetFile && item.targetFileId && !item.fileDeleted) {
+      const beforePresence = await this.inspectTargetFilePresence(rule, item);
+      if (beforePresence === 'absent') {
+        item.fileDeleted = true;
+        this.log('info', `规则 ${rule.id} 旧群文件已不在文件库，按已清理处理 file=${item.targetFileId}`);
+        return;
+      }
+
       try {
         await this.callWithRetry(rule, 'delete_group_file', {
           group_id: groupParam(item.targetGroupId),
@@ -619,8 +684,19 @@ export class GroupFileMirrorService {
         });
         item.fileDeleted = true;
       } catch (error) {
-        if (isAlreadyGoneError(error)) item.fileDeleted = true;
-        else this.log('warn', `规则 ${rule.id} 删除旧群文件失败 file=${item.targetFileId}: ${String(error)}`);
+        if (isAlreadyGoneError(error)) {
+          item.fileDeleted = true;
+          return;
+        }
+
+        const afterPresence = await this.inspectTargetFilePresence(rule, item);
+        if (afterPresence === 'absent') {
+          item.fileDeleted = true;
+          this.log('info', `规则 ${rule.id} 删除动作返回失败，但文件库已无该文件，按幂等成功处理 file=${item.targetFileId}: ${String(error)}`);
+          return;
+        }
+
+        this.log('warn', `规则 ${rule.id} 删除旧群文件失败 file=${item.targetFileId} presence=${afterPresence}: ${String(error)}`);
       }
     }
   }

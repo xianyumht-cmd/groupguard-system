@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   extractFileSegmentsFromMessage,
+  extractListedGroupFiles,
   fileEventMatchesRule,
+  listedGroupFileExists,
   normalizeGroupFileMirrorConfig,
   type GroupFileMirrorRule,
 } from '../src/services/group_file_mirror_service.ts';
@@ -56,6 +58,21 @@ function main(): void {
   assert.equal(rule.recallPreviousTargetMessage, true, 'target message recall defaults on');
   assert.equal(rule.syncSourceRecall, true, 'source recall sync defaults on');
   assert.equal(rule.retryCount, 3);
+
+  const listedResponse = {
+    data: {
+      files: [
+        { file_id: '/target-file-a', file_name: 'old.7z', file_size: 4096 },
+        { file_id: '/target-file-b', file_name: 'new.7z', file_size: 8192 },
+      ],
+    },
+  };
+  assert.deepEqual(extractListedGroupFiles(listedResponse), [
+    { id: '/target-file-a', name: 'old.7z', size: 4096 },
+    { id: '/target-file-b', name: 'new.7z', size: 8192 },
+  ], 'SnowLuma group file list is normalized');
+  assert.equal(listedGroupFileExists(listedResponse, '/target-file-a'), true);
+  assert.equal(listedGroupFileExists(listedResponse, '/missing-file'), false);
 
   const canonical = extractFileSegmentsFromMessage({
     message: [
@@ -271,6 +288,9 @@ function main(): void {
   );
   assert.match(serviceSource, /get_group_file_url/);
   assert.match(serviceSource, /upload_group_file/);
+  assert.match(serviceSource, /get_group_root_files/);
+  assert.match(serviceSource, /get_group_files_by_folder/);
+  assert.match(serviceSource, /presence=/);
   assert.match(serviceSource, /delete_group_file/);
   assert.match(serviceSource, /delete_msg/);
   assert.doesNotMatch(serviceSource, /send_group_forward_msg/);

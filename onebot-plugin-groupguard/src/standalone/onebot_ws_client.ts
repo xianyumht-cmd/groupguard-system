@@ -340,7 +340,9 @@ export class OneBotWsClient {
         this.lastActionAt = Date.now();
         call.resolve(payload.data ?? payload.result ?? payload);
       } else {
-        call.reject(new Error(`onebot_action_failed:${call.action}:${retcode}:${payload.message || payload.msg || status}`));
+        const rawDetail = payload.message ?? payload.msg ?? payload.wording ?? status ?? 'failed';
+        const failureDetail = redactSensitiveText(String(rawDetail || 'failed')).slice(0, 500);
+        call.reject(new Error(`onebot_action_failed:${call.action}:${retcode}:${failureDetail}`));
       }
       return;
     }
