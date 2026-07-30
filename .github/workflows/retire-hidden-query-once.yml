@@ -1,0 +1,223 @@
+name: Retire hidden query once
+
+on:
+  push:
+    branches:
+      - codex/retire-hidden-query-20260730
+    paths:
+      - .github/workflows/retire-hidden-query-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  retire:
+    if: ${{ !contains(github.event.head_commit.message, '[hidden-retire-bot]') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onebot-plugin-groupguard
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/retire-hidden-query-20260730
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+      - name: Retire hidden query implementation
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+          import re
+
+          root = Path('.')
+
+          def read(path):
+              return (root / path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              (root / path).write_text(text, encoding='utf-8')
+
+          def replace(path, old, new, *, required=True):
+              text = read(path)
+              if required and old not in text:
+                  raise SystemExit(f'missing expected text in {path}: {old!r}')
+              write(path, text.replace(old, new))
+
+          replace(
+              'src/commands.ts',
+              "import { registerIntranetHiddenCommandPlugins } from './dynamic-commands/intranet_hidden_runtime_plugin';\n",
+              '',
+          )
+          replace('src/commands.ts', '  registerIntranetHiddenCommandPlugins();\n', '')
+
+          for obsolete in [
+              'src/dynamic-commands/intranet_hidden_runtime_plugin.ts',
+              'scripts/verify-intranet-hidden-command.ts',
+          ]:
+              path = root / obsolete
+              if not path.exists():
+                  raise SystemExit(f'missing obsolete file: {obsolete}')
+              path.unlink()
+
+          package_path = root / 'package.json'
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          scripts = package['scripts']
+          scripts.pop('verify:intranet-hidden-command', None)
+          scripts['verify:hidden-retired'] = (
+              'node --experimental-strip-types --import ./scripts/register-ts-loader.mjs '
+              'scripts/verify-hidden-retired.ts'
+          )
+          for key in ['test', 'build:release', 'build:debug', 'build:snowluma']:
+              value = scripts[key]
+              value = value.replace('npm run verify:intranet-hidden-command', 'npm run verify:hidden-retired')
+              scripts[key] = value
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          types_path = 'src/types.ts'
+          types = read(types_path)
+          types = types.replace("  | 'hidden'\n", '')
+          types = re.sub(r"^\s*hiddenQuery:\s*boolean;\s*\n", '', types, flags=re.M)
+          write(types_path, types)
+
+          client_path = 'src/services/groupguard_query_delivery_client.ts'
+          client = read(client_path).replace("  | 'hidden'\n", '')
+          write(client_path, client)
+
+          generic_path = 'src/services/intranet_query_service.ts'
+          generic = read(generic_path).replace("  | 'hidden'\n", '')
+          write(generic_path, generic)
+
+          config_path = 'src/config.ts'
+          config = read(config_path)
+          config = re.sub(r"^\s*hiddenQuery:\s*true,?\s*\n", '', config, flags=re.M)
+          config = re.sub(r"^\s*hiddenQuery:\s*\([^\n]+\n", '', config, flags=re.M)
+          write(config_path, config)
+
+          formatter_path = 'src/dynamic-commands/command_response_formatter.ts'
+          formatter = read(formatter_path)
+          formatter = formatter.replace("'查战绩', '查封号', '查隐藏', '查合集'", "'查战绩', '查封号', '查合集'")
+          formatter = formatter.replace("'查战绩', '查封号', '查隐藏',", "'查战绩', '查封号',")
+          write(formatter_path, formatter)
+
+          interaction_path = 'src/services/interaction_service.ts'
+          interaction = read(interaction_path)
+          interaction = interaction.replace("  '查隐藏',\n", '')
+          interaction = interaction.replace(
+              "type QueryCommandType = 'lol_battle' | 'lol_hidden' | 'lol_shard';",
+              "type QueryCommandType = 'lol_battle' | 'lol_shard';",
+          )
+          interaction = re.sub(
+              r"\ninterface LolHiddenData \{.*?\n\}\n",
+              '\n',
+              interaction,
+              flags=re.S,
+          )
+          interaction = interaction.replace(
+              "type LolCommandKey = 'battleQuery' | 'banQuery' | 'hiddenQuery';",
+              "type LolCommandKey = 'battleQuery' | 'banQuery';",
+          )
+          interaction = re.sub(r"^\s*hiddenQuery:\s*\([^\n]+\n", '', interaction, flags=re.M)
+          interaction = re.sub(r"^\s*hiddenQuery:\s*true,?\s*\n", '', interaction, flags=re.M)
+          interaction = re.sub(r"^\s*查隐藏:\s*'hiddenQuery',?\s*\n", '', interaction, flags=re.M)
+          interaction = interaction.replace('仅支持：查战绩、查封号、查隐藏', '仅支持：查战绩、查封号')
+          interaction = interaction.replace(
+              " / 查隐藏(${switches.hiddenQuery ? '开' : '关'})",
+              '',
+          )
+          hidden_start = interaction.find("  if (text.startsWith('查隐藏')) {")
+          hidden_end = interaction.find("  if (text === '邀请查询') {", hidden_start)
+          if hidden_start < 0 or hidden_end < 0:
+              raise SystemExit('legacy hidden query block markers not found')
+          interaction = interaction[:hidden_start] + interaction[hidden_end:]
+          write(interaction_path, interaction)
+
+          verify = r"""import assert from 'node:assert/strict';
+          import { existsSync, readFileSync } from 'node:fs';
+          import path from 'node:path';
+
+          const root = process.cwd();
+          const commands = readFileSync(path.join(root, 'src/commands.ts'), 'utf8');
+          const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+          assert.equal(commands.includes('registerIntranetHiddenCommandPlugins'), false);
+          assert.equal(existsSync(path.join(root, 'src/dynamic-commands/intranet_hidden_runtime_plugin.ts')), false);
+          assert.equal(existsSync(path.join(root, 'scripts/verify-intranet-hidden-command.ts')), false);
+          assert.equal(Boolean(packageJson.scripts['verify:intranet-hidden-command']), false);
+          assert.ok(packageJson.scripts['verify:hidden-retired']);
+
+          const forbidden = [
+            '查隐藏',
+            'query.lol_hidden',
+            'hiddenQuery',
+            'builtin.query.hidden.intranet',
+            'intranet_hidden_runtime_plugin',
+          ];
+          const activeFiles = [
+            'src/commands.ts',
+            'src/config.ts',
+            'src/types.ts',
+            'src/services/interaction_service.ts',
+            'src/services/groupguard_query_delivery_client.ts',
+            'src/services/intranet_query_service.ts',
+            'src/dynamic-commands/command_response_formatter.ts',
+          ];
+          for (const relative of activeFiles) {
+            const text = readFileSync(path.join(root, relative), 'utf8');
+            for (const token of forbidden) {
+              assert.equal(text.includes(token), false, `${relative} still contains retired token ${token}`);
+            }
+          }
+          console.log('hidden query retirement verification passed');
+          """
+          verify = '\n'.join(line[10:] if line.startswith('          ') else line for line in verify.splitlines()).lstrip()
+          write('scripts/verify-hidden-retired.ts', verify)
+
+          retirement_doc = """# HIDDEN-RETIRE-001：查隐藏功能退休记录
+
+          ## 决策
+
+          `查隐藏` 未形成可靠、可维护的生产能力，现已从 GroupGuard 产品入口中彻底退休。
+
+          ## 删除范围
+
+          - 删除内网查隐藏命令插件和注册入口；
+          - 删除旧直连实现，禁止回退到公开上游；
+          - 删除分群 `hiddenQuery` 开关和统一协议中的 `hidden` 请求类型；
+          - 删除旧验证脚本，改为永久退休回归测试；
+          - 保留 Git 历史，不保留任何可执行入口。
+
+          ## 行为
+
+          群成员发送 `查隐藏` 后，不再被识别为 GroupGuard 查询指令，也不会访问 `lolapisevers` 或任何公开接口。
+          """
+          retirement_doc = '\n'.join(line[10:] if line.startswith('          ') else line for line in retirement_doc.splitlines()).lstrip()
+          write('docs/HIDDEN_QUERY_RETIREMENT_20260730.md', retirement_doc)
+
+          residual = []
+          for base in ['src']:
+              for path in (root / base).rglob('*'):
+                  if not path.is_file() or path.suffix not in {'.ts', '.js', '.mjs', '.json', '.html'}:
+                      continue
+                  text = path.read_text(encoding='utf-8', errors='ignore')
+                  for token in ['查隐藏', 'query.lol_hidden', 'hiddenQuery', 'builtin.query.hidden.intranet', 'intranet_hidden_runtime_plugin']:
+                      if token in text:
+                          residual.append(f'{path}:{token}')
+          if residual:
+              raise SystemExit('active hidden query residue:\n' + '\n'.join(residual))
+
+      - run: npm ci
+      - run: npm test
+      - name: Commit verified retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git rm -f ../.github/workflows/retire-hidden-query-once.yml
+          git commit -m "refactor(query): retire hidden query [hidden-retire-bot]"
+          git push origin HEAD:codex/retire-hidden-query-20260730
