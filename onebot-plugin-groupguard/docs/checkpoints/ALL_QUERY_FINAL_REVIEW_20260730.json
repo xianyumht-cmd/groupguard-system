@@ -1,0 +1,12 @@
+{
+  "schema": "all-query-final-review.v1",
+  "status": "final_ci_passed",
+  "pull_request": 17,
+  "base_branch": "main",
+  "runtime_commit": "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2",
+  "production_acceptance": "passed",
+  "transient_files_removed": true,
+  "runtime_changed_after_acceptance": false,
+  "ci_run": 30524087056,
+  "build_run": 30524087309
+}

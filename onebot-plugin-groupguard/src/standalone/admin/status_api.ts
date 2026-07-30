@@ -4,6 +4,8 @@ import { contextStateService } from '../../core/state-services/context_state_ser
 import { identityStateService } from '../../core/state-services/identity_state_service';
 import { getFeatureGateSnapshot } from '../../core/feature_gate';
 import { loadDynamicCommands } from '../../dynamic-commands/command_loader';
+import { getBuildInfo } from '../../build_info';
+import { redactWebSocketUrl } from '../redact_url';
 import type { SnowLumaAdminServerOptions } from './types';
 
 export function getStatus(options: SnowLumaAdminServerOptions) {
@@ -17,7 +19,9 @@ export function getStatus(options: SnowLumaAdminServerOptions) {
     sqlitePath,
     backupDir: options.backupDir,
     dynamicCommandsPath: options.dynamicCommandsConfigPath,
-    wsUrl: options.wsUrl,
+    wsUrl: redactWebSocketUrl(options.wsUrl),
+    build: getBuildInfo(),
+    oneBot: options.getOneBotStatus?.() || { status: 'unknown', connected: false },
     botId: identityStateService.getBotId() || '',
     adapterName: contextStateService.getAdapterName() || '',
     dynamicCommandsCount: dynamicCommands.length,

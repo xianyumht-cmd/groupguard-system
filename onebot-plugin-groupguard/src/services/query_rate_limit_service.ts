@@ -61,7 +61,6 @@ function inferFeatureKeyFromLabel(label: string): string {
   if (text.startsWith('查隐藏')) return 'query.lol_hidden';
   if (text.startsWith('查合集')) return 'query.lol_shard';
   if (text.startsWith('海符榜')) return 'query.lol_shard';
-  if (text.startsWith('我要看')) return 'query.video';
   if (text.startsWith('查骗子') || text.startsWith('举报骗子')) return 'query.scammer';
   if (text.startsWith('查同行') || text.startsWith('举报同行')) return 'query.peer';
   return 'query.generic';

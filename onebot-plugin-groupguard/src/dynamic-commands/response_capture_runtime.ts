@@ -19,6 +19,7 @@ export interface CapturedCommandDelivery {
   applyTemplate?: boolean;
   force?: boolean;
   skipProbability?: boolean;
+  requireDelivery?: boolean;
 }
 
 const responseCaptureStorage = new AsyncLocalStorage<CapturedCommandDelivery[]>();
@@ -113,7 +114,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
         scene: resolvedDelivery.scene,
         force: resolvedDelivery.force ?? true,
         applyTemplate: resolvedDelivery.applyTemplate ?? true,
-        skipProbability: resolvedDelivery.skipProbability === true
+        skipProbability: resolvedDelivery.skipProbability === true,
+        requireDelivery: resolvedDelivery.requireDelivery === true
       } as any);
       return;
     }
@@ -121,7 +123,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
       scene: resolvedDelivery.scene,
       vars: resolvedDelivery.vars,
       force: resolvedDelivery.force ?? true,
-      applyTemplate: resolvedDelivery.applyTemplate ?? true
+      applyTemplate: resolvedDelivery.applyTemplate ?? true,
+      requireDelivery: resolvedDelivery.requireDelivery === true
     });
     return;
   }
@@ -141,7 +144,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
         scene: resolvedDelivery.scene,
         force: resolvedDelivery.force ?? true,
         applyTemplate: resolvedDelivery.applyTemplate ?? true,
-        skipProbability: resolvedDelivery.skipProbability === true
+        skipProbability: resolvedDelivery.skipProbability === true,
+        requireDelivery: resolvedDelivery.requireDelivery === true
       } as any
     );
     return;
@@ -154,7 +158,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
       vars: resolvedDelivery.vars,
       force: resolvedDelivery.force ?? true,
       applyTemplate: resolvedDelivery.applyTemplate ?? true,
-      skipProbability: resolvedDelivery.skipProbability === true
+      skipProbability: resolvedDelivery.skipProbability === true,
+      requireDelivery: resolvedDelivery.requireDelivery === true
     } as any
   );
 }

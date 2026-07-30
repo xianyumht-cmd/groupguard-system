@@ -8,7 +8,7 @@ import {
   getRegisteredCommandPlugins,
   isCommandPluginEnabled
 } from './command_plugin_store';
-import { createHttpCommandPlugin } from './http_command_plugin';
+import { createIntranetDynamicCommandPlugin } from './intranet_dynamic_command_plugin';
 import { assertCommandPluginContract } from './command_runtime_plugin';
 import type { CommandPlugin } from './command_runtime_plugin';
 import type { CommandRuntimeSchemaModule, DynamicCommandDefinition } from './types';
@@ -29,8 +29,8 @@ function rebuildPluginCaches(): void {
   try {
     const nextMap = new Map<string, CommandPlugin>();
     for (const definition of definitions) {
-      if (definition.provider.type !== 'http') continue;
-      const plugin = createHttpCommandPlugin(definition, 'json');
+      if (definition.provider.type !== 'intranet') continue;
+      const plugin = createIntranetDynamicCommandPlugin(definition, 'json');
       assertCommandPluginContract(plugin);
       nextMap.set(definition.id, plugin);
     }

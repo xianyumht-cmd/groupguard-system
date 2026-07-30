@@ -14,6 +14,7 @@ import {
 } from '../commands';
 import { handleVerifyAnswer } from '../verify';
 import { runWithForcedResponseScene } from '../dynamic-commands/response_capture_runtime';
+import { shouldBypassGroupFileMirrorGlobalRecall } from '../services/group_file_mirror_message_adapter';
 
 export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11Message): Promise<void> {
   if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
@@ -37,6 +38,16 @@ export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11M
     }
 
     if (userId === selfId) {
+      // Native files uploaded by GroupFileMirror own their whole lifecycle.
+      // They bypass the existing global risk/self-recall scheduler and are
+      // cleaned only by the mirror's direct delete_msg + delete_group_file path.
+      if (shouldBypassGroupFileMirrorGlobalRecall(event)) {
+        loggingStateService.debug(
+          `[GroupFileMirror] 原生群文件消息已绕过全局风控撤回 group=${groupId} message=${messageId}`,
+        );
+        return;
+      }
+
       if (isQueryOnlyBotRole()) {
         const block = shouldBlockByBotRole({ source: 'runtime_message_pipeline', rawMessage: raw, intent: 'self_recall_like', actionType: 'self_recall' });
         if (block.blocked) loggingStateService.info(block.logLine || `bot_role_blocked role=query intent=self_recall_like rawMessage=${raw} source=runtime_message_pipeline`);

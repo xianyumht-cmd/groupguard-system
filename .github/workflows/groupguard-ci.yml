@@ -1,0 +1,48 @@
+name: GroupGuard CI
+
+on:
+  push:
+    paths:
+      - "onebot-plugin-groupguard/**"
+      - ".github/workflows/groupguard-ci.yml"
+  pull_request:
+    paths:
+      - "onebot-plugin-groupguard/**"
+      - ".github/workflows/groupguard-ci.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onebot-plugin-groupguard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - name: Validate deployment PowerShell syntax
+        shell: pwsh
+        run: |
+          Get-ChildItem scripts/ops/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$($_.Extent.File): $($_.Message)" }
+              exit 1
+            }
+          }
+      - run: npm run build:snowluma
+      - name: Verify cross-repository contracts with local mocks
+        env:
+          TEST_GROUP_ID: mock-test-group
+        run: node scripts/integration/verify-lolapisevers-contracts.mjs --mode mock

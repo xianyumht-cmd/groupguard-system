@@ -35,6 +35,9 @@ export type DynamicCommandProviderDefinition =
       timeoutMs?: number;
     }
   | {
+      type: 'intranet';
+    }
+  | {
       type: 'plugin';
       runtime: 'native' | 'legacy_adapter';
     };

@@ -69,7 +69,7 @@ globalThis.fetch = (async (input: string | URL | Request) => {
 }) as typeof fetch;
 
 await initializeDynamicCommands();
-for (const pluginId of ['quote.daily', 'music.search', 'video.info']) {
+for (const pluginId of ['quote.daily', 'music.search']) {
   setCommandPluginEnabled(pluginId, true);
   setCommandPluginRuntimeConfig(pluginId, {});
 }

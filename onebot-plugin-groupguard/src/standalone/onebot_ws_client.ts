@@ -1,6 +1,14 @@
 import { WebSocket } from 'undici';
+import { redactSensitiveText, redactWebSocketUrl } from './redact_url';
 
 type OneBotEventHandler = (event: any) => void | Promise<void>;
+type OneBotConnectedHandler = () => void | Promise<void>;
+type OneBotWebSocketLike = {
+  readyState: number;
+  send: (data: string) => void;
+  close: () => void;
+  addEventListener: (type: string, listener: (event: any) => void, options?: { once?: boolean }) => void;
+};
 
 type PendingCall = {
   action: string;
@@ -11,11 +19,26 @@ type PendingCall = {
 
 const WS_OPEN = 1;
 
+export interface OneBotConnectionStatus {
+  status: 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'stopped';
+  connected: boolean;
+  started: boolean;
+  connecting: boolean;
+  reconnectScheduled: boolean;
+  reconnectAttempts: number;
+  pendingCalls: number;
+  connectedAt: number;
+  disconnectedAt: number;
+  lastActionAt: number;
+  lastError: string;
+}
+
 export interface OneBotWsClientOptions {
   url: string;
   accessToken?: string;
   timeoutMs?: number;
   reconnectDelayMs?: number;
+  webSocketFactory?: (url: string) => OneBotWebSocketLike;
   logger?: {
     info?: (message: string) => void;
     warn?: (message: string) => void;
@@ -25,16 +48,23 @@ export interface OneBotWsClientOptions {
 
 export class OneBotWsClient {
   private readonly options: OneBotWsClientOptions;
-  private ws: WebSocket | null = null;
+  private ws: OneBotWebSocketLike | null = null;
   private seq = 0;
   private started = false;
   private connecting = false;
   private manuallyClosed = false;
   private readonly pending = new Map<string, PendingCall>();
   private readonly handlers = new Set<OneBotEventHandler>();
+  private readonly connectedHandlers = new Set<OneBotConnectedHandler>();
   private readonly timeoutMs: number;
   private readonly reconnectDelayMs: number;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private connectPromise: Promise<void> | null = null;
+  private reconnectAttempts = 0;
+  private connectedAt = 0;
+  private disconnectedAt = 0;
+  private lastActionAt = 0;
+  private lastError = '';
 
   constructor(options: OneBotWsClientOptions) {
     this.options = options;
@@ -48,6 +78,58 @@ export class OneBotWsClient {
 
   offEvent(handler: OneBotEventHandler): void {
     this.handlers.delete(handler);
+  }
+
+  onConnected(handler: OneBotConnectedHandler): void {
+    this.connectedHandlers.add(handler);
+  }
+
+  offConnected(handler: OneBotConnectedHandler): void {
+    this.connectedHandlers.delete(handler);
+  }
+
+  getConnectionStatus(): OneBotConnectionStatus {
+    const connected = Boolean(this.ws && this.ws.readyState === WS_OPEN);
+    const status: OneBotConnectionStatus['status'] = !this.started || this.manuallyClosed
+      ? 'stopped'
+      : connected
+        ? 'connected'
+        : this.connecting
+          ? 'connecting'
+          : this.reconnectTimer
+            ? 'reconnecting'
+            : 'disconnected';
+    return {
+      status,
+      connected,
+      started: this.started,
+      connecting: this.connecting,
+      reconnectScheduled: Boolean(this.reconnectTimer),
+      reconnectAttempts: this.reconnectAttempts,
+      pendingCalls: this.pending.size,
+      connectedAt: this.connectedAt,
+      disconnectedAt: this.disconnectedAt,
+      lastActionAt: this.lastActionAt,
+      lastError: this.lastError
+    };
+  }
+
+  async recover(): Promise<OneBotConnectionStatus> {
+    if (this.ws?.readyState === WS_OPEN) return this.getConnectionStatus();
+    if (!this.started || this.manuallyClosed) {
+      this.started = true;
+      this.manuallyClosed = false;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    await this.connect();
+    const status = this.getConnectionStatus();
+    if (!status.connected) {
+      throw new Error(`onebot_recovery_not_connected:${status.status}`);
+    }
+    return status;
   }
 
   async start(): Promise<void> {
@@ -76,6 +158,7 @@ export class OneBotWsClient {
     }
     try { this.ws?.close(); } catch { /* noop */ }
     this.ws = null;
+    this.disconnectedAt = Date.now();
   }
 
   async call(action: string, params: unknown = {}): Promise<any> {
@@ -114,7 +197,19 @@ export class OneBotWsClient {
   }
 
   private async connect(): Promise<void> {
-    if (this.connecting || !this.started || this.manuallyClosed) return;
+    if (this.ws?.readyState === WS_OPEN) return;
+    if (this.connectPromise) return await this.connectPromise;
+    if (!this.started || this.manuallyClosed) return;
+    const task = this.connectOnce();
+    this.connectPromise = task;
+    try {
+      await task;
+    } finally {
+      if (this.connectPromise === task) this.connectPromise = null;
+    }
+  }
+
+  private async connectOnce(): Promise<void> {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -123,24 +218,44 @@ export class OneBotWsClient {
 
     try {
       const url = this.buildUrl();
-      this.options.logger?.info?.(`OneBot WS connecting: ${url.replace(/access_token=[^&]+/g, 'access_token=***')}`);
+      this.options.logger?.info?.(`OneBot WS connecting: ${redactWebSocketUrl(url)}`);
 
       await new Promise<void>((resolve, reject) => {
-        const ws = new WebSocket(url);
+        const ws = this.options.webSocketFactory
+          ? this.options.webSocketFactory(url)
+          : new WebSocket(url) as unknown as OneBotWebSocketLike;
         let settled = false;
+        const connectionTimer = setTimeout(
+          () => settleErr(new Error('onebot_ws_connect_timeout')),
+          this.timeoutMs
+        );
 
         const settleOk = () => {
           if (settled) return;
+          if (!this.started || this.manuallyClosed) {
+            settleErr(new Error('onebot_client_closed'));
+            return;
+          }
           settled = true;
+          clearTimeout(connectionTimer);
           this.ws = ws;
+          this.connectedAt = Date.now();
+          this.lastError = '';
+          this.reconnectAttempts = 0;
           this.bindSocket(ws);
           this.options.logger?.info?.('OneBot WS connected');
+          for (const handler of this.connectedHandlers) {
+            void Promise.resolve(handler()).catch((error) => {
+              this.options.logger?.warn?.(`OneBot connected handler failed: ${this.safeError(error)}`);
+            });
+          }
           resolve();
         };
 
         const settleErr = (error: unknown) => {
           if (settled) return;
           settled = true;
+          clearTimeout(connectionTimer);
           try { ws.close(); } catch { /* noop */ }
           reject(error instanceof Error ? error : new Error(String(error)));
         };
@@ -149,7 +264,9 @@ export class OneBotWsClient {
         ws.addEventListener('error', (event: any) => settleErr(event?.error || 'websocket_error'), { once: true });
       });
     } catch (error) {
-      this.options.logger?.error?.(`OneBot WS connect failed: ${String(error)}`);
+      this.lastError = this.safeError(error);
+      this.reconnectAttempts += 1;
+      this.options.logger?.error?.(`OneBot WS connect failed: ${this.lastError}`);
       this.scheduleReconnect();
       throw error;
     } finally {
@@ -157,20 +274,24 @@ export class OneBotWsClient {
     }
   }
 
-  private bindSocket(ws: WebSocket): void {
+  private bindSocket(ws: OneBotWebSocketLike): void {
     ws.addEventListener('message', (event: any) => {
       void this.handleMessage(event?.data);
     });
 
     ws.addEventListener('close', () => {
-      if (this.ws === ws) this.ws = null;
+      if (this.ws !== ws) return;
+      this.ws = null;
+      this.disconnectedAt = Date.now();
       this.rejectPending(new Error('onebot_ws_closed'));
       this.options.logger?.warn?.('OneBot WS closed');
       this.scheduleReconnect();
     });
 
     ws.addEventListener('error', (event: any) => {
-      this.options.logger?.error?.(`OneBot WS error: ${String(event?.error || 'unknown')}`);
+      if (this.ws !== ws) return;
+      this.lastError = this.safeError(event?.error || 'websocket_error');
+      this.options.logger?.error?.(`OneBot WS error: ${this.lastError}`);
     });
   }
 
@@ -216,6 +337,7 @@ export class OneBotWsClient {
       const retcode = Number(payload.retcode ?? 0);
       const status = String(payload.status || (retcode === 0 ? 'ok' : 'failed'));
       if (status === 'ok' && (retcode === 0 || payload.retcode === undefined)) {
+        this.lastActionAt = Date.now();
         call.resolve(payload.data ?? payload.result ?? payload);
       } else {
         call.reject(new Error(`onebot_action_failed:${call.action}:${retcode}:${payload.message || payload.msg || status}`));
@@ -230,5 +352,10 @@ export class OneBotWsClient {
         this.options.logger?.error?.(`OneBot event handler failed: ${String(error)}`);
       }
     }
+  }
+
+  private safeError(error: unknown): string {
+    return redactSensitiveText(error instanceof Error ? error.message : error || 'unknown')
+      .slice(0, 300);
   }
 }

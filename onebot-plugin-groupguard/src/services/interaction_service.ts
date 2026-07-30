@@ -15,9 +15,8 @@ import { queryInvitedBy, queryInviterOf, resetInviteRelationData } from './invit
 import { checkAndConsumeQueryRate } from './query_rate_limit_service';
 import { storageAdapter } from '../storage_adapter';
 import type { ContactIdentifierType, ContactRiskCategory, ContactRiskRecord, ScammerRecord } from '../types';
+import { deliverOneBotImageToGroup } from './lol_image_delivery';
 
-const DEFAULT_LOL_BAN_PRIMARY_URL = 'https://yun.4png.com/api/query.html?token=c7739372694acf36&qq={qq}';
-const DEFAULT_LOL_API_BASE_URL = 'http://192.168.3.94:5000';
 const DEFAULT_SHARD_DATA_URL = 'https://raw.githubusercontent.com/badspacebar/release/master/files/shards.json';
 const DEFAULT_SHARD_HERO_LIST_URL = 'https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js';
 function getConfig() {
@@ -34,7 +33,6 @@ const QUERY_ROLE_PREFIXES = [
   '查隐藏',
   '查合集',
   '海符榜',
-  '我要看',
   '查骗子',
   '举报骗子',
   '查同行',
@@ -45,8 +43,6 @@ const QUERY_ROLE_PREFIXES = [
   '设置战绩分群开关',
   '设置战绩分群限流',
   '设置战绩指令开关',
-  '设置看视频接口',
-  '删除看视频接口',
   '设置lolurl',
   '设置lolkey',
   '设置loltoken',
@@ -65,7 +61,6 @@ const QUERY_ROLE_EXACT = new Set([
   '封号接口列表',
   '战绩接口状态',
   '战绩配置',
-  '看视频接口列表',
   '骗子接口状态'
 ]);
 
@@ -244,20 +239,29 @@ function mergeUniqueDetail(parts: Array<any>): string {
 
 function collectBanQueryEndpoints(): string[] {
   const config = getConfig();
-  const primary = (config.lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
+  const localBase = normalizeUrlBase(config.lolApiBaseUrl || '');
+  const localEndpoint = localBase
+    ? `${localBase}/api/v2/lolban?qq={qq}&output=json&compat=napcat`
+    : '';
+  const primary = (config.lolBanPrimaryUrl || '').trim();
   const backups = Array.isArray(config.lolBanBackupUrls) ? config.lolBanBackupUrls : [];
-  const list = [primary, ...backups.map(v => String(v || '').trim()).filter(Boolean)];
-  return Array.from(new Set(list));
+  // Once the unified intranet API is configured it owns provider fallback,
+  // cache, stale/LKG semantics, and observability. Direct legacy URLs remain
+  // available only as a migration fallback when no local API base is set.
+  const list = localEndpoint
+    ? [localEndpoint]
+    : [primary, ...backups.map(v => String(v || '').trim()).filter(Boolean)];
+  return Array.from(new Set(list.filter(Boolean)));
 }
 
 function normalizeUrlBase(url: string): string {
   const trimmed = String(url || '').trim();
-  if (!trimmed) return DEFAULT_LOL_API_BASE_URL;
+  if (!trimmed) return '';
   return trimmed.replace(/\/+$/, '');
 }
 
 function resolveLolApiBaseUrl(): string {
-  return normalizeUrlBase(getConfig().lolApiBaseUrl || DEFAULT_LOL_API_BASE_URL);
+  return normalizeUrlBase(getConfig().lolApiBaseUrl || '');
 }
 
 function resolveLolQueryTimeoutMs(): number {
@@ -266,51 +270,6 @@ function resolveLolQueryTimeoutMs(): number {
   return sec * 1000;
 }
 
-function getVideoApiTemplates(): Record<string, string> {
-  const data = getConfig().videoApiTemplates || {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(data)) {
-    const key = String(k || '').trim();
-    const val = String(v || '').trim();
-    if (key && val) out[key] = val;
-  }
-  return out;
-}
-
-function pickVideoApiByCategory(category: string): string | null {
-  const map = getVideoApiTemplates();
-  const exact = map[category];
-  if (exact) return exact;
-  const keys = Object.keys(map);
-  if (!keys.length) return null;
-  return map[keys[0]];
-}
-
-function resolveVideoRequestUrl(template: string, category: string): string {
-  const raw = String(template || '').trim();
-  if (!raw) return '';
-  if (raw.includes('{category}')) return raw.replace(/\{category\}/g, encodeURIComponent(category));
-  if (raw.includes('?')) return `${raw}&category=${encodeURIComponent(category)}`;
-  return `${raw}?category=${encodeURIComponent(category)}`;
-}
-
-function extractVideoUrl(data: any): string {
-  if (!data) return '';
-  if (typeof data === 'string') {
-    const text = data.trim();
-    if (/^https?:\/\//i.test(text)) return text;
-    return '';
-  }
-  const candidates = [
-    data.url, data.video, data.video_url, data.play, data.play_url, data.src, data.link, data.mp4,
-    data.data?.url, data.data?.video, data.data?.play, data.result?.url, data.result?.video, data.result?.play
-  ];
-  for (const item of candidates) {
-    const text = String(item || '').trim();
-    if (/^https?:\/\//i.test(text)) return text;
-  }
-  return '';
-}
 
 function normalizePlayerId(input: string): { ok: true; playerId: string; gameName: string; tagLine: string; } | { ok: false; reason: string; } {
   const raw = String(input || '').trim();
@@ -456,7 +415,8 @@ function resolveShardDataUrls(groupId: string): { ok: true; dataUrl: string; her
   const dataUrl = String(cfg.shardDataUrl || DEFAULT_SHARD_DATA_URL).trim();
   const heroUrl = String(cfg.shardHeroListUrl || DEFAULT_SHARD_HERO_LIST_URL).trim();
   const configuredImageTemplate = String(cfg.shardImageUrlTemplate || '').trim();
-  const imageTemplate = configuredImageTemplate || `${resolveLolApiBaseUrl()}/shard_query?hero={name}&output=image`;
+  const localBase = resolveLolApiBaseUrl();
+  const imageTemplate = configuredImageTemplate || (localBase ? `${localBase}/shard_query?hero={name}&output=image` : '');
   const fallback = normalizeQueryOutputFormat(cfg.shardQueryOutputFormat, 'image');
   const outputFormat = resolveQueryOutputFormat(groupId, 'lol_shard', fallback);
   const wrapperMode = resolveQueryWrapperMode('lol_shard');
@@ -857,18 +817,12 @@ async function sendFormattedQueryPagesDirect(
 }
 
 async function sendLolQueryImage(groupId: string, imageUrl: string): Promise<boolean> {
-  const probe = await probeImageUrlWithTimeout(imageUrl, resolveLolQueryTimeoutMs());
-  if (probe.ok) {
-    try {
-      await sendGroupSegmentsDirect(groupId, [
-        { type: 'image', data: { file: imageUrl } }
-      ]);
-      return true;
-    } catch (e: any) {
-      loggingStateService.warn(`战绩查询图片发送失败，降级合并转发: ${String(e?.message || e)}`);
-    }
-  } else {
-    loggingStateService.warn(`战绩查询图片接口不可用，降级合并转发: ${probe.error}`);
+  try {
+    const timeoutMs = Math.min(90_000, Math.max(45_000, resolveLolQueryTimeoutMs() + 15_000));
+    await deliverOneBotImageToGroup(groupId, imageUrl, { timeoutMs });
+    return true;
+  } catch (e: any) {
+    loggingStateService.warn(`LOL 查询图片获取或发送失败，降级文本结果: ${String(e?.message || e)}`);
   }
   return false;
 }
@@ -1271,9 +1225,27 @@ function saveLocalScammerReport(qq: string, content: string, source: string): Sc
 }
 
 function toBanQueryResult(data: any): BanQueryResult {
-  const detailText = mergeUniqueDetail([data?.msg, data?.data?.banmsg, data?.data?.rammsg, data?.data?.return, data?.data?.time, data?.data?.ban_time, data?.data?.unban_time, data?.data?.left_time]);
+  const structuredStatus = String(data?.data?.status || data?.status || '').trim();
+  const detailText = mergeUniqueDetail([
+    data?.msg,
+    data?.data?.banmsg,
+    data?.data?.rammsg,
+    data?.data?.return,
+    data?.data?.time,
+    data?.data?.ban_time,
+    data?.data?.end_time,
+    data?.data?.unban_time,
+    data?.data?.left_time,
+    data?.source === 'stale' ? '数据来自最近一次成功结果' : ''
+  ]);
   if (detailText && isUnavailableMessage(detailText)) {
     return { status: 'unknown', detail: detailText };
+  }
+  if (structuredStatus === '封禁' || structuredStatus.toLowerCase() === 'banned') {
+    return { status: 'banned', detail: detailText || '账号封禁中' };
+  }
+  if (structuredStatus === '正常' || ['safe', 'normal', 'unbanned'].includes(structuredStatus.toLowerCase())) {
+    return { status: 'safe', detail: detailText || '账号状态正常' };
   }
   if (typeof data?.code === 'number') {
     if ([201, 202, 203, 204, 401, 402, 403, 405, 408, 409, 410, 412, 423, 425, 429].includes(data.code)) {
@@ -1312,7 +1284,10 @@ function toBanQueryResult(data: any): BanQueryResult {
 async function queryBanByEndpoint(endpoint: string, qq: string): Promise<BanQueryAttempt> {
   const url = buildBanQueryUrl(endpoint, qq);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeoutMs = endpoint.includes('/api/v2/lolban')
+    ? Math.max(10_000, resolveLolQueryTimeoutMs())
+    : 8000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -1712,8 +1687,8 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'command_format_error', '请指定要查询的QQ号，例如：查封号 12345 或 查封号 @某人', { example: '查封号 123456789' });
       return true;
     }
-    if (!/^\d{5,13}$/.test(targetQQ)) {
-      await sendGroupScene(groupId, 'invalid_range', 'QQ号格式错误 (需5-13位数字)');
+    if (!/^\d{5,11}$/.test(targetQQ)) {
+      await sendGroupScene(groupId, 'invalid_range', 'QQ号格式错误 (需5-11位数字)');
       return true;
     }
     const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
@@ -1769,9 +1744,13 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       await sendGroupScene(groupId, 'command_format_error', parsed.reason, { example: '查战绩张三#12345' });
       return true;
     }
+    const baseUrl = resolveLolApiBaseUrl();
+    if (!baseUrl) {
+      await sendGroupScene(groupId, 'not_found', '未配置 LOL API Base，请联系机器人主人完成内网服务地址配置');
+      return true;
+    }
     await sendGroupScene(groupId, 'raw_text', `正在为您查询${parsed.playerId}${parsed.region ? parsed.region : ''}，请耐心等待`);
     runDetachedQuery('查战绩', async () => {
-      const baseUrl = resolveLolApiBaseUrl();
       const outputFormat = resolveQueryOutputFormat(groupId, 'lol_battle', normalizeQueryOutputFormat(getGroupSettings(groupId).lolQueryOutputFormat, 'forward'));
       const wrapperMode = resolveQueryWrapperMode('lol_battle');
       const selfId = String((event as any).self_id || userId);
@@ -1866,21 +1845,15 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       return true;
     }
     const baseUrl = resolveLolApiBaseUrl();
+    if (!baseUrl) {
+      await sendGroupScene(groupId, 'not_found', '未配置 LOL API Base，请联系机器人主人完成内网服务地址配置');
+      return true;
+    }
     await sendGroupScene(groupId, 'raw_text', `正在查询 ${rest} 的海克斯大乱斗强化符文，请稍等`);
     runDetachedQuery('海符榜', async () => {
       const imageUrl = buildAramAugmentImageUrl(baseUrl, rest);
-      const probe = await probeImageUrlWithTimeout(imageUrl, resolveLolQueryTimeoutMs());
-      if (probe.ok) {
-        try {
-          await sendGroupSegmentsDirect(groupId, [
-            { type: 'image', data: { file: imageUrl } }
-          ]);
-          return;
-        } catch (e: any) {
-          loggingStateService.warn(`海符榜图片发送失败，降级合并转发: ${String(e?.message || e)}`);
-        }
-      } else {
-        loggingStateService.warn(`海符榜图片接口不可用，降级合并转发: ${probe.error}`);
+      if (await sendLolQueryImage(groupId, imageUrl)) {
+        return;
       }
       const jsonRes = await fetchJsonWithTimeout(buildAramAugmentJsonUrl(baseUrl, rest), resolveLolQueryTimeoutMs());
       if (!jsonRes.ok) {
@@ -1986,12 +1959,15 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
   }
   if (text === '封号接口列表') {
     if (!authStateService.isOwner(userId)) return true;
-    const primary = (getConfig().lolBanPrimaryUrl || '').trim() || DEFAULT_LOL_BAN_PRIMARY_URL;
+    const localBase = resolveLolApiBaseUrl();
+    const primary = localBase ? `${localBase}/api/v2/lolban` : '（未配置 LOL API Base）';
+    const legacyPrimary = (getConfig().lolBanPrimaryUrl || '').trim();
     const configuredBackups = getConfig().lolBanBackupUrls;
     const backups = Array.isArray(configuredBackups) ? configuredBackups.map(v => String(v || '').trim()).filter(Boolean) : [];
-    const lines = [`主接口：${primary}`, '', '备用接口列表：'];
-    if (!backups.length) lines.push('（空）');
-    else backups.forEach((url, idx) => lines.push(`${idx + 1}. ${url}`));
+    const fallbacks = [legacyPrimary, ...backups].filter(Boolean);
+    const lines = [`统一主接口：${primary}`, '', '兼容备用接口列表：'];
+    if (!fallbacks.length) lines.push('（空）');
+    else fallbacks.forEach((url, idx) => lines.push(`${idx + 1}. ${url}`));
     await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
     return true;
   }
@@ -1999,7 +1975,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     if (!authStateService.isOwner(userId)) return true;
     const rawUrl = text.replace('设置战绩接口', '').trim();
     if (!rawUrl) {
-      await sendGroupScene(groupId, 'command_format_error', '请提供接口根地址，例如：设置战绩接口 http://192.168.3.94:5000', { example: '设置战绩接口 http://192.168.3.94:5000' });
+      await sendGroupScene(groupId, 'command_format_error', '请提供接口根地址，例如：设置战绩接口 http://192.168.x.x:5001', { example: '设置战绩接口 http://192.168.1.10:5001' });
       return true;
     }
     try {
@@ -2024,7 +2000,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       `当前接口：${current}`,
       '',
       '可用命令：',
-      '1) 设置战绩接口 http://192.168.3.94:5000',
+      '1) 设置战绩接口 http://192.168.1.10:5001',
       '2) 查战绩张三#12345'
     ];
     await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
@@ -2135,87 +2111,6 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       `- 本群覆盖指令：${(groupCfg as any).lolQueryCommandSwitch ? '已设置' : '未设置'}`
     ];
     await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
-    return true;
-  }
-  if (text.startsWith('设置看视频接口')) {
-    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
-    const rest = text.replace('设置看视频接口', '').trim();
-    const parts = rest.split(/\s+/).filter(Boolean);
-    if (parts.length < 2) {
-      await sendGroupScene(groupId, 'command_format_error', '格式：设置看视频接口 <分类> <URL模板>', { example: '设置看视频接口 搞笑 https://api.example.com/video?cat={category}' });
-      return true;
-    }
-    const category = parts[0];
-    const url = parts.slice(1).join(' ').trim();
-    if (!/^https?:\/\//i.test(url)) {
-      await sendGroupScene(groupId, 'invalid_range', '接口地址需为 http/https');
-      return true;
-    }
-    const config = getConfig();
-    const templates = config.videoApiTemplates || (config.videoApiTemplates = {});
-    templates[category] = url;
-    saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', `已设置看视频接口：${category}`);
-    return true;
-  }
-  if (text.startsWith('删除看视频接口')) {
-    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
-    const category = text.replace('删除看视频接口', '').trim();
-    if (!category) {
-      await sendGroupScene(groupId, 'command_format_error', '格式：删除看视频接口 <分类>', { example: '删除看视频接口 搞笑' });
-      return true;
-    }
-    const templates = getConfig().videoApiTemplates;
-    if (!templates?.[category]) {
-      await sendGroupScene(groupId, 'not_found', `未找到分类：${category}`);
-      return true;
-    }
-    delete templates[category];
-    saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', `已删除看视频接口：${category}`);
-    return true;
-  }
-  if (text === '看视频接口列表') {
-    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
-    const map = getVideoApiTemplates();
-    const keys = Object.keys(map);
-    if (!keys.length) {
-      await sendGroupScene(groupId, 'list_empty', '暂无看视频接口配置');
-      return true;
-    }
-    const lines = keys.map((k, i) => `${i + 1}. ${k} -> ${map[k]}`);
-    await sendGroupScene(groupId, 'raw_text', `看视频接口列表：\n${lines.join('\n')}`);
-    return true;
-  }
-  if (text.startsWith('我要看')) {
-    if (!await allowGroupFeature(input, 'query.video', '本群视频查询功能已关闭')) return true;
-    const rateCheck = checkAndConsumeQueryRate(groupId, '视频接口');
-    if (!rateCheck.ok) {
-      await sendQueryRateLimitNotice(groupId, rateCheck);
-      return true;
-    }
-    const category = text.replace('我要看', '').trim() || '热门';
-    const template = pickVideoApiByCategory(category);
-    if (!template) {
-      await sendGroupScene(groupId, 'not_found', '暂无可用看视频接口，请联系主人配置');
-      return true;
-    }
-    const requestUrl = resolveVideoRequestUrl(template, category);
-    if (!requestUrl) {
-      await sendGroupScene(groupId, 'raw_text', '看视频接口配置无效');
-      return true;
-    }
-    const res = await fetchAnyWithTimeout(requestUrl);
-    if (!res.ok) {
-      await sendGroupScene(groupId, 'raw_text', `视频接口请求失败：${res.error}`);
-      return true;
-    }
-    const directUrl = extractVideoUrl(res.data) || extractVideoUrl(res.raw);
-    if (!directUrl) {
-      await sendGroupScene(groupId, 'raw_text', `未解析到视频链接，接口返回：${String(res.raw || '').slice(0, 200)}`);
-      return true;
-    }
-    await sendGroupScene(groupId, 'raw_text', `🎬 ${category} 视频\n${directUrl}`);
     return true;
   }
   if (text.startsWith('设置lolurl')) {

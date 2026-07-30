@@ -34,6 +34,7 @@ interface GroupSendTask {
   groupId: string;
   message: any[];
   force: boolean;
+  requireDelivery: boolean;
   applyTemplate: boolean;
   scene: string;
   queuedAt: number;
@@ -506,7 +507,8 @@ class PluginState {
       reason,
       createdAt: Date.now()
     });
-    task.resolve();
+    if (task.requireDelivery) task.reject(new Error(`group_send_not_delivered:${reason}`));
+    else task.resolve();
   }
 
   private cloneMessage(message: any[]): any[] {
@@ -538,14 +540,19 @@ class PluginState {
     }
   }
 
-  private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; templateApplied?: boolean; suffixApplied?: boolean; suffixMode?: string; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) return Promise.resolve();
+  private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; requireDelivery?: boolean; applyTemplate?: boolean; scene?: string; templateApplied?: boolean; suffixApplied?: boolean; suffixMode?: string; }): Promise<void> {
+    if (!this.actions || !this.networkConfig) {
+      return options?.requireDelivery
+        ? Promise.reject(new Error('group_send_transport_unavailable'))
+        : Promise.resolve();
+    }
     return new Promise<void>((resolve, reject) => {
       const desc = this.describeMessage(message);
       const task: GroupSendTask = {
         groupId,
         message,
         force: options?.force === true,
+        requireDelivery: options?.requireDelivery === true,
         applyTemplate: options?.applyTemplate !== false,
         scene: options?.scene || 'raw_text',
         queuedAt: Date.now(),
@@ -650,7 +657,8 @@ class PluginState {
           reason: 'group_send_fused',
           createdAt: Date.now()
         });
-        task.resolve();
+        if (task.requireDelivery) task.reject(new Error('group_send_not_delivered:group_send_fused'));
+        else task.resolve();
         return;
       }
       const randomDelayMs = await this.randomSleep(task.groupId, task.scene);
@@ -677,7 +685,8 @@ class PluginState {
           reason: 'send_rate_limited',
           createdAt: Date.now()
         });
-        task.resolve();
+        if (task.requireDelivery) task.reject(new Error('group_send_not_delivered:send_rate_limited'));
+        else task.resolve();
         return;
       }
       const sent = await this.sendGroupMessageRaw(task.groupId, task.message);
@@ -726,7 +735,7 @@ class PluginState {
   }
 
   private async sendGroupMessageRaw(groupId: string, message: any[]): Promise<{ messageId: string; sentAt: number; selfRecallDueAt: number; }> {
-    if (!this.actions || !this.networkConfig) return { messageId: '', sentAt: 0, selfRecallDueAt: 0 };
+    if (!this.actions || !this.networkConfig) throw new Error('group_send_transport_unavailable');
     const res = await this.actions.call('send_group_msg', {
       group_id: groupId,
       message
@@ -782,8 +791,11 @@ class PluginState {
     }
   }
 
-  async sendGroupText (groupId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) return;
+  async sendGroupText (groupId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
+    if (!this.actions || !this.networkConfig) {
+      if (options?.requireDelivery) throw new Error('group_send_transport_unavailable');
+      return;
+    }
     const templateDisabled = this.isReplyTemplateDisabled();
     const scene = options?.scene || 'raw_text';
     const allowSemanticTemplate = isReplyTemplateSceneAllowed(scene);
@@ -807,6 +819,7 @@ class PluginState {
     const outgoingMessage = this.packageOutgoingMessage(groupId, scene, [{ type: 'text', data: { text: finalContent } }], 'group');
     await this.enqueueGroupTask(groupId, outgoingMessage, {
       force,
+      requireDelivery: options?.requireDelivery === true,
       applyTemplate,
       scene,
       templateApplied: !templateDisabled && applyTemplate,
@@ -816,8 +829,11 @@ class PluginState {
   }
 
   /** 发送群消息 (Array) */
-  async sendGroupMsg (groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) return;
+  async sendGroupMsg (groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
+    if (!this.actions || !this.networkConfig) {
+      if (options?.requireDelivery) throw new Error('group_send_transport_unavailable');
+      return;
+    }
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
@@ -852,6 +868,7 @@ class PluginState {
     const outgoingMessage = this.packageOutgoingMessage(groupId, scene, cloned, 'group');
     await this.enqueueGroupTask(groupId, outgoingMessage, {
       force,
+      requireDelivery: options?.requireDelivery === true,
       applyTemplate,
       scene,
       templateApplied: !templateDisabled && applyTemplate && !!firstText,
@@ -861,8 +878,11 @@ class PluginState {
   }
 
   /** 发送私聊消息 (Text) */
-  async sendPrivateMsg (userId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) return;
+  async sendPrivateMsg (userId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; requireDelivery?: boolean; }): Promise<void> {
+    if (!this.actions || !this.networkConfig) {
+      if (options?.requireDelivery) throw new Error('private_send_transport_unavailable');
+      return;
+    }
     const force = options?.force !== false;
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
@@ -893,6 +913,7 @@ class PluginState {
       } as never, this.adapterName, this.networkConfig);
     } catch (e) {
       this.log('error', `发送私聊消息失败: ${e}`);
+      if (options?.requireDelivery) throw e;
     }
   }
 
