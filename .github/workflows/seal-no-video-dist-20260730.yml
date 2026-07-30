@@ -49,6 +49,23 @@ jobs:
         working-directory: onebot-plugin-groupguard
         run: npm run build:release
 
+      - name: Upload exact source snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-source-diagnostic-fb3a4eb7865f
+          path: |
+            onebot-plugin-groupguard/src
+            onebot-plugin-groupguard/config
+            onebot-plugin-groupguard/scripts
+            onebot-plugin-groupguard/package.json
+            onebot-plugin-groupguard/package-lock.json
+            onebot-plugin-groupguard/tsconfig.json
+            onebot-plugin-groupguard/vite.config.ts
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 30
+
       - name: Seal dist manifest
         shell: bash
         working-directory: onebot-plugin-groupguard
