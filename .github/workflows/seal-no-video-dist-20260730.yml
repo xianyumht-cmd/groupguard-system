@@ -1,0 +1,91 @@
+name: seal-no-video-dist-20260730
+
+on:
+  push:
+    branches:
+      - feat/all-query-intranet-client-20260729
+    paths:
+      - .github/workflows/seal-no-video-dist-20260730.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seal-dist:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: fb3a4eb7865f25ac13727961329a605f81cb51ca
+          fetch-depth: 1
+
+      - name: Verify exact source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "fb3a4eb7865f25ac13727961329a605f81cb51ca"
+          test -z "$(git status --porcelain)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: onebot-plugin-groupguard
+        run: npm ci
+
+      - name: Run complete verification suite
+        working-directory: onebot-plugin-groupguard
+        run: npm test
+
+      - name: Build release dist
+        working-directory: onebot-plugin-groupguard
+        run: npm run build:release
+
+      - name: Seal dist manifest
+        shell: bash
+        working-directory: onebot-plugin-groupguard
+        run: |
+          set -euo pipefail
+          test -d dist
+          test -n "$(find dist -type f -print -quit)"
+          if find dist -type f -iname '*video*' -print -quit | grep -q .; then
+            echo 'Video-named file found in dist' >&2
+            find dist -type f -iname '*video*' -print >&2
+            exit 1
+          fi
+          if grep -RInaE 'registerIntranetVideoCommandPlugins|intranet_video_runtime_plugin|video\.info|我要看' dist; then
+            echo 'Retired video runtime marker found in dist' >&2
+            exit 1
+          fi
+          find dist -type f -print0 | sort -z | xargs -0 sha256sum > DIST-SHA256SUMS.txt
+          cat > DIST-RELEASE-MANIFEST.json <<'JSON'
+          {
+            "schema": "groupguard-dist-release.v1",
+            "source_commit": "fb3a4eb7865f25ac13727961329a605f81cb51ca",
+            "runtime_commit": "8f37a02a7ac4fbe27dea7197b723d8d60a5b793e",
+            "api_commit": "f221b64649763eb8d325d87348fd2f42f48a6485",
+            "video_category": "retired",
+            "delivery_protocol": "groupguard-query-delivery.v1",
+            "pr": 17
+          }
+          JSON
+
+      - name: Upload dist only
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-no-video-dist-fb3a4eb7865f
+          path: |
+            onebot-plugin-groupguard/dist
+            onebot-plugin-groupguard/DIST-SHA256SUMS.txt
+            onebot-plugin-groupguard/DIST-RELEASE-MANIFEST.json
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 90
