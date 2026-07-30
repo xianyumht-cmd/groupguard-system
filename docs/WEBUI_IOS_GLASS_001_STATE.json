@@ -2,17 +2,18 @@
   "task_id": "WEBUI-IOS-001",
   "repository": "xianyumht-cmd/groupguard-system",
   "branch": "codex/webui-ios-glass-20260730",
-  "status": "VERIFYING",
-  "updated_at": "2026-07-30T22:39:00+08:00",
-  "progress_percent": 70,
+  "merged_commit": "cb4792a336e970b2683d5ab2ec9a82e0ecb63a68",
+  "status": "COMPLETED",
+  "updated_at": "2026-07-30T22:42:00+08:00",
+  "progress_percent": 100,
   "phases": {
     "audit": "COMPLETED",
     "plan": "COMPLETED",
     "implementation": "COMPLETED",
-    "verification": "IN_PROGRESS",
-    "completion": "PENDING"
+    "verification": "COMPLETED",
+    "completion": "COMPLETED"
   },
-  "current_step": "Run full GroupGuard CI and SnowLuma build",
+  "current_step": "Completed and merged to main",
   "completed": [
     "Audited all standalone admin pages and server routing",
     "Audited global, group, query, QA, license, backup and raw config save paths",
@@ -23,11 +24,10 @@
     "Added a query presentation facade without changing query runtime behavior",
     "Removed retired hidden-query controls from the rendered WebUI",
     "Aligned displayed query formats with text, forward and image preferences",
-    "Added theme and query presentation verification to test/build gates"
+    "Added theme and query presentation verification to test/build gates",
+    "Passed GroupGuard CI",
+    "Passed SnowLuma Build",
+    "Merged PR 25 to main"
   ],
-  "remaining": [
-    "Pass GroupGuard CI and SnowLuma build",
-    "Merge to main",
-    "Mark task COMPLETED"
-  ]
+  "remaining": []
 }
