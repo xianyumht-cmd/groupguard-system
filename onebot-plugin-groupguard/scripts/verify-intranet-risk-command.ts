@@ -81,7 +81,8 @@ try {
     ...(config.global || {}),
     lolQueryRequestTimeoutSeconds: 20,
     lolQueryGlobalMinIntervalSeconds: 0,
-    lolQueryGroupMinIntervalSeconds: 0
+    lolQueryGroupMinIntervalSeconds: 0,
+    lolQueryOutputFormat: 'image'
   };
   configStateService.setConfig(config);
 
@@ -126,6 +127,7 @@ try {
   );
   assert.equal(queryCount, 1);
   assert.equal(queryPayload.feature, 'scammer');
+  assert.equal(queryPayload.preferred, 'image');
   assert.deepEqual(queryPayload.parameters, { identifier_type: 'qq', identifier: '123456789' });
   assert.equal(JSON.stringify(queryPayload).includes('must-not-be-used'), false);
   assert.equal(queryResult.ok, true);

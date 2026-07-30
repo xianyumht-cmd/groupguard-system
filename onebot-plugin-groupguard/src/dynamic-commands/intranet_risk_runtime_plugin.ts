@@ -8,7 +8,8 @@ import {
 } from '../services/intranet_query_service';
 import {
   buildIntranetStructuredResult,
-  resolveIntranetQueryTimeoutMs
+  resolveIntranetQueryTimeoutMs,
+  resolveUnifiedQueryPreferredOutput
 } from './intranet_query_runtime_plugin';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
@@ -156,7 +157,7 @@ export async function executeRiskIntranetQuery(
         identifier_type: parsed.identifier.type,
         identifier: parsed.identifier.value
       },
-      preferred: 'text',
+      preferred: resolveUnifiedQueryPreferredOutput(groupId, [category]),
       timeoutMs: resolveIntranetQueryTimeoutMs(),
       requestId: requestIdFromContext(category, input, context),
       ...(requestFn ? { requestFn } : {})

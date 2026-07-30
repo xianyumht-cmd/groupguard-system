@@ -71,6 +71,26 @@ export function resolveAramPreferredOutput(groupId: string): IntranetPreferredOu
   return normalizeIntranetPreferredOutput(config?.aramQueryOutputFormat || 'image');
 }
 
+export function resolveUnifiedQueryPreferredOutput(
+  groupId: string,
+  profileKeys: string[] = []
+): IntranetPreferredOutput {
+  const config = configStateService.getConfig() as any;
+  for (const key of profileKeys) {
+    const profileValue = config?.queryCommandProfiles?.[key]?.outputFormat;
+    if (profileValue !== undefined && profileValue !== '') {
+      return normalizeIntranetPreferredOutput(profileValue);
+    }
+  }
+  const group = configStateService.resolveGroupSettings(groupId) as any;
+  return normalizeIntranetPreferredOutput(
+    group?.lolQueryOutputFormat
+      ?? config?.global?.lolQueryOutputFormat
+      ?? config?.lolQueryOutputFormat
+      ?? 'text'
+  );
+}
+
 export function resolveIntranetQueryTimeoutMs(): number {
   const config = configStateService.getConfig() as any;
   const raw = Number(config?.global?.lolQueryRequestTimeoutSeconds ?? 20);
@@ -285,7 +305,7 @@ export async function executeLolbanIntranetQuery(
       baseUrl,
       feature: 'lolban',
       parameters: { qq },
-      preferred: 'text',
+      preferred: resolveUnifiedQueryPreferredOutput(group.groupId, ['lol_ban', 'lolban']),
       timeoutMs: resolveIntranetQueryTimeoutMs(),
       requestId: requestIdFromContext('lolban', input, context),
       ...(requestFn ? { requestFn } : {})
