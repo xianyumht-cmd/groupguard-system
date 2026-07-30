@@ -198,7 +198,6 @@ export const DEFAULT_GROUP_SETTINGS: GroupGuardSettings = {
   lolQueryCommandSwitch: {
     battleQuery: true,
     banQuery: true,
-    hiddenQuery: true,
   },
   allowRecallAdminMessage: false,
   allowRecallOwnerMessage: false,
@@ -580,7 +579,6 @@ export function normalizeGroupSettings(input: GroupGuardSettings): GroupGuardSet
   merged.lolQueryCommandSwitch = {
     battleQuery: (switchInput as any).battleQuery !== false,
     banQuery: (switchInput as any).banQuery !== false,
-    hiddenQuery: (switchInput as any).hiddenQuery !== false,
   };
   merged.inviteQueryPermission = merged.inviteQueryPermission === 'admin' || merged.inviteQueryPermission === 'owner' ? merged.inviteQueryPermission : 'all';
   merged.blacklistAction = merged.blacklistAction === 'ban' || merged.blacklistAction === 'kick' || merged.blacklistAction === 'kick_and_block' ? merged.blacklistAction : 'recall';

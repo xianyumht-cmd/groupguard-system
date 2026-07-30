@@ -537,7 +537,6 @@ export type LolQueryOutputFormat = 'forward' | 'text' | 'image' | 'card';
 export interface LolQueryCommandSwitch {
   battleQuery: boolean;
   banQuery: boolean;
-  hiddenQuery: boolean;
 }
 
 /** 入群验证日志 */

@@ -22,7 +22,6 @@ export type GroupGuardQueryFeature =
   | 'aram'
   | 'lolban'
   | 'battle'
-  | 'hidden'
   | 'video'
   | 'scammer'
   | 'peer'

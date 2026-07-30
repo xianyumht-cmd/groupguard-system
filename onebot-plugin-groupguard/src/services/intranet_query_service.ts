@@ -13,7 +13,6 @@ import {
 export type IntranetQueryFeature =
   | GroupGuardQueryRequest['feature']
   | 'battle'
-  | 'hidden'
   | 'video'
   | 'scammer'
   | 'peer'
