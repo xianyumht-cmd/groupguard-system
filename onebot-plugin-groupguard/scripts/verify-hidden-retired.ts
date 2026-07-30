@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { INTERACTION_PREFIXES } from '../src/commands/modules/interaction.ts';
 
+// Permanent guard: the retired hidden query must not regain an active route,
+// protocol feature, legacy implementation, or user-visible configuration.
 const root = process.cwd();
 const commands = readFileSync(path.join(root, 'src/commands.ts'), 'utf8');
 const formatter = readFileSync(path.join(root, 'src/dynamic-commands/command_response_formatter.ts'), 'utf8');
