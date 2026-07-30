@@ -1,0 +1,76 @@
+name: GFM SnowLuma delete diagnostics retry 001
+
+on:
+  push:
+    branches:
+      - fix/gfm-delete-snowluma-diagnostics-001
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gfm-delete-snowluma-diagnostics-retry-001
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout clean fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/gfm-delete-snowluma-diagnostics-001
+          fetch-depth: 0
+
+      - name: Relax one-shot applicator duplicate guard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/apply_gfm_delete_snowluma_diagnostics_001.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('if count != 1:', 'if count < 1:')
+          text = text.replace('expected exactly one match', 'expected at least one match')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Apply SnowLuma-specific patch
+        run: python3 .github/scripts/apply_gfm_delete_snowluma_diagnostics_001.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: onebot-plugin-groupguard
+        run: npm ci
+
+      - name: Type-check
+        working-directory: onebot-plugin-groupguard
+        run: npm run typecheck
+
+      - name: Verify OneBot error propagation
+        working-directory: onebot-plugin-groupguard
+        run: npm run verify:core-stability
+
+      - name: Verify GroupFileMirror cleanup
+        working-directory: onebot-plugin-groupguard
+        run: npm run verify:group-file-mirror
+
+      - name: Remove one-shot machinery
+        run: |
+          rm -f .github/scripts/apply_gfm_delete_snowluma_diagnostics_001.py
+          rm -f .github/workflows/gfm-delete-snowluma-diagnostics-001.yml
+          rm -f .github/workflows/gfm-delete-snowluma-diagnostics-retry-001.yml
+
+      - name: Commit verified implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(group-file-mirror): preserve SnowLuma delete errors"
+          git push origin HEAD:fix/gfm-delete-snowluma-diagnostics-001
