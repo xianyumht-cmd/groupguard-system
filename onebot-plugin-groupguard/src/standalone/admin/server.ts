@@ -8,6 +8,8 @@ import { renderQaPage } from './qa_page';
 import { renderQueryPage } from './query_page';
 import { renderQunGuanjiaPage } from './qun_guanjia_page';
 import { renderGroupFileMirrorPage } from './group_file_mirror_page';
+import { applyWebUiTheme } from './webui_theme';
+import { normalizeQueryOverviewForWebUi, patchQueryPageHtml } from './query_webui_facade';
 import {
   getGroupFileMirrorOverview,
   saveGroupFileMirrorFromWeb,
@@ -91,27 +93,27 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
     const url = new URL(req.url || '/', `http://${host}:${port}`);
     try {
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-        send(res, 200, renderMainPage(), 'text/html; charset=utf-8');
+        send(res, 200, applyWebUiTheme(renderMainPage()), 'text/html; charset=utf-8');
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/qa.html') {
-        send(res, 200, renderQaPage(), 'text/html; charset=utf-8');
+        send(res, 200, applyWebUiTheme(renderQaPage()), 'text/html; charset=utf-8');
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/query.html') {
-        send(res, 200, renderQueryPage(), 'text/html; charset=utf-8');
+        send(res, 200, applyWebUiTheme(patchQueryPageHtml(renderQueryPage())), 'text/html; charset=utf-8');
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/qun-guanjia.html') {
-        send(res, 200, renderQunGuanjiaPage(), 'text/html; charset=utf-8');
+        send(res, 200, applyWebUiTheme(renderQunGuanjiaPage()), 'text/html; charset=utf-8');
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/group-file-mirror.html') {
-        send(res, 200, renderGroupFileMirrorPage(), 'text/html; charset=utf-8');
+        send(res, 200, applyWebUiTheme(renderGroupFileMirrorPage()), 'text/html; charset=utf-8');
         return;
       }
 
@@ -336,13 +338,13 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       }
 
       if (req.method === 'GET' && url.pathname === '/api/query/overview') {
-        sendJson(res, 200, getQueryOverview());
+        sendJson(res, 200, normalizeQueryOverviewForWebUi(getQueryOverview()));
         return;
       }
 
       if (req.method === 'POST' && url.pathname === '/api/query/patch') {
         const payload = JSON.parse(await readBody(req) || '{}');
-        sendJson(res, 200, patchQueryConfig(options, payload.patch || {}));
+        sendJson(res, 200, normalizeQueryOverviewForWebUi(patchQueryConfig(options, payload.patch || {})));
         return;
       }
 
