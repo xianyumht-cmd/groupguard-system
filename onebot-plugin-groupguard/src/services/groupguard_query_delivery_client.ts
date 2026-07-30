@@ -315,3 +315,85 @@ export function toOneBotDeliveryPlan(envelope: GroupGuardQueryDeliveryEnvelope):
     })
   };
 }
+
+export function isIntranetHostname(hostname: string): boolean {
+  const host = String(hostname || '').trim().toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host === '::1' || host.endsWith('.local')) return true;
+  if (host === '127.0.0.1' || host.startsWith('127.')) return true;
+  if (host.startsWith('10.')) return true;
+  if (host.startsWith('192.168.')) return true;
+  const match172 = host.match(/^172\.(\d{1,3})\./);
+  if (match172) {
+    const second = Number(match172[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
+  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true;
+  if (/^[a-z0-9-]+$/i.test(host)) return true;
+  return false;
+}
+
+export function resolveGroupGuardQueryEndpoint(baseUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(baseUrl || '').trim());
+  } catch {
+    throw new Error('lol_api_base_url_invalid');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('lol_api_base_protocol_invalid');
+  if (parsed.username || parsed.password) throw new Error('lol_api_base_credentials_forbidden');
+  if (parsed.search || parsed.hash) throw new Error('lol_api_base_query_forbidden');
+  if (parsed.pathname && parsed.pathname !== '/') throw new Error('lol_api_base_path_forbidden');
+  if (!isIntranetHostname(parsed.hostname)) throw new Error('lol_api_base_must_be_intranet');
+  return `${parsed.origin}${GROUPGUARD_QUERY_DELIVERY_PATH}`;
+}
+
+export async function requestGroupGuardQueryDelivery(
+  baseUrl: string,
+  payload: GroupGuardQueryRequest,
+  options: {
+    timeoutMs?: number;
+    fetchFn?: typeof fetch;
+    maxResponseChars?: number;
+  } = {}
+): Promise<GroupGuardQueryDeliveryEnvelope> {
+  const endpoint = resolveGroupGuardQueryEndpoint(baseUrl);
+  const fetchFn = options.fetchFn || globalThis.fetch;
+  const timeoutMs = Math.max(1_000, Math.min(Number(options.timeoutMs || 20_000), 120_000));
+  const maxResponseChars = Math.max(1_024, Math.min(Number(options.maxResponseChars || MAX_RESPONSE_CHARS), MAX_RESPONSE_CHARS));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchFn(endpoint, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    const declaredLength = Number(response.headers.get('content-length') || 0);
+    if (Number.isFinite(declaredLength) && declaredLength > maxResponseChars) {
+      await response.body?.cancel();
+      throw new Error('delivery_response_too_large');
+    }
+    const text = await response.text();
+    if (text.length > maxResponseChars) throw new Error('delivery_response_too_large');
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(text);
+    } catch {
+      throw new Error(`delivery_response_invalid_json_http_${response.status}`);
+    }
+    const envelope = parseGroupGuardQueryDelivery(decoded);
+    if (!response.ok && envelope.ok) throw new Error(`delivery_http_status_conflict_${response.status}`);
+    return envelope;
+  } catch (error: unknown) {
+    if ((error as { name?: string })?.name === 'AbortError') throw new Error('delivery_request_timeout');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
