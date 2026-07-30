@@ -88,6 +88,12 @@ function main(): void {
   );
   assert.equal(selectedDeleteFile?.id, 'encoded-new-file-id', 'deletable encoded file ID is selected by upload time');
   assert.equal(selectedDeleteFile?.busid, 102, 'delete_group_file busid is preserved');
+  assert.equal(selectListedGroupFileForUpload(
+    listedFiles,
+    'same-package.7z',
+    4096,
+    1785500060 * 1000,
+  ), null, 'an old same-name file outside the upload window is never guessed');
 
   const canonical = extractFileSegmentsFromMessage({
     message: [

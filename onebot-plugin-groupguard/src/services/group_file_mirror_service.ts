@@ -242,10 +242,10 @@ export function selectListedGroupFileForUpload(
   if (!matches.length) return null;
 
   const timed = matches.filter(file => file.uploadTime > 0);
-  if (uploadStartedAt > 0 && timed.length) {
+  if (uploadStartedAt > 0) {
     const withinWindow = timed.filter(file => Math.abs(file.uploadTime - uploadStartedAt) <= 5 * 60 * 1000);
-    const candidates = withinWindow.length ? withinWindow : timed;
-    return candidates.reduce((best, candidate) => (
+    if (!withinWindow.length) return null;
+    return withinWindow.reduce((best, candidate) => (
       Math.abs(candidate.uploadTime - uploadStartedAt) < Math.abs(best.uploadTime - uploadStartedAt)
         ? candidate
         : best
