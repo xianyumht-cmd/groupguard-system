@@ -18,12 +18,12 @@ const migratedCommands = [
   '海符榜',
   '查封号',
   '查战绩',
-  '查隐藏',
   '查骗子',
   '举报骗子',
   '查同行',
   '举报同行'
 ];
+const retiredCommands = ['查隐藏'];
 const migratedConfigurationCommands = [
   '设置封号主接口',
   '设置封号接口配置',
@@ -38,14 +38,13 @@ const migratedConfigurationCommands = [
   '设置骗子库限制',
   '设置骗子风控'
 ];
-for (const command of [...migratedCommands, ...migratedConfigurationCommands]) {
+for (const command of [...migratedCommands, ...retiredCommands, ...migratedConfigurationCommands]) {
   assert.equal(INTERACTION_PREFIXES.includes(command), false, `legacy interaction route still owns ${command}`);
   assert.equal(INTERACTION_EXACT.includes(command), false, `legacy exact route still owns ${command}`);
 }
 for (const command of ['封号接口列表', '骗子接口状态']) {
   assert.equal(INTERACTION_EXACT.includes(command), false, `legacy provider status command remains active: ${command}`);
 }
-
 
 const retiredVideoMarkers = [
   '我要看',
@@ -78,17 +77,18 @@ const commandsSource = await text('src/commands.ts');
 for (const registration of [
   'registerIntranetQueryCommandPlugins()',
   'registerIntranetBattleCommandPlugins()',
-  'registerIntranetHiddenCommandPlugins()',
   'registerIntranetRiskCommandPlugins()'
 ]) {
   assert.ok(commandsSource.includes(registration), `missing query registration: ${registration}`);
 }
+assert.doesNotMatch(commandsSource, /registerIntranetHiddenCommandPlugins|intranet_hidden_runtime_plugin/);
 
 const activeRuntimeFiles = (await readdir(dynamicRoot))
   .filter((name) => /^intranet_.*(?:runtime_plugin|command_plugin)\.ts$/.test(name))
   .sort();
-assert.ok(activeRuntimeFiles.length >= 5, 'expected all retained intranet query runtime modules');
+assert.ok(activeRuntimeFiles.length >= 4, 'expected all retained intranet query runtime modules');
 assert.equal(activeRuntimeFiles.includes('intranet_video_runtime_plugin.ts'), false, 'retired video runtime must not exist');
+assert.equal(activeRuntimeFiles.includes('intranet_hidden_runtime_plugin.ts'), false, 'retired hidden runtime must not exist');
 assert.doesNotMatch(commandsSource, /registerIntranetVideoCommandPlugins|intranet_video_runtime_plugin/);
 for (const name of activeRuntimeFiles) {
   const source = (await readFile(path.join(dynamicRoot, name), 'utf8')).toLowerCase();
@@ -126,6 +126,7 @@ for (const [name, source] of [
   assert.equal(source.includes('lolso1.com'), false, `${name} contains public business source`);
   assert.equal(source.includes('game.gtimg.cn'), false, `${name} contains public business source`);
 }
+assert.equal(queryClientSource.includes("| 'hidden'"), false, 'retired hidden feature remains in query request type');
 
 const registrySource = await text('src/dynamic-commands/command_plugin_registry.ts');
 assert.match(registrySource, /createIntranetDynamicCommandPlugin/);
@@ -161,12 +162,12 @@ const architectureDoc = await text('docs/architecture/CHANNEL_NEUTRAL_QUERY_CLIE
 assert.match(architectureDoc, /官方机器人|official bot/i);
 assert.match(architectureDoc, /内网接口失败时直连公网|公网.*备用|public fallback/i);
 
-// Legacy query implementations remain temporarily reviewable in
-// interaction_service.ts, but the active dispatcher must have no migrated
-// trigger path into them. This assertion prevents accidental reactivation.
+// Legacy query implementations may remain temporarily reviewable in
+// interaction_service.ts, but the active dispatcher must not expose migrated
+// or retired trigger paths into them.
 const interactionModuleSource = await text('src/commands/modules/interaction.ts');
-for (const command of migratedCommands) {
-  assert.equal(interactionModuleSource.includes(`'${command}'`), false, `migrated command reactivated in interaction module: ${command}`);
+for (const command of [...migratedCommands, ...retiredCommands]) {
+  assert.equal(interactionModuleSource.includes(`'${command}'`), false, `query command reactivated in interaction module: ${command}`);
 }
 
 console.log(`all-query client boundary verification passed (${activeRuntimeFiles.length} intranet runtime modules)`);
