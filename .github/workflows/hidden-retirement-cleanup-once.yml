@@ -52,6 +52,7 @@ jobs:
               "type QueryCommandType = 'lol_battle' | 'lol_hidden' | 'lol_shard';",
               "type QueryCommandType = 'lol_battle' | 'lol_shard';",
           )
+          interaction = re.sub(r'\ninterface LolQueryData \{.*?\n\}\n', '\n', interaction, flags=re.S)
           interaction = re.sub(r'\ninterface LolHiddenData \{.*?\n\}\n', '\n', interaction, flags=re.S)
           interaction = interaction.replace(
               "type LolCommandKey = 'battleQuery' | 'banQuery' | 'hiddenQuery';",
@@ -62,11 +63,18 @@ jobs:
           interaction = re.sub(r'^\s*查隐藏:\s*\'hiddenQuery\',?\s*\n', '', interaction, flags=re.M)
           interaction = interaction.replace('仅支持：查战绩、查封号、查隐藏', '仅支持：查战绩、查封号')
           interaction = interaction.replace(" / 查隐藏(${switches.hiddenQuery ? '开' : '关'})", '')
-          start = interaction.find("  if (text.startsWith('查隐藏')) {")
-          end = interaction.find("  if (text === '邀请查询') {", start)
-          if start < 0 or end < 0:
+
+          formatter_start = interaction.find('function buildLolForwardPages(')
+          formatter_end = interaction.find('function buildCrossPrettyPages(', formatter_start)
+          if formatter_start < 0 or formatter_end < 0:
+              raise SystemExit('legacy hidden formatter markers not found')
+          interaction = interaction[:formatter_start] + interaction[formatter_end:]
+
+          command_start = interaction.find("  if (text.startsWith('查隐藏')) {")
+          command_end = interaction.find("  if (text === '邀请查询') {", command_start)
+          if command_start < 0 or command_end < 0:
               raise SystemExit('legacy hidden query block markers not found')
-          interaction = interaction[:start] + interaction[end:]
+          interaction = interaction[:command_start] + interaction[command_end:]
           save('src/services/interaction_service.ts', interaction)
 
           guard = load('scripts/verify-hidden-retired.ts')
@@ -78,6 +86,8 @@ jobs:
             assert.equal(source.includes('hiddenQuery'), false);
             assert.equal(source.includes('query.lol_hidden'), false);
             assert.equal(source.includes("text.startsWith('查隐藏')"), false);
+            assert.equal(source.includes('LolHiddenData'), false);
+            assert.equal(source.includes('buildLolForwardPages'), false);
           }
           """
           marker = "console.log('hidden query retirement verification passed');"
