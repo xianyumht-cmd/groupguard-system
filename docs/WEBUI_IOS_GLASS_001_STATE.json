@@ -1,0 +1,29 @@
+{
+  "task_id": "WEBUI-IOS-001",
+  "repository": "xianyumht-cmd/groupguard-system",
+  "branch": "codex/webui-ios-glass-20260730",
+  "status": "IMPLEMENTING",
+  "updated_at": "2026-07-30T21:53:00+08:00",
+  "progress_percent": 30,
+  "phases": {
+    "audit": "COMPLETED",
+    "plan": "COMPLETED",
+    "implementation": "IN_PROGRESS",
+    "verification": "PENDING",
+    "completion": "PENDING"
+  },
+  "current_step": "Implement shared theme injection and align query configuration with unified delivery modes",
+  "completed": [
+    "Audited all standalone admin pages and server routing",
+    "Audited global, group, query, QA, license, backup and raw config save paths",
+    "Identified stale hidden-query UI and fixed-text assumptions"
+  ],
+  "remaining": [
+    "Add shared iOS glass theme module",
+    "Inject theme into all plugin WebUI pages",
+    "Remove retired hidden query controls",
+    "Align text/image/forward preferences",
+    "Add tests and run full CI/build",
+    "Merge to main and mark COMPLETED"
+  ]
+}
