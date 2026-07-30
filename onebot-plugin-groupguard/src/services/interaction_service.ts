@@ -30,7 +30,6 @@ function getGroupSettings(groupId: string) {
 const QUERY_ROLE_PREFIXES = [
   '查封号',
   '查战绩',
-  '查隐藏',
   '查合集',
   '海符榜',
   '查骗子',
@@ -68,7 +67,7 @@ function isQueryRoleInteractionText(text: string): boolean {
   return QUERY_ROLE_EXACT.has(text) || QUERY_ROLE_PREFIXES.some(prefix => text.startsWith(prefix));
 }
 
-type QueryCommandType = 'lol_battle' | 'lol_hidden' | 'lol_shard';
+type QueryCommandType = 'lol_battle' | 'lol_shard';
 type QueryOutputFormat = 'forward' | 'text' | 'image' | 'card';
 type QueryWrapperMode = 'global' | 'none' | 'forward';
 
@@ -129,19 +128,7 @@ interface LolRecentMatch {
   win?: boolean;
 }
 
-interface LolQueryData {
-  name?: string;
-  rank?: string;
-  winrate?: string;
-  recent_matches?: LolRecentMatch[];
-}
 
-interface LolHiddenData {
-  found_matches?: number;
-  recent_heroes?: string[];
-  kda_estimate?: number;
-  recent_matches?: LolRecentMatch[];
-}
 
 
 interface CrossPrettyMatch {
@@ -203,7 +190,7 @@ interface CrossPrettyData {
   raw_ok?: boolean;
 }
 
-type LolCommandKey = 'battleQuery' | 'banQuery' | 'hiddenQuery';
+type LolCommandKey = 'battleQuery' | 'banQuery';
 
 const BAN_UNAVAILABLE_PATTERNS = [
   /额度|上限|次数|限制|限流|频繁|拥挤|繁忙|维护|异常|失败|超时|重试|稍后|暂停|通道|风控|waf|拦截|拒绝/i,
@@ -308,7 +295,6 @@ function getLolCommandSwitch(groupId: string): Record<LolCommandKey, boolean> {
   return {
     battleQuery: (data as any).battleQuery !== false,
     banQuery: (data as any).banQuery !== false,
-    hiddenQuery: (data as any).hiddenQuery !== false
   };
 }
 
@@ -323,7 +309,6 @@ function setLolCommandSwitch(groupId: string, key: LolCommandKey, enabled: boole
     gs.lolQueryCommandSwitch = {
       battleQuery: true,
       banQuery: true,
-      hiddenQuery: true
     };
   }
   gs.lolQueryCommandSwitch[key] = enabled;
@@ -586,49 +571,6 @@ function summarizeMatch(match: LolRecentMatch): string {
     : `${match?.kills ?? 0}/${match?.deaths ?? 0}/${match?.assists ?? 0}`;
   const when = match?.game_time || '-';
   return `${when} | ${champion} | ${winText} | KDA ${kda}`;
-}
-
-function buildLolForwardPages(playerId: string, queryData: LolQueryData | null, hiddenData: LolHiddenData | null, queryError: string, hiddenError: string): string[] {
-  const pages: string[] = [];
-  pages.push(`🎮 战绩查询\n玩家：${playerId}\n时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`);
-  if (queryData) {
-    const rows = Array.isArray(queryData.recent_matches) ? queryData.recent_matches : [];
-    const winCount = rows.filter(r => !!r.win).length;
-    const rank = (queryData.rank || '').trim() || '未知';
-    const winrate = (queryData.winrate || '').trim() || '未知';
-    const head = [
-      '📈 常规战绩',
-      `召唤师：${queryData.name || playerId}`,
-      `段位：${rank}`,
-      `胜率：${winrate}`,
-      `最近场次：${rows.length}（胜 ${winCount} / 负 ${Math.max(rows.length - winCount, 0)}）`
-    ];
-    if (!rows.length) {
-      head.push('最近战绩：暂无可用数据');
-    } else {
-      head.push('', ...rows.slice(0, 10).map((m, i) => `${i + 1}. ${summarizeMatch(m)}`));
-    }
-    pages.push(head.join('\n'));
-  } else {
-    pages.push(`📈 常规战绩\n查询失败：${queryError || '接口返回异常'}`);
-  }
-  if (hiddenData) {
-    const rows = Array.isArray(hiddenData.recent_matches) ? hiddenData.recent_matches : [];
-    const heroes = Array.isArray(hiddenData.recent_heroes) ? hiddenData.recent_heroes.filter(Boolean) : [];
-    const found = Number(hiddenData.found_matches || 0);
-    const hiddenLines = [
-      '🕵️ 隐藏战绩碎片',
-      `识别场次：${found}`,
-      `估算KDA：${typeof hiddenData.kda_estimate === 'number' ? hiddenData.kda_estimate.toFixed(2) : Number(hiddenData.kda_estimate || 0).toFixed(2)}`,
-      `近期英雄：${heroes.length ? heroes.join('、') : '暂无'}`
-    ];
-    if (!rows.length) hiddenLines.push('最近隐藏场次：暂无可用数据');
-    else hiddenLines.push('', ...rows.slice(0, 10).map((m, i) => `${i + 1}. ${summarizeMatch(m)}`));
-    pages.push(hiddenLines.join('\n'));
-  } else {
-    pages.push(`🕵️ 隐藏战绩碎片\n查询失败：${hiddenError || '接口返回异常'}`);
-  }
-  return pages;
 }
 
 function buildCrossPrettyPages(playerId: string, region: string, data: CrossPrettyData | null, errorText: string): string[] {
@@ -2075,11 +2017,10 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     const map: Record<string, LolCommandKey> = {
       查战绩: 'battleQuery',
       查封号: 'banQuery',
-      查隐藏: 'hiddenQuery'
     };
     const key = map[commandName];
     if (!key) {
-      await sendGroupScene(groupId, 'not_found', '仅支持：查战绩、查封号、查隐藏');
+      await sendGroupScene(groupId, 'not_found', '仅支持：查战绩、查封号');
       return true;
     }
     setLolCommandSwitch(groupId, key, enabled);
@@ -2103,7 +2044,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       `全局最小间隔(秒)：${effective.lolQueryGlobalMinIntervalSeconds ?? 1}`,
       `接口等待时长(秒)：${effective.lolQueryRequestTimeoutSeconds ?? 20}`,
       `分群最小间隔(秒)：${effective.lolQueryGroupMinIntervalSeconds ?? 2}`,
-      `指令开关：查战绩(${switches.battleQuery ? '开' : '关'}) / 查封号(${switches.banQuery ? '开' : '关'}) / 查隐藏(${switches.hiddenQuery ? '开' : '关'})`,
+      `指令开关：查战绩(${switches.battleQuery ? '开' : '关'}) / 查封号(${switches.banQuery ? '开' : '关'})`,
       '',
       '配置来源：',
       `- 本群覆盖开关：${typeof (groupCfg as any).disableLolQuery === 'boolean' ? '已设置' : '未设置'}`,
@@ -2148,118 +2089,6 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
     saveConfig(ctx);
     await sendGroupScene(groupId, 'action_success', 'LOL Token 已更新');
     return true;
-  }
-  if (text.startsWith('查隐藏')) {
-    if (!await allowGroupFeature(input, 'query.lol_hidden', '本群已关闭查隐藏指令')) return true;
-    if (!isLolCommandEnabled(groupId, 'hiddenQuery')) {
-      await sendGroupScene(groupId, 'feature_disabled', '本群已关闭查隐藏指令');
-      return true;
-    }
-    const rateCheck = checkAndConsumeQueryRate(groupId, '查隐藏');
-    if (!rateCheck.ok) {
-      await sendQueryRateLimitNotice(groupId, rateCheck);
-      return true;
-    }
-    const rest = text.replace('查隐藏', '').trim();
-    if (!rest) {
-      await sendGroupScene(groupId, 'command_format_error', '请指定召唤师名称，例如：查隐藏 TheShy', { example: '查隐藏 TheShy 1' });
-      return true;
-    }
-    const args = rest.split(/\s+/);
-    const name = args[0];
-    const region = args[1] || '1';
-    const outputFormat = resolveQueryOutputFormat(groupId, 'lol_hidden', normalizeQueryOutputFormat(getGroupSettings(groupId).lolQueryOutputFormat, 'forward'));
-    const wrapperMode = resolveQueryWrapperMode('lol_hidden');
-    const selfId = String((event as any).self_id || userId);
-    const customUrl = getConfig().lolQueryUrl;
-    const customKey = getConfig().lolAuthKey;
-    if (customUrl && customKey) {
-      await sendGroupScene(groupId, 'raw_text', `🔍 正在通过自定义接口查询 ${name}...`);
-      try {
-        const params = new URLSearchParams();
-        params.append('name', name);
-        params.append('region', region);
-        params.append('sign', '0');
-        params.append('key', customKey);
-        const res = await fetch(customUrl, {
-          method: 'POST',
-          body: params,
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest',
-            Cookie: `zhanjikey=${customKey}`,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          }
-        });
-        if (res.status === 200) {
-          const json = await res.json() as any;
-          if (json.status === 200) {
-            const d = json.data;
-            let msg = `📊 ${d.summonerName} (Lv.${d.level}) 隐藏战绩\n`;
-            msg += `------------------------------\n`;
-            msg += `封号状态: ${d.banstatus === 1 ? '❌ 封号' : (d.banstatus === 2 ? '❓ 未知/灰白' : '✅ 正常')}\n`;
-            if (d.banst) msg += `封号详情: ${d.banst}\n`;
-            msg += `单双排: ${d.soloData?.tier} ${d.soloData?.rank} (${d.soloData?.lp}点)\n`;
-            msg += `灵活排: ${d.flexData?.tier} ${d.flexData?.rank} (${d.flexData?.lp}点)\n`;
-            msg += `最后在线: ${d.last_game?.time || '未知'}\n`;
-            msg += `排位资格: ${d.rankEligibility || '未知'}`;
-            await sendFormattedQueryPagesDirect(groupId, selfId, '🕵️ 隐藏战绩', [msg], outputFormat, wrapperMode);
-            return true;
-          }
-          await sendGroupScene(groupId, 'raw_text', `查询失败: ${json.msg || '未知错误'}`);
-          return true;
-        }
-        await sendGroupScene(groupId, 'raw_text', `接口请求失败: HTTP ${res.status}`);
-        return true;
-      } catch (e: any) {
-        loggingStateService.error(`自定义查询出错: ${e}`);
-        await sendGroupScene(groupId, 'raw_text', `查询出错: ${e.message}`);
-        return true;
-      }
-    }
-    const token = getConfig().lolToken;
-    if (!token) {
-      await sendGroupScene(groupId, 'not_found', '❌ 未配置 LOL Token，请联系机器人主人配置');
-      return true;
-    }
-    await sendGroupScene(groupId, 'raw_text', `🔍 正在查询 [${region}区] ${name} 的隐藏战绩...`);
-    try {
-      const searchRes = await fetch('https://ww1.lolso1.com/game-lol/customize-summoner-basic-by-name-region', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Content-Type': 'application/json',
-          Referer: 'https://lolso1.com/',
-          Origin: 'https://lolso1.com'
-        },
-        body: JSON.stringify({ name, region: parseInt(region) || 1 })
-      });
-      const searchJson = await searchRes.json() as any;
-      const summary = searchJson?.data?.summonerBasic;
-      if (!summary?.puuid) {
-        await sendGroupScene(groupId, 'not_found', `未找到召唤师：${name}`);
-        return true;
-      }
-      const detailRes = await fetch(`https://ww1.lolso1.com/game-lol/customize-career-collection?region=${parseInt(region) || 1}&puuid=${summary.puuid}&name=${encodeURIComponent(name)}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Referer: 'https://lolso1.com/',
-          Origin: 'https://lolso1.com'
-        }
-      });
-      const detailJson = await detailRes.json() as any;
-      const d = detailJson?.data?.[0] || detailJson?.data || {};
-      const line = `📊 ${summary.name || name} (Lv.${summary.level || '?'})\n大区：${region}\n封号状态：${d.banstatus === 1 ? '❌ 封号' : '✅ 正常'}\n单双排：${d?.soloData?.tier || '-'} ${d?.soloData?.rank || ''} (${d?.soloData?.lp || 0}点)\n灵活排：${d?.flexData?.tier || '-'} ${d?.flexData?.rank || ''} (${d?.flexData?.lp || 0}点)\n最后在线：${d?.last_game?.time || '未知'}`;
-      await sendFormattedQueryPagesDirect(groupId, selfId, '🕵️ 隐藏战绩', [line], outputFormat, wrapperMode);
-      return true;
-    } catch (e: any) {
-      loggingStateService.error(`LOL查询失败: ${e}`);
-      await sendGroupScene(groupId, 'raw_text', `查询失败：${e.message || e}`);
-      return true;
-    }
   }
   if (text === '邀请查询') {
     if (getGroupSettings(groupId).disableInvite) { await sendGroupScene(groupId, 'feature_disabled', '本群邀请统计已关闭'); return true; }

@@ -17,4 +17,15 @@ assert.equal(formatter.includes("'查隐藏'"), false);
 assert.equal(Boolean(packageJson.scripts['verify:intranet-hidden-command']), false);
 assert.ok(packageJson.scripts['verify:hidden-retired']);
 
+const typesSource = readFileSync(path.join(root, 'src/types.ts'), 'utf8');
+const configSource = readFileSync(path.join(root, 'src/config.ts'), 'utf8');
+const interactionSource = readFileSync(path.join(root, 'src/services/interaction_service.ts'), 'utf8');
+for (const source of [typesSource, configSource, interactionSource]) {
+  assert.equal(source.includes('hiddenQuery'), false);
+  assert.equal(source.includes('query.lol_hidden'), false);
+  assert.equal(source.includes("text.startsWith('查隐藏')"), false);
+  assert.equal(source.includes('LolHiddenData'), false);
+  assert.equal(source.includes('buildLolForwardPages'), false);
+}
+
 console.log('hidden query retirement verification passed');
