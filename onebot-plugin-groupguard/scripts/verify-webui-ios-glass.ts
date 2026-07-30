@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { applyWebUiTheme, GROUPGUARD_WEBUI_THEME_STORAGE_KEY } from '../src/standalone/admin/webui_theme.ts';
+import { normalizeQueryOverviewForWebUi, patchQueryPageHtml } from '../src/standalone/admin/query_webui_facade.ts';
 import { renderHomePage } from '../src/standalone/admin/static_page.ts';
 import { renderQaPage } from '../src/standalone/admin/qa_page.ts';
 import { renderQueryPage } from '../src/standalone/admin/query_page.ts';
 import { renderQunGuanjiaPage } from '../src/standalone/admin/qun_guanjia_page.ts';
 import { renderGroupFileMirrorPage } from '../src/standalone/admin/group_file_mirror_page.ts';
 
+const patchedQueryPage = patchQueryPageHtml(renderQueryPage());
 const pages = [
   renderHomePage(),
   renderQaPage(),
-  renderQueryPage(),
+  patchedQueryPage,
   renderQunGuanjiaPage(),
   renderGroupFileMirrorPage()
 ];
@@ -30,21 +32,46 @@ for (const raw of pages) {
 }
 
 assert.throws(() => applyWebUiTheme('<div>invalid</div>'), /webui_theme_invalid_html/);
+assert.equal(patchedQueryPage.includes('查隐藏'), false);
+assert.equal(patchedQueryPage.includes('lol_hidden'), false);
+for (const mode of ['text', 'forward', 'image']) assert.ok(patchedQueryPage.includes(mode));
+assert.ok(patchedQueryPage.includes("dynamic:'动态查询默认'"));
+assert.ok(patchedQueryPage.includes('插件只提交输出偏好'));
+
+const overview = normalizeQueryOverviewForWebUi({
+  ok: true,
+  base: {
+    masterEnabled: true,
+    queryEnabled: true,
+    dynamicCommandEnabled: true,
+    defaultOutputFormat: 'forward'
+  },
+  config: { lolApiBaseUrl: 'http://192.168.3.100:5001' },
+  profiles: {
+    lol_hidden: { enabled: true },
+    scammer: { outputFormat: 'image' },
+    dynamic: { outputFormat: 'text' }
+  },
+  rows: [
+    { type: 'lol_hidden', outputFormat: 'text' },
+    { type: 'lol_ban', outputFormat: 'text', dataSource: 'legacy' },
+    { type: 'scammer', outputFormat: 'text', dataSource: 'external' },
+    { type: 'peer', outputFormat: 'text', dataSource: 'local-db' }
+  ]
+});
+assert.equal(overview.rows.some((row: any) => row.type === 'lol_hidden'), false);
+assert.equal(overview.profiles.lol_hidden, undefined);
+assert.equal(overview.rows.find((row: any) => row.type === 'lol_ban').outputFormat, 'forward');
+assert.equal(overview.rows.find((row: any) => row.type === 'scammer').outputFormat, 'image');
+assert.equal(overview.rows.find((row: any) => row.type === 'peer').dataSource, 'local-api');
+assert.equal(overview.rows.find((row: any) => row.type === 'dynamic').outputFormat, 'text');
 
 const serverSource = await readFile(new URL('../src/standalone/admin/server.ts', import.meta.url), 'utf8');
-assert.match(serverSource, /applyWebUiTheme/);
-for (const renderer of ['renderMainPage()', 'renderQaPage()', 'renderQueryPage()', 'renderQunGuanjiaPage()', 'renderGroupFileMirrorPage()']) {
+for (const renderer of ['renderMainPage()', 'renderQaPage()', 'renderQunGuanjiaPage()', 'renderGroupFileMirrorPage()']) {
   assert.ok(serverSource.includes(`applyWebUiTheme(${renderer})`), `server must theme ${renderer}`);
 }
-
-const queryPageSource = await readFile(new URL('../src/standalone/admin/query_page.ts', import.meta.url), 'utf8');
-assert.equal(queryPageSource.includes('查隐藏'), false, 'retired hidden query must not appear in WebUI');
-assert.equal(queryPageSource.includes('lol_hidden'), false, 'retired hidden query key must not appear in WebUI');
-for (const mode of ['text', 'forward', 'image']) assert.ok(queryPageSource.includes(mode));
-assert.ok(queryPageSource.includes("dynamic:'动态查询默认'"));
-
-const queryApiSource = await readFile(new URL('../src/standalone/admin/query_api.ts', import.meta.url), 'utf8');
-assert.equal(queryApiSource.includes("type: 'lol_hidden'"), false, 'retired hidden query must not appear in overview rows');
-assert.match(queryApiSource, /global\.lolQueryOutputFormat \|\| 'forward'/);
+assert.ok(serverSource.includes('applyWebUiTheme(patchQueryPageHtml(renderQueryPage()))'));
+assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(getQueryOverview())'));
+assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(patchQueryConfig('));
 
 console.log('webui iOS glass theme verification passed');
