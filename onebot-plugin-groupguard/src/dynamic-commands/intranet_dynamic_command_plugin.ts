@@ -6,6 +6,7 @@ import {
 } from '../services/intranet_query_service';
 import type { OneBotDeliveryPlan } from '../services/groupguard_query_delivery_client';
 import type { CommandPlugin } from './command_runtime_plugin';
+import { resolveUnifiedQueryPreferredOutput } from './intranet_query_runtime_plugin';
 import type {
   DynamicCommandDefinition,
   UnifiedCommandExecutionContext,
@@ -197,7 +198,7 @@ export async function executeIntranetDynamicCommand(
       baseUrl,
       feature: 'dynamic',
       parameters,
-      preferred: 'text',
+      preferred: resolveUnifiedQueryPreferredOutput(String(input.groupId || ''), [definition.id, 'dynamic']),
       timeoutMs: timeoutMs(),
       requestId: requestId(definition, input, context),
       ...(requestFn ? { requestFn } : {})

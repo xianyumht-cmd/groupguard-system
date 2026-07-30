@@ -50,6 +50,7 @@ export interface IntranetDeliveryRequestResult {
 
 export function normalizeIntranetPreferredOutput(value: unknown): IntranetPreferredOutput {
   if (value === 'text' || value === 'image' || value === 'forward') return value;
+  if (value === 'card') return 'image';
   return 'auto';
 }
 

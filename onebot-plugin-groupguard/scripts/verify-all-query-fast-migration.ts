@@ -138,7 +138,8 @@ try {
     lolQueryGlobalRateLimitPerMinute: 5000,
     lolQueryGroupRateLimitPerMinute: 1000,
     lolQueryDailyLimit: 100000,
-    banQueryUserCooldownSeconds: 0
+    banQueryUserCooldownSeconds: 0,
+    lolQueryOutputFormat: 'image'
   };
   config.groups = {
     ...(config.groups || {}),
@@ -172,6 +173,7 @@ try {
       executeBanCount += 1;
       assert.equal(payload.feature, 'lolban');
       assert.equal(payload.parameters.qq, '123456789');
+      assert.equal(payload.preferred, 'image');
       return banEnvelope;
     }) as any
   );

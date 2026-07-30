@@ -449,7 +449,7 @@ export interface GroupGuardSettings {
   /** 战绩查询分群最小间隔（秒） */
   lolQueryGroupMinIntervalSeconds?: number;
   lolQueryDailyLimit?: number;
-  /** 战绩查询输出格式 */
+  /** 查询结果格式 */
   lolQueryOutputFormat?: LolQueryOutputFormat;
   /** 战绩查询指令开关 */
   lolQueryCommandSwitch?: LolQueryCommandSwitch;

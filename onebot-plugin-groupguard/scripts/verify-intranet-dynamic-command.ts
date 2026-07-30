@@ -84,7 +84,7 @@ const originalConfig = structuredClone(configStateService.getConfig() as any);
 try {
   const config = structuredClone(originalConfig) as any;
   config.lolApiBaseUrl = 'http://192.168.3.100:5001';
-  config.global = { ...(config.global || {}), lolQueryRequestTimeoutSeconds: 20 };
+  config.global = { ...(config.global || {}), lolQueryRequestTimeoutSeconds: 20, lolQueryOutputFormat: 'image' };
   configStateService.setConfig(config);
 
   const input = {
@@ -125,6 +125,7 @@ try {
   );
   assert.equal(requestCount, 1);
   assert.equal(sentPayload.feature, 'dynamic');
+  assert.equal(sentPayload.preferred, 'image');
   assert.deepEqual(sentPayload.parameters, {
     command_id: 'music.search',
     keyword: '晴天'
