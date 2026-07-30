@@ -637,10 +637,6 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   scammerReportUserDailyLimit: 20,
   scammerReportDedupHours: 24,
   lanzouUpdatePush: { ...DEFAULT_LANZOU_UPDATE_PUSH },
-  videoApiTemplates: {
-    搞笑: 'https://api.pearktrue.cn/api/random_video/?name=搞笑',
-    热门: 'https://api.pearktrue.cn/api/random_video/?name=热门'
-  },
   msgFilter: { ...DEFAULT_MSG_FILTER },
   contentRisk: JSON.parse(JSON.stringify(DEFAULT_CONTENT_RISK)),
   qaList: [],
@@ -723,13 +719,6 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
     if (!hasQaLinkDelivery) delete (groups[gid] as any).qaLinkDelivery;
   }
   merged.groups = groups;
-  const videoTemplates = merged.videoApiTemplates || {};
-  merged.videoApiTemplates = Object.entries(videoTemplates).reduce((acc, [k, v]) => {
-    const key = String(k || '').trim();
-    const val = String(v || '').trim();
-    if (key && val) acc[key] = val;
-    return acc;
-  }, {} as Record<string, string>);
   const validUrl = (value: string): boolean => {
     try {
       const sample = String(value || '')

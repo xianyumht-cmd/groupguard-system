@@ -28,7 +28,6 @@ const EXTERNAL_QUERY_TRIGGER_PREFIXES = [
   '查隐藏',
   '查合集',
   '海符榜',
-  '我要看',
   '查骗子',
   '举报骗子',
   '查同行',

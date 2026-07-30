@@ -71,8 +71,7 @@ function getQueryProfileType(featureKey: string): string {
     'query.lol_hidden': 'lol_hidden',
     'query.lol_shard': 'lol_shard',
     'query.scammer': 'scammer',
-    'query.peer': 'peer',
-    'query.video': 'video'
+    'query.peer': 'peer'
   };
   return map[featureKey] || '';
 }

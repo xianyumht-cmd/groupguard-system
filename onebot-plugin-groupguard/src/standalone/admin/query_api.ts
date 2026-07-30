@@ -6,10 +6,10 @@ import type { SnowLumaAdminServerOptions } from './types';
 
 const MAX_BODY_PREVIEW = 12000;
 
-type QueryType = 'lol_ban' | 'lol_battle' | 'lol_hidden' | 'lol_shard' | 'lol_aram_augments' | 'scammer' | 'peer' | 'video' | 'ele_build' | 'custom';
+type QueryType = 'lol_ban' | 'lol_battle' | 'lol_hidden' | 'lol_shard' | 'lol_aram_augments' | 'scammer' | 'peer' | 'ele_build' | 'custom';
 const QUERY_TYPE_SET = new Set<QueryType>([
   'lol_ban', 'lol_battle', 'lol_hidden', 'lol_shard', 'lol_aram_augments',
-  'scammer', 'peer', 'video', 'ele_build', 'custom'
+  'scammer', 'peer', 'ele_build', 'custom'
 ]);
 
 type QueryCommandProfile = {
@@ -27,7 +27,6 @@ const QUERY_TYPES: Array<{ type: QueryType; name: string; trigger: string; featu
   { type: 'lol_aram_augments', name: '海符榜', trigger: '海符榜', featureKey: 'query.lol_aram_augments', dataSource: 'local-api' },
   { type: 'scammer', name: '骗子查询', trigger: '查骗子', featureKey: 'query.scammer', dataSource: 'external' },
   { type: 'peer', name: '同行查询', trigger: '查同行', featureKey: 'query.peer', dataSource: 'local-db' },
-  { type: 'video', name: '视频接口', trigger: '查视频/视频', featureKey: 'query.video', dataSource: 'external' },
   { type: 'ele_build', name: 'ELE下载', trigger: 'ELE下载', featureKey: 'dynamic.ele_build', dataSource: 'external' }
 ];
 
@@ -62,7 +61,7 @@ function getProfile(config: any, type: QueryType): QueryCommandProfile {
 
 function defaultOutputFor(config: any, global: any, type: QueryType): string {
   if (type === 'lol_shard' || type === 'lol_aram_augments') return 'image';
-  if (type === 'lol_ban' || type === 'scammer' || type === 'peer' || type === 'video' || type === 'ele_build') return 'text';
+  if (type === 'lol_ban' || type === 'scammer' || type === 'peer' || type === 'ele_build') return 'text';
   return global.lolQueryOutputFormat || 'forward';
 }
 
@@ -82,10 +81,6 @@ function rowUrl(config: any, type: QueryType): string {
   if (type === 'lol_aram_augments') return config.lolApiBaseUrl || '';
   if (type === 'scammer') return Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls[0] || '' : '';
   if (type === 'peer') return '本地数据库';
-  if (type === 'video') {
-    const templates = config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? config.videoApiTemplates : {};
-    return Object.values(templates)[0] ? String(Object.values(templates)[0]) : '';
-  }
   if (type === 'ele_build') return config.eleBuildApiBaseUrl || '';
   return '';
 }
@@ -103,7 +98,6 @@ function isQueryEnabled(config: any, global: any, type: QueryType): boolean {
   if (type === 'lol_aram_augments') return baseEnabled && enabledSwitch(featureSwitches, 'query.lol_aram_augments');
   if (type === 'scammer') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.scammer');
   if (type === 'peer') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.peer');
-  if (type === 'video') return global.masterEnabled !== false && global.queryEnabled !== false && enabledSwitch(featureSwitches, 'query.video');
   if (type === 'ele_build') return global.masterEnabled !== false && global.queryEnabled !== false && global.dynamicCommandEnabled !== false;
   return false;
 }
@@ -151,15 +145,6 @@ function validateConfig(config: any): { warnings: string[]; errors: string[]; } 
   warnings.push(...validateUrlValue('骗子举报 URL', config.scammerReportUrl, false));
   const scammerUrls = Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls : [];
   scammerUrls.forEach((url: string, index: number) => warnings.push(...validateUrlValue(`骗子查询 URL #${index + 1}`, url, false)));
-  const templates = config.videoApiTemplates;
-  if (templates && (typeof templates !== 'object' || Array.isArray(templates))) {
-    errors.push('videoApiTemplates 必须是 JSON 对象');
-  } else if (templates) {
-    for (const [key, value] of Object.entries(templates)) {
-      if (!String(key).trim()) warnings.push('视频模板存在空名称');
-      warnings.push(...validateUrlValue(`视频模板 ${key}`, value, false));
-    }
-  }
   return { warnings, errors };
 }
 
@@ -180,7 +165,6 @@ export function getQueryOverview() {
     heroListUrl: '',
     backupUrls: item.type === 'lol_ban' && Array.isArray(config.lolBanBackupUrls) ? config.lolBanBackupUrls.length : undefined,
     urlCount: item.type === 'scammer' && Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls.length : undefined,
-    templateCount: item.type === 'video' && config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? Object.keys(config.videoApiTemplates).length : undefined,
     outputFormat: outputFormatFor(config, global, item.type),
     defaultOutputFormat: defaultOutputFor(config, global, item.type),
     wrapperMode: wrapperModeFor(config, item.type),
@@ -221,7 +205,6 @@ export function getQueryOverview() {
       shardLegacyConfigDeprecated: true,
       scammerQueryUrls: config.scammerQueryUrls || [],
       scammerReportUrl: config.scammerReportUrl || '',
-      videoApiTemplates: config.videoApiTemplates || {},
       lanzouUpdatePush: {
         enabled: config.lanzouUpdatePush?.enabled === true,
         monitorBaseUrl: config.lanzouUpdatePush?.monitorBaseUrl || '',
@@ -324,13 +307,6 @@ function buildTestUrl(type: QueryType, param: string, payload: any): string {
   }
   if (type === 'peer') {
     throw new Error('同行查询走本地数据库，不使用外部 URL');
-  }
-  if (type === 'video') {
-    const templates = config.videoApiTemplates && typeof config.videoApiTemplates === 'object' ? config.videoApiTemplates : {};
-    const templateKey = String(payload?.templateKey || Object.keys(templates)[0] || '');
-    const template = String(payload?.url || templates[templateKey] || '');
-    if (!template) throw new Error('未配置 videoApiTemplates，也未填写测试 URL');
-    return replaceTemplate(template, param, payload || {});
   }
   if (type === 'ele_build') {
     const base = String(payload?.url || config.eleBuildApiBaseUrl || 'http://www.ele00001.cc.cd/api').replace(/\/+$/, '');
@@ -556,10 +532,6 @@ function buildFinalReplyPreview(type: QueryType, param: string, parsedPreview: a
     const hero = parsed?.hero?.title || parsed?.hero?.name || param;
     const rows = Array.isArray(parsed?.rows) ? parsed.rows.length : 0;
     return `海符榜预览：${hero}，推荐 ${rows} 条\n输出格式：image`;
-  }
-  if (type === 'video') {
-    const text = parsedPreview?.msg || parsed?.title || parsed?.url || String(body || '').slice(0, 120) || '接口已返回视频内容';
-    return `视频接口预览：${text}`;
   }
   if (type === 'scammer') {
     const msg = parsedPreview?.msg || parsed?.message || parsed?.msg || String(body || '').slice(0, 160) || '接口已返回结果';

@@ -19,7 +19,6 @@ const migratedCommands = [
   '查封号',
   '查战绩',
   '查隐藏',
-  '我要看',
   '查骗子',
   '举报骗子',
   '查同行',
@@ -29,8 +28,6 @@ const migratedConfigurationCommands = [
   '设置封号主接口',
   '设置封号接口配置',
   '删除封号备用接口',
-  '设置看视频接口',
-  '删除看视频接口',
   '设置lolurl',
   '设置lolkey',
   '设置loltoken',
@@ -45,8 +42,36 @@ for (const command of [...migratedCommands, ...migratedConfigurationCommands]) {
   assert.equal(INTERACTION_PREFIXES.includes(command), false, `legacy interaction route still owns ${command}`);
   assert.equal(INTERACTION_EXACT.includes(command), false, `legacy exact route still owns ${command}`);
 }
-for (const command of ['封号接口列表', '看视频接口列表', '骗子接口状态']) {
+for (const command of ['封号接口列表', '骗子接口状态']) {
   assert.equal(INTERACTION_EXACT.includes(command), false, `legacy provider status command remains active: ${command}`);
+}
+
+
+const retiredVideoMarkers = [
+  '我要看',
+  '设置看视频接口',
+  '删除看视频接口',
+  '看视频接口列表',
+  'videoApiTemplates',
+  'query.video',
+  'video.info',
+  'intranet_video_runtime_plugin',
+  'registerIntranetVideoCommandPlugins'
+];
+async function collectRuntimeSourceFiles(directory: string): Promise<string[]> {
+  const result: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) result.push(...await collectRuntimeSourceFiles(absolute));
+    else if (/\.(?:ts|js|mjs|json)$/i.test(entry.name)) result.push(absolute);
+  }
+  return result;
+}
+for (const file of await collectRuntimeSourceFiles(srcRoot)) {
+  const source = await readFile(file, 'utf8');
+  for (const marker of retiredVideoMarkers) {
+    assert.equal(source.includes(marker), false, `retired video query marker ${marker} remains in ${path.relative(root, file)}`);
+  }
 }
 
 const commandsSource = await text('src/commands.ts');

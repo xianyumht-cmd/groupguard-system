@@ -6,10 +6,10 @@ function inferResponseScene(event: OB11Message): string {
   const text = String(event.raw_message || '').replace(/\[CQ:[^\]]+\]/g, '').trim();
   if (!text) return 'raw_text';
   const queryPrefixes = [
-    '查战绩', '查封号', '查隐藏', '查合集', '海符榜', '我要看',
+    '查战绩', '查封号', '查隐藏', '查合集', '海符榜',
     '查骗子', '举报骗子', '查同行', '举报同行',
     '查邀请', '查来源', '邀请查询', '邀请榜',
-    '封号接口列表', '战绩接口状态', '战绩配置', '看视频接口列表', '骗子接口状态'
+    '封号接口列表', '战绩接口状态', '战绩配置', '骗子接口状态'
   ];
   if (queryPrefixes.some(prefix => text.startsWith(prefix))) return 'external_query';
   if (text.startsWith('查') || text.includes('查询')) return 'query';

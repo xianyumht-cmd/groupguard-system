@@ -345,7 +345,6 @@ var fieldMeta = {
   'global.featureSwitches.query.lol_shard':['查合集','控制查合集查询入口。','查询功能'],
   'global.featureSwitches.query.scammer':['查骗子','控制骗子查询入口。','查询功能'],
   'global.featureSwitches.query.peer':['查同行','控制同行查询入口。','查询功能'],
-  'global.featureSwitches.query.video':['视频接口','控制视频查询入口。','查询功能'],
   'global.lolQueryCommandSwitch.battleQuery':['查战绩旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
   'global.lolQueryCommandSwitch.banQuery':['查封号旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
   'global.lolQueryCommandSwitch.hiddenQuery':['查隐藏旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
@@ -583,7 +582,6 @@ function renderForms(){
     + switchHtml('查合集','global.featureSwitches.query.lol_shard',get(config,'global.featureSwitches.query.lol_shard',true),{meta:fieldMeta['global.featureSwitches.query.lol_shard']})
     + switchHtml('查骗子','global.featureSwitches.query.scammer',get(config,'global.featureSwitches.query.scammer',true),{meta:fieldMeta['global.featureSwitches.query.scammer']})
     + switchHtml('查同行','global.featureSwitches.query.peer',get(config,'global.featureSwitches.query.peer',true),{meta:fieldMeta['global.featureSwitches.query.peer']})
-    + switchHtml('视频接口','global.featureSwitches.query.video',get(config,'global.featureSwitches.query.video',true),{meta:fieldMeta['global.featureSwitches.query.video']})
     + switchHtml('查战绩旧指令','global.lolQueryCommandSwitch.battleQuery',get(config,'global.lolQueryCommandSwitch.battleQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.battleQuery']})
     + switchHtml('查封号旧指令','global.lolQueryCommandSwitch.banQuery',get(config,'global.lolQueryCommandSwitch.banQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.banQuery']})
     + switchHtml('查隐藏旧指令','global.lolQueryCommandSwitch.hiddenQuery',get(config,'global.lolQueryCommandSwitch.hiddenQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.hiddenQuery']})
@@ -736,7 +734,6 @@ function renderGroupForm(data){
     + switchHtml('查合集','featureSwitches.query.lol_shard',get(groupSrc,'featureSwitches.query.lol_shard',true))
     + switchHtml('查骗子','featureSwitches.query.scammer',get(groupSrc,'featureSwitches.query.scammer',true))
     + switchHtml('查同行','featureSwitches.query.peer',get(groupSrc,'featureSwitches.query.peer',true))
-    + switchHtml('视频接口','featureSwitches.query.video',get(groupSrc,'featureSwitches.query.video',true))
     + switchHtml('问答包装','botSendWrapperQaEnabled',get(groupSrc,'botSendWrapperQaEnabled',false))
     + switchHtml('查询包装','botSendWrapperQueryEnabled',get(groupSrc,'botSendWrapperQueryEnabled',false))
     + switchHtml('全局包装','botSendWrapperAllEnabled',get(groupSrc,'botSendWrapperAllEnabled',false))

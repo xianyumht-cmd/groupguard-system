@@ -92,7 +92,6 @@ export function classifyMessageIntent(rawMessage: unknown): BotRoleIntent {
     '查隐藏',
     '查合集',
     '海符榜',
-    '我要看',
     '查骗子',
     '举报骗子',
     '查同行',
@@ -103,8 +102,6 @@ export function classifyMessageIntent(rawMessage: unknown): BotRoleIntent {
     '设置战绩分群开关',
     '设置战绩分群限流',
     '设置战绩指令开关',
-    '设置看视频接口',
-    '删除看视频接口',
     '设置lolurl',
     '设置lolkey',
     '设置loltoken',
@@ -121,10 +118,9 @@ export function classifyMessageIntent(rawMessage: unknown): BotRoleIntent {
     '封号接口列表',
     '战绩接口状态',
     '战绩配置',
-    '看视频接口列表',
     '骗子接口状态'
   ];
-  if (queryExact.includes(text) || startsWithAny(text, queryPrefixes) || /^视频\s+/.test(text) || text === '视频') {
+  if (queryExact.includes(text) || startsWithAny(text, queryPrefixes)) {
     return 'query_like';
   }
 

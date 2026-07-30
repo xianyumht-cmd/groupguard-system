@@ -198,7 +198,6 @@ export interface PluginConfig {
   shardHeroListUrl?: string;
   shardImageUrlTemplate?: string;
   shardQueryOutputFormat?: 'forward' | 'text' | 'image';
-  videoApiTemplates?: Record<string, string>;
   scammerQueryUrls?: string[];
   scammerReportUrl?: string;
   scammerMaxRecords?: number;

@@ -33,7 +33,6 @@ const QUERY_ROLE_PREFIXES = [
   '查隐藏',
   '查合集',
   '海符榜',
-  '我要看',
   '查骗子',
   '举报骗子',
   '查同行',
@@ -44,8 +43,6 @@ const QUERY_ROLE_PREFIXES = [
   '设置战绩分群开关',
   '设置战绩分群限流',
   '设置战绩指令开关',
-  '设置看视频接口',
-  '删除看视频接口',
   '设置lolurl',
   '设置lolkey',
   '设置loltoken',
@@ -64,7 +61,6 @@ const QUERY_ROLE_EXACT = new Set([
   '封号接口列表',
   '战绩接口状态',
   '战绩配置',
-  '看视频接口列表',
   '骗子接口状态'
 ]);
 
@@ -274,51 +270,6 @@ function resolveLolQueryTimeoutMs(): number {
   return sec * 1000;
 }
 
-function getVideoApiTemplates(): Record<string, string> {
-  const data = getConfig().videoApiTemplates || {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(data)) {
-    const key = String(k || '').trim();
-    const val = String(v || '').trim();
-    if (key && val) out[key] = val;
-  }
-  return out;
-}
-
-function pickVideoApiByCategory(category: string): string | null {
-  const map = getVideoApiTemplates();
-  const exact = map[category];
-  if (exact) return exact;
-  const keys = Object.keys(map);
-  if (!keys.length) return null;
-  return map[keys[0]];
-}
-
-function resolveVideoRequestUrl(template: string, category: string): string {
-  const raw = String(template || '').trim();
-  if (!raw) return '';
-  if (raw.includes('{category}')) return raw.replace(/\{category\}/g, encodeURIComponent(category));
-  if (raw.includes('?')) return `${raw}&category=${encodeURIComponent(category)}`;
-  return `${raw}?category=${encodeURIComponent(category)}`;
-}
-
-function extractVideoUrl(data: any): string {
-  if (!data) return '';
-  if (typeof data === 'string') {
-    const text = data.trim();
-    if (/^https?:\/\//i.test(text)) return text;
-    return '';
-  }
-  const candidates = [
-    data.url, data.video, data.video_url, data.play, data.play_url, data.src, data.link, data.mp4,
-    data.data?.url, data.data?.video, data.data?.play, data.result?.url, data.result?.video, data.result?.play
-  ];
-  for (const item of candidates) {
-    const text = String(item || '').trim();
-    if (/^https?:\/\//i.test(text)) return text;
-  }
-  return '';
-}
 
 function normalizePlayerId(input: string): { ok: true; playerId: string; gameName: string; tagLine: string; } | { ok: false; reason: string; } {
   const raw = String(input || '').trim();
@@ -2160,87 +2111,6 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       `- 本群覆盖指令：${(groupCfg as any).lolQueryCommandSwitch ? '已设置' : '未设置'}`
     ];
     await sendGroupScene(groupId, 'raw_text', lines.join('\n'));
-    return true;
-  }
-  if (text.startsWith('设置看视频接口')) {
-    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
-    const rest = text.replace('设置看视频接口', '').trim();
-    const parts = rest.split(/\s+/).filter(Boolean);
-    if (parts.length < 2) {
-      await sendGroupScene(groupId, 'command_format_error', '格式：设置看视频接口 <分类> <URL模板>', { example: '设置看视频接口 搞笑 https://api.example.com/video?cat={category}' });
-      return true;
-    }
-    const category = parts[0];
-    const url = parts.slice(1).join(' ').trim();
-    if (!/^https?:\/\//i.test(url)) {
-      await sendGroupScene(groupId, 'invalid_range', '接口地址需为 http/https');
-      return true;
-    }
-    const config = getConfig();
-    const templates = config.videoApiTemplates || (config.videoApiTemplates = {});
-    templates[category] = url;
-    saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', `已设置看视频接口：${category}`);
-    return true;
-  }
-  if (text.startsWith('删除看视频接口')) {
-    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
-    const category = text.replace('删除看视频接口', '').trim();
-    if (!category) {
-      await sendGroupScene(groupId, 'command_format_error', '格式：删除看视频接口 <分类>', { example: '删除看视频接口 搞笑' });
-      return true;
-    }
-    const templates = getConfig().videoApiTemplates;
-    if (!templates?.[category]) {
-      await sendGroupScene(groupId, 'not_found', `未找到分类：${category}`);
-      return true;
-    }
-    delete templates[category];
-    saveConfig(ctx);
-    await sendGroupScene(groupId, 'action_success', `已删除看视频接口：${category}`);
-    return true;
-  }
-  if (text === '看视频接口列表') {
-    if (!authStateService.isOwner(userId)) { await sendGroupScene(groupId, 'permission_denied', '仅主人可操作'); return true; }
-    const map = getVideoApiTemplates();
-    const keys = Object.keys(map);
-    if (!keys.length) {
-      await sendGroupScene(groupId, 'list_empty', '暂无看视频接口配置');
-      return true;
-    }
-    const lines = keys.map((k, i) => `${i + 1}. ${k} -> ${map[k]}`);
-    await sendGroupScene(groupId, 'raw_text', `看视频接口列表：\n${lines.join('\n')}`);
-    return true;
-  }
-  if (text.startsWith('我要看')) {
-    if (!await allowGroupFeature(input, 'query.video', '本群视频查询功能已关闭')) return true;
-    const rateCheck = checkAndConsumeQueryRate(groupId, '视频接口');
-    if (!rateCheck.ok) {
-      await sendQueryRateLimitNotice(groupId, rateCheck);
-      return true;
-    }
-    const category = text.replace('我要看', '').trim() || '热门';
-    const template = pickVideoApiByCategory(category);
-    if (!template) {
-      await sendGroupScene(groupId, 'not_found', '暂无可用看视频接口，请联系主人配置');
-      return true;
-    }
-    const requestUrl = resolveVideoRequestUrl(template, category);
-    if (!requestUrl) {
-      await sendGroupScene(groupId, 'raw_text', '看视频接口配置无效');
-      return true;
-    }
-    const res = await fetchAnyWithTimeout(requestUrl);
-    if (!res.ok) {
-      await sendGroupScene(groupId, 'raw_text', `视频接口请求失败：${res.error}`);
-      return true;
-    }
-    const directUrl = extractVideoUrl(res.data) || extractVideoUrl(res.raw);
-    if (!directUrl) {
-      await sendGroupScene(groupId, 'raw_text', `未解析到视频链接，接口返回：${String(res.raw || '').slice(0, 200)}`);
-      return true;
-    }
-    await sendGroupScene(groupId, 'raw_text', `🎬 ${category} 视频\n${directUrl}`);
     return true;
   }
   if (text.startsWith('设置lolurl')) {
