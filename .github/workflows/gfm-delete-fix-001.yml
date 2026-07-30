@@ -1,0 +1,60 @@
+name: GFM delete fix 001
+
+on:
+  push:
+    branches:
+      - fix/gfm-delete-001
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gfm-delete-fix-001
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/gfm-delete-001
+          fetch-depth: 0
+
+      - name: Apply focused patch
+        run: python3 .github/scripts/apply_gfm_delete_fix_001.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: onebot-plugin-groupguard
+        run: npm ci
+
+      - name: Type-check
+        working-directory: onebot-plugin-groupguard
+        run: npm run typecheck
+
+      - name: Verify GroupFileMirror
+        working-directory: onebot-plugin-groupguard
+        run: npm run verify:group-file-mirror
+
+      - name: Remove one-shot repair machinery
+        run: |
+          rm -f .github/scripts/apply_gfm_delete_fix_001.py
+          rm -f .github/workflows/gfm-delete-fix-001.yml
+
+      - name: Commit verified fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(group-file-mirror): resolve deletable target file ID"
+          git push origin HEAD:fix/gfm-delete-001
