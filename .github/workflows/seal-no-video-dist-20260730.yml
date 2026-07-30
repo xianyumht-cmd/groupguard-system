@@ -19,7 +19,7 @@ jobs:
       - name: Checkout exact verified commit
         uses: actions/checkout@v4
         with:
-          ref: fb3a4eb7865f25ac13727961329a605f81cb51ca
+          ref: 3ea7af2c42dee65700c8b10bd43e1bc819ba43e2
           fetch-depth: 1
 
       - name: Verify exact source commit
@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          test "$actual" = "fb3a4eb7865f25ac13727961329a605f81cb51ca"
+          test "$actual" = "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2"
           test -z "$(git status --porcelain)"
 
       - name: Setup Node
@@ -45,26 +45,19 @@ jobs:
         working-directory: onebot-plugin-groupguard
         run: npm test
 
+      - name: Scan runtime source
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker='我要看|设置看视频接口|删除看视频接口|看视频接口列表|videoApiTemplates|query\.video|video\.info|intranet_video_runtime_plugin|registerIntranetVideoCommandPlugins'
+          if grep -RInaE "$marker" onebot-plugin-groupguard/src onebot-plugin-groupguard/config; then
+            echo 'Retired video-query marker found in runtime source.' >&2
+            exit 1
+          fi
+
       - name: Build release dist
         working-directory: onebot-plugin-groupguard
         run: npm run build:release
-
-      - name: Upload exact source snapshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: groupguard-source-diagnostic-fb3a4eb7865f
-          path: |
-            onebot-plugin-groupguard/src
-            onebot-plugin-groupguard/config
-            onebot-plugin-groupguard/scripts
-            onebot-plugin-groupguard/package.json
-            onebot-plugin-groupguard/package-lock.json
-            onebot-plugin-groupguard/tsconfig.json
-            onebot-plugin-groupguard/vite.config.ts
-          if-no-files-found: error
-          compression-level: 9
-          retention-days: 30
 
       - name: Seal dist manifest
         shell: bash
@@ -74,20 +67,21 @@ jobs:
           test -d dist
           test -n "$(find dist -type f -print -quit)"
           if find dist -type f -iname '*video*' -print -quit | grep -q .; then
-            echo 'Video-named file found in dist' >&2
+            echo 'Video-named file found in dist.' >&2
             find dist -type f -iname '*video*' -print >&2
             exit 1
           fi
-          if grep -RInaE 'registerIntranetVideoCommandPlugins|intranet_video_runtime_plugin|video\.info|我要看' dist; then
-            echo 'Retired video runtime marker found in dist' >&2
+          marker='我要看|设置看视频接口|删除看视频接口|看视频接口列表|videoApiTemplates|query\.video|video\.info|intranet_video_runtime_plugin|registerIntranetVideoCommandPlugins'
+          if grep -RInaE "$marker" dist; then
+            echo 'Retired video-query marker found in dist.' >&2
             exit 1
           fi
           find dist -type f -print0 | sort -z | xargs -0 sha256sum > DIST-SHA256SUMS.txt
           cat > DIST-RELEASE-MANIFEST.json <<'JSON'
           {
             "schema": "groupguard-dist-release.v1",
-            "source_commit": "fb3a4eb7865f25ac13727961329a605f81cb51ca",
-            "runtime_commit": "8f37a02a7ac4fbe27dea7197b723d8d60a5b793e",
+            "source_commit": "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2",
+            "runtime_commit": "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2",
             "api_commit": "f221b64649763eb8d325d87348fd2f42f48a6485",
             "video_category": "retired",
             "delivery_protocol": "groupguard-query-delivery.v1",
@@ -95,11 +89,10 @@ jobs:
           }
           JSON
 
-      - name: Upload dist for sealing or diagnosis
-        if: always()
+      - name: Upload sealed dist only
         uses: actions/upload-artifact@v4
         with:
-          name: groupguard-no-video-dist-diagnostic-fb3a4eb7865f
+          name: groupguard-no-video-dist-3ea7af2c42de
           path: |
             onebot-plugin-groupguard/dist
             onebot-plugin-groupguard/DIST-SHA256SUMS.txt
