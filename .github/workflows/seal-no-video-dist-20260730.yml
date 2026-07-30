@@ -55,17 +55,26 @@ jobs:
             exit 1
           fi
 
-      - name: Build release dist
+      - name: Build SnowLuma release dist
         working-directory: onebot-plugin-groupguard
-        run: npm run build:release
+        run: npm run build:snowluma
 
-      - name: Seal dist manifest
+      - name: Seal SnowLuma dist manifest
         shell: bash
         working-directory: onebot-plugin-groupguard
         run: |
           set -euo pipefail
           test -d dist
-          test -n "$(find dist -type f -print -quit)"
+          test -f dist/snowluma-service.mjs
+          test -f dist/build-info.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const info = JSON.parse(fs.readFileSync('dist/build-info.json', 'utf8'));
+          if (info.commit_sha !== '3ea7af2c42dee65700c8b10bd43e1bc819ba43e2') throw new Error('build commit mismatch');
+          if (info.dirty !== false) throw new Error('dirty build');
+          if (info.service !== 'groupguard') throw new Error('service mismatch');
+          if (info.artifact !== 'snowluma-service.mjs') throw new Error('SnowLuma artifact mismatch');
+          NODE
           if find dist -type f -iname '*video*' -print -quit | grep -q .; then
             echo 'Video-named file found in dist.' >&2
             find dist -type f -iname '*video*' -print >&2
@@ -79,20 +88,21 @@ jobs:
           find dist -type f -print0 | sort -z | xargs -0 sha256sum > DIST-SHA256SUMS.txt
           cat > DIST-RELEASE-MANIFEST.json <<'JSON'
           {
-            "schema": "groupguard-dist-release.v1",
+            "schema": "groupguard-snowluma-dist-release.v1",
             "source_commit": "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2",
             "runtime_commit": "3ea7af2c42dee65700c8b10bd43e1bc819ba43e2",
             "api_commit": "f221b64649763eb8d325d87348fd2f42f48a6485",
+            "entry_artifact": "snowluma-service.mjs",
             "video_category": "retired",
             "delivery_protocol": "groupguard-query-delivery.v1",
             "pr": 17
           }
           JSON
 
-      - name: Upload sealed dist only
+      - name: Upload sealed SnowLuma dist only
         uses: actions/upload-artifact@v4
         with:
-          name: groupguard-no-video-dist-3ea7af2c42de
+          name: groupguard-snowluma-no-video-dist-3ea7af2c42de
           path: |
             onebot-plugin-groupguard/dist
             onebot-plugin-groupguard/DIST-SHA256SUMS.txt
