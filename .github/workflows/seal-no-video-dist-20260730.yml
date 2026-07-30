@@ -1,9 +1,9 @@
 name: seal-no-video-dist-20260730
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/all-query-intranet-client-20260729
+      - feat/groupguard-shard-intranet-migration-20260729
     paths:
       - .github/workflows/seal-no-video-dist-20260730.yml
   workflow_dispatch:
