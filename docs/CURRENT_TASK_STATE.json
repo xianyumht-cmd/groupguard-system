@@ -1,96 +1,38 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-31T15:27:00+08:00",
+  "updated_at": "2026-07-31T15:42:00+08:00",
   "task_id": "GFM-DELETE-002",
-  "title": "群文件历史文件清理可靠性修复",
-  "status": "implemented_and_ci_verified_awaiting_deployment_authorization",
+  "status": "merged_and_deployment_package_ready",
   "repository": "xianyumht-cmd/groupguard-system",
-  "working_branch": "codex/gg-battle-delivery-diagnosis-20260731",
-  "default_branch": "main",
-  "production_environment": {
-    "host": "root@192.168.3.89",
-    "app_path": "/mnt/sda1/groupguard/app",
-    "container": "groupguard-snowluma",
-    "runtime": "SnowLuma",
-    "protocol": "OneBot",
-    "windows_repo": "D:\\project2\\napcatplugin\\lengxi_repo"
-  },
-  "battle_delivery": {
-    "task_id": "GG-BATTLE-DELIVERY-001",
-    "status": "resolved",
-    "final_decision_code": "A",
-    "root_cause": "群 805402626 的查战绩输出配置为 text。"
-  },
-  "readonly_evidence": {
-    "target_group_id": "960957757",
-    "observed_file_count": 6,
-    "pending_cleanup_count": 0,
-    "list_structure_compatible": true,
-    "current_file_id_exact_match": true,
-    "three_snapshots_stable": true,
-    "historical_root_cause": "insufficient_historical_state",
-    "production_modified": false,
-    "service_restarted": false
-  },
-  "implemented_fix": {
-    "status": "complete",
-    "service_commit": "2632989ed9d533ab243e39b4ed40823a29181752",
-    "test_commit": "10ef5fa4b14bfd8024eda6f3a49f390578c05869",
-    "pull_request": 26,
-    "pull_request_state": "draft",
-    "changes": [
-      "不再因删除前单次列表未命中而跳过 delete_group_file",
-      "删除动作后按 0ms、1500ms、5000ms 三次读取列表",
-      "只有最后连续两次 absent 才设置 fileDeleted=true",
-      "present、unknown 或不稳定结果继续保留 pendingCleanup",
-      "未确认消失时写入 lastError，避免 pending=0 且 error=none 的静默状态"
-    ],
-    "state_compatibility": "状态版本保持 version=1，新字段为可选，兼容旧状态文件。"
+  "pull_request": {
+    "number": 26,
+    "merged": true,
+    "method": "squash",
+    "merge_commit": "5753808b10a653e8a7f7805ff7b16c6cc3161204"
   },
   "verification": {
-    "groupguard_ci": {
-      "run_id": 30612845713,
-      "run_number": 318,
-      "conclusion": "success",
-      "passed_steps": [
-        "npm ci",
-        "npm test",
-        "deployment PowerShell syntax",
-        "npm run build:snowluma",
-        "cross-repository contract mocks"
-      ]
-    },
-    "groupguard_build": {
-      "run_id": 30612845702,
-      "run_number": 350,
-      "conclusion": "success"
-    }
+    "ci_run": 320,
+    "ci_result": "success",
+    "build_run": 352,
+    "build_result": "success"
   },
-  "historical_files": {
-    "existing_stale_count": 5,
-    "automatic_mass_cleanup_added": false,
-    "reason": "旧 pendingCleanup 记录已经丢失，修复代码不会猜测并批量处理现有历史文件。存量文件需单独、明确、可审计地处理。"
+  "deployment_package": {
+    "filename": "GroupGuard-GFM-DELETE-002-production-safe-deployment-kit.zip",
+    "sha256": "dc4b95c47fc1de14ce0d5e94c532c9b0feb9adf6cc0ab9e6e2f42c615c85c6ef",
+    "entry": "run-production-safe-deploy.cmd",
+    "target_commit": "5753808b10a653e8a7f7805ff7b16c6cc3161204",
+    "automatic_rollback": true,
+    "preserves_config_and_data": true,
+    "mass_deletes_existing_history": false
   },
   "production_status": {
-    "code_deployed": false,
-    "production_modified": false,
-    "service_restarted": false,
-    "main_merged": false
+    "deployed": false,
+    "verified": false
   },
-  "completed": [
-    "完成生产只读诊断并排除列表结构与持续 ID 格式问题",
-    "直接实装删除后确认与 pending 保留修复",
-    "增加删除传播延迟、列表不稳定和读取失败回归测试",
-    "GroupGuard CI #318 通过",
-    "GroupGuard Build #350 通过",
-    "创建 Draft PR #26"
+  "remaining": [
+    "执行安全部署包",
+    "上传部署报告并完成生产验收",
+    "单独处理 5 个存量历史文件"
   ],
-  "not_completed": [
-    "尚未合并 main",
-    "尚未部署生产",
-    "尚未处理当前 5 个存量历史文件",
-    "尚未完成生产实机验收"
-  ],
-  "next_action": "等待用户明确授权后审核并合并 PR #26，再生成安全部署与验收包。",
-  "merge_policy": "no_merge_without_explicit_user_authorization"
+  "next_action": "运行 run-production-safe-deploy.cmd，成功后上传 deployment report ZIP。"
 }
