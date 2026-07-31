@@ -1,230 +1,193 @@
-# GG-BATTLE-DELIVERY-001 新聊天交接
+# GroupGuard 双任务只读诊断交接
 
-更新时间：2026-07-31 13:59 +08:00  
-状态：`paused_for_new_chat`  
+更新时间：2026-07-31 14:30 +08:00  
+状态：`awaiting_readonly_diagnosis_execution`  
 工作分支：`codex/gg-battle-delivery-diagnosis-20260731`
 
-## 1. 新聊天必须先做什么
+当前并行任务：
 
-先读取并以仓库内容为准：
+```text
+GG-BATTLE-DELIVERY-001  战绩图片交付插件端只读链路诊断
+GFM-DELETE-002          群文件假缺失原始列表只读诊断
+```
+
+## 1. 必须先读取
 
 ```text
 docs/CURRENT_TASK_STATE.json
 docs/NEXT_CHAT_HANDOFF.md
-docs/NEW_CHAT_PROMPT.txt
 docs/PROJECT_IDENTITY.md
+docs/GG_BATTLE_DELIVERY_001_STATIC_REVIEW.md
+docs/GFM_DELETE_002.md
 ```
 
-然后审查：
+## 2. 当前生产身份
 
 ```text
-onebot-plugin-groupguard
+仓库：xianyumht-cmd/groupguard-system
+Windows：D:\project2\napcatplugin\lengxi_repo
+核心目录：onebot-plugin-groupguard
+ARM：root@192.168.3.89
+生产目录：/mnt/sda1/groupguard/app
+容器：groupguard-snowluma
+宿主：SnowLuma
+通信：OneBot
 ```
 
-重点搜索这些链路：
+NapCat 仅为历史宿主和兼容构建。当前故障判断必须以 SnowLuma 实际链路为准。
 
-```text
-查战绩 / battle
-LOLDataSystem / 5001
-capabilities / preferred
-response.ok
-delivery.kind
-delivery.segments
-segment.type=image
-base64 / base64:// / data:image
-SnowLuma / OneBot
-send_msg / send_group_msg / image segment
-fallback / text fallback / 降级
-```
+## 3. 战绩接口端不得重复排查
 
-## 2. 已确认事实
-
-### 2.1 上游接口已部署成功
-
-`lolapisevers` 的 P009 安全部署已经完成：
+LOLDataSystem P009 已部署成功：
 
 ```text
 生产提交：d2416c90c6a37cc27fed2ccde4c71aa40c81a53b
-服务：LOLDataSystem
-部署结果：completed
-```
-
-P009 经历 v1-v4 的兼容性与验收探针修复，最终 v5 成功。后续不要重复部署 P009。
-
-### 2.2 接口端没有把战绩降级为文字
-
-已执行接口端战绩交付诊断，结果为：
-
-```text
 HTTP：200
 response.ok：true
-请求 preferred：auto
-请求 image capability：true
+接口独立诊断 preferred：auto
+image capability：true
 delivery.kind：segments
 首个 segment.type：image
 MIME：image/png
 图片字节：373591
-delivery_fallback：无
+fallback：无
 ```
 
-结论：`LOLDataSystem` 正常生成并返回图片。QQ群里最终出现文字的问题发生在 GroupGuard 插件收到响应之后。
+接口端能够正常生成并返回图片。禁止重新修改或部署 5001/6178。
 
-### 2.3 当前生产身份
+## 4. GG-BATTLE-DELIVERY-001 静态审查结果
 
-以 `docs/PROJECT_IDENTITY.md` 为准：
+完整链路：
 
 ```text
-仓库：xianyumht-cmd/groupguard-system
-Windows 本地：D:\project2\napcatplugin\lengxi_repo
-核心目录：onebot-plugin-groupguard
-ARM：root@192.168.3.89
-生产目录：/mnt/sda1/groupguard/app
-生产容器：groupguard-snowluma
-当前宿主：SnowLuma
-通信层：OneBot
+executeBattleIntranetQuery
+  -> requestIntranetDelivery
+  -> requestGroupGuardQueryDelivery
+  -> parseGroupGuardQueryDelivery
+  -> toOneBotDeliveryPlan
+  -> buildIntranetStructuredResult
+  -> sendUnifiedCommandResponse
+  -> response_capture_runtime.send
+  -> pluginState.sendGroupMsg
+  -> send_group_msg
+  -> SnowLuma / OneBot
 ```
 
-NapCat 是历史宿主和兼容构建，不应直接把当前故障归因到 NapCat 专属 API。诊断中可以记录“NapCat/OneBot 图片发送调用”这一业务说法，但代码判断必须以 SnowLuma 实际适配层为准。
-
-## 3. 当前目标
-
-做一次插件端只读链路诊断，完整记录：
-
-1. 插件实际发送给 5001 的请求参数。
-2. `capabilities.text/forward/image` 和 `preferred` 的实际值。
-3. 接口响应的 `ok`、`delivery.kind` 和每个 segment 的类型。
-4. image segment 的字段名、编码形式和长度。
-5. Base64 解码是否成功、解码后字节数、MIME、文件头和 SHA-256。
-6. 插件是否进入 SnowLuma/OneBot 图片发送路径。
-7. 调用的动作名、消息 segment 结构和参数类型。
-8. 发送结果中的 retcode/status/message/message_id。
-9. 捕获到的异常类型、错误消息和调用栈。
-10. 图片失败后是否主动回退成文字，以及具体触发条件。
-
-最终必须给出单一结论：
+请求 capabilities 固定为：
 
 ```text
-A. 调整 6108 WebUI 配置
-B. 修复插件响应解析/Base64
-C. 修复消息路由
-D. 修复 SnowLuma/OneBot 图片发送适配
-E. 现有日志不足，需先增加临时诊断埋点
+text=true
+image=true
+forward=true
 ```
 
-## 4. 安全边界
+实际 `preferred` 依次取：
 
-第一阶段只读，禁止：
+1. 解析后的群设置 `lolQueryOutputFormat`；
+2. `queryCommandProfiles.lol_battle.outputFormat`；
+3. 根配置 `lolQueryOutputFormat`；
+4. 最终默认 `forward`。
 
-- 修改生产配置。
-- 重启容器或服务。
-- 构建或部署。
-- 修改 ARM 上任何文件。
-- 执行 `git pull`、`git reset`、`git clean`、`git checkout`。
-- 在报告中保存 token、cookie、authorization、密码或完整 Base64。
-- 未经用户明确授权合并 `main` 或部署修复。
+图片 segment 在插件端严格校验 Base64、MIME、字节数和 SHA-256，随后转换成：
 
-日志与报告必须脱敏：
+```json
+{"type":"image","data":{"file":"base64://<data>"}}
+```
+
+当前生产日志通常不记录成功请求、segment 摘要、Base64 摘要和成功 message_id，因此真实查询后仍可能只能得到：
 
 ```text
-TOKEN
-SECRET
-PASSWORD / PASSWD
-COOKIE
-AUTHORIZATION
-API_KEY / APIKEY
-ACCESS_KEY
+E = 现有日志不足，需要最小临时诊断埋点
 ```
 
-Base64 只记录：
+判定代码：
 
 ```text
-是否存在
-原字符串长度
-解码成功/失败
-解码字节数
-MIME/魔数
-SHA-256
+A 配置解析为 preferred=text
+B delivery/Base64 解析失败
+C 图片有效但未进入 send_group_msg
+D SnowLuma/OneBot send_group_msg 失败
+E 当前日志不足
 ```
 
-不得把完整图片 Base64 写入提交或聊天。
+## 5. GFM-DELETE-002 当前假设
 
-## 5. 推荐执行顺序
+现象：目标群仍存在多份历史文件，但 WebUI 显示 `pendingCleanup=0` 且无错误。
 
-### 阶段 A：仓库静态审查
-
-1. 找到战绩命令入口。
-2. 找到对 LOLDataSystem 的请求构造器。
-3. 找到统一交付响应解析器。
-4. 找到 image segment 到 OneBot segment 的转换代码。
-5. 找到 SnowLuma 动作调用器。
-6. 找到文字回退条件。
-7. 找到 6108 WebUI 对应配置字段及默认值。
-8. 检查现有日志是否已经覆盖关键字段。
-
-静态审查后先形成调用链图和字段映射，不要直接猜修复。
-
-### 阶段 B：生成只读诊断包
-
-诊断包应至少包含：
+当前代码在删除前查询目标列表。若精确 `file_id` 未命中，会直接把旧文件标记为已删除并移出待清理队列。因此待确认：
 
 ```text
-run-readonly-battle-delivery-diagnosis.cmd
-diagnose-battle-delivery-chain-readonly.ps1
-README-FIRST.txt
-diagnosis-plan.json
+1. list_structure_mismatch
+   SnowLuma 返回结构与插件解析假设不一致。
+
+2. id_format_mismatch
+   upload_group_file 返回 ID 与列表返回 ID 表示不同。
+
+3. list_visibility_delay_or_inconsistency
+   上传后第一次列表查询暂时看不到文件，后续才出现。
 ```
 
-脚本行为：
+只读探针会对每条启用规则执行三次：
 
-1. 检查 SSH、仓库路径、容器和服务状态。
-2. 记录开始时间。
-3. 提示用户在 QQ 群中执行一次真实“查战绩”。
-4. 只读取该时间窗口内相关容器日志。
-5. 提取请求、响应、Base64、发送动作、返回结果、异常和回退证据。
-6. 对日志中的秘密字段进行脱敏。
-7. 生成机器可读 JSON、文本摘要和原始脱敏日志。
-8. 在 Windows 本地打包 ZIP。
+```text
+0ms / 1500ms / 5000ms
+get_group_root_files 或 get_group_files_by_folder
+```
+
+记录结构、字段、数量、列表指纹、ID 格式、精确/规范化/文件名大小匹配和耗时。
+
+注意：旧记录一旦被错误移出 `pendingCleanup`，状态文件不再保留历史 `targetFileId`。若结果为 `insufficient_historical_state`，需旧日志或下一次受控上传窗口补证，不能伪造最终结论。
+
+## 6. 已生成一键只读诊断包
+
+文件：
+
+```text
+GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit.zip
+SHA-256：e29daffdac2c16a707498a01256cc5cfc68dfec4f865965de2300f07bafa07da
+```
+
+入口：
+
+```text
+run-readonly-groupguard-diagnosis.cmd
+```
+
+执行过程：
+
+1. 检查本地分支、HEAD 和工作区；
+2. 记录生产容器状态和关键文件哈希；
+3. 在容器内读取配置，但不输出 access token；
+4. 只调用 `get_login_info`、`get_group_root_files`、`get_group_files_by_folder`；
+5. 提示用户在 QQ 群执行一次真实“查战绩”；
+6. 收集时间窗口内脱敏容器日志；
+7. 再次记录生产文件哈希；
+8. 输出 JSON、文本摘要、原始脱敏日志和 ZIP；
 9. 明确报告 `production_modified=false`、`service_restarted=false`。
 
-### 阶段 C：证据判定
+## 7. 下一步
 
-按以下规则判断：
+用户运行诊断包后，上传：
 
-| 证据 | 结论 |
-|---|---|
-| 请求 `image=false` 或 `preferred=text` | WebUI/插件配置 |
-| 响应含 image segment，Base64 解码失败 | 响应解析/Base64 代码 |
-| Base64 成功但没有进入发送方法 | 消息路由代码 |
-| 进入发送方法但 OneBot 返回失败 | SnowLuma/OneBot 适配 |
-| 图片失败后主动发送文字 | 追查原始错误并保留可用回退 |
-| 日志没有关键字段 | 设计临时诊断埋点，等待授权部署 |
+```text
+reports\groupguard-readonly-diagnosis-<timestamp>.zip
+```
 
-## 6. 目前没有完成的事情
+收到 ZIP 后：
 
-- 尚未从 ARM 收集本次真实查询的运行日志。
-- 尚未确认插件发出的 capabilities/preferred。
-- 尚未确认插件收到的 image segment 字段结构。
-- 尚未验证 Base64 解码。
-- 尚未确认 SnowLuma/OneBot 图片发送动作及返回值。
-- 尚未确认文字回退代码路径。
-- 尚未确定改 WebUI 还是改代码。
-- 尚未提交诊断脚本、修复代码、PR 或部署包。
+1. 校验 manifest 和前后文件哈希；
+2. 读取 `readonly-onebot-probe.json`；
+3. 对 GFM 给出结构、ID 格式、列表延迟或历史状态不足的单一结论；
+4. 读取战绩 resolved preferred 和真实查询日志；
+5. 对战绩给出 A/B/C/D/E 单一结论；
+6. 只有结论 E 时，设计最小化、可关闭、可回滚、绝不记录完整 Base64/秘密字段的临时埋点；
+7. 未经明确授权，不修改生产、不部署、不合并 main。
 
-## 7. 不要重复或误做
+## 8. 禁止事项
 
-- 不要再次排查 5001 是否能生成图片，已有证据证明它可以。
-- 不要先改 6178 配置。
-- 不要先改 6108 配置再观察，这会污染证据。
-- 不要把 SnowLuma 生产链路当成 NapCat 插件目录部署。
-- 不要在缺少实际调用证据时直接修 Base64。
-- 不要因群里收到文字就断言 API 返回文字。
-
-## 8. 新聊天完成标准
-
-至少完成以下一项才算推进：
-
-1. 生成经过静态审查的一键只读诊断包，并由用户在 Windows 运行；或
-2. 用户已经上传诊断 ZIP，完成证据分析并明确 A/B/C/D/E 单一结论；或
-3. 证明现有日志不足，提交最小化、可关闭、可回滚、不会记录秘密或完整 Base64 的诊断埋点方案。
-
-未经用户明确授权，不进入生产修改与部署阶段。
+- 不要重新排查或部署接口端；
+- 不要先修改 6178、6108 或生产配置；
+- 不要重启容器；
+- 不要执行 `git pull/reset/clean/checkout`；
+- 不要输出 token、cookie、authorization、密码或完整 Base64；
+- 不要在证据不足时直接修 Base64、发送格式或 GFM 删除逻辑。
