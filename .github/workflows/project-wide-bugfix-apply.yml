@@ -6,6 +6,7 @@ on:
       - fix/project-wide-bugs-20260801
     paths:
       - scripts/apply-project-wide-bug-fixes-20260801.mjs
+      - scripts/run-project-wide-bug-fixes-20260801.mjs
       - .github/workflows/project-wide-bugfix-apply.yml
   pull_request:
     branches:
@@ -37,7 +38,7 @@ jobs:
           cache-dependency-path: onebot-plugin-groupguard/package-lock.json
 
       - name: Apply audited fixes
-        run: node scripts/apply-project-wide-bug-fixes-20260801.mjs
+        run: node scripts/run-project-wide-bug-fixes-20260801.mjs
 
       - name: Install dependencies
         working-directory: onebot-plugin-groupguard
