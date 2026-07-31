@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-31T13:59:00+08:00",
+  "task_id": "GG-BATTLE-DELIVERY-001",
+  "title": "战绩图片交付插件端只读链路诊断",
+  "status": "paused_for_new_chat",
+  "repository": "xianyumht-cmd/groupguard-system",
+  "working_branch": "codex/gg-battle-delivery-diagnosis-20260731",
+  "default_branch": "main",
+  "production_environment": {
+    "host": "root@192.168.3.89",
+    "app_path": "/mnt/sda1/groupguard/app",
+    "container": "groupguard-snowluma",
+    "runtime": "SnowLuma",
+    "protocol": "OneBot",
+    "windows_repo": "D:\\project2\\napcatplugin\\lengxi_repo",
+    "core_directory": "onebot-plugin-groupguard"
+  },
+  "upstream_api_state": {
+    "repository": "xianyumht-cmd/lolapisevers",
+    "service": "LOLDataSystem",
+    "production_commit": "d2416c90c6a37cc27fed2ccde4c71aa40c81a53b",
+    "deployment_task": "LAPI-PARSER-CENTER-P009",
+    "deployment_result": "completed",
+    "diagnostic_result": {
+      "request_preferred": "auto",
+      "request_image_capability": true,
+      "response_ok": true,
+      "delivery_kind": "segments",
+      "first_segment_type": "image",
+      "image_mime": "image/png",
+      "image_bytes": 373591,
+      "delivery_fallback": null
+    },
+    "conclusion": "接口端正常生成并返回图片，未发生文字降级。问题位于 GroupGuard/SnowLuma/OneBot 后续交付链路。"
+  },
+  "current_symptom": "QQ群内查战绩最终表现为文字，和接口诊断返回图片不一致。",
+  "diagnosis_goal": [
+    "记录插件实际发送给 LOLDataSystem 的请求参数和 capabilities/preferred",
+    "记录收到的 delivery.kind、segments 类型和图片 segment 内容结构",
+    "验证 Base64 是否完整、能否解码、字节数、MIME 和文件头",
+    "记录进入 SnowLuma/OneBot 图片发送方法时的动作名和参数结构",
+    "记录发送结果、消息 ID、错误对象、异常栈和文字回退触发原因",
+    "根据证据决定调整 WebUI 配置还是修复插件代码"
+  ],
+  "safety_constraints": [
+    "只读诊断阶段不得修改生产配置",
+    "不得重启容器或服务",
+    "不得构建、部署或覆盖生产文件",
+    "不得执行 git pull/reset/clean/checkout",
+    "不得输出或提交 token、cookie、authorization、密码和完整 Base64 图片内容",
+    "未经明确授权不得合并到 main 或部署修复"
+  ],
+  "decision_rules": [
+    {
+      "condition": "实际请求 image=false 或 preferred=text",
+      "decision": "优先调整 6108 WebUI 或插件配置"
+    },
+    {
+      "condition": "接口响应含 image segment，但 Base64 解码失败",
+      "decision": "修复插件响应解析或数据截断问题"
+    },
+    {
+      "condition": "Base64 解码成功，但未进入图片发送方法",
+      "decision": "修复消息路由或 segment 映射"
+    },
+    {
+      "condition": "已调用 OneBot 图片发送但动作返回失败",
+      "decision": "修复图片参数格式、动作名或 SnowLuma 适配层"
+    },
+    {
+      "condition": "图片发送失败后插件主动回退文字",
+      "decision": "保留用户可用回退，同时修复原始图片失败原因并增加可观测性"
+    },
+    {
+      "condition": "现有日志不包含关键字段",
+      "decision": "先提交可回滚的临时诊断埋点方案，用户授权后再部署"
+    }
+  ],
+  "completed": [
+    "确认当前生产宿主是 SnowLuma，NapCat 仅为历史宿主与兼容构建",
+    "完成 LOLDataSystem P009 安全部署",
+    "完成接口端战绩交付诊断并确认返回 image segment",
+    "确定下一阶段必须检查插件端完整图片交付链路",
+    "建立本任务专用分支和交接状态文档"
+  ],
+  "not_completed": [
+    "尚未执行 ARM 服务器只读日志采集",
+    "尚未确认插件实际请求参数",
+    "尚未确认 Base64 解码状态",
+    "尚未确认 SnowLuma/OneBot 图片发送调用和返回结果",
+    "尚未决定是改 WebUI 还是改代码",
+    "尚未创建修复提交、PR 或部署包"
+  ],
+  "next_action": "在新聊天先读取 docs/CURRENT_TASK_STATE.json、docs/NEXT_CHAT_HANDOFF.md 和 docs/NEW_CHAT_PROMPT.txt，然后审查 onebot-plugin-groupguard 中战绩查询、delivery segment 解析、Base64 图片处理、SnowLuma/OneBot 发送和文字回退代码，生成并审查一键只读诊断包。",
+  "merge_policy": "no_merge_without_explicit_user_authorization"
+}
