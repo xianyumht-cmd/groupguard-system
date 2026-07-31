@@ -1,91 +1,112 @@
 # GroupGuard 当前任务交接
 
-更新时间：2026-07-31 16:04 +08:00  
-状态：`merged_and_deployment_package_v2_ready`
+更新时间：2026-07-31 16:24 +08:00  
+状态：`merged_and_deployment_package_v3_ready`
 
-当前任务：
+## 当前任务
 
 ```text
 GFM-DELETE-002  群文件历史文件清理可靠性修复
 ```
 
-## 已完成
-
 PR #26 已通过 squash 合并到 `main`：
 
 ```text
 5753808b10a653e8a7f7805ff7b16c6cc3161204
-fix(gfm): verify old file deletion before clearing pending cleanup (#26)
 ```
 
-合并前验证：
+合并前 GroupGuard CI #320 和 Build #352 均通过。
+
+## 部署尝试 1
+
+完整 Windows worktree 因仓库中一个无关超长文件名失败。失败发生在构建和生产连接前，没有接触生产。
+
+## 部署尝试 2
+
+v2 sparse worktree 虽仍打印超长文件警告，但插件子目录成功检出，随后：
 
 ```text
-GroupGuard CI #320    success
-GroupGuard Build #352 success
+npm ci                 passed
+npm test               passed
+build:snowluma         passed
+node --check           passed
+candidate manifest     passed
+candidate SHA-256      f6bc5d602afbaf4a051a753ec323972e765bf6fa4359fb6ad09fc7a54c4a27fd
 ```
 
-修复行为：始终执行旧文件删除；随后在 0ms、1500ms、5000ms 读取文件列表；只有最后连续两次均为 `absent` 才清除 pending。`present`、`unknown` 或列表不稳定时继续保留待清理记录并写入错误状态。
-
-## 首次部署尝试结果
-
-首次部署包在本地第 1/7 步失败：
+远程预检也实际完成，确认：
 
 ```text
-Create detached build worktree
-Filename too long
+container_status=running
+container_restart_count=0
+current_build_commit=600bf3ca678b76061733485efe6bc2b06ba648dd
+target_commit=5753808b10a653e8a7f7805ff7b16c6cc3161204
+current_node_check=passed
 ```
 
-原因是完整 Windows worktree 尝试检出仓库中一个与 GroupGuard 构建无关的超长路径。失败发生在候选依赖安装、SSH、上传和生产停止之前，因此：
+但 PowerShell 5.1 将 shell 脚本作为文本管道送入 ssh 时，在首行带入 UTF-8 BOM，并在末尾增加 CR。远程因此出现：
 
 ```text
-production_contacted=false
+bash: line 1: ﻿#!/usr/bin/env: No such file or directory
+bash: line 46: $'\r': command not found
+```
+
+最终 preflight 以 127 退出。此时尚未上传候选、未提示 DEPLOY、未停止容器、未切换 dist。因此：
+
+```text
 production_stopped=false
+production_dist_switched=false
 production_modified=false
+rollback_not_required=true
 ```
 
-不需要执行回滚。
-
-## 修复后的生产安全部署包 v2
+预检仅创建了独立空备份目录：
 
 ```text
-GroupGuard-GFM-DELETE-002-production-safe-deployment-kit-v2.zip
-SHA-256: d27a530e5fee8484e8f877c65353bc1cf90d5a312264078aff07e6c0f13d141f
+/mnt/sda1/groupguard/backups/GFM-DELETE-002-20260731-161420-5753808b10a6
+```
+
+## 生产安全部署包 v3
+
+```text
+GroupGuard-GFM-DELETE-002-production-safe-deployment-kit-v3.zip
+SHA-256: 062ee9eab4d55f2eb638df2ebf5a47df86fdafd5a22b3ef7590270ac52c724bb
 入口: run-production-safe-deploy.cmd
 目标提交: 5753808b10a653e8a7f7805ff7b16c6cc3161204
+内置候选 SHA-256: f6bc5d602afbaf4a051a753ec323972e765bf6fa4359fb6ad09fc7a54c4a27fd
 ```
 
-v2 改为：
-
-1. 创建 `--no-checkout` detached worktree；
-2. 启用 cone sparse checkout；
-3. 仅检出 `onebot-plugin-groupguard`；
-4. 清理本部署临时路径可能遗留的失效 worktree 元数据；
-5. 不修改用户当前工作区。
-
-其余安全流程保持不变：停止生产前完成依赖安装、完整测试和 SnowLuma 构建；候选上传并校验后才进入切换；上线检查失败自动恢复旧 `dist`。
-
-## 资源占用新增关注项
-
-用户观察到设备运行数日后：
+v3 不再执行 Git checkout 或 npm 重建，而是内置部署尝试 2 已完成完整测试和构建的不可变候选。运行时重新执行：
 
 ```text
-可用内存约 699 MB
-swap 使用约 2034 MB / 79.5%
-可用存储约 1968 MB 且存在波动
+候选归档 SHA-256
+node --check
+build-info commit/dirty/artifact
+362 个 dist 文件的字节数与 SHA-256
 ```
 
-单次摘要不能证明 GroupGuard 内存泄漏。Linux 可能把长期不活跃页面留在 swap，即使后来已有可用内存；存储波动也可能来自 Docker 日志、overlay、缓存、备份或临时文件。后续需要只读采集：
+远程脚本不再通过 PowerShell stdin 文本管道传输，改用 Base64 字节编码后由远端解码给 bash，规避 BOM 和 CRLF 污染。
+
+生产安全边界不变：候选上传并核验后才提示 DEPLOY；只切换 dist；配置和 data 不覆盖；上线失败自动回滚；不会批量删除现有 5 个历史文件。
+
+## Swap 与存储波动
+
+用户报告设备运行数日后 Swap 使用约 2 GB、可用存储约 1.9 GB 并波动。目前不能仅凭总量认定 GroupGuard 内存泄漏。
+
+值得注意的是，v2 预检显示 `/mnt/sda1/groupguard/app` 所在文件系统仍有约 42 GB 可用，而登录横幅显示约 1.9 GB 可用，二者很可能是不同文件系统。横幅更可能显示根分区；波动可能来自 Docker Root、容器日志、`/var/log` 或 `/tmp`，并不等同于 `/mnt/sda1` 应用目录耗尽。
+
+v3 预检新增只读采集：
 
 ```text
-容器与进程 RSS/PSS/Swap
-/proc/*/smaps_rollup
-Docker 日志大小和增长率
-/app、Docker root、备份与临时目录占用趋势
-内存和 swap 的时间序列
+主机 MemAvailable、SwapTotal/Used/Cached
+GroupGuard 容器所有进程 RSS/Swap
+根分区与 /mnt/sda1 应用分区容量
+Docker Root 路径及总占用
+GroupGuard 容器日志路径与大小
+/app、backups、/var/log、/tmp 占用
 ```
 
-在未取证前不要执行 `swapoff -a`，避免低内存设备发生 OOM。
+不执行 `swapoff -a`、`drop_caches` 或任何系统清理。
 
 ## 当前状态
 
@@ -93,26 +114,28 @@ Docker 日志大小和增长率
 main_merged=true
 production_deployed=false
 production_verified=false
+production_container=running
+current_production_commit=600bf3ca678b76061733485efe6bc2b06ba648dd
 ```
 
 ## 下一步
 
-把 v2 解压到新目录，运行：
+把 v3 解压到新目录，运行：
 
 ```text
 run-production-safe-deploy.cmd
 ```
 
-脚本要求确认时输入：
+出现确认提示后输入：
 
 ```text
 DEPLOY
 ```
 
-部署结束后上传：
+完成后上传：
 
 ```text
 reports\groupguard-gfm-delete-002-deployment-report-时间.zip
 ```
 
-生产验收完成后，再进入内存、交换区和存储的只读趋势诊断。存量 5 个历史文件继续作为单独任务处理。
+根据报告同时完成生产部署验收和第一份 Swap/磁盘来源基线判断。
