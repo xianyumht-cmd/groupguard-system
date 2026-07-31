@@ -95,6 +95,24 @@ replaceOnce(
     let oldModeSettled = false;\`,
   'group force overflow regression'
 );
+replaceOnce(
+  p('scripts/verify-core-stability.ts'),
+  '  const originalSaveGroups = storageAdapter.saveGroupConfigs;',
+  '  const originalReplaceAllGroups = storageAdapter.replaceAllGroupConfigs;',
+  'atomic save test storage hook'
+);
+replaceOnce(
+  p('scripts/verify-core-stability.ts'),
+  '    storageAdapter.saveGroupConfigs = () => undefined;',
+  '    storageAdapter.replaceAllGroupConfigs = (_groups, beforeCommit) => { beforeCommit?.(); };',
+  'atomic save test coordinated callback'
+);
+replaceOnce(
+  p('scripts/verify-core-stability.ts'),
+  '    storageAdapter.saveGroupConfigs = originalSaveGroups;',
+  '    storageAdapter.replaceAllGroupConfigs = originalReplaceAllGroups;',
+  'atomic save test restore hook'
+);
 
 ${finalMarker}`);
 
