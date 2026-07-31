@@ -8,6 +8,11 @@ const generatedPath = path.join(dir, '.apply-project-wide-bug-fixes-20260801.gen
 let source = fs.readFileSync(sourcePath, 'utf8');
 
 source = source.replace(
+  "  if (matches.length !== 1) throw new Error(`regex target count ${matches.length}: ${label}`);",
+  "  const globalReplacement = regex.flags.includes('g');\n  if ((!globalReplacement && matches.length !== 1) || (globalReplacement && matches.length === 0)) {\n    throw new Error(`regex target count ${matches.length}: ${label}`);\n  }"
+);
+
+source = source.replace(
   /replaceOnce\(\n  p\('src\/state\.ts'\),\n  `    const force = options\?\.force !== false;`,[\s\S]*?  'private force defaults false'\n\);/,
   `{
   const rel = p('src/state.ts');
