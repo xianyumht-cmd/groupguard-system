@@ -46,6 +46,29 @@ source = source.replace(
 }`
 );
 
+source = source.replace(
+  "        if (generatedFileUploads.size >= 2000) generatedFileUploads.delete(generatedFileUploads.keys().next().value);",
+  "        if (generatedFileUploads.size >= 2000) {\n          const oldestKey = generatedFileUploads.keys().next().value as string | undefined;\n          if (oldestKey) generatedFileUploads.delete(oldestKey);\n        }"
+);
+source = source.replace(
+  "  'handleSocketFailure',\n  'socket failure helper'",
+  "  'private handleSocketFailure(',\n  'socket failure helper'"
+);
+source = source.replace(
+  "function mapEnqueueFailureCode(result: Exclude<ReturnType<typeof enqueueTask>, 'ok'>): string {",
+  "function mapEnqueueFailureCode(result: Exclude<ReturnType<typeof enqueueTask>, 'ok'>): GuardResult['code'] {"
+);
+
+const finalMarker = "console.log(JSON.stringify({ ok: true, changed }, null, 2));";
+source = source.replace(finalMarker, `replaceOnce(
+  p('src/services/action_guard_service.ts'),
+  "  code: 'ok' | 'unknown_timeout' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'queue_reset' | 'action_failed_timeout' | 'fail_api' | 'backpressure_reject';",
+  "  code: 'ok' | 'unknown_timeout' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'queue_reset' | 'action_failed_timeout' | 'fail_api' | 'backpressure_reject' | 'bot_role_blocked';",
+  'guard result bot role code'
+);
+
+${finalMarker}`);
+
 fs.writeFileSync(generatedPath, source, 'utf8');
 try {
   await import(`${pathToFileURL(generatedPath).href}?v=${Date.now()}`);
