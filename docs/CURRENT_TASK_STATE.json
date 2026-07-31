@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-31T15:08:00+08:00",
+  "updated_at": "2026-07-31T15:27:00+08:00",
   "task_id": "GFM-DELETE-002",
-  "title": "群文件历史文件未清理诊断",
-  "status": "root_cause_narrowed_awaiting_cleanup_action_verification",
+  "title": "群文件历史文件清理可靠性修复",
+  "status": "implemented_and_ci_verified_awaiting_deployment_authorization",
   "repository": "xianyumht-cmd/groupguard-system",
   "working_branch": "codex/gg-battle-delivery-diagnosis-20260731",
   "default_branch": "main",
@@ -13,90 +13,84 @@
     "container": "groupguard-snowluma",
     "runtime": "SnowLuma",
     "protocol": "OneBot",
-    "windows_repo": "D:\\project2\\napcatplugin\\lengxi_repo",
-    "core_directory": "onebot-plugin-groupguard"
+    "windows_repo": "D:\\project2\\napcatplugin\\lengxi_repo"
   },
   "battle_delivery": {
     "task_id": "GG-BATTLE-DELIVERY-001",
     "status": "resolved",
     "final_decision_code": "A",
-    "root_cause": "群 805402626 的查战绩输出配置为 text。",
-    "resolution": "用户调整群配置后问题已解决。",
-    "resolution_document": "docs/GG_BATTLE_DELIVERY_001_RESOLUTION.md"
+    "root_cause": "群 805402626 的查战绩输出配置为 text。"
   },
-  "gfm_delete": {
-    "task_id": "GFM-DELETE-002",
-    "status": "root_cause_narrowed",
-    "rule_id": "mp1",
-    "source_group_id": "125253150",
+  "readonly_evidence": {
     "target_group_id": "960957757",
-    "folder_id": "/",
     "observed_file_count": 6,
     "pending_cleanup_count": 0,
-    "last_error": "",
-    "readonly_result": {
-      "report_received": "reports(2).zip",
-      "report_sha256": "96132c25d3ef5a444458062437f7fee262eb98a4a77ac0436feadac8a4678b57",
-      "manifest_files_verified": 10,
-      "probe_exit_code": 0,
-      "onebot_connected": true,
-      "list_action": "get_group_root_files",
-      "response_files_path": "files",
-      "response_top_level_keys": ["files", "folders"],
-      "snapshot_counts": [6, 6, 6],
-      "snapshot_fingerprints_identical": true,
-      "current_present_sequence": [true, true, true],
-      "current_exact_id_match": true,
-      "current_name_size_match": true,
-      "production_modified": false,
-      "service_restarted": false,
-      "before_after_hashes_identical": true
-    },
-    "excluded_current_causes": [
-      "list_structure_mismatch",
-      "persistent_id_format_mismatch",
-      "steady_state_list_inconsistency",
-      "ARM 盒子性能不足"
-    ],
-    "final_readonly_conclusion": "insufficient_historical_state",
-    "conclusion_explanation": "旧 pendingCleanup 记录已被移除，当前状态不再保存历史 targetFileId、清理动作请求响应和 fileDeleted=true 的具体分支，因此不能从普通快照还原每次旧文件未删除的唯一原因。",
-    "remaining_decision_branches": [
-      "keepLatestOnly 或 deletePreviousTargetFile 实际为 false，属于 WebUI/配置原因",
-      "delete_group_file 返回成功但文件实际仍存在，插件缺少删除后确认",
-      "delete_group_file 返回失败或异常，属于 SnowLuma/OneBot 删除动作链路问题",
-      "清理窗口列表短暂漏报，单次 absent 判断误清 pending"
-    ],
-    "code_risks_confirmed": [
-      "删除前单次列表未命中即按 absent 成功处理",
-      "delete_group_file 返回成功后立即 fileDeleted=true，没有删除后列表确认"
-    ],
-    "result_document": "docs/GFM_DELETE_002_READONLY_RESULT_20260731.md"
+    "list_structure_compatible": true,
+    "current_file_id_exact_match": true,
+    "three_snapshots_stable": true,
+    "historical_root_cause": "insufficient_historical_state",
+    "production_modified": false,
+    "service_restarted": false
   },
-  "safety": {
+  "implemented_fix": {
+    "status": "complete",
+    "service_commit": "2632989ed9d533ab243e39b4ed40823a29181752",
+    "test_commit": "10ef5fa4b14bfd8024eda6f3a49f390578c05869",
+    "pull_request": 26,
+    "pull_request_state": "draft",
+    "changes": [
+      "不再因删除前单次列表未命中而跳过 delete_group_file",
+      "删除动作后按 0ms、1500ms、5000ms 三次读取列表",
+      "只有最后连续两次 absent 才设置 fileDeleted=true",
+      "present、unknown 或不稳定结果继续保留 pendingCleanup",
+      "未确认消失时写入 lastError，避免 pending=0 且 error=none 的静默状态"
+    ],
+    "state_compatibility": "状态版本保持 version=1，新字段为可选，兼容旧状态文件。"
+  },
+  "verification": {
+    "groupguard_ci": {
+      "run_id": 30612845713,
+      "run_number": 318,
+      "conclusion": "success",
+      "passed_steps": [
+        "npm ci",
+        "npm test",
+        "deployment PowerShell syntax",
+        "npm run build:snowluma",
+        "cross-repository contract mocks"
+      ]
+    },
+    "groupguard_build": {
+      "run_id": 30612845702,
+      "run_number": 350,
+      "conclusion": "success"
+    }
+  },
+  "historical_files": {
+    "existing_stale_count": 5,
+    "automatic_mass_cleanup_added": false,
+    "reason": "旧 pendingCleanup 记录已经丢失，修复代码不会猜测并批量处理现有历史文件。存量文件需单独、明确、可审计地处理。"
+  },
+  "production_status": {
+    "code_deployed": false,
     "production_modified": false,
     "service_restarted": false,
-    "build_executed": false,
-    "deployment_executed": false,
-    "git_updated": false,
-    "manual_delete_executed": false
+    "main_merged": false
   },
   "completed": [
-    "完成 GFM 三次 OneBot 根目录列表快照",
-    "确认列表结构为顶层 files/folders 且插件解析器兼容",
-    "确认当前 targetFileId 与列表 file_id 三次精确一致",
-    "确认三次列表数量和指纹稳定",
-    "确认目标群实际存在 6 个文件而 pendingCleanup=0",
-    "确认生产前后哈希一致且容器未重启",
-    "排除当前持续性结构不匹配和 ID 格式不匹配",
-    "记录普通快照无法恢复历史动作证据的限制",
-    "新增 docs/GFM_DELETE_002_READONLY_RESULT_20260731.md"
+    "完成生产只读诊断并排除列表结构与持续 ID 格式问题",
+    "直接实装删除后确认与 pending 保留修复",
+    "增加删除传播延迟、列表不稳定和读取失败回归测试",
+    "GroupGuard CI #318 通过",
+    "GroupGuard Build #350 通过",
+    "创建 Draft PR #26"
   ],
   "not_completed": [
-    "尚未读取并确认规则 keepLatestOnly/deletePreviousTargetFile 的实际值",
-    "尚未捕获下一次自然搬运时的旧文件 ID、删除动作和前后列表",
-    "尚未在配置原因、删除假成功、删除动作失败、清理窗口列表瞬态之间给出唯一最终根因",
-    "尚未创建或部署 GFM 修复"
+    "尚未合并 main",
+    "尚未部署生产",
+    "尚未处理当前 5 个存量历史文件",
+    "尚未完成生产实机验收"
   ],
-  "next_action": "不要重复运行 v3 普通快照。下一步执行一次 GFM 专用清理动作只读观察：先输出脱敏规则开关，再等待下一次自然搬运并记录旧文件 ID、pending 状态以及删除前后列表；不得手动删除或修改配置。",
+  "next_action": "等待用户明确授权后审核并合并 PR #26，再生成安全部署与验收包。",
   "merge_policy": "no_merge_without_explicit_user_authorization"
 }
