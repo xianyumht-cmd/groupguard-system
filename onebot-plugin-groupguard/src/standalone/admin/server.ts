@@ -1,8 +1,9 @@
 import http, { type Server } from 'http';
 import fs from 'fs';
+import path from 'node:path';
 import { URL } from 'node:url';
 import { createToken, requireAuth } from './auth';
-import { readBody, send, sendBuffer, sendJson } from './http';
+import { HttpBodyTooLargeError, readBody, send, sendBuffer, sendJson } from './http';
 import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
 import { renderQueryPage } from './query_page';
@@ -49,9 +50,21 @@ function resolveServerConfig(options: SnowLumaAdminServerOptions) {
   const host = options.host || process.env.GROUPGUARD_WEBUI_HOST || '127.0.0.1';
   const parsedPort = options.port || Number(process.env.GROUPGUARD_WEBUI_PORT || 6108);
   const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 6108;
-  const token = options.token || process.env.GROUPGUARD_WEBUI_TOKEN || createToken();
-  const tokenFromEnv = Boolean(options.token || process.env.GROUPGUARD_WEBUI_TOKEN);
-  return { host, port, token, tokenFromEnv };
+  const configuredToken = String(options.token || process.env.GROUPGUARD_WEBUI_TOKEN || '').trim();
+  const tokenPath = path.join(options.dataDir, '.groupguard-webui-token');
+  let token = configuredToken;
+  let tokenSource = configuredToken ? 'configuration' : 'file';
+  if (!token) {
+    try { token = fs.readFileSync(tokenPath, 'utf-8').trim(); } catch { /* create below */ }
+  }
+  if (!token) {
+    token = createToken();
+    fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+    fs.writeFileSync(tokenPath, `${token}\n`, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
+    tokenSource = 'generated_file';
+  }
+  if (!token) throw new Error('groupguard_webui_token_unavailable');
+  return { host, port, token, tokenSource, tokenPath };
 }
 
 function parseGroupPath(pathname: string): string | null {
@@ -87,11 +100,13 @@ function renderMainPage(): string {
 
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
   const logger = options.logger || console;
-  const { host, port, token, tokenFromEnv } = resolveServerConfig(options);
+  const { host, port, token, tokenSource, tokenPath } = resolveServerConfig(options);
 
   const server: Server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${host}:${port}`);
     try {
+      if (!requireAuth(req, res, url, token)) return;
+
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
         send(res, 200, applyWebUiTheme(renderMainPage()), 'text/html; charset=utf-8');
         return;
@@ -411,16 +426,15 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
 
       sendJson(res, 404, { ok: false, error: '页面或接口不存在' });
     } catch (error) {
-      const statusCode = error instanceof GroupFileMirrorConfigError ? 400 : 500;
+      const statusCode = error instanceof HttpBodyTooLargeError ? 413 : error instanceof GroupFileMirrorConfigError ? 400 : 500;
       sendJson(res, statusCode, { ok: false, error: String((error as Error)?.message || error) });
     }
   });
 
   server.listen(port, host, () => {
     logger.info(`[GroupGuard:SnowLumaWebUI] listening http://${host}:${port}`);
-    if (tokenFromEnv) {
-      logger.info('[GroupGuard:SnowLumaWebUI] authentication token loaded from configuration');
-    } else {
+    logger.info(`[GroupGuard:SnowLumaWebUI] authentication token source=${tokenSource}`);
+    if (tokenSource === 'generated_file') logger.warn(`[GroupGuard:SnowLumaWebUI] generated token stored with mode 0600 at ${tokenPath}`); else {
       logger.warn('[GroupGuard:SnowLumaWebUI] GROUPGUARD_WEBUI_TOKEN is not configured; using an ephemeral token that is intentionally not logged');
     }
   });

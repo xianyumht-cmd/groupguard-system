@@ -1,5 +1,11 @@
 # GroupGuard 全仓 Bug 审计与缺陷台账（2026-08-01）
 
+## 0. 修复执行状态
+
+- 修复分支：`fix/project-wide-bugs-20260801`
+- 状态：代码修复已应用，等待 CI 与真实 SnowLuma/QQ 环境验收。
+- 原则：源码可确认项必须有自动回归；环境依赖项在未实机验收前保持“待验证”，不得伪报已闭环。
+
 > 审计基线：`main@98edb1fc2eef2ade4e1f771e8cf4479cdd6c6f70`  
 > 审计对象：`xianyumht-cmd/groupguard-system`，重点覆盖 `onebot-plugin-groupguard` 的 SnowLuma 独立运行、OneBot 通信、消息/事件流水线、动作队列、配置与 SQLite 持久化、群文件搬运、查询协议、WebUI 与构建发布。  
 > 结论口径：本文记录的是本轮静态审查已经定位到的全部缺陷，不宣称软件从此“绝对没有其他 Bug”。凡未经过真实 SnowLuma/NapCat/QQ 环境复现的条目均明确标记为“需实机验证”。

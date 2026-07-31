@@ -30,27 +30,39 @@ export {
   recordActivity
 } from './commands/passive';
 let commandValidationRan = false;
+let commandInitializationPromise: Promise<void> | null = null;
 
-export function initCommandValidation(): void {
+export async function initCommandValidation(): Promise<void> {
   if (commandValidationRan) return;
-  commandValidationRan = true;
-  registerIntranetQueryCommandPlugins();
-  registerIntranetBattleCommandPlugins();
-  registerIntranetRiskCommandPlugins();
-  registerLegacyRuntimePlugins();
-  registerSendWrapperCommandPlugins();
-  registerEleBuildCommandPlugins();
-  registerSubGameplayCommandPlugins();
-  void initializeDynamicCommands().then(() => {
+  if (commandInitializationPromise) return commandInitializationPromise;
+
+  commandInitializationPromise = (async () => {
+    registerIntranetQueryCommandPlugins();
+    registerIntranetBattleCommandPlugins();
+    registerIntranetRiskCommandPlugins();
+    registerLegacyRuntimePlugins();
+    registerSendWrapperCommandPlugins();
+    registerEleBuildCommandPlugins();
+    registerSubGameplayCommandPlugins();
+    await initializeDynamicCommands();
     refreshCommandPluginRegistry();
     assertCommandPluginRegistryReady();
     refreshDynamicCommandRegistry();
-    return initializeDynamicCommandMetrics(loadDynamicCommands().map((command) => command.id));
-  });
+    await initializeDynamicCommandMetrics(loadDynamicCommands().map((command) => command.id));
+    commandValidationRan = true;
+  })();
+
+  try {
+    await commandInitializationPromise;
+  } catch (error) {
+    commandValidationRan = false;
+    commandInitializationPromise = null;
+    throw error;
+  }
 }
 
 export async function handleCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
-  initCommandValidation();
+  await initCommandValidation();
   try {
     return await commandDispatcher.handle(event, ctx);
   } catch (error) {

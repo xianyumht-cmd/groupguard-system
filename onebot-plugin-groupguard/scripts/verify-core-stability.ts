@@ -138,8 +138,8 @@ async function verifySendQueueSettlement(): Promise<void> {
       [{ type: 'text', data: { text: 'new' } }],
       { force: true, scene: 'stability_test' }
     );
-    assert.equal(globalEvicted, 1, 'force overflow must settle the evicted global task');
-    state.globalSendQueue.at(-1)?.resolve();
+    assert.equal(globalEvicted, 0, 'force overflow must preserve existing global tasks');
+    assert.equal(state.globalSendQueue.length, 100, 'force overflow must not grow the global queue');
     await globalAccepted;
 
     let groupEvicted = 0;
@@ -154,8 +154,8 @@ async function verifySendQueueSettlement(): Promise<void> {
       [{ type: 'text', data: { text: 'new' } }],
       { force: true, scene: 'stability_test' }
     );
-    assert.equal(groupEvicted, 1, 'force overflow must settle the evicted group task');
-    state.groupSendQueues.get('group-a')?.at(-1)?.resolve();
+    assert.equal(groupEvicted, 0, 'force overflow must preserve existing group tasks');
+    assert.equal(state.groupSendQueues.get('group-a')?.length, 20, 'force overflow must not grow the group queue');
     await groupAccepted;
 
     let oldModeSettled = false;
@@ -183,13 +183,13 @@ function verifyAtomicConfigSave(): void {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-core-stability-'));
   const configPath = path.join(tempDir, 'config.json');
   const originalConfig = configStateService.getConfig();
-  const originalSaveGroups = storageAdapter.saveGroupConfigs;
+  const originalReplaceAllGroups = storageAdapter.replaceAllGroupConfigs;
   try {
     const nextConfig = structuredClone(DEFAULT_PLUGIN_CONFIG);
     nextConfig.ownerQQs = 'atomic-save-test';
     nextConfig.groups = { '10001': structuredClone(nextConfig.global) };
     configStateService.setConfig(nextConfig);
-    storageAdapter.saveGroupConfigs = () => undefined;
+    storageAdapter.replaceAllGroupConfigs = (_groups, beforeCommit) => { beforeCommit?.(); };
 
     saveConfigStrict({ configPath } as any);
     const saved = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -209,7 +209,7 @@ function verifyAtomicConfigSave(): void {
       'atomic save must not leave temporary files behind'
     );
   } finally {
-    storageAdapter.saveGroupConfigs = originalSaveGroups;
+    storageAdapter.replaceAllGroupConfigs = originalReplaceAllGroups;
     configStateService.setConfig(originalConfig);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

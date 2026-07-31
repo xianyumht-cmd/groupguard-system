@@ -3,25 +3,15 @@ import type { PluginLogger } from 'napcat-types/napcat-onebot/network/plugin-man
 import type { NetworkAdapterConfig } from 'napcat-types/napcat-onebot/config/config';
 import type { PluginConfig, VerifySession, GroupGuardSettings, ActivityRecord, SigninData, InviteData, BotSendEventRecord } from './types';
 import { DEFAULT_PLUGIN_CONFIG } from './config';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'node:url';
+import { getBuildInfo } from './build_info';
 import type { ReplyPersona } from './types';
 import { generateReply, isReplyTemplateSceneAllowed } from './reply_generator';
 import { shouldBlockByBotRole } from './core/bot_role';
 import { packageForwardMessages, packageOutgoingSegments } from './services/outgoing_risk_packager';
 
-// 运行时从 package.json 读取版本号
-function getPluginVersion (): string {
-  try {
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const pkgPath = path.join(__dirname, 'package.json');
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      return pkg.version || '1.0.0';
-    }
-  } catch { /* 读取失败使用默认版本 */ }
-  return '1.0.0';
+// Build metadata is embedded by Vite and is the single runtime version source.
+function getPluginVersion(): string {
+  return String(getBuildInfo().version || 'unknown');
 }
 
 interface LogEntry {
@@ -108,6 +98,7 @@ class PluginState {
   /** 分群熔断截止时间 */
   private groupFuseUntil: Map<string, number> = new Map();
   private selfRecallScheduleMap: Map<string, number> = new Map();
+  private selfRecallTimers: Map<string, NodeJS.Timeout> = new Map();
 
   // ===== 内存优化 =====
   /** 清理内存缓存 */
@@ -251,8 +242,8 @@ class PluginState {
     const min = scenePolicy.delayMinMs !== undefined ? Number(scenePolicy.delayMinMs) : (settings.randomDelayMin || 0);
     const max = scenePolicy.delayMaxMs !== undefined ? Number(scenePolicy.delayMaxMs) : (settings.randomDelayMax || 0);
     
-    if (max > min && max > 0) {
-      const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    if (max >= min && max > 0) {
+      const delay = max === min ? min : Math.floor(Math.random() * (max - min + 1)) + min;
       if (delay > 0) {
         if (this.config.debug) this.log('info', `[AntiRisk] 随机延迟: ${delay}ms`);
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -410,7 +401,8 @@ class PluginState {
       .catch((err) => {
         this.debug(`[SelfRecall] persist_failed source=${source} groupId=${gid} msgId=${msgId} err=${String(err)}`);
       });
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      this.selfRecallTimers.delete(dedupKey);
       import('./services/action_queue_service')
         .then(mod => mod.enqueueSelfRecallAction({
           taskId,
@@ -429,7 +421,15 @@ class PluginState {
           this.debug(`[SelfRecall] enqueue_failed source=${source} groupId=${gid} msgId=${msgId} err=${String(err)}`);
         });
     }, delay);
+    timer.unref?.();
+    this.selfRecallTimers.set(dedupKey, timer);
     return dueAt;
+  }
+
+  clearSelfRecallTimers(): void {
+    for (const timer of this.selfRecallTimers.values()) clearTimeout(timer);
+    this.selfRecallTimers.clear();
+    this.selfRecallScheduleMap.clear();
   }
 
   private applyReplyTemplate(text: string): string {
@@ -567,23 +567,15 @@ class PluginState {
       };
       if (this.getQueueMode() === 'global') {
         if (this.globalSendQueue.length >= this.getMaxQueueSizeGlobal()) {
-          if (!task.force) {
-            this.settleDroppedGroupTask(task, 'send_queue_overflow');
-            return;
-          }
-          const evicted = this.globalSendQueue.shift();
-          if (evicted) this.settleDroppedGroupTask(evicted, 'send_queue_force_evicted');
+          this.settleDroppedGroupTask(task, task.force ? 'send_queue_force_overflow' : 'send_queue_overflow');
+          return;
         }
         this.globalSendQueue.push(task);
       } else {
         const q = this.groupSendQueues.get(groupId) || [];
         if (q.length >= this.getMaxQueueSizePerGroup()) {
-          if (!task.force) {
-            this.settleDroppedGroupTask(task, 'group_send_queue_overflow');
-            return;
-          }
-          const evicted = q.shift();
-          if (evicted) this.settleDroppedGroupTask(evicted, 'group_send_queue_force_evicted');
+          this.settleDroppedGroupTask(task, task.force ? 'group_send_queue_force_overflow' : 'group_send_queue_overflow');
+          return;
         }
         q.push(task);
         this.groupSendQueues.set(groupId, q);
@@ -765,6 +757,9 @@ class PluginState {
       } as never, this.adapterName, this.networkConfig) as { message_id?: number | string };
       this.log('warn', `forward_send_direct source=send_queue_fallback group=${task.groupId} reason=${reason}`);
       const messageId = this.extractSendMessageId(res);
+      const sentAt = Date.now();
+      const selfRecallDueAt = this.scheduleSelfRecall(task.groupId, messageId, 'send_group_msg');
+      this.markGroupSend(task.groupId);
       this.recordBotSendEvent({
         groupId: task.groupId,
         scene: task.scene,
@@ -779,7 +774,8 @@ class PluginState {
         suffixMode: task.suffixMode,
         randomDelayMs,
         queuedAt: task.queuedAt,
-        sentAt: Date.now(),
+        sentAt,
+        selfRecallDueAt,
         status: 'sent',
         reason: `forward_fallback_${reason}`,
         createdAt: Date.now()
@@ -809,7 +805,7 @@ class PluginState {
         persona: options?.persona,
         settings
       }).text;
-    const force = options?.force !== false;
+    const force = options?.force === true;
     const applyTemplate = options?.applyTemplate !== false;
     if (!force && options?.skipProbability !== true && !this.shouldSendByProbability(scene)) return;
     const templated = (!templateDisabled && allowSemanticTemplate && applyTemplate) ? this.applyReplyTemplate(renderedText) : renderedText;
@@ -834,7 +830,7 @@ class PluginState {
       if (options?.requireDelivery) throw new Error('group_send_transport_unavailable');
       return;
     }
-    const force = options?.force !== false;
+    const force = options?.force === true;
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
     const scene = options?.scene || 'raw_text';
@@ -883,7 +879,7 @@ class PluginState {
       if (options?.requireDelivery) throw new Error('private_send_transport_unavailable');
       return;
     }
-    const force = options?.force !== false;
+    const force = options?.force === true;
     const applyTemplate = options?.applyTemplate !== false;
     const templateDisabled = this.isReplyTemplateDisabled();
     const scene = options?.scene || 'raw_text';
@@ -938,7 +934,8 @@ class PluginState {
     if (action === 'send_group_forward_msg' && params && Array.isArray(params.messages)) {
       const groupId = String(params.group_id ?? params.groupId ?? '');
       const settings = this.getGroupSettings(groupId);
-      const packed = packageForwardMessages(params.messages, settings, 'raw_text');
+      const scene = String(params.__groupguard_scene || 'raw_text');
+      const packed = packageForwardMessages(params.messages, settings, scene);
       if (packed.urlCount > 0) {
         const actionText = packed.changed ? 'wrapped' : 'detected';
         this.log('warn', `[OutgoingRisk] url_${actionText} channel=forward group=${groupId || '-'} scene=raw_text count=${packed.urlCount}`);
@@ -953,37 +950,21 @@ class PluginState {
       
       // 针对 delete_msg 的特殊优化
       if (action === 'delete_msg') {
-          // 1. 如果是超时或无响应，且消息其实已经发出去了，我们降低日志级别并重试一次
-          if (errMsg.includes('Timeout') || errMsg.includes('No data returned') || errMsg.includes('decode failed')) {
-              if (this.config.debug) this.log('warn', `撤回消息请求超时，尝试重试一次...`);
-              await new Promise(resolve => setTimeout(resolve, 300)); // 缩短重试间隔
-              try {
-                  return await this.actions.call(action, params as never, this.adapterName, this.networkConfig);
-              } catch (retryErr) {
-                  // 2. 如果重试也失败，通常是因为消息已经不存在了（撤回成功了），此时保持静默
-                  if (this.config.debug) this.log('info', `撤回消息最终确认: 已处理或失效`);
-                  return null;
-              }
-          }
-          // 3. 其他类型的错误（如权限不足），仅在 debug 模式下记录
-          if (this.config.debug) this.log('warn', `撤回消息 API 调用异常: ${errMsg}`);
-          return null;
+        this.log('error', `撤回消息 API 调用失败: ${errMsg}`);
+        throw e;
       }
-      
+
       this.log('error', `API调用失败 [${action}]: ${e}`);
       return null;
     }
   }
 
   /** 检查机器人是否为管理员 */
-  async isBotAdmin (groupId: string): Promise<boolean> {
-    if (!this.botId) return false;
-    try {
-      const info = await this.callApi('get_group_member_info', { group_id: groupId, user_id: this.botId }) as any;
-      return info?.role === 'admin' || info?.role === 'owner';
-    } catch {
-      return false;
-    }
+  async isBotAdmin(groupId: string): Promise<boolean> {
+    if (!this.botId) throw new Error('bot_identity_unavailable');
+    if (!this.actions || !this.networkConfig) throw new Error('group_send_transport_unavailable');
+    const info = await this.actions.call('get_group_member_info', { group_id: groupId, user_id: this.botId } as never, this.adapterName, this.networkConfig) as any;
+    return info?.role === 'admin' || info?.role === 'owner';
   }
 }
 

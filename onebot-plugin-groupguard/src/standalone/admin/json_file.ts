@@ -9,7 +9,14 @@ export function readJsonFile(filePath: string, fallback: any = {}): any {
 
 export function writeJsonFile(filePath: string, value: any): void {
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+  const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    try { fs.unlinkSync(tempPath); } catch { /* noop */ }
+    throw error;
+  }
 }
 
 export function ensureObjectConfig(value: any): Record<string, any> {

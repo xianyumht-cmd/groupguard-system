@@ -40,7 +40,10 @@ function createLoggerShim(logger: Console = console) {
     info: (message: string) => logger.info(message),
     warn: (message: string) => logger.warn(message),
     error: (message: string) => logger.error(message),
-    debug: (message: string) => logger.debug?.(message) ?? logger.info(message)
+    debug: (message: string) => {
+      if (typeof logger.debug === 'function') logger.debug(message);
+      else logger.info(message);
+    }
   };
 }
 

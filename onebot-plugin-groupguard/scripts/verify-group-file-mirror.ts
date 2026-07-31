@@ -213,7 +213,8 @@ function main(): void {
       fileNamePattern: '[',
     }],
   });
-  assert.equal(invalidRegex.rules[0]?.fileNamePattern, '', 'invalid regular expressions are safely disabled');
+  assert.equal(invalidRegex.rules[0]?.fileNamePattern, '[', 'invalid regular expressions remain visible for diagnosis');
+  assert.equal(invalidRegex.rules[0]?.enabled, false, 'invalid regular expressions disable the rule instead of matching every file');
 
   const webConfig = normalizeGroupFileMirrorWebInput({
     enabled: true,

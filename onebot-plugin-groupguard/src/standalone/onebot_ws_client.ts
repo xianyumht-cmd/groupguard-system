@@ -290,9 +290,19 @@ export class OneBotWsClient {
 
     ws.addEventListener('error', (event: any) => {
       if (this.ws !== ws) return;
-      this.lastError = this.safeError(event?.error || 'websocket_error');
-      this.options.logger?.error?.(`OneBot WS error: ${this.lastError}`);
+      this.handleSocketFailure(ws, event?.error || 'websocket_error');
     });
+  }
+
+  private handleSocketFailure(ws: OneBotWebSocketLike, error: unknown): void {
+    if (this.ws !== ws) return;
+    this.lastError = this.safeError(error);
+    this.options.logger?.error?.(`OneBot WS error: ${this.lastError}`);
+    this.ws = null;
+    this.disconnectedAt = Date.now();
+    this.rejectPending(new Error('onebot_ws_error'));
+    try { ws.close(); } catch { /* noop */ }
+    this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {

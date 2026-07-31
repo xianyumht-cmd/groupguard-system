@@ -86,9 +86,16 @@ export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown
       return;
     }
 
-    const isAdmin = await authStateService.isBotAdmin(groupId);
-    if (!isAdmin) {
-      loggingStateService.debug(`机器人在群 ${groupId} 不是管理员，跳过验证`);
+    let isAdmin = false;
+    let adminStatusKnown = true;
+    try {
+      isAdmin = await authStateService.isBotAdmin(groupId);
+    } catch (error) {
+      adminStatusKnown = false;
+      loggingStateService.warn(`机器人管理员状态查询失败，继续执行保护流程 group=${groupId}: ${String(error)}`);
+    }
+    if (!isAdmin && adminStatusKnown) {
+      loggingStateService.debug(`机器人在群 ${groupId} 不是管理员，跳过需要管理员权限的验证`);
       return;
     }
 
@@ -155,12 +162,17 @@ export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown
     const groupLeave = settings.leaveBlacklist;
     if (!globalLeave && !groupLeave) return;
 
-    if (!config.blacklist) config.blacklist = [];
-    if (!config.blacklist.includes(userId)) {
-      config.blacklist.push(userId);
-      loggingStateService.info(`退群拉黑: 用户 ${userId} 退出群 ${groupId}，已加入黑名单（${globalLeave ? '全局' : '群独立'}设置）`);
-      saveConfig(ctx);
+    if (globalLeave) {
+      if (!config.blacklist) config.blacklist = [];
+      if (!config.blacklist.includes(userId)) config.blacklist.push(userId);
+    } else if (groupLeave) {
+      const own = configStateService.getGroupSettings(groupId) || ({ useGlobal: false } as any);
+      own.useGlobal = false;
+      own.groupBlacklist = Array.from(new Set([...(own.groupBlacklist || []), userId]));
+      configStateService.setGroupSettings(groupId, own);
     }
+    loggingStateService.info(`退群拉黑: 用户 ${userId} 退出群 ${groupId}，已加入${globalLeave ? '全局' : '本群'}黑名单`);
+    saveConfig(ctx);
     return;
   }
 }

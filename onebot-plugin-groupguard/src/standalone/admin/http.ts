@@ -22,14 +22,46 @@ export function sendJson(res: ServerResponse, status: number, value: any): void 
   send(res, status, JSON.stringify(value, null, 2), 'application/json; charset=utf-8');
 }
 
-export function readBody(req: IncomingMessage): Promise<string> {
+export class HttpBodyTooLargeError extends Error {
+  readonly statusCode = 413;
+  constructor() { super('请求体过大'); }
+}
+
+export function readBody(req: IncomingMessage, maxBytes = 5 * 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => {
-      body += String(chunk);
-      if (body.length > 5 * 1024 * 1024) reject(new Error('请求体过大'));
-    });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    const cleanup = () => {
+      req.off('data', onData);
+      req.off('end', onEnd);
+      req.off('error', onError);
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      req.pause();
+      reject(error);
+    };
+    const onData = (chunk: Buffer | string) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += buffer.length;
+      if (bytes > maxBytes) {
+        fail(new HttpBodyTooLargeError());
+        return;
+      }
+      chunks.push(buffer);
+    };
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(Buffer.concat(chunks, bytes).toString('utf-8'));
+    };
+    const onError = (error: Error) => fail(error);
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
   });
 }

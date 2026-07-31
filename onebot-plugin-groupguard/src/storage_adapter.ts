@@ -271,8 +271,8 @@ function readJsonFile(filePath: string): any {
   if (!fs.existsSync(filePath)) return null;
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(`invalid_migration_json:${filePath}`, { cause: error });
   }
 }
 
@@ -369,14 +369,26 @@ export class StorageAdapter {
   private actionQueueEventRetentionLogHandler: ActionQueueEventRetentionLogHandler | null = null;
 
   init(configDir: string): void {
-    if (this.inited) return;
-    this.dataDir = path.resolve(contextStateService.getDataDir() || path.join(configDir, 'data'));
+    const nextDataDir = path.resolve(contextStateService.getDataDir() || path.join(configDir, 'data'));
+    const nextDbPath = path.join(nextDataDir, 'groupguard.db');
+    if (this.inited && this.db && this.dbPath === nextDbPath) return;
+    if (this.inited) this.close();
+    this.dataDir = nextDataDir;
     if (!fs.existsSync(this.dataDir)) fs.mkdirSync(this.dataDir, { recursive: true });
-    this.dbPath = path.join(this.dataDir, 'groupguard.db');
+    this.dbPath = nextDbPath;
     const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec(SCHEMA_SQL);
     this.inited = true;
+  }
+
+  close(): void {
+    try { this.db?.close?.(); } finally {
+      this.db = null;
+      this.inited = false;
+      this.dbPath = '';
+      this.dataDir = '';
+    }
   }
 
   private assertReady(): SqliteDb {
@@ -559,28 +571,54 @@ export class StorageAdapter {
     return genericDeleted + toNumber(result?.changes, 0);
   }
 
-  saveGroupConfig(groupId: string, cfg: GroupGuardSettings): void {
+  private saveGroupConfigUnsafe(groupId: string, cfg: GroupGuardSettings): void {
     const db = this.assertReady();
     const now = Date.now();
     const qaList = Array.isArray((cfg as any).qaList) ? (cfg as any).qaList : [];
     const configToSave: any = { ...(cfg as any) };
     delete configToSave.qaList;
+    db.prepare('INSERT OR REPLACE INTO group_config(group_id, config_json, updated_at) VALUES (?, ?, ?)').run(groupId, JSON.stringify(configToSave), now);
+    db.prepare('DELETE FROM group_qa WHERE group_id = ?').run(groupId);
+    const stmt = db.prepare('INSERT OR REPLACE INTO group_qa(group_id, keyword, mode, reply, updated_at) VALUES (?, ?, ?, ?, ?)');
+    for (const qa of qaList) {
+      stmt.run(groupId, String(qa.keyword || ''), String(qa.mode || 'exact'), String(qa.reply || ''), now);
+    }
+  }
+
+  saveGroupConfig(groupId: string, cfg: GroupGuardSettings): void {
+    this.runInTransaction(() => this.saveGroupConfigUnsafe(groupId, cfg));
+  }
+
+  deleteGroupConfig(groupId: string): void {
+    const db = this.assertReady();
     this.runInTransaction(() => {
-      db.prepare('INSERT OR REPLACE INTO group_config(group_id, config_json, updated_at) VALUES (?, ?, ?)').run(groupId, JSON.stringify(configToSave), now);
       db.prepare('DELETE FROM group_qa WHERE group_id = ?').run(groupId);
-      const stmt = db.prepare('INSERT OR REPLACE INTO group_qa(group_id, keyword, mode, reply, updated_at) VALUES (?, ?, ?, ?, ?)');
-      for (const qa of qaList) {
-        stmt.run(groupId, String(qa.keyword || ''), String(qa.mode || 'exact'), String(qa.reply || ''), now);
+      db.prepare('DELETE FROM group_config WHERE group_id = ?').run(groupId);
+    });
+  }
+
+  replaceAllGroupConfigs(groups: Record<string, GroupGuardSettings>, beforeCommit?: () => void): void {
+    const db = this.assertReady();
+    const ids = Object.keys(groups || {});
+    this.runInTransaction(() => {
+      for (const gid of ids) {
+        const cfg = groups[gid];
+        if (cfg) this.saveGroupConfigUnsafe(gid, cfg);
       }
+      if (ids.length === 0) {
+        db.prepare('DELETE FROM group_qa').run();
+        db.prepare('DELETE FROM group_config').run();
+      } else {
+        const placeholders = ids.map(() => '?').join(',');
+        db.prepare(`DELETE FROM group_qa WHERE group_id NOT IN (${placeholders})`).run(...ids);
+        db.prepare(`DELETE FROM group_config WHERE group_id NOT IN (${placeholders})`).run(...ids);
+      }
+      beforeCommit?.();
     });
   }
 
   saveGroupConfigs(groups: Record<string, GroupGuardSettings>): void {
-    const keys = Object.keys(groups || {});
-    for (const gid of keys) {
-      const cfg = groups[gid];
-      if (cfg) this.saveGroupConfig(gid, cfg);
-    }
+    this.replaceAllGroupConfigs(groups);
   }
 
   loadAllGroupConfigs(): Record<string, GroupGuardSettings> {
@@ -599,8 +637,8 @@ export class StorageAdapter {
       let cfg: any = {};
       try {
         cfg = JSON.parse(String(row.config_json || '{}'));
-      } catch {
-        cfg = {};
+      } catch (error) {
+        throw new Error(`invalid_group_config_json:${gid}`, { cause: error });
       }
       cfg.qaList = qaMap.get(gid) || [];
       result[gid] = cfg as GroupGuardSettings;
