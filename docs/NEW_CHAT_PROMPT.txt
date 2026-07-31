@@ -1,0 +1,13 @@
+继续 GroupGuard 的 GG-BATTLE-DELIVERY-001 战绩图片交付插件端只读链路诊断任务。
+
+仓库：https://github.com/xianyumht-cmd/groupguard-system
+工作分支：codex/gg-battle-delivery-diagnosis-20260731
+
+先读取：
+- docs/CURRENT_TASK_STATE.json
+- docs/NEXT_CHAT_HANDOFF.md
+- docs/PROJECT_IDENTITY.md
+
+已知结论：lolapisevers 的 P009 已成功部署到 d2416c90c6a37cc27fed2ccde4c71aa40c81a53b；接口诊断确认战绩请求 preferred=auto、image=true，返回 delivery.kind=segments、image/png、373591 字节且没有 delivery_fallback。不要重复排查接口端，也不要先改 6178 或 6108 配置。
+
+下一步直接审查 onebot-plugin-groupguard 的完整链路：实际请求参数、delivery segment 解析、Base64 解码、SnowLuma/OneBot 图片发送调用、返回结果、异常和文字回退条件。随后生成经过审查的一键只读诊断包。第一阶段禁止修改生产配置、重启、部署、覆盖文件或合并 main；报告必须脱敏且不得保存完整 Base64。
