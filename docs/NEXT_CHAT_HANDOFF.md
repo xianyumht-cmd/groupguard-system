@@ -1,84 +1,33 @@
 # GroupGuard 当前任务交接
 
-更新时间：2026-07-31 14:52 +08:00  
-状态：`battle_resolved_gfm_awaiting_readonly_probe`  
+更新时间：2026-07-31 15:08 +08:00  
+状态：`root_cause_narrowed_awaiting_cleanup_action_verification`  
 工作分支：`codex/gg-battle-delivery-diagnosis-20260731`
 
 当前仅剩任务：
 
 ```text
-GFM-DELETE-002  群文件假缺失原始列表只读诊断
+GFM-DELETE-002  群文件历史文件未清理诊断
 ```
 
-## 1. GG-BATTLE-DELIVERY-001 已解决
+## 1. 战绩任务已经关闭
 
-用户已确认群 `805402626` 的“查战绩”输出配置为：
+`GG-BATTLE-DELIVERY-001` 已解决：群 `805402626` 的输出配置原来是 `text`。用户调整配置后问题消失。
+
+后续不再排查战绩接口、图片 Base64、SnowLuma 图片发送或 5001/6178/6108。
+
+## 2. v3 GFM 只读报告已经成功
+
+用户上传：
 
 ```text
-text
+reports(2).zip
+SHA-256: 96132c25d3ef5a444458062437f7fee262eb98a4a77ac0436feadac8a4678b57
 ```
 
-因此插件按群配置输出文字。用户调整该群配置后，查战绩输出问题已经解决。
+`manifest.json` 的 10 个文件全部通过字节数和 SHA-256 校验。
 
-最终结论：
-
-```text
-A = 实际群配置解析为 preferred=text
-```
-
-此前生产日志已经证明命令成功执行，且没有接口请求失败、delivery 解析失败或 Base64 校验错误。因此不需要修改：
-
-- LOLDataSystem 5001/6178；
-- SnowLuma 6108；
-- Base64 校验；
-- OneBot 图片 segment；
-- 插件代码或生产服务。
-
-详细结论：
-
-```text
-docs/GG_BATTLE_DELIVERY_001_RESOLUTION.md
-```
-
-后续不再重复发送“查战绩”，也不再继续战绩链路诊断。
-
-## 2. GFM-DELETE-002 仍需完成
-
-现象：目标群仍有多份历史文件，但 WebUI 显示：
-
-```text
-pendingCleanup=0
-recent error=none
-```
-
-当前代码风险：删除旧文件前只执行一次列表查询；精确 `file_id` 未命中即按 `absent` 处理，设置 `fileDeleted=true`，随后从 `pendingCleanup` 清除。
-
-待判断的最终结论只能是以下之一：
-
-```text
-list_structure_mismatch
-id_format_mismatch
-list_visibility_delay_or_inconsistency
-insufficient_historical_state
-```
-
-仍缺少：
-
-```text
-get_group_root_files/get_group_files_by_folder 原始结构
-0ms / 1500ms / 5000ms 三次列表快照
-file_id 精确与规范化比较
-文件名与大小候选匹配
-列表指纹和可见性变化
-```
-
-## 3. 前两次诊断包结果
-
-v1：SSH 强制 `BatchMode=yes`，密码认证被禁止，未建立生产连接。
-
-v2：成功完成生产前后哈希和部分日志采集，但 OneBot 探针从 `/app/[eval1]` 导入 `undici` 失败；随后 PowerShell StrictMode 因缺失属性中止。
-
-两次均确认：
+安全结果：
 
 ```text
 production_modified=false
@@ -88,42 +37,133 @@ deployment_executed=false
 git_updated=false
 ```
 
-## 4. 使用 v3 的 GFM 专用入口
+生产前后关键文件哈希一致，容器一直 running，`restart_count=0`。
 
-诊断包：
+## 3. GFM 实测结果
 
-```text
-GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit-v3.zip
-SHA-256: b19b8b947b06a0df9a16f6d646cd2244a9ee2affa1eb49f84b1ef542cf81daf0
-```
-
-后续只运行：
+规则：
 
 ```text
-run-readonly-gfm-delete-002-diagnosis.cmd
+rule=mp1
+source=125253150
+target=960957757
+folder=/
+action=get_group_root_files
 ```
 
-不运行双任务入口，不需要填写战绩群号，也不需要发送“查战绩”。
-
-完成后上传：
+三次列表读取：
 
 ```text
-reports\groupguard-readonly-diagnosis-<timestamp>.zip
+retcode=0
+files_path=files
+top_level_keys=files,folders
+counts=6,6,6
+fingerprints=完全一致
 ```
 
-收到报告后：
+当前文件：
 
-1. 校验生产前后哈希和容器状态；
-2. 读取 OneBot 三次列表快照；
-3. 对 GFM 给出结构、ID、延迟或历史状态不足的单一结论；
-4. 证据充分后再规划最小修复；
-5. 未经明确授权，不修改生产、不部署、不合并 main。
+```text
+name=3Aln5swi.7z
+file_id=/fdbca459-7d44-48f8-8250-03fe40cb65d7
+size=17098443
+upload_time=2026-07-31 14:54:18 +08:00
+```
 
-## 5. 固定安全边界
+状态中的当前 `targetFileId` 与三次 OneBot 列表返回值均精确相等，文件名和大小也一致：
 
+```text
+current_present_sequence=true,true,true
+exact_match=true
+normalized_match=true
+```
+
+目标群实际有 6 个文件，但：
+
+```text
+pendingCleanup=[]
+lastError=""
+```
+
+## 4. 已排除与尚未证明
+
+当前环境已经排除：
+
+```text
+list_structure_mismatch
+persistent_id_format_mismatch
+steady_state_list_inconsistency
+ARM 性能不足
+```
+
+普通快照的正式结论仍是：
+
+```text
+insufficient_historical_state
+```
+
+原因：旧 `pendingCleanup` 已被清除，状态文件不再保存旧文件当时的目标 ID、列表结果、`delete_group_file` 请求响应和 `fileDeleted=true` 的具体分支。
+
+因此目前还需在以下分支中选择唯一根因：
+
+```text
+1. keepLatestOnly/deletePreviousTargetFile 实际为 false -> WebUI/配置原因
+2. delete_group_file 返回成功但文件仍在 -> 插件缺少删除后确认
+3. delete_group_file 返回失败或异常 -> SnowLuma/OneBot 删除链路
+4. 清理窗口列表短暂漏报 -> 单次 absent 判断错误清除 pending
+```
+
+## 5. 已确认的插件可靠性缺口
+
+当前代码：
+
+1. 删除前只做一次列表查询，单次未命中就按 absent 成功处理；
+2. `delete_group_file` 返回成功后立即设置 `fileDeleted=true`，没有再次读取列表确认文件确实消失。
+
+因此确实可能形成：
+
+```text
+pendingCleanup=0
+lastError=""
+实际历史文件仍存在
+```
+
+但不能把该匹配直接冒充为已经证明的唯一历史根因。
+
+详细报告：
+
+```text
+docs/GFM_DELETE_002_READONLY_RESULT_20260731.md
+```
+
+## 6. 下一步
+
+不要重复运行 v3 普通快照。
+
+下一步应制作并运行一次 GFM 专用“清理动作只读观察”包：
+
+1. 读取并仅输出 `keepLatestOnly`、`deletePreviousTargetFile` 等非秘密规则开关；
+2. 记录基线 current/列表；
+3. 等待下一次正常、自然发生的文件搬运；
+4. 捕获旧 current ID、新 current ID、pendingCleanup 变化；
+5. 读取删除前后列表和相关容器日志；
+6. 不主动上传、不手动删除、不修改配置、不重启服务。
+
+根据结果再决定：
+
+```text
+WebUI/配置修正
+或
+插件增加多次 absent 确认、删除后确认和 pending 保留
+或
+转向 SnowLuma delete_group_file 链路
+```
+
+## 7. 固定安全边界
+
+- 不主动制造上传或删除；
 - 不修改 5001、6178、6108 或生产配置；
-- 不重启容器和服务；
-- 不构建、不部署、不覆盖生产文件；
-- 不执行 `git pull/reset/clean/checkout`；
-- 不输出 token、cookie、authorization、密码或完整 Base64；
-- 不在证据不足时直接修改 GFM 删除逻辑。
+- 不重启、不构建、不部署；
+- 不执行 git pull/reset/clean/checkout；
+- 不输出 token、cookie、authorization、密码；
+- 未经明确授权不合并 main、不部署修复。
