@@ -1,0 +1,36 @@
+name: Project dependency audit temp
+
+on:
+  push:
+    branches: [fix/project-wide-bugs-20260801]
+    paths: [.github/workflows/project-dependency-audit-temp.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/project-wide-bugs-20260801
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+      - working-directory: onebot-plugin-groupguard
+        run: npm ci
+      - name: Production dependency audit
+        working-directory: onebot-plugin-groupguard
+        shell: bash
+        run: |
+          npm audit --omit=dev --audit-level=low || true
+      - name: Full dependency audit
+        working-directory: onebot-plugin-groupguard
+        shell: bash
+        run: |
+          npm audit --audit-level=low || true
