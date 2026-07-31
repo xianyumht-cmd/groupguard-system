@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-31T14:30:00+08:00",
+  "updated_at": "2026-07-31T14:31:00+08:00",
   "task_id": "GG-BATTLE-DELIVERY-001+GFM-DELETE-002",
   "title": "战绩图片交付与群文件假缺失生产只读诊断",
-  "status": "awaiting_readonly_diagnosis_execution",
+  "status": "awaiting_readonly_diagnosis_execution_v2",
   "repository": "xianyumht-cmd/groupguard-system",
   "working_branch": "codex/gg-battle-delivery-diagnosis-20260731",
   "default_branch": "main",
@@ -35,7 +35,7 @@
     "conclusion": "接口端正常生成并返回图片，未发生文字降级。不得重复排查或修改接口端。"
   },
   "battle_delivery": {
-    "status": "readonly_package_ready",
+    "status": "awaiting_v2_production_evidence",
     "symptom": "QQ群内查战绩最终表现为文字，和接口独立诊断返回图片不一致。",
     "static_chain": [
       "intranet_battle_runtime_plugin.executeBattleIntranetQuery",
@@ -66,36 +66,57 @@
   },
   "gfm_delete": {
     "task_id": "GFM-DELETE-002",
-    "status": "readonly_package_ready",
+    "status": "awaiting_v2_production_evidence",
     "symptom": "目标群仍有多份历史文件，但 WebUI 等待清理为 0 且最近错误为空。",
     "suspected_causes": [
       "get_group_root_files/get_group_files_by_folder 返回结构与解析假设不一致",
-      "上传返回 file_id 与列表返回 file_id 表示不同",
+      "upload_group_file 返回 file_id 与列表返回 file_id 表示不同",
       "上传后列表存在可见性延迟或短暂不一致"
     ],
     "known_risk": "单次列表未命中会被直接当作 absent 并设置 fileDeleted=true，随后从 pendingCleanup 清除。",
-    "readonly_probe": {
-      "snapshots_per_rule": 3,
-      "delays_ms": [0, 1500, 5000],
-      "actions": [
-        "get_login_info",
-        "get_group_root_files",
-        "get_group_files_by_folder"
-      ],
-      "records": [
-        "返回结构和字段名",
-        "文件数量与列表指纹",
-        "file_id 格式和规范化比较",
-        "文件名与大小候选匹配",
-        "查询耗时与三次一致性"
-      ]
-    },
     "historical_limit": "若旧记录已因假缺失被清出 pendingCleanup，当前状态不再包含历史 targetFileId，需要旧日志或下一次受控上传窗口补证。"
   },
+  "execution_attempts": [
+    {
+      "started_at": "2026-07-31T14:25:16+08:00",
+      "package_version": "v1",
+      "result": "failed_before_remote_collection",
+      "error": "Permission denied (publickey,password)",
+      "root_cause": "诊断脚本强制 BatchMode=yes，禁止当前服务器使用的交互式密码认证。Windows PowerShell 5.1 又在处理真实退出码前将 stderr 提升为 NativeCommandError。",
+      "report_received": "reports.zip",
+      "report_contents": [
+        "diagnosis-summary.txt",
+        "local-repository.txt",
+        "static-source-evidence.txt"
+      ],
+      "production_evidence_collected": false,
+      "production_modified": false,
+      "service_restarted": false,
+      "build_executed": false,
+      "deployment_executed": false,
+      "git_updated": false,
+      "local_repository": {
+        "branch": "main",
+        "head": "600bf3ca678b76061733485efe6bc2b06ba648dd",
+        "expected_branch": "codex/gg-battle-delivery-diagnosis-20260731",
+        "branch_matches": false,
+        "working_tree_dirty": false,
+        "note": "当前分支差异仅为诊断文档，不是 SSH 失败原因，也不阻止 v2 只读采集。"
+      }
+    }
+  ],
   "readonly_package": {
-    "filename": "GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit.zip",
-    "sha256": "e29daffdac2c16a707498a01256cc5cfc68dfec4f865965de2300f07bafa07da",
+    "filename": "GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit-v2.zip",
+    "sha256": "9309f2f4ce1a9c6a0ff3b5104b6d8963c8ce1ede85a2d4a9a96824fb81cf6840",
     "entry": "run-readonly-groupguard-diagnosis.cmd",
+    "changes_from_v1": [
+      "移除 BatchMode=yes",
+      "允许 publickey、keyboard-interactive 和 password",
+      "最多允许三次密码输入",
+      "兼容 Windows PowerShell 5.1 NativeCommandError 行为",
+      "增加明确认证失败提示",
+      "不保存或输出 SSH 密码"
+    ],
     "production_write": false,
     "service_restart": false,
     "build": false,
@@ -115,18 +136,19 @@
     "读取 CURRENT_TASK_STATE、NEXT_CHAT_HANDOFF 和 PROJECT_IDENTITY",
     "完成战绩请求参数、delivery 解析、Base64 校验、structured delivery、send_group_msg 和文字回退静态审查",
     "确认 GFM 假缺失的三种待证原因和历史状态丢失限制",
-    "生成双任务一键只读诊断包",
-    "新增 docs/GFM_DELETE_002.md",
-    "新增 docs/GG_BATTLE_DELIVERY_001_STATIC_REVIEW.md"
+    "分析首次 reports.zip 并确认未建立 SSH 连接、未采集生产证据",
+    "定位首版 BatchMode=yes 认证缺陷",
+    "生成允许密码认证且兼容 PowerShell 5.1 的 v2 只读诊断包",
+    "新增 docs/READONLY_DIAGNOSIS_AUTH_FIX_20260731.md"
   ],
   "not_completed": [
-    "尚未在 Windows 运行只读诊断包",
+    "尚未成功运行 v2 只读诊断包",
     "尚未取得生产真实战绩查询窗口日志",
     "尚未取得 GFM 三次 OneBot 列表快照",
     "尚未给出战绩 A/B/C/D/E 最终单一结论",
     "尚未给出 GFM 列表结构/ID格式/列表延迟最终单一结论",
     "尚未创建任何生产修复、PR 或部署包"
   ],
-  "next_action": "运行 GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit.zip 中的 run-readonly-groupguard-diagnosis.cmd，按提示在 QQ 群执行一次真实查战绩，然后上传 reports 目录生成的 ZIP。",
+  "next_action": "先手动运行 ssh root@192.168.3.89 验证密码登录，再运行 v2 包中的 run-readonly-groupguard-diagnosis.cmd；按提示执行一次真实查战绩，并上传新生成的 reports ZIP。",
   "merge_policy": "no_merge_without_explicit_user_authorization"
 }
