@@ -67,6 +67,35 @@ source = source.replace(finalMarker, `replaceOnce(
   'guard result bot role code'
 );
 
+replaceOnce(
+  p('scripts/verify-core-stability.ts'),
+  \`    assert.equal(globalEvicted, 1, 'force overflow must settle the evicted global task');
+    state.globalSendQueue.at(-1)?.resolve();
+    await globalAccepted;
+
+    let groupEvicted = 0;\`,
+  \`    assert.equal(globalEvicted, 0, 'force overflow must preserve existing global tasks');
+    assert.equal(state.globalSendQueue.length, 100, 'force overflow must not grow the global queue');
+    await globalAccepted;
+
+    let groupEvicted = 0;\`,
+  'global force overflow regression'
+);
+replaceOnce(
+  p('scripts/verify-core-stability.ts'),
+  \`    assert.equal(groupEvicted, 1, 'force overflow must settle the evicted group task');
+    state.groupSendQueues.get('group-a')?.at(-1)?.resolve();
+    await groupAccepted;
+
+    let oldModeSettled = false;\`,
+  \`    assert.equal(groupEvicted, 0, 'force overflow must preserve existing group tasks');
+    assert.equal(state.groupSendQueues.get('group-a')?.length, 20, 'force overflow must not grow the group queue');
+    await groupAccepted;
+
+    let oldModeSettled = false;\`,
+  'group force overflow regression'
+);
+
 ${finalMarker}`);
 
 fs.writeFileSync(generatedPath, source, 'utf8');
