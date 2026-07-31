@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-31T15:42:00+08:00",
+  "updated_at": "2026-07-31T16:04:00+08:00",
   "task_id": "GFM-DELETE-002",
-  "status": "merged_and_deployment_package_ready",
+  "status": "merged_and_deployment_package_v2_ready",
   "repository": "xianyumht-cmd/groupguard-system",
   "pull_request": {
     "number": 26,
@@ -16,11 +16,21 @@
     "build_run": 352,
     "build_result": "success"
   },
+  "deployment_attempt_1": {
+    "result": "failed_before_candidate_build",
+    "failed_step": "create_detached_build_worktree",
+    "reason": "Windows checkout attempted to materialize an unrelated repository path whose filename exceeds the platform limit.",
+    "production_contacted": false,
+    "production_stopped": false,
+    "production_modified": false
+  },
   "deployment_package": {
-    "filename": "GroupGuard-GFM-DELETE-002-production-safe-deployment-kit.zip",
-    "sha256": "dc4b95c47fc1de14ce0d5e94c532c9b0feb9adf6cc0ab9e6e2f42c615c85c6ef",
+    "filename": "GroupGuard-GFM-DELETE-002-production-safe-deployment-kit-v2.zip",
+    "sha256": "d27a530e5fee8484e8f877c65353bc1cf90d5a312264078aff07e6c0f13d141f",
+    "revision": "v2-windows-sparse-worktree",
     "entry": "run-production-safe-deploy.cmd",
     "target_commit": "5753808b10a653e8a7f7805ff7b16c6cc3161204",
+    "workspace": "detached sparse worktree containing only onebot-plugin-groupguard",
     "automatic_rollback": true,
     "preserves_config_and_data": true,
     "mass_deletes_existing_history": false
@@ -29,10 +39,16 @@
     "deployed": false,
     "verified": false
   },
+  "resource_follow_up": {
+    "status": "awaiting_readonly_diagnosis",
+    "question": "运行数日后 swap 占用上升及可用存储波动是否由 GroupGuard 插件导致",
+    "current_interpretation": "单次系统摘要不足以证明插件内存泄漏；需按容器和进程采集 RSS/PSS/Swap、Docker 日志与磁盘目录增长趋势。"
+  },
   "remaining": [
-    "执行安全部署包",
+    "使用 v2 安全部署包完成生产部署",
     "上传部署报告并完成生产验收",
+    "执行内存、交换区和存储只读趋势诊断",
     "单独处理 5 个存量历史文件"
   ],
-  "next_action": "运行 run-production-safe-deploy.cmd，成功后上传 deployment report ZIP。"
+  "next_action": "解压 v2 到新目录并运行 run-production-safe-deploy.cmd；成功后上传 deployment report ZIP。"
 }
