@@ -1,169 +1,132 @@
 # GroupGuard 当前任务交接
 
-更新时间：2026-07-31 15:08 +08:00  
-状态：`root_cause_narrowed_awaiting_cleanup_action_verification`  
-工作分支：`codex/gg-battle-delivery-diagnosis-20260731`
+更新时间：2026-07-31 15:27 +08:00  
+状态：`implemented_and_ci_verified_awaiting_deployment_authorization`  
+工作分支：`codex/gg-battle-delivery-diagnosis-20260731`  
+Draft PR：`#26`
 
-当前仅剩任务：
+当前任务：
 
 ```text
-GFM-DELETE-002  群文件历史文件未清理诊断
+GFM-DELETE-002  群文件历史文件清理可靠性修复
 ```
 
-## 1. 战绩任务已经关闭
+## 1. 已完成的诊断
 
-`GG-BATTLE-DELIVERY-001` 已解决：群 `805402626` 的输出配置原来是 `text`。用户调整配置后问题消失。
-
-后续不再排查战绩接口、图片 Base64、SnowLuma 图片发送或 5001/6178/6108。
-
-## 2. v3 GFM 只读报告已经成功
-
-用户上传：
+生产只读报告确认：
 
 ```text
-reports(2).zip
-SHA-256: 96132c25d3ef5a444458062437f7fee262eb98a4a77ac0436feadac8a4678b57
-```
-
-`manifest.json` 的 10 个文件全部通过字节数和 SHA-256 校验。
-
-安全结果：
-
-```text
-production_modified=false
-service_restarted=false
-build_executed=false
-deployment_executed=false
-git_updated=false
-```
-
-生产前后关键文件哈希一致，容器一直 running，`restart_count=0`。
-
-## 3. GFM 实测结果
-
-规则：
-
-```text
-rule=mp1
-source=125253150
-target=960957757
-folder=/
-action=get_group_root_files
-```
-
-三次列表读取：
-
-```text
-retcode=0
-files_path=files
-top_level_keys=files,folders
-counts=6,6,6
-fingerprints=完全一致
-```
-
-当前文件：
-
-```text
-name=3Aln5swi.7z
-file_id=/fdbca459-7d44-48f8-8250-03fe40cb65d7
-size=17098443
-upload_time=2026-07-31 14:54:18 +08:00
-```
-
-状态中的当前 `targetFileId` 与三次 OneBot 列表返回值均精确相等，文件名和大小也一致：
-
-```text
-current_present_sequence=true,true,true
-exact_match=true
-normalized_match=true
-```
-
-目标群实际有 6 个文件，但：
-
-```text
-pendingCleanup=[]
+target_group=960957757
+files=6
+pendingCleanup=0
 lastError=""
 ```
 
-## 4. 已排除与尚未证明
+三次 `get_group_root_files` 返回结构、数量和指纹稳定；当前状态中的 `targetFileId` 与列表 `file_id` 精确一致。因此排除当前持续性的列表结构错误和 ID 格式错误。
 
-当前环境已经排除：
-
-```text
-list_structure_mismatch
-persistent_id_format_mismatch
-steady_state_list_inconsistency
-ARM 性能不足
-```
-
-普通快照的正式结论仍是：
+旧清理记录已经从状态中移除，无法恢复每一个历史动作的唯一根因，正式历史结论仍为：
 
 ```text
 insufficient_historical_state
 ```
 
-原因：旧 `pendingCleanup` 已被清除，状态文件不再保存旧文件当时的目标 ID、列表结果、`delete_group_file` 请求响应和 `fileDeleted=true` 的具体分支。
+但代码中已确认两个必须修复的可靠性缺口：
 
-因此目前还需在以下分支中选择唯一根因：
+1. 删除前单次列表未命中会直接按已清理处理；
+2. `delete_group_file` 返回成功后会直接清除 pending，没有删除后确认。
 
-```text
-1. keepLatestOnly/deletePreviousTargetFile 实际为 false -> WebUI/配置原因
-2. delete_group_file 返回成功但文件仍在 -> 插件缺少删除后确认
-3. delete_group_file 返回失败或异常 -> SnowLuma/OneBot 删除链路
-4. 清理窗口列表短暂漏报 -> 单次 absent 判断错误清除 pending
-```
+## 2. 用户决策
 
-## 5. 已确认的插件可靠性缺口
+用户明确决定不等待概率性复现，直接实装修复代码。
 
-当前代码：
+## 3. 已实装行为
 
-1. 删除前只做一次列表查询，单次未命中就按 absent 成功处理；
-2. `delete_group_file` 返回成功后立即设置 `fileDeleted=true`，没有再次读取列表确认文件确实消失。
-
-因此确实可能形成：
+提交：
 
 ```text
-pendingCleanup=0
-lastError=""
-实际历史文件仍存在
+2632989ed9d533ab243e39b4ed40823a29181752
+fix(gfm): retain cleanup until deletion is verified
+
+10ef5fa4b14bfd8024eda6f3a49f390578c05869
+test(gfm): cover verified deletion retention
 ```
 
-但不能把该匹配直接冒充为已经证明的唯一历史根因。
+新逻辑：
 
-详细报告：
+1. 不再使用删除前单次 `absent` 作为跳过删除的依据；
+2. 始终调用 `delete_group_file`；
+3. 动作完成后在 `0ms / 1500ms / 5000ms` 读取目标文件列表；
+4. 只有最后连续两次都为 `absent` 才设置 `fileDeleted=true`；
+5. 最终为 `present`、`unknown` 或列表不稳定时继续保留 `pendingCleanup`；
+6. 未确认消失时写入 `lastError`，避免静默变成 `pending=0/error=none`；
+7. 状态版本仍为 `version=1`，兼容旧状态文件。
+
+## 4. 验证结果
+
+Draft PR：
 
 ```text
-docs/GFM_DELETE_002_READONLY_RESULT_20260731.md
+#26 fix(gfm): verify old file deletion before clearing pending cleanup
 ```
 
-## 6. 下一步
-
-不要重复运行 v3 普通快照。
-
-下一步应制作并运行一次 GFM 专用“清理动作只读观察”包：
-
-1. 读取并仅输出 `keepLatestOnly`、`deletePreviousTargetFile` 等非秘密规则开关；
-2. 记录基线 current/列表；
-3. 等待下一次正常、自然发生的文件搬运；
-4. 捕获旧 current ID、新 current ID、pendingCleanup 变化；
-5. 读取删除前后列表和相关容器日志；
-6. 不主动上传、不手动删除、不修改配置、不重启服务。
-
-根据结果再决定：
+CI：
 
 ```text
-WebUI/配置修正
-或
-插件增加多次 absent 确认、删除后确认和 pending 保留
-或
-转向 SnowLuma delete_group_file 链路
+GroupGuard CI #318: success
+- npm ci
+- npm test
+- deployment PowerShell syntax
+- npm run build:snowluma
+- cross-repository contract mocks
+
+GroupGuard Build #350: success
+- build success
 ```
 
-## 7. 固定安全边界
+回归覆盖：
 
-- 不主动制造上传或删除；
-- 不修改 5001、6178、6108 或生产配置；
-- 不重启、不构建、不部署；
-- 不执行 git pull/reset/clean/checkout；
-- 不输出 token、cookie、authorization、密码；
-- 未经明确授权不合并 main、不部署修复。
+```text
+单次 absent                  -> unknown
+absent,absent                -> absent
+present,absent,absent        -> absent
+absent,present,absent        -> unknown
+absent,absent,present        -> present
+unknown,absent,absent        -> absent
+```
+
+## 5. 当前生产状态
+
+```text
+main_merged=false
+code_deployed=false
+production_modified=false
+service_restarted=false
+```
+
+没有修改 5001、6178、6108 或生产配置。
+
+## 6. 存量历史文件边界
+
+此修复阻止未来清理记录被错误清除，但不会猜测并批量处理目标群当前已有的 5 个历史文件。
+
+原因：这些文件原来的 `pendingCleanup` 记录已经丢失，无法可靠区分哪些文件应由规则自动处理。存量文件需要单独、明确、可审计地处理，不能夹带在状态机修复中自动执行。
+
+## 7. 下一步
+
+代码与 CI 已完成。后续顺序：
+
+```text
+用户明确授权
+-> 审核并合并 PR #26
+-> 生成安全部署包
+-> 部署 SnowLuma 构建
+-> 验收下一次自然搬运的 pending 与删除后确认
+-> 单独处理存量历史文件
+```
+
+未经明确授权：
+
+- 不合并 main；
+- 不部署生产；
+- 不重启容器；
+- 不手动处理群文件。
