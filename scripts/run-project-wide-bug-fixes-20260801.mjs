@@ -24,6 +24,23 @@ source = source.replace(
 }`
 );
 
+source = source.replace(
+  /replaceOnce\(\n  p\('src\/state\.ts'\),\n  `      this\.recordBotSendEvent\(\{\\n        groupId: task\.groupId,`,[\s\S]*?  'forward fallback recall audit'\n\);/,
+  `{
+  const rel = p('src/state.ts');
+  let current = read(rel);
+  if (!current.includes('const selfRecallDueAt = this.scheduleSelfRecall(task.groupId, messageId')) {
+    const methodPattern = /(private async sendGroupForwardFallback[\\s\\S]*?const messageId = this\\.extractSendMessageId\\(res\\);\\n)(      this\\.recordBotSendEvent\\(\\{[\\s\\S]*?        sentAt: Date\\.now\\(\\),\\n        status: 'sent',)/;
+    const match = current.match(methodPattern);
+    if (!match) throw new Error('patch target missing: forward fallback method');
+    const patchedBody = match[2]
+      .replace('        sentAt: Date.now(),\\n        status: \'sent\',', '        sentAt,\\n        selfRecallDueAt,\\n        status: \'sent\',');
+    current = current.replace(methodPattern, \`\${match[1]}      const sentAt = Date.now();\\n      const selfRecallDueAt = this.scheduleSelfRecall(task.groupId, messageId, 'send_group_msg');\\n      this.markGroupSend(task.groupId);\\n\${patchedBody}\`);
+    write(rel, current);
+  }
+}`
+);
+
 fs.writeFileSync(generatedPath, source, 'utf8');
 try {
   await import(`${pathToFileURL(generatedPath).href}?v=${Date.now()}`);
