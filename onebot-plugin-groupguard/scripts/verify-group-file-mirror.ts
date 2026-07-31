@@ -8,6 +8,7 @@ import {
   fileEventMatchesRule,
   listedGroupFileExists,
   normalizeGroupFileMirrorConfig,
+  resolveTargetFileDeletionVerification,
   type GroupFileMirrorRule,
 } from '../src/services/group_file_mirror_service.ts';
 import {
@@ -73,6 +74,37 @@ function main(): void {
   ], 'SnowLuma group file list is normalized');
   assert.equal(listedGroupFileExists(listedResponse, '/target-file-a'), true);
   assert.equal(listedGroupFileExists(listedResponse, '/missing-file'), false);
+
+  assert.equal(
+    resolveTargetFileDeletionVerification(['absent']),
+    'unknown',
+    'one missing snapshot never proves deletion',
+  );
+  assert.equal(
+    resolveTargetFileDeletionVerification(['absent', 'absent']),
+    'absent',
+    'two consecutive missing snapshots confirm deletion',
+  );
+  assert.equal(
+    resolveTargetFileDeletionVerification(['present', 'absent', 'absent']),
+    'absent',
+    'eventual list propagation can confirm deletion',
+  );
+  assert.equal(
+    resolveTargetFileDeletionVerification(['absent', 'present', 'absent']),
+    'unknown',
+    'an unstable list never clears pending cleanup',
+  );
+  assert.equal(
+    resolveTargetFileDeletionVerification(['absent', 'absent', 'present']),
+    'present',
+    'a final present snapshot keeps cleanup pending',
+  );
+  assert.equal(
+    resolveTargetFileDeletionVerification(['unknown', 'absent', 'absent']),
+    'absent',
+    'two final confirmed absences recover from an earlier read failure',
+  );
 
   const canonical = extractFileSegmentsFromMessage({
     message: [
@@ -293,6 +325,11 @@ function main(): void {
   assert.match(serviceSource, /presence=/);
   assert.match(serviceSource, /delete_group_file/);
   assert.match(serviceSource, /delete_msg/);
+  assert.match(serviceSource, /TARGET_FILE_DELETE_VERIFY_DELAYS_MS = \[0, 1500, 5000\]/);
+  assert.match(serviceSource, /verifyTargetFileDeletion/);
+  assert.match(serviceSource, /删除旧群文件后未确认消失/);
+  assert.match(serviceSource, /保留待清理/);
+  assert.doesNotMatch(serviceSource, /旧群文件已不在文件库，按已清理处理/);
   assert.doesNotMatch(serviceSource, /send_group_forward_msg/);
 
   console.log('group file native upload mirror verification passed');
