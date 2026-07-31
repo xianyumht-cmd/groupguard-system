@@ -7,6 +7,10 @@ on:
     paths:
       - scripts/apply-project-wide-bug-fixes-20260801.mjs
       - .github/workflows/project-wide-bugfix-apply.yml
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -48,6 +52,7 @@ jobs:
         run: npm run build:snowluma
 
       - name: Commit verified fixes
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
           if git diff --quiet; then
