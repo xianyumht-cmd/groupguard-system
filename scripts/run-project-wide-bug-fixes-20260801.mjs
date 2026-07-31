@@ -34,7 +34,7 @@ source = source.replace(
     const match = current.match(methodPattern);
     if (!match) throw new Error('patch target missing: forward fallback method');
     const patchedBody = match[2]
-      .replace('        sentAt: Date.now(),\\n        status: \'sent\',', '        sentAt,\\n        selfRecallDueAt,\\n        status: \'sent\',');
+      .replace("        sentAt: Date.now(),\\n        status: 'sent',", "        sentAt,\\n        selfRecallDueAt,\\n        status: 'sent',");
     current = current.replace(methodPattern, \`\${match[1]}      const sentAt = Date.now();\\n      const selfRecallDueAt = this.scheduleSelfRecall(task.groupId, messageId, 'send_group_msg');\\n      this.markGroupSend(task.groupId);\\n\${patchedBody}\`);
     write(rel, current);
   }
