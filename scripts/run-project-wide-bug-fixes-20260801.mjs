@@ -113,6 +113,24 @@ replaceOnce(
   '    storageAdapter.replaceAllGroupConfigs = originalReplaceAllGroups;',
   'atomic save test restore hook'
 );
+replaceOnce(
+  p('scripts/verify-groupguard-query-delivery-contract.ts'),
+  "for (const hostname of ['localhost', 'lol-api', 'lol-api.local', '127.0.0.1', '10.0.0.8', '172.16.0.8', '172.31.255.8', '192.168.3.89', 'fd00::1', 'fe80::1']) {",
+  "for (const hostname of ['localhost', '127.0.0.1', '10.0.0.8', '172.16.0.8', '172.31.255.8', '192.168.3.89', 'fd00::1', 'fe80::1']) {",
+  'strict intranet positive host cases'
+);
+replaceOnce(
+  p('scripts/verify-groupguard-query-delivery-contract.ts'),
+  "for (const hostname of ['example.com', 'raw.githubusercontent.com', 'game.gtimg.cn', 'op.gg', '8.8.8.8', '172.32.0.1']) {",
+  "for (const hostname of ['lol-api', 'lol-api.local', 'example.com', 'raw.githubusercontent.com', 'game.gtimg.cn', 'op.gg', '8.8.8.8', '172.32.0.1']) {",
+  'strict intranet negative host cases'
+);
+replaceOnce(
+  p('scripts/verify-groupguard-query-delivery-contract.ts'),
+  "assert.equal(resolveGroupGuardQueryEndpoint('http://lol-api:5001/'), 'http://lol-api:5001/api/v1/groupguard/query');",
+  "assert.throws(() => resolveGroupGuardQueryEndpoint('http://lol-api:5001/'), /lol_api_base_must_be_intranet/);",
+  'single label endpoint rejected'
+);
 
 ${finalMarker}`);
 
