@@ -38,6 +38,8 @@ export interface ListedGroupFileDescriptor {
   size: number;
 }
 
+export type TargetFilePresence = 'present' | 'absent' | 'unknown';
+
 interface FileMessageDescriptor {
   fileId: string;
   fileName: string;
@@ -65,6 +67,7 @@ interface CleanupRecord {
   targetFolderId?: string;
   targetMessageId: string;
   sourceFileName: string;
+  sourceFileSize?: number;
   messageRecalled: boolean;
   fileDeleted: boolean;
   queuedAt: number;
@@ -107,6 +110,7 @@ const DEFAULT_CONFIG: GroupFileMirrorConfig = {
 };
 
 const RECENT_MESSAGE_TTL_MS = 10 * 60 * 1000;
+const TARGET_FILE_DELETE_VERIFY_DELAYS_MS = [0, 1500, 5000] as const;
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -219,6 +223,20 @@ export function extractListedGroupFiles(value: unknown): ListedGroupFileDescript
 export function listedGroupFileExists(value: unknown, fileId: string): boolean {
   const normalized = normalizeId(fileId);
   return Boolean(normalized) && extractListedGroupFiles(value).some(file => file.id === normalized);
+}
+
+export function resolveTargetFileDeletionVerification(
+  observations: readonly TargetFilePresence[],
+): TargetFilePresence {
+  const lastIndex = observations.length - 1;
+  if (lastIndex < 0) return 'unknown';
+  if (observations[lastIndex] === 'present') return 'present';
+  if (lastIndex >= 1
+    && observations[lastIndex] === 'absent'
+    && observations[lastIndex - 1] === 'absent') {
+    return 'absent';
+  }
+  return 'unknown';
 }
 
 function extractMessageId(message: any): string {
@@ -618,6 +636,7 @@ export class GroupFileMirrorService {
       targetFolderId: record.targetFolderId || '',
       targetMessageId: record.targetMessageId,
       sourceFileName: record.sourceFileName,
+      sourceFileSize: record.sourceFileSize,
       messageRecalled: !record.targetMessageId,
       fileDeleted: !record.targetFileId,
       queuedAt: Date.now(),
@@ -627,20 +646,27 @@ export class GroupFileMirrorService {
   private async cleanupPending(rule: GroupFileMirrorRule, state: MirrorRuleState): Promise<void> {
     if (!state.pendingCleanup.length) return;
     const remaining: CleanupRecord[] = [];
+    let fileCleanupRetained = false;
     for (const item of state.pendingCleanup) {
       await this.cleanupTarget(rule, item);
       const messageDone = !rule.recallPreviousTargetMessage || item.messageRecalled;
       const fileDone = !rule.deletePreviousTargetFile || item.fileDeleted;
       if (!messageDone || !fileDone) remaining.push(item);
+      if (rule.deletePreviousTargetFile && !item.fileDeleted) fileCleanupRetained = true;
     }
     state.pendingCleanup = remaining;
+    if (fileCleanupRetained) {
+      const retained = remaining.find(item => !item.fileDeleted);
+      state.lastErrorAt = Date.now();
+      state.lastError = `旧群文件删除后尚未确认消失，已保留待清理 file=${retained?.targetFileId || 'unknown'}`;
+    }
     this.saveState();
   }
 
   private async inspectTargetFilePresence(
     rule: GroupFileMirrorRule,
     item: CleanupRecord,
-  ): Promise<'present' | 'absent' | 'unknown'> {
+  ): Promise<TargetFilePresence> {
     const folderId = normalizeId(item.targetFolderId) || rule.targetFolderId || '/';
     const action = folderId === '/' ? 'get_group_root_files' : 'get_group_files_by_folder';
     const params: Record<string, unknown> = { group_id: groupParam(item.targetGroupId) };
@@ -658,6 +684,23 @@ export class GroupFileMirrorService {
     }
   }
 
+  private async verifyTargetFileDeletion(
+    rule: GroupFileMirrorRule,
+    item: CleanupRecord,
+  ): Promise<{ presence: TargetFilePresence; observations: TargetFilePresence[] }> {
+    const observations: TargetFilePresence[] = [];
+    let previousDelay = 0;
+    for (const delay of TARGET_FILE_DELETE_VERIFY_DELAYS_MS) {
+      if (delay > previousDelay) await sleep(delay - previousDelay);
+      previousDelay = delay;
+      observations.push(await this.inspectTargetFilePresence(rule, item));
+    }
+    return {
+      presence: resolveTargetFileDeletionVerification(observations),
+      observations,
+    };
+  }
+
   private async cleanupTarget(rule: GroupFileMirrorRule, item: CleanupRecord): Promise<void> {
     if (rule.recallPreviousTargetMessage && item.targetMessageId && !item.messageRecalled) {
       try {
@@ -670,34 +713,36 @@ export class GroupFileMirrorService {
     }
 
     if (rule.deletePreviousTargetFile && item.targetFileId && !item.fileDeleted) {
-      const beforePresence = await this.inspectTargetFilePresence(rule, item);
-      if (beforePresence === 'absent') {
-        item.fileDeleted = true;
-        this.log('info', `规则 ${rule.id} 旧群文件已不在文件库，按已清理处理 file=${item.targetFileId}`);
-        return;
-      }
-
+      let deleteError: unknown = null;
       try {
         await this.callWithRetry(rule, 'delete_group_file', {
           group_id: groupParam(item.targetGroupId),
           file_id: item.targetFileId,
         });
-        item.fileDeleted = true;
       } catch (error) {
-        if (isAlreadyGoneError(error)) {
-          item.fileDeleted = true;
-          return;
-        }
-
-        const afterPresence = await this.inspectTargetFilePresence(rule, item);
-        if (afterPresence === 'absent') {
-          item.fileDeleted = true;
-          this.log('info', `规则 ${rule.id} 删除动作返回失败，但文件库已无该文件，按幂等成功处理 file=${item.targetFileId}: ${String(error)}`);
-          return;
-        }
-
-        this.log('warn', `规则 ${rule.id} 删除旧群文件失败 file=${item.targetFileId} presence=${afterPresence}: ${String(error)}`);
+        deleteError = error;
       }
+
+      const verification = await this.verifyTargetFileDeletion(rule, item);
+      const observationText = verification.observations.join('>');
+      if (verification.presence === 'absent') {
+        item.fileDeleted = true;
+        if (deleteError) {
+          const outcome = isAlreadyGoneError(deleteError) ? 'already_gone' : 'error_but_absent';
+          this.log('info', `规则 ${rule.id} 删除旧群文件已确认消失 file=${item.targetFileId} outcome=${outcome} observations=${observationText}`);
+        } else {
+          this.log('info', `规则 ${rule.id} 删除旧群文件已确认消失 file=${item.targetFileId} outcome=success observations=${observationText}`);
+        }
+        return;
+      }
+
+      const outcome = deleteError
+        ? (isAlreadyGoneError(deleteError) ? 'already_gone_error' : 'action_error')
+        : 'action_success';
+      const errorText = deleteError
+        ? String((deleteError as Error)?.message || deleteError).replace(/\s+/g, ' ').slice(0, 300)
+        : 'none';
+      this.log('warn', `规则 ${rule.id} 删除旧群文件后未确认消失 file=${item.targetFileId} outcome=${outcome} presence=${verification.presence} observations=${observationText} error=${errorText}; 保留待清理`);
     }
   }
 
