@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-31T14:31:00+08:00",
+  "updated_at": "2026-07-31T14:42:00+08:00",
   "task_id": "GG-BATTLE-DELIVERY-001+GFM-DELETE-002",
   "title": "战绩图片交付与群文件假缺失生产只读诊断",
-  "status": "awaiting_readonly_diagnosis_execution_v2",
+  "status": "awaiting_readonly_diagnosis_execution_v3",
   "repository": "xianyumht-cmd/groupguard-system",
   "working_branch": "codex/gg-battle-delivery-diagnosis-20260731",
   "default_branch": "main",
@@ -35,8 +35,9 @@
     "conclusion": "接口端正常生成并返回图片，未发生文字降级。不得重复排查或修改接口端。"
   },
   "battle_delivery": {
-    "status": "awaiting_v2_production_evidence",
-    "symptom": "QQ群内查战绩最终表现为文字，和接口独立诊断返回图片不一致。",
+    "status": "partial_production_evidence_awaiting_v3_config_probe",
+    "symptom": "QQ群内查战绩最终表现与接口独立诊断返回的直接图片不一致。",
+    "actual_test_group_id": "805402626",
     "static_chain": [
       "intranet_battle_runtime_plugin.executeBattleIntranetQuery",
       "intranet_query_service.requestIntranetDelivery",
@@ -46,35 +47,56 @@
       "buildIntranetStructuredResult",
       "sendUnifiedCommandResponse",
       "response_capture_runtime.send",
-      "pluginState.sendGroupMsg",
-      "send_group_msg"
+      "pluginState.sendGroupMsg/send_group_forward_msg",
+      "SnowLuma OneBot"
     ],
     "static_findings": [
       "capabilities.text/image/forward 固定为 true",
       "preferred 依次取群设置、queryCommandProfiles.lol_battle、根 lolQueryOutputFormat，最终默认 forward",
       "图片 Base64、字节数、MIME 和 SHA-256 在插件端严格校验",
-      "合法图片转换为 OneBot base64:// image segment 后进入 send_group_msg",
-      "现有生产日志通常不记录成功请求、segment 摘要和成功 message_id，可能只能得出 E=日志不足"
+      "合法图片可转换为 OneBot base64:// image segment",
+      "forward delivery 会直接调用 send_group_forward_msg"
     ],
+    "v2_live_evidence": {
+      "command_id": "builtin.query.battle.intranet",
+      "plugin_resolution_ok": true,
+      "execution_ok": true,
+      "latency_ms": 2894,
+      "parser_or_base64_error_seen": false,
+      "request_failure_seen": false,
+      "delivery_path": "forward_send_direct",
+      "delivery_group_id": "805402626",
+      "scene": "external_query",
+      "preliminary_conclusion": "真实查询成功进入合并转发路径，不是接口失败后的文字回退；高概率为 preferred=forward，但仍需 v3 读取实际群配置后确认 A。"
+    },
     "decision_codes": {
-      "A": "生产配置解析为 preferred=text",
+      "A": "实际群配置解析为 text 或 forward，而不是直接 image",
       "B": "响应解析或 Base64 校验失败",
-      "C": "图片有效但未进入 send_group_msg",
-      "D": "SnowLuma/OneBot send_group_msg 失败",
+      "C": "图片有效但未进入 OneBot 发送",
+      "D": "SnowLuma/OneBot 图片发送失败",
       "E": "现有日志不足，需授权后增加最小临时诊断埋点"
     }
   },
   "gfm_delete": {
     "task_id": "GFM-DELETE-002",
-    "status": "awaiting_v2_production_evidence",
+    "status": "awaiting_v3_onebot_list_snapshots",
     "symptom": "目标群仍有多份历史文件，但 WebUI 等待清理为 0 且最近错误为空。",
     "suspected_causes": [
       "get_group_root_files/get_group_files_by_folder 返回结构与解析假设不一致",
       "upload_group_file 返回 file_id 与列表返回 file_id 表示不同",
-      "上传后列表存在可见性延迟或短暂不一致"
+      "上传后列表存在可见性延迟或短暂不一致",
+      "历史 targetFileId 已被假缺失逻辑从 pendingCleanup 丢弃"
     ],
     "known_risk": "单次列表未命中会被直接当作 absent 并设置 fileDeleted=true，随后从 pendingCleanup 清除。",
-    "historical_limit": "若旧记录已因假缺失被清出 pendingCleanup，当前状态不再包含历史 targetFileId，需要旧日志或下一次受控上传窗口补证。"
+    "v2_result": "OneBot 探针因 /app/[eval1] 无法导入 undici 而未启动，没有取得任何列表快照。"
+  },
+  "host_observation": {
+    "load_average_range": "7.44-7.70",
+    "available_memory_mb_range": "699-715",
+    "container_cpu_range": "0.00%-1.45%",
+    "container_memory_mib_range": "76.95-79.24",
+    "container_restart_count": 0,
+    "conclusion": "宿主负载偏高，但 GroupGuard 容器资源占用低且真实战绩请求正常完成；当前证据不支持把两个故障归因于盒子性能。"
   },
   "execution_attempts": [
     {
@@ -82,40 +104,35 @@
       "package_version": "v1",
       "result": "failed_before_remote_collection",
       "error": "Permission denied (publickey,password)",
-      "root_cause": "诊断脚本强制 BatchMode=yes，禁止当前服务器使用的交互式密码认证。Windows PowerShell 5.1 又在处理真实退出码前将 stderr 提升为 NativeCommandError。",
-      "report_received": "reports.zip",
-      "report_contents": [
-        "diagnosis-summary.txt",
-        "local-repository.txt",
-        "static-source-evidence.txt"
-      ],
+      "root_cause": "BatchMode=yes 禁止密码认证。",
       "production_evidence_collected": false,
+      "production_modified": false
+    },
+    {
+      "started_at": "2026-07-31T14:36:02+08:00",
+      "package_version": "v2",
+      "result": "partial_evidence_then_report_generation_failed",
+      "report_received": "reports(1).zip",
+      "probe_error": "ERR_MODULE_NOT_FOUND: Cannot find package undici imported from /app/[eval1]",
+      "final_report_error": "PowerShell StrictMode property battle not found",
+      "production_evidence_collected": true,
+      "gfm_onebot_evidence_collected": false,
+      "battle_live_logs_collected": true,
       "production_modified": false,
       "service_restarted": false,
-      "build_executed": false,
-      "deployment_executed": false,
-      "git_updated": false,
-      "local_repository": {
-        "branch": "main",
-        "head": "600bf3ca678b76061733485efe6bc2b06ba648dd",
-        "expected_branch": "codex/gg-battle-delivery-diagnosis-20260731",
-        "branch_matches": false,
-        "working_tree_dirty": false,
-        "note": "当前分支差异仅为诊断文档，不是 SSH 失败原因，也不阻止 v2 只读采集。"
-      }
+      "before_after_hashes_identical": true
     }
   ],
   "readonly_package": {
-    "filename": "GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit-v2.zip",
-    "sha256": "9309f2f4ce1a9c6a0ff3b5104b6d8963c8ce1ede85a2d4a9a96824fb81cf6840",
+    "filename": "GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit-v3.zip",
+    "sha256": "b19b8b947b06a0df9a16f6d646cd2244a9ee2affa1eb49f84b1ef542cf81daf0",
     "entry": "run-readonly-groupguard-diagnosis.cmd",
-    "changes_from_v1": [
-      "移除 BatchMode=yes",
-      "允许 publickey、keyboard-interactive 和 password",
-      "最多允许三次密码输入",
-      "兼容 Windows PowerShell 5.1 NativeCommandError 行为",
-      "增加明确认证失败提示",
-      "不保存或输出 SSH 密码"
+    "changes_from_v2": [
+      "使用 Node 22 内置 WebSocket，不再从 /app 导入 undici",
+      "PowerShell 安全读取可选 JSON 属性",
+      "探针失败时仍生成最终报告",
+      "记录 forward_send_direct 证据",
+      "运行开始时要求填写实际查战绩群号"
     ],
     "production_write": false,
     "service_restart": false,
@@ -133,22 +150,22 @@
     "未经明确授权不得合并到 main 或部署修复"
   ],
   "completed": [
-    "读取 CURRENT_TASK_STATE、NEXT_CHAT_HANDOFF 和 PROJECT_IDENTITY",
-    "完成战绩请求参数、delivery 解析、Base64 校验、structured delivery、send_group_msg 和文字回退静态审查",
-    "确认 GFM 假缺失的三种待证原因和历史状态丢失限制",
-    "分析首次 reports.zip 并确认未建立 SSH 连接、未采集生产证据",
-    "定位首版 BatchMode=yes 认证缺陷",
-    "生成允许密码认证且兼容 PowerShell 5.1 的 v2 只读诊断包",
-    "新增 docs/READONLY_DIAGNOSIS_AUTH_FIX_20260731.md"
+    "完成战绩插件静态链路审查",
+    "完成 v2 生产前后哈希和容器状态采集",
+    "确认 v2 没有修改生产或重启服务",
+    "从真实日志确认战绩命令成功并进入 forward_send_direct",
+    "确认本次实际测试群号为 805402626",
+    "定位 v2 undici 导入和 PowerShell 缺失属性两处缺陷",
+    "生成 v3 双任务只读诊断包",
+    "新增 docs/READONLY_DIAGNOSIS_V2_PARTIAL_RESULT_20260731.md"
   ],
   "not_completed": [
-    "尚未成功运行 v2 只读诊断包",
-    "尚未取得生产真实战绩查询窗口日志",
+    "尚未用 v3 读取群 805402626 的 resolved preferred 和配置来源",
     "尚未取得 GFM 三次 OneBot 列表快照",
     "尚未给出战绩 A/B/C/D/E 最终单一结论",
-    "尚未给出 GFM 列表结构/ID格式/列表延迟最终单一结论",
+    "尚未给出 GFM 列表结构/ID格式/列表延迟/历史状态不足最终单一结论",
     "尚未创建任何生产修复、PR 或部署包"
   ],
-  "next_action": "先手动运行 ssh root@192.168.3.89 验证密码登录，再运行 v2 包中的 run-readonly-groupguard-diagnosis.cmd；按提示执行一次真实查战绩，并上传新生成的 reports ZIP。",
+  "next_action": "运行 v3 包；群号提示输入 805402626；随后在该群执行一次真实查战绩，上传最终生成的 reports ZIP。",
   "merge_policy": "no_merge_without_explicit_user_authorization"
 }
