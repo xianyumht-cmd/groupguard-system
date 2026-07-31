@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-31T14:42:00+08:00",
-  "task_id": "GG-BATTLE-DELIVERY-001+GFM-DELETE-002",
-  "title": "战绩图片交付与群文件假缺失生产只读诊断",
-  "status": "awaiting_readonly_diagnosis_execution_v3",
+  "updated_at": "2026-07-31T14:52:00+08:00",
+  "task_id": "GFM-DELETE-002",
+  "title": "群文件假缺失生产只读诊断",
+  "status": "battle_resolved_gfm_awaiting_readonly_probe",
   "repository": "xianyumht-cmd/groupguard-system",
   "working_branch": "codex/gg-battle-delivery-diagnosis-20260731",
   "default_branch": "main",
@@ -16,66 +16,33 @@
     "windows_repo": "D:\\project2\\napcatplugin\\lengxi_repo",
     "core_directory": "onebot-plugin-groupguard"
   },
+  "battle_delivery": {
+    "task_id": "GG-BATTLE-DELIVERY-001",
+    "status": "resolved",
+    "resolved_at": "2026-07-31T14:52:00+08:00",
+    "actual_test_group_id": "805402626",
+    "final_decision_code": "A",
+    "root_cause": "群 805402626 的查战绩输出配置为 text，插件按群配置输出文字。",
+    "resolution": "用户调整群输出配置后，查战绩输出问题已解决。",
+    "excluded_causes": [
+      "LOLDataSystem 接口失败或文字降级",
+      "delivery 解析失败",
+      "Base64、MIME、字节数或 SHA-256 校验失败",
+      "SnowLuma/OneBot 图片发送失败",
+      "ARM 盒子性能不足"
+    ],
+    "production_change_required": false,
+    "code_change_required": false,
+    "restart_required": false,
+    "resolution_document": "docs/GG_BATTLE_DELIVERY_001_RESOLUTION.md"
+  },
   "upstream_api_state": {
     "repository": "xianyumht-cmd/lolapisevers",
     "service": "LOLDataSystem",
     "production_commit": "d2416c90c6a37cc27fed2ccde4c71aa40c81a53b",
     "deployment_task": "LAPI-PARSER-CENTER-P009",
     "deployment_result": "completed",
-    "diagnostic_result": {
-      "request_preferred": "auto",
-      "request_image_capability": true,
-      "response_ok": true,
-      "delivery_kind": "segments",
-      "first_segment_type": "image",
-      "image_mime": "image/png",
-      "image_bytes": 373591,
-      "delivery_fallback": null
-    },
-    "conclusion": "接口端正常生成并返回图片，未发生文字降级。不得重复排查或修改接口端。"
-  },
-  "battle_delivery": {
-    "status": "partial_production_evidence_awaiting_v3_config_probe",
-    "symptom": "QQ群内查战绩最终表现与接口独立诊断返回的直接图片不一致。",
-    "actual_test_group_id": "805402626",
-    "static_chain": [
-      "intranet_battle_runtime_plugin.executeBattleIntranetQuery",
-      "intranet_query_service.requestIntranetDelivery",
-      "groupguard_query_delivery_client.requestGroupGuardQueryDelivery",
-      "parseGroupGuardQueryDelivery",
-      "toOneBotDeliveryPlan",
-      "buildIntranetStructuredResult",
-      "sendUnifiedCommandResponse",
-      "response_capture_runtime.send",
-      "pluginState.sendGroupMsg/send_group_forward_msg",
-      "SnowLuma OneBot"
-    ],
-    "static_findings": [
-      "capabilities.text/image/forward 固定为 true",
-      "preferred 依次取群设置、queryCommandProfiles.lol_battle、根 lolQueryOutputFormat，最终默认 forward",
-      "图片 Base64、字节数、MIME 和 SHA-256 在插件端严格校验",
-      "合法图片可转换为 OneBot base64:// image segment",
-      "forward delivery 会直接调用 send_group_forward_msg"
-    ],
-    "v2_live_evidence": {
-      "command_id": "builtin.query.battle.intranet",
-      "plugin_resolution_ok": true,
-      "execution_ok": true,
-      "latency_ms": 2894,
-      "parser_or_base64_error_seen": false,
-      "request_failure_seen": false,
-      "delivery_path": "forward_send_direct",
-      "delivery_group_id": "805402626",
-      "scene": "external_query",
-      "preliminary_conclusion": "真实查询成功进入合并转发路径，不是接口失败后的文字回退；高概率为 preferred=forward，但仍需 v3 读取实际群配置后确认 A。"
-    },
-    "decision_codes": {
-      "A": "实际群配置解析为 text 或 forward，而不是直接 image",
-      "B": "响应解析或 Base64 校验失败",
-      "C": "图片有效但未进入 OneBot 发送",
-      "D": "SnowLuma/OneBot 图片发送失败",
-      "E": "现有日志不足，需授权后增加最小临时诊断埋点"
-    }
+    "conclusion": "接口端正常生成并返回图片；本次文字输出由群配置 text 导致，不再重复排查接口端。"
   },
   "gfm_delete": {
     "task_id": "GFM-DELETE-002",
@@ -88,7 +55,20 @@
       "历史 targetFileId 已被假缺失逻辑从 pendingCleanup 丢弃"
     ],
     "known_risk": "单次列表未命中会被直接当作 absent 并设置 fileDeleted=true，随后从 pendingCleanup 清除。",
-    "v2_result": "OneBot 探针因 /app/[eval1] 无法导入 undici 而未启动，没有取得任何列表快照。"
+    "v2_result": "OneBot 探针因 /app/[eval1] 无法导入 undici 而未启动，没有取得任何列表快照。",
+    "required_evidence": [
+      "get_group_root_files/get_group_files_by_folder 原始结构",
+      "0ms、1500ms、5000ms 三次列表快照",
+      "file_id 精确与规范化比较",
+      "文件名与大小候选匹配",
+      "列表指纹和可见性变化"
+    ],
+    "possible_final_conclusions": [
+      "list_structure_mismatch",
+      "id_format_mismatch",
+      "list_visibility_delay_or_inconsistency",
+      "insufficient_historical_state"
+    ]
   },
   "host_observation": {
     "load_average_range": "7.44-7.70",
@@ -96,7 +76,7 @@
     "container_cpu_range": "0.00%-1.45%",
     "container_memory_mib_range": "76.95-79.24",
     "container_restart_count": 0,
-    "conclusion": "宿主负载偏高，但 GroupGuard 容器资源占用低且真实战绩请求正常完成；当前证据不支持把两个故障归因于盒子性能。"
+    "conclusion": "宿主负载偏高，但 GroupGuard 容器资源占用低且战绩请求成功完成；当前证据不支持把 GFM 假缺失归因于盒子性能。"
   },
   "execution_attempts": [
     {
@@ -112,7 +92,6 @@
       "started_at": "2026-07-31T14:36:02+08:00",
       "package_version": "v2",
       "result": "partial_evidence_then_report_generation_failed",
-      "report_received": "reports(1).zip",
       "probe_error": "ERR_MODULE_NOT_FOUND: Cannot find package undici imported from /app/[eval1]",
       "final_report_error": "PowerShell StrictMode property battle not found",
       "production_evidence_collected": true,
@@ -126,14 +105,8 @@
   "readonly_package": {
     "filename": "GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit-v3.zip",
     "sha256": "b19b8b947b06a0df9a16f6d646cd2244a9ee2affa1eb49f84b1ef542cf81daf0",
-    "entry": "run-readonly-groupguard-diagnosis.cmd",
-    "changes_from_v2": [
-      "使用 Node 22 内置 WebSocket，不再从 /app 导入 undici",
-      "PowerShell 安全读取可选 JSON 属性",
-      "探针失败时仍生成最终报告",
-      "记录 forward_send_direct 证据",
-      "运行开始时要求填写实际查战绩群号"
-    ],
+    "recommended_entry": "run-readonly-gfm-delete-002-diagnosis.cmd",
+    "note": "战绩问题已解决，后续只运行 GFM 模式，不需要再次发送查战绩。",
     "production_write": false,
     "service_restart": false,
     "build": false,
@@ -151,21 +124,19 @@
   ],
   "completed": [
     "完成战绩插件静态链路审查",
-    "完成 v2 生产前后哈希和容器状态采集",
+    "确认真实战绩命令成功执行且无请求、解析或 Base64 错误",
+    "用户确认群 805402626 配置为 text",
+    "用户调整群配置后确认查战绩输出问题已解决",
+    "将 GG-BATTLE-DELIVERY-001 最终判定为 A 并关闭",
     "确认 v2 没有修改生产或重启服务",
-    "从真实日志确认战绩命令成功并进入 forward_send_direct",
-    "确认本次实际测试群号为 805402626",
-    "定位 v2 undici 导入和 PowerShell 缺失属性两处缺陷",
-    "生成 v3 双任务只读诊断包",
-    "新增 docs/READONLY_DIAGNOSIS_V2_PARTIAL_RESULT_20260731.md"
+    "生成 v3 只读诊断包",
+    "新增 docs/GG_BATTLE_DELIVERY_001_RESOLUTION.md"
   ],
   "not_completed": [
-    "尚未用 v3 读取群 805402626 的 resolved preferred 和配置来源",
     "尚未取得 GFM 三次 OneBot 列表快照",
-    "尚未给出战绩 A/B/C/D/E 最终单一结论",
     "尚未给出 GFM 列表结构/ID格式/列表延迟/历史状态不足最终单一结论",
-    "尚未创建任何生产修复、PR 或部署包"
+    "尚未创建任何 GFM 生产修复、PR 或部署包"
   ],
-  "next_action": "运行 v3 包；群号提示输入 805402626；随后在该群执行一次真实查战绩，上传最终生成的 reports ZIP。",
+  "next_action": "只运行 v3 包中的 run-readonly-gfm-delete-002-diagnosis.cmd，完成 GFM OneBot 列表只读采集并上传生成的 reports ZIP；不再发送查战绩。",
   "merge_policy": "no_merge_without_explicit_user_authorization"
 }
