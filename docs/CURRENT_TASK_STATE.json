@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-31T13:59:00+08:00",
-  "task_id": "GG-BATTLE-DELIVERY-001",
-  "title": "战绩图片交付插件端只读链路诊断",
-  "status": "paused_for_new_chat",
+  "updated_at": "2026-07-31T14:30:00+08:00",
+  "task_id": "GG-BATTLE-DELIVERY-001+GFM-DELETE-002",
+  "title": "战绩图片交付与群文件假缺失生产只读诊断",
+  "status": "awaiting_readonly_diagnosis_execution",
   "repository": "xianyumht-cmd/groupguard-system",
   "working_branch": "codex/gg-battle-delivery-diagnosis-20260731",
   "default_branch": "main",
@@ -32,66 +32,101 @@
       "image_bytes": 373591,
       "delivery_fallback": null
     },
-    "conclusion": "接口端正常生成并返回图片，未发生文字降级。问题位于 GroupGuard/SnowLuma/OneBot 后续交付链路。"
+    "conclusion": "接口端正常生成并返回图片，未发生文字降级。不得重复排查或修改接口端。"
   },
-  "current_symptom": "QQ群内查战绩最终表现为文字，和接口诊断返回图片不一致。",
-  "diagnosis_goal": [
-    "记录插件实际发送给 LOLDataSystem 的请求参数和 capabilities/preferred",
-    "记录收到的 delivery.kind、segments 类型和图片 segment 内容结构",
-    "验证 Base64 是否完整、能否解码、字节数、MIME 和文件头",
-    "记录进入 SnowLuma/OneBot 图片发送方法时的动作名和参数结构",
-    "记录发送结果、消息 ID、错误对象、异常栈和文字回退触发原因",
-    "根据证据决定调整 WebUI 配置还是修复插件代码"
-  ],
+  "battle_delivery": {
+    "status": "readonly_package_ready",
+    "symptom": "QQ群内查战绩最终表现为文字，和接口独立诊断返回图片不一致。",
+    "static_chain": [
+      "intranet_battle_runtime_plugin.executeBattleIntranetQuery",
+      "intranet_query_service.requestIntranetDelivery",
+      "groupguard_query_delivery_client.requestGroupGuardQueryDelivery",
+      "parseGroupGuardQueryDelivery",
+      "toOneBotDeliveryPlan",
+      "buildIntranetStructuredResult",
+      "sendUnifiedCommandResponse",
+      "response_capture_runtime.send",
+      "pluginState.sendGroupMsg",
+      "send_group_msg"
+    ],
+    "static_findings": [
+      "capabilities.text/image/forward 固定为 true",
+      "preferred 依次取群设置、queryCommandProfiles.lol_battle、根 lolQueryOutputFormat，最终默认 forward",
+      "图片 Base64、字节数、MIME 和 SHA-256 在插件端严格校验",
+      "合法图片转换为 OneBot base64:// image segment 后进入 send_group_msg",
+      "现有生产日志通常不记录成功请求、segment 摘要和成功 message_id，可能只能得出 E=日志不足"
+    ],
+    "decision_codes": {
+      "A": "生产配置解析为 preferred=text",
+      "B": "响应解析或 Base64 校验失败",
+      "C": "图片有效但未进入 send_group_msg",
+      "D": "SnowLuma/OneBot send_group_msg 失败",
+      "E": "现有日志不足，需授权后增加最小临时诊断埋点"
+    }
+  },
+  "gfm_delete": {
+    "task_id": "GFM-DELETE-002",
+    "status": "readonly_package_ready",
+    "symptom": "目标群仍有多份历史文件，但 WebUI 等待清理为 0 且最近错误为空。",
+    "suspected_causes": [
+      "get_group_root_files/get_group_files_by_folder 返回结构与解析假设不一致",
+      "上传返回 file_id 与列表返回 file_id 表示不同",
+      "上传后列表存在可见性延迟或短暂不一致"
+    ],
+    "known_risk": "单次列表未命中会被直接当作 absent 并设置 fileDeleted=true，随后从 pendingCleanup 清除。",
+    "readonly_probe": {
+      "snapshots_per_rule": 3,
+      "delays_ms": [0, 1500, 5000],
+      "actions": [
+        "get_login_info",
+        "get_group_root_files",
+        "get_group_files_by_folder"
+      ],
+      "records": [
+        "返回结构和字段名",
+        "文件数量与列表指纹",
+        "file_id 格式和规范化比较",
+        "文件名与大小候选匹配",
+        "查询耗时与三次一致性"
+      ]
+    },
+    "historical_limit": "若旧记录已因假缺失被清出 pendingCleanup，当前状态不再包含历史 targetFileId，需要旧日志或下一次受控上传窗口补证。"
+  },
+  "readonly_package": {
+    "filename": "GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit.zip",
+    "sha256": "e29daffdac2c16a707498a01256cc5cfc68dfec4f865965de2300f07bafa07da",
+    "entry": "run-readonly-groupguard-diagnosis.cmd",
+    "production_write": false,
+    "service_restart": false,
+    "build": false,
+    "deployment": false,
+    "git_update": false,
+    "full_base64_capture": false
+  },
   "safety_constraints": [
-    "只读诊断阶段不得修改生产配置",
+    "不得修改 6178、6108 或生产配置",
     "不得重启容器或服务",
     "不得构建、部署或覆盖生产文件",
     "不得执行 git pull/reset/clean/checkout",
     "不得输出或提交 token、cookie、authorization、密码和完整 Base64 图片内容",
     "未经明确授权不得合并到 main 或部署修复"
   ],
-  "decision_rules": [
-    {
-      "condition": "实际请求 image=false 或 preferred=text",
-      "decision": "优先调整 6108 WebUI 或插件配置"
-    },
-    {
-      "condition": "接口响应含 image segment，但 Base64 解码失败",
-      "decision": "修复插件响应解析或数据截断问题"
-    },
-    {
-      "condition": "Base64 解码成功，但未进入图片发送方法",
-      "decision": "修复消息路由或 segment 映射"
-    },
-    {
-      "condition": "已调用 OneBot 图片发送但动作返回失败",
-      "decision": "修复图片参数格式、动作名或 SnowLuma 适配层"
-    },
-    {
-      "condition": "图片发送失败后插件主动回退文字",
-      "decision": "保留用户可用回退，同时修复原始图片失败原因并增加可观测性"
-    },
-    {
-      "condition": "现有日志不包含关键字段",
-      "decision": "先提交可回滚的临时诊断埋点方案，用户授权后再部署"
-    }
-  ],
   "completed": [
-    "确认当前生产宿主是 SnowLuma，NapCat 仅为历史宿主与兼容构建",
-    "完成 LOLDataSystem P009 安全部署",
-    "完成接口端战绩交付诊断并确认返回 image segment",
-    "确定下一阶段必须检查插件端完整图片交付链路",
-    "建立本任务专用分支和交接状态文档"
+    "读取 CURRENT_TASK_STATE、NEXT_CHAT_HANDOFF 和 PROJECT_IDENTITY",
+    "完成战绩请求参数、delivery 解析、Base64 校验、structured delivery、send_group_msg 和文字回退静态审查",
+    "确认 GFM 假缺失的三种待证原因和历史状态丢失限制",
+    "生成双任务一键只读诊断包",
+    "新增 docs/GFM_DELETE_002.md",
+    "新增 docs/GG_BATTLE_DELIVERY_001_STATIC_REVIEW.md"
   ],
   "not_completed": [
-    "尚未执行 ARM 服务器只读日志采集",
-    "尚未确认插件实际请求参数",
-    "尚未确认 Base64 解码状态",
-    "尚未确认 SnowLuma/OneBot 图片发送调用和返回结果",
-    "尚未决定是改 WebUI 还是改代码",
-    "尚未创建修复提交、PR 或部署包"
+    "尚未在 Windows 运行只读诊断包",
+    "尚未取得生产真实战绩查询窗口日志",
+    "尚未取得 GFM 三次 OneBot 列表快照",
+    "尚未给出战绩 A/B/C/D/E 最终单一结论",
+    "尚未给出 GFM 列表结构/ID格式/列表延迟最终单一结论",
+    "尚未创建任何生产修复、PR 或部署包"
   ],
-  "next_action": "在新聊天先读取 docs/CURRENT_TASK_STATE.json、docs/NEXT_CHAT_HANDOFF.md 和 docs/NEW_CHAT_PROMPT.txt，然后审查 onebot-plugin-groupguard 中战绩查询、delivery segment 解析、Base64 图片处理、SnowLuma/OneBot 发送和文字回退代码，生成并审查一键只读诊断包。",
+  "next_action": "运行 GroupGuard-GFM-DELETE-002-GG-BATTLE-DELIVERY-001-readonly-diagnosis-kit.zip 中的 run-readonly-groupguard-diagnosis.cmd，按提示在 QQ 群执行一次真实查战绩，然后上传 reports 目录生成的 ZIP。",
   "merge_policy": "no_merge_without_explicit_user_authorization"
 }
