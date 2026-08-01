@@ -1,12 +1,14 @@
 {
-  "updated_at": "2026-08-02T04:52:00+08:00",
+  "updated_at": "2026-08-02T05:02:00+08:00",
   "repository": "xianyumht-cmd/groupguard-system",
   "task_id": "OB-NAPCAT-DECOUPLING-001",
-  "status": "branch_implementation_and_full_regression_complete_final_ci_pending",
+  "status": "code_complete_merge_ready_production_blocked_no_safe_deployment_path",
   "branch": "refactor/remove-napcat-onebot-runtime-20260802",
   "pull_request": 30,
   "pull_request_draft": true,
   "implementation_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
+  "audit_and_state_commit": "2ed7e9ecf8044b1734662b5f1bef96a4be692fbd",
+  "temporary_audit_workflow_removed_commit": "82968af8aad7ed92ed9985471cd955456c841093",
   "production_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
   "production_changed": false,
   "completed": [
@@ -17,20 +19,31 @@
     "direct SnowLuma runtime integration",
     "NapCat dependency, shim, lifecycle and build removal",
     "host-profile-only extension action boundary",
-    "full npm test and OneBot/SnowLuma dual build regression"
+    "full npm test and OneBot/SnowLuma dual build regression",
+    "final normal CI, build and full-repository audit",
+    "temporary patch and audit workflows removed"
   ],
+  "verification": {
+    "controlled_regression_run": 30717036168,
+    "controlled_regression_job": 91414108890,
+    "final_ci_run": 30717204473,
+    "final_build_run": 30717204475,
+    "final_audit_run": 30717204512,
+    "final_audit_result": "zero active NapCat runtime bindings; remaining napcat text is historical documentation or upstream LAPI compat=napcat wire-format selection",
+    "result": "passed"
+  },
   "safety": {
     "GFM-DELETE-003": "forbidden_not_executed",
     "snowluma_extension_inference_from_napcat": "forbidden_not_used",
-    "unknown_group_file_response": "indeterminate_fail_closed",
+    "unknown_group_file_response": "indeterminate_fail_closed_preserve_retry_state",
     "merge": "not_executed",
-    "deployment": "not_executed"
+    "deployment": "not_executed_no_safe_ssh_or_deployment_path"
   },
   "next": [
-    "final normal CI and audit artifact review",
-    "remove temporary audit workflow",
-    "merge after all checks pass",
-    "safe deployment only through an available verified deployment path"
+    "run final normal CI and build on this post-cleanup state commit",
+    "keep PR 30 draft until the repository owner chooses a merge window with an executable safe deployment path",
+    "before production switch capture old production ready=true, OneBot connected=true and bot identity known evidence",
+    "perform immutable candidate validation, backup, atomic switch and automatic rollback through a verified deployment path"
   ],
   "references": [
     "docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.md",

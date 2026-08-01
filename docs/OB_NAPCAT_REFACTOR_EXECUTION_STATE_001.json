@@ -1,13 +1,14 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "task_id": "OB-NAPCAT-DECOUPLING-001",
-  "updated_at": "2026-08-02T04:52:00+08:00",
+  "updated_at": "2026-08-02T05:02:00+08:00",
   "branch": "refactor/remove-napcat-onebot-runtime-20260802",
   "pull_request": 30,
   "pull_request_draft": true,
   "production_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
   "implementation_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
   "temporary_patch_workflow_removed_commit": "6b7a37aa990dcb4f9c81551431e3a58b55804b15",
+  "temporary_audit_workflow_removed_commit": "82968af8aad7ed92ed9985471cd955456c841093",
   "phase_status": {
     "OB-AUDIT-001": "complete",
     "OB-RUNTIME-001": "complete",
@@ -17,7 +18,7 @@
     "OB-SNOWLUMA-001": "complete",
     "OB-NAPCAT-REMOVE-001": "complete",
     "OB-REGRESSION-001": "complete",
-    "OB-PRODUCTION-001": "blocked_pending_final_ci_audit_and_deployment_path"
+    "OB-PRODUCTION-001": "blocked_no_safe_ssh_or_deployment_path"
   },
   "constraints": {
     "gfm_delete_003_forbidden": true,
@@ -28,17 +29,28 @@
     "production_unchanged": true
   },
   "regression": {
-    "workflow_run_id": 30717036168,
-    "job_id": 91414108890,
-    "conclusion": "success",
+    "controlled_workflow_run_id": 30717036168,
+    "controlled_job_id": 91414108890,
+    "controlled_conclusion": "success",
+    "final_ci_run_id": 30717204473,
+    "final_build_run_id": 30717204475,
+    "final_audit_run_id": 30717204512,
+    "final_conclusion": "success",
     "npm_test": "passed",
     "build_onebot": "passed",
-    "build_snowluma": "passed"
+    "build_snowluma": "passed",
+    "active_napcat_runtime_bindings": 0,
+    "four_argument_action_calls": 0
+  },
+  "merge_readiness": {
+    "code_gates": "passed",
+    "pull_request_state": "draft",
+    "merge_executed": false,
+    "reason_not_merged": "safe production deployment path is not available in the current execution environment"
   },
   "next_actions": [
-    "verify normal branch CI and the full repository audit on the final state commit",
-    "remove ob-napcat-audit-snapshot workflow after evidence capture",
-    "merge only if all final checks pass",
-    "do not claim or execute production deployment without an available safe SSH/deployment path"
+    "verify final normal CI and build on the post-cleanup state commit",
+    "retain the draft pull request until a safe deployment window and executable SSH/deployment path are available",
+    "do not claim or execute production deployment without pre-switch readiness evidence, immutable provenance, backup and rollback"
   ]
 }
