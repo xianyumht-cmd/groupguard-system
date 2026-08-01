@@ -23,7 +23,7 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,11 +56,12 @@ jobs:
           PATCH_DIR=automation/ob-patches/current
           test -f "$PATCH_DIR/MESSAGE"
           test -f "$PATCH_DIR/PATCH_SHA256"
+          test -f "$PATCH_DIR/GZIP_SHA256"
           cp "$PATCH_DIR/MESSAGE" /tmp/ob-patch-message
 
-          chunks=(000 001 002 003 004)
-          sizes=(8000 8000 8000 8000 3352)
-          : > /tmp/ob-reviewed.b64
+          chunks=(000 001 002 003)
+          sizes=(8000 8000 8000 8080)
+          : > /tmp/ob-reviewed.patch.gz.b64
           for index in "${!chunks[@]}"; do
             file="$PATCH_DIR/${chunks[$index]}.b64"
             expected="${sizes[$index]}"
@@ -70,11 +71,13 @@ jobs:
               echo "Patch chunk ${chunks[$index]} is truncated: expected at least $expected bytes, got $actual" >&2
               exit 1
             fi
-            head -c "$expected" "$file" >> /tmp/ob-reviewed.b64
+            head -c "$expected" "$file" >> /tmp/ob-reviewed.patch.gz.b64
           done
 
-          test "$(wc -c < /tmp/ob-reviewed.b64)" -eq 35352
-          base64 --decode /tmp/ob-reviewed.b64 > /tmp/ob-reviewed.patch
+          test "$(wc -c < /tmp/ob-reviewed.patch.gz.b64)" -eq 32080
+          base64 --decode /tmp/ob-reviewed.patch.gz.b64 > /tmp/ob-reviewed.patch.gz
+          printf '%s  %s\n' "$(cat "$PATCH_DIR/GZIP_SHA256")" /tmp/ob-reviewed.patch.gz | sha256sum -c -
+          gzip -dc /tmp/ob-reviewed.patch.gz > /tmp/ob-reviewed.patch
           test -s /tmp/ob-reviewed.patch
           printf '%s  %s\n' "$(cat "$PATCH_DIR/PATCH_SHA256")" /tmp/ob-reviewed.patch | sha256sum -c -
           git apply --check /tmp/ob-reviewed.patch
@@ -86,14 +89,15 @@ jobs:
         working-directory: onebot-plugin-groupguard
         run: npm ci
 
-      - name: Validate migration
+      - name: Run complete regression and dual builds
         if: steps.ready.outputs.value == 'true'
         working-directory: onebot-plugin-groupguard
         shell: bash
         run: |
           set -euo pipefail
-          npm run typecheck
-          npm run verify:host-profiles
+          npm test
+          npm run build:onebot
+          npm run build:snowluma
 
       - name: Commit reviewed patch
         if: steps.ready.outputs.value == 'true'
