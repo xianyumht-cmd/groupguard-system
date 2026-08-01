@@ -119,6 +119,9 @@ async function start(): Promise<RuntimeState> {
   const consumeGeneratedUploadEvent = (event: any): boolean => {
     if (event?.post_type !== 'notice' || event?.notice_type !== 'group_upload') return false;
     pruneGeneratedUploads();
+    const uploaderId = String(event?.user_id ?? event?.operator_id ?? '').trim();
+    const botId = identityStateService.getBotId();
+    if (!botId || uploaderId !== botId) return false;
     const key = generatedUploadKey(event?.group_id, event?.file?.name ?? event?.file?.file_name);
     if (!key || !generatedFileUploads.has(key)) return false;
     generatedFileUploads.delete(key);
@@ -130,8 +133,15 @@ async function start(): Promise<RuntimeState> {
     callAction: async (action, params) => {
       if (action !== 'upload_group_file') return actions.call(action, params);
       const raw = params && typeof params === 'object' ? params as Record<string, any> : {};
+      pruneGeneratedUploads();
       const key = generatedUploadKey(raw.group_id ?? raw.groupId, raw.name);
-      if (key) generatedFileUploads.set(key, Date.now() + GENERATED_FILE_UPLOAD_TTL_MS);
+      if (key) {
+        if (generatedFileUploads.size >= 2000) {
+          const oldestKey = generatedFileUploads.keys().next().value as string | undefined;
+          if (oldestKey) generatedFileUploads.delete(oldestKey);
+        }
+        generatedFileUploads.set(key, Date.now() + GENERATED_FILE_UPLOAD_TTL_MS);
+      }
       try {
         return await actions.call(action, params);
       } catch (error) {
@@ -152,23 +162,29 @@ async function start(): Promise<RuntimeState> {
 
   installQunGuanjiaRealtimeCapture();
 
-  client.onEvent(async (event) => {
+  let runtimeReady = false;
+  const pendingEvents: any[] = [];
+  const MAX_PENDING_EVENTS = 500;
+  const dispatchEvent = async (event: any): Promise<void> => {
     if (!event || typeof event !== 'object') return;
     const eventSelfId = String(event.self_id || '').trim();
-    if (eventSelfId && eventSelfId !== identityStateService.getBotId()) {
-      contextStateService.setBotId(eventSelfId);
-    }
-
-    // Observe before the licensed group-management pipeline, because a source
-    // group used only for file mirroring may intentionally have no GroupGuard license.
+    if (eventSelfId && eventSelfId !== identityStateService.getBotId()) contextStateService.setBotId(eventSelfId);
     if (!consumeGeneratedUploadEvent(event)) groupFileMirrorService.observeEvent(event);
-
     if (isMessageEvent(event)) {
       observeQunGuanjiaRealtimeMessage(event);
       await plugin_onmessage(ctx, event as any);
       return;
     }
     await plugin_onevent(ctx, event);
+  };
+
+  client.onEvent(async (event) => {
+    if (!runtimeReady) {
+      if (pendingEvents.length >= MAX_PENDING_EVENTS) pendingEvents.shift();
+      pendingEvents.push(event);
+      return;
+    }
+    await dispatchEvent(event);
   });
 
   const refreshBotIdentity = async (): Promise<void> => {
@@ -187,8 +203,11 @@ async function start(): Promise<RuntimeState> {
   };
   client.onConnected(refreshBotIdentity);
 
-  await client.start();
   await plugin_init(ctx);
+  await client.start();
+  await refreshBotIdentity();
+  runtimeReady = true;
+  for (const event of pendingEvents.splice(0)) await dispatchEvent(event);
 
   const adminServer = startSnowLumaAdminServer({
     ctx,
@@ -215,7 +234,7 @@ async function start(): Promise<RuntimeState> {
 let runtime: RuntimeState | null = null;
 let stopping = false;
 
-async function stop(signal: string): Promise<void> {
+async function stop(signal: string, exitCode = 0): Promise<void> {
   if (stopping) return;
   stopping = true;
   console.info(`[GroupGuard:SnowLuma] stopping by ${signal}`);
@@ -232,7 +251,7 @@ async function stop(signal: string): Promise<void> {
   } catch (error) {
     console.error(`[GroupGuard:SnowLuma] cleanup failed: ${String(error)}`);
   }
-  process.exit(0);
+  process.exit(exitCode);
 }
 
 process.on('SIGINT', () => void stop('SIGINT'));
@@ -242,6 +261,7 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('uncaughtException', (error) => {
   console.error(`[GroupGuard:SnowLuma] uncaughtException: ${String(error)}`);
+  void stop('uncaughtException', 1);
 });
 
 const isDirectRun = (() => {

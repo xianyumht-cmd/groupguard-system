@@ -317,20 +317,19 @@ export function toOneBotDeliveryPlan(envelope: GroupGuardQueryDeliveryEnvelope):
 }
 
 export function isIntranetHostname(hostname: string): boolean {
-  const host = String(hostname || '').trim().toLowerCase();
+  const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
   if (!host) return false;
-  if (host === 'localhost' || host === '::1' || host.endsWith('.local')) return true;
-  if (host === '127.0.0.1' || host.startsWith('127.')) return true;
-  if (host.startsWith('10.')) return true;
-  if (host.startsWith('192.168.')) return true;
-  const match172 = host.match(/^172\.(\d{1,3})\./);
+  if (host === 'localhost' || host === '::1') return true;
+  if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true;
+  if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true;
+  if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
+  const match172 = host.match(/^172\.(\d{1,3})(?:\.\d{1,3}){2}$/);
   if (match172) {
     const second = Number(match172[1]);
     if (second >= 16 && second <= 31) return true;
   }
   if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
   if (/^fe[89ab][0-9a-f]:/i.test(host)) return true;
-  if (/^[a-z0-9-]+$/i.test(host)) return true;
   return false;
 }
 
@@ -347,6 +346,30 @@ export function resolveGroupGuardQueryEndpoint(baseUrl: string): string {
   if (parsed.pathname && parsed.pathname !== '/') throw new Error('lol_api_base_path_forbidden');
   if (!isIntranetHostname(parsed.hostname)) throw new Error('lol_api_base_must_be_intranet');
   return `${parsed.origin}${GROUPGUARD_QUERY_DELIVERY_PATH}`;
+}
+
+async function readResponseTextBounded(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel('delivery_response_too_large');
+        throw new Error('delivery_response_too_large');
+      }
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return chunks.join('');
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export async function requestGroupGuardQueryDelivery(
@@ -379,8 +402,7 @@ export async function requestGroupGuardQueryDelivery(
       await response.body?.cancel();
       throw new Error('delivery_response_too_large');
     }
-    const text = await response.text();
-    if (text.length > maxResponseChars) throw new Error('delivery_response_too_large');
+    const text = await readResponseTextBounded(response, maxResponseChars);
     let decoded: unknown;
     try {
       decoded = JSON.parse(text);

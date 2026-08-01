@@ -139,7 +139,7 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
   contextStateService.setBackupDir(runtimePaths.backupDir);
   contextStateService.setDynamicCommandsConfigPath(runtimePaths.dynamicCommandsConfigPath);
   loggingStateService.info('群管插件正在初始化...');
-  initCommandValidation();
+  await initCommandValidation();
 
   plugin_config_ui = ctx.NapCatConfig.combine(
     ctx.NapCatConfig.html(`
@@ -207,7 +207,7 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
   // 定时保存任务 (5分钟一次，减少 I/O)
   if (configFlushTimer) clearInterval(configFlushTimer);
   configFlushTimer = setInterval(() => {
-    saveConfig(ctx);
+    try { saveConfig(ctx); } catch (error) { loggingStateService.error(`后台保存配置失败: ${error}`); }
     // 顺便清理缓存
     contextStateService.cleanCache();
   }, 300000);
@@ -256,6 +256,9 @@ const plugin_cleanup: PluginModule['plugin_cleanup'] = async () => {
   }
   authManager.cleanup();
   stopSelfRecallRecovery();
+  configStateService.getConfig();
+  const { pluginState } = await import('./state');
+  pluginState.clearSelfRecallTimers();
   await flushInviteService();
   stopInviteService();
   stopPassiveServiceTimers();
@@ -266,6 +269,7 @@ const plugin_cleanup: PluginModule['plugin_cleanup'] = async () => {
   cacheStateService.clearRepeatCache();
   cacheStateService.clearQaCooldowns();
   cacheStateService.clearAdminCache();
+  storageAdapter.close();
 };
 
 // ========== 消息处理 ==========

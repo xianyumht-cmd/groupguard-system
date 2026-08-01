@@ -1,6 +1,6 @@
 # 🛡️ GroupGuard 群管理系统
 
-[![Version](https://img.shields.io/badge/version-1.2.14-blue.svg)](onebot-plugin-groupguard/package.json)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](onebot-plugin-groupguard/package.json)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 GroupGuard 是面向 QQ 群管理与自动化场景的完整系统，集成风控防护、商业授权、互动娱乐、入群验证、自动问答、动态命令和 WebUI 配置等能力。

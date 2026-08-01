@@ -68,23 +68,36 @@ function writeTextFileAtomically(filePath: string, content: string): void {
 }
 
 export function saveConfig(ctx: NapCatPluginContext): void {
+  if (!ctx?.configPath) return;
   try {
-    if (ctx?.configPath) saveConfigStrict(ctx);
+    saveConfigStrict(ctx);
   } catch (e) {
     loggingStateService.error(`保存配置失败: ${e}`);
+    throw e;
   }
 }
 
 export function saveConfigStrict(ctx: NapCatPluginContext): void {
-  if (!ctx?.configPath) {
-    throw new Error('missing_config_path');
-  }
+  if (!ctx?.configPath) throw new Error('missing_config_path');
   const config = configStateService.getConfig();
   const mainConfig = { ...config, groups: {} };
-  // 主配置与群配置仍保持分离；主 JSON 使用同目录临时文件替换，
-  // 避免进程中断留下半截 JSON。
-  writeTextFileAtomically(ctx.configPath, JSON.stringify(mainConfig, null, 2));
-  storageAdapter.saveGroupConfigs(config.groups || {});
+  const serialized = JSON.stringify(mainConfig, null, 2);
+  const existed = fs.existsSync(ctx.configPath);
+  const previous = existed ? fs.readFileSync(ctx.configPath, 'utf-8') : null;
+
+  try {
+    storageAdapter.replaceAllGroupConfigs(config.groups || {}, () => {
+      writeTextFileAtomically(ctx.configPath, serialized);
+    });
+  } catch (error) {
+    try {
+      if (previous !== null) writeTextFileAtomically(ctx.configPath, previous);
+      else if (!existed && fs.existsSync(ctx.configPath)) fs.unlinkSync(ctx.configPath);
+    } catch (restoreError) {
+      loggingStateService.error(`配置回滚失败: ${restoreError}`);
+    }
+    throw error;
+  }
 }
 
 export async function sendGroupScene(groupId: string, scene: string, fallback: string, vars?: Record<string, string | number | boolean>): Promise<void> {

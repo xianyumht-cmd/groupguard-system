@@ -3,7 +3,7 @@ import { configStateService } from '../../core/state-services/config_state_servi
 import { saveConfigStrict } from '../../commands/common';
 import { applyPatch } from './object_patch';
 import { backupFile } from './backup';
-import { ensureObjectConfig, readJsonFile, writeJsonFile } from './json_file';
+import { ensureObjectConfig, readJsonFile } from './json_file';
 import type { JsonRecord, SnowLumaAdminServerOptions } from './types';
 
 export function getRawConfig(options: SnowLumaAdminServerOptions): JsonRecord {
@@ -12,10 +12,16 @@ export function getRawConfig(options: SnowLumaAdminServerOptions): JsonRecord {
 
 export function saveRawConfig(options: SnowLumaAdminServerOptions, nextConfig: any): void {
   const configObject = ensureObjectConfig(nextConfig);
+  const normalized = normalizePluginConfig(configObject as any);
+  const previous = configStateService.getConfig();
   backupFile(options.configPath, options.backupDir, 'config.json');
-  writeJsonFile(options.configPath, configObject);
-  configStateService.setConfig(normalizePluginConfig(configObject as any));
-  saveConfigStrict(options.ctx);
+  try {
+    configStateService.setConfig(normalized);
+    saveConfigStrict(options.ctx);
+  } catch (error) {
+    configStateService.setConfig(previous);
+    throw error;
+  }
 }
 
 export function patchRawConfig(options: SnowLumaAdminServerOptions, patch: JsonRecord): void {

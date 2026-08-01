@@ -519,16 +519,20 @@ function pickTask(): QueueTask | null {
   return queue.shift() || null;
 }
 
-async function executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<{ timeout: boolean; value?: T; }> {
+async function executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<{ timeout: boolean; value?: T; error?: unknown; }> {
   let timer: NodeJS.Timeout | null = null;
+  const valuePromise = promise.then(
+    (value) => ({ timeout: false, value }),
+    (error) => ({ timeout: false, error })
+  );
   try {
-    const timeoutPromise = new Promise<{ timeout: boolean; value?: T; }>((resolve) => {
+    const timeoutPromise = new Promise<{ timeout: boolean; value?: T; error?: unknown; }>((resolve) => {
       timer = setTimeout(() => resolve({ timeout: true }), timeoutMs);
     });
-    const valuePromise = promise.then((value) => ({ timeout: false, value }));
     return await Promise.race([valuePromise, timeoutPromise]);
   } finally {
     if (timer) clearTimeout(timer);
+    void valuePromise; // observe late completion/rejection; mutating actions are not retried on ambiguous timeout.
   }
 }
 
@@ -816,7 +820,7 @@ async function executeTask(task: QueueTask): Promise<void> {
 }
 
 function kickWorkers(): void {
-  const cap = Math.max(1, Math.min(20, getConcurrency(queue[0]?.groupId || '0')));
+  const cap = Math.max(1, Math.min(20, getConcurrency('')));
   while (activeWorkers < cap) {
     const task = pickTask();
     if (!task) return;
@@ -828,6 +832,14 @@ function kickWorkers(): void {
         kickWorkers();
       });
   }
+}
+
+function mapEnqueueFailureCode(result: Exclude<ReturnType<typeof enqueueTask>, 'ok'>): GuardResult['code'] {
+  if (result === 'backpressure_reject') return 'backpressure_reject';
+  if (result === 'queue_overflow') return 'skip_queue_overflow';
+  if (result === 'skip_duplicate') return 'skip_duplicate';
+  if (result === 'bot_role_blocked') return 'bot_role_blocked';
+  return result;
 }
 
 export async function enqueueRecallAction(opts: {
@@ -880,7 +892,7 @@ export async function enqueueRecallAction(opts: {
       reject
     };
     const enqueueResult = enqueueTask(task);
-    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_queue_overflow', taskId, actionId });
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: mapEnqueueFailureCode(enqueueResult), taskId, actionId });
   });
 }
 
@@ -918,7 +930,7 @@ export async function enqueueSelfRecallAction(opts: {
       reject
     };
     const enqueueResult = enqueueTask(task);
-    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_queue_overflow' });
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: mapEnqueueFailureCode(enqueueResult) });
   });
 }
 
@@ -957,7 +969,7 @@ export async function enqueueBanAction(opts: {
       reject
     };
     const enqueueResult = enqueueTask(task);
-    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_rate_limited', taskId, actionId });
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: mapEnqueueFailureCode(enqueueResult), taskId, actionId });
   });
 }
 
@@ -994,7 +1006,7 @@ export async function enqueueKickAction(opts: {
       reject
     };
     const enqueueResult = enqueueTask(task);
-    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_rate_limited', taskId, actionId });
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: mapEnqueueFailureCode(enqueueResult), taskId, actionId });
   });
 }
 
@@ -1027,7 +1039,7 @@ export async function enqueueMiscAction(opts: {
       reject
     };
     const enqueueResult = enqueueTask(task);
-    if (enqueueResult !== 'ok') resolve({ ok: false, code: enqueueResult === 'backpressure_reject' ? 'backpressure_reject' : 'skip_queue_overflow' });
+    if (enqueueResult !== 'ok') resolve({ ok: false, code: mapEnqueueFailureCode(enqueueResult) });
   });
 }
 

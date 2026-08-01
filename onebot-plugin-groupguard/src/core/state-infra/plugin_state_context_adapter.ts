@@ -132,7 +132,8 @@ export class PluginStateContextAdapter {
     }
     if (actionName === 'send_group_forward_msg' && Array.isArray(next.messages)) {
       const groupId = String(next.group_id ?? next.groupId ?? '');
-      next.messages = packageForwardMessages(next.messages, pluginState.getGroupSettings(groupId), 'raw_text').messages;
+      const scene = this.getSendScene(params);
+      next.messages = packageForwardMessages(next.messages, pluginState.getGroupSettings(groupId), scene).messages;
     }
     return next;
   }

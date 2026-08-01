@@ -159,13 +159,14 @@ export function normalizeGroupFileMirrorConfig(value: unknown): GroupFileMirrorC
     seenIds.add(id);
 
     const fileNamePattern = String(raw.fileNamePattern ?? raw.file_name_pattern ?? '').trim();
+    const patternValid = isValidPattern(fileNamePattern);
     rules.push({
       id,
-      enabled: raw.enabled !== false,
+      enabled: raw.enabled !== false && patternValid,
       sourceGroupId,
       targetGroupId,
       sourceUploaderIds: normalizeStringArray(raw.sourceUploaderIds ?? raw.source_uploader_ids),
-      fileNamePattern: isValidPattern(fileNamePattern) ? fileNamePattern : '',
+      fileNamePattern,
       maxFileSizeMb: clampNumber(raw.maxFileSizeMb ?? raw.max_file_size_mb, 512, 1, 4096),
       targetFolderId: String(raw.targetFolderId ?? raw.target_folder_id ?? '/').trim() || '/',
       keepLatestOnly: raw.keepLatestOnly !== false && raw.keep_latest_only !== false,
@@ -310,6 +311,7 @@ export class GroupFileMirrorService {
   private configErrorSignature = '';
   private state: MirrorStateStore = { version: 1, rules: {} };
   private loadedStatePath = '';
+  private stateWritable = true;
   private readonly recentMessages = new Map<string, RecentFileMessage>();
   private readonly ruleTails = new Map<string, Promise<void>>();
 
@@ -366,27 +368,34 @@ export class GroupFileMirrorService {
     if (this.loadedStatePath === filePath) return;
     this.loadedStatePath = filePath;
     this.state = { version: 1, rules: {} };
+    this.stateWritable = true;
     try {
       if (!fs.existsSync(filePath)) return;
       const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      if (isRecord(parsed) && isRecord(parsed.rules)) {
-        this.state = { version: 1, rules: parsed.rules as Record<string, MirrorRuleState> };
-      }
+      if (!isRecord(parsed) || !isRecord(parsed.rules)) throw new Error('invalid_state_shape');
+      this.state = { version: 1, rules: parsed.rules as Record<string, MirrorRuleState> };
     } catch (error) {
-      this.log('warn', `状态文件读取失败，将从空状态继续: ${String(error)}`);
+      const backupPath = `${filePath}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}-.bak`;
+      try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch { /* preserve original even if backup fails */ }
+      this.stateWritable = false;
+      this.config = { ...this.config, enabled: false };
+      this.log('error', `状态文件损坏，群文件搬运已停用且不会覆盖原文件: ${String(error)}`);
     }
   }
 
   private saveState(): void {
     this.ensureStateLoaded();
+    if (!this.stateWritable) throw new Error('group_file_mirror_state_not_writable');
     const filePath = this.getStateFilePath();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      const tempPath = `${filePath}.tmp`;
       fs.writeFileSync(tempPath, `${JSON.stringify(this.state, null, 2)}\n`, 'utf-8');
       fs.renameSync(tempPath, filePath);
     } catch (error) {
+      try { fs.unlinkSync(tempPath); } catch { /* noop */ }
       this.log('error', `状态文件保存失败: ${String(error)}`);
+      throw error;
     }
   }
 
@@ -781,8 +790,7 @@ export class GroupFileMirrorService {
           const message = messages[index];
           const files = extractFileSegmentsFromMessage(message);
           if (!files.some(file => {
-            if (targetFileId && file.fileId && targetFileId === file.fileId) return true;
-            return file.fileName === fileName && (fileSize <= 0 || file.fileSize <= 0 || file.fileSize === fileSize);
+            return Boolean(targetFileId && file.fileId && targetFileId === file.fileId);
           })) continue;
           const messageId = extractMessageId(message);
           if (messageId) return messageId;

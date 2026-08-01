@@ -618,7 +618,7 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   lolBanBackupUrls: [],
   lolApiBaseUrl: '',
   eleBuildApiBaseUrl: '',
-  shardDataUrl: 'https://raw.githubusercontent.com/badspacebar/release/master/files/shards.json',
+  shardDataUrl: '',
   shardHeroListUrl: 'https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js',
   shardImageUrlTemplate: '',
   shardQueryOutputFormat: 'image',
@@ -648,7 +648,8 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
     ...JSON.parse(JSON.stringify(DEFAULT_PLUGIN_CONFIG)),
     ...(input || {}),
   };
-  const inputVersion = Number((input as any)?.configVersion || 1);
+  const rawInputVersion = Number((input as any)?.configVersion);
+  const inputVersion = Number.isFinite(rawInputVersion) && rawInputVersion > 0 ? rawInputVersion : 1;
   if (inputVersion < 2) {
     merged.global = {
       ...(merged.global || {}),
@@ -698,10 +699,10 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
 
   merged.qaList = normalizedQaList;
   merged.global = normalizeGroupSettings(merged.global || ({} as GroupGuardSettings));
-  merged.global.auditRetentionMaxAgeDays = Math.max(1, Math.min(3650, Number(merged.global.auditRetentionMaxAgeDays || 30)));
-  merged.global.auditRetentionMaxRows = Math.max(100, Math.min(1000000, Number(merged.global.auditRetentionMaxRows || 20000)));
-  merged.global.actionQueueEventRetentionMaxAgeDays = Math.max(1, Math.min(3650, Number(merged.global.actionQueueEventRetentionMaxAgeDays || 7)));
-  merged.global.actionQueueEventRetentionMaxRows = Math.max(100, Math.min(1000000, Number(merged.global.actionQueueEventRetentionMaxRows || 50000)));
+  merged.global.auditRetentionMaxAgeDays = normalizeNumber(merged.global.auditRetentionMaxAgeDays, 30, 1, 3650);
+  merged.global.auditRetentionMaxRows = normalizeNumber(merged.global.auditRetentionMaxRows, 20000, 100, 1000000);
+  merged.global.actionQueueEventRetentionMaxAgeDays = normalizeNumber(merged.global.actionQueueEventRetentionMaxAgeDays, 7, 1, 3650);
+  merged.global.actionQueueEventRetentionMaxRows = normalizeNumber(merged.global.actionQueueEventRetentionMaxRows, 50000, 100, 1000000);
   merged.shardDataUrl = String(merged.shardDataUrl || '').trim();
   merged.eleBuildApiBaseUrl = String(merged.eleBuildApiBaseUrl || '').trim().replace(/\/+$/, '');
   merged.shardHeroListUrl = String(merged.shardHeroListUrl || '').trim();
@@ -738,16 +739,16 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
     .filter((value: string) => value && validUrl(value))));
   const reportUrl = String(merged.scammerReportUrl || '').trim();
   merged.scammerReportUrl = reportUrl && validUrl(reportUrl) ? reportUrl : '';
-  merged.scammerMaxRecords = Math.max(100, Math.min(100000, Number(merged.scammerMaxRecords || 5000)));
-  merged.scammerMaxEvidenceLength = Math.max(50, Math.min(5000, Number(merged.scammerMaxEvidenceLength || 500)));
-  merged.scammerMaxRecentReportsPerQQ = Math.max(1, Math.min(50, Number(merged.scammerMaxRecentReportsPerQQ || 10)));
-  merged.scammerQueryUserCooldownSeconds = Math.max(0, Math.min(3600, Number(merged.scammerQueryUserCooldownSeconds ?? 10)));
-  merged.scammerQueryGroupRateLimitPerMinute = Math.max(1, Math.min(1000, Number(merged.scammerQueryGroupRateLimitPerMinute ?? 20)));
-  merged.scammerQueryCacheSeconds = Math.max(0, Math.min(86400, Number(merged.scammerQueryCacheSeconds ?? 300)));
-  merged.scammerReportUserCooldownSeconds = Math.max(0, Math.min(86400, Number(merged.scammerReportUserCooldownSeconds ?? 60)));
-  merged.scammerReportGroupRateLimitPerMinute = Math.max(1, Math.min(1000, Number(merged.scammerReportGroupRateLimitPerMinute ?? 5)));
-  merged.scammerReportUserDailyLimit = Math.max(1, Math.min(1000, Number(merged.scammerReportUserDailyLimit ?? 20)));
-  merged.scammerReportDedupHours = Math.max(0, Math.min(720, Number(merged.scammerReportDedupHours ?? 24)));
+  merged.scammerMaxRecords = normalizeNumber(merged.scammerMaxRecords, 5000, 100, 100000);
+  merged.scammerMaxEvidenceLength = normalizeNumber(merged.scammerMaxEvidenceLength, 500, 50, 5000);
+  merged.scammerMaxRecentReportsPerQQ = normalizeNumber(merged.scammerMaxRecentReportsPerQQ, 10, 1, 50);
+  merged.scammerQueryUserCooldownSeconds = normalizeNumber(merged.scammerQueryUserCooldownSeconds, 10, 0, 3600);
+  merged.scammerQueryGroupRateLimitPerMinute = normalizeNumber(merged.scammerQueryGroupRateLimitPerMinute, 20, 1, 1000);
+  merged.scammerQueryCacheSeconds = normalizeNumber(merged.scammerQueryCacheSeconds, 300, 0, 86400);
+  merged.scammerReportUserCooldownSeconds = normalizeNumber(merged.scammerReportUserCooldownSeconds, 60, 0, 86400);
+  merged.scammerReportGroupRateLimitPerMinute = normalizeNumber(merged.scammerReportGroupRateLimitPerMinute, 5, 1, 1000);
+  merged.scammerReportUserDailyLimit = normalizeNumber(merged.scammerReportUserDailyLimit, 20, 1, 1000);
+  merged.scammerReportDedupHours = normalizeNumber(merged.scammerReportDedupHours, 24, 0, 720);
   return merged;
 }
 
