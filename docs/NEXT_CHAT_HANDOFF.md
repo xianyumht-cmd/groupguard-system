@@ -1,67 +1,174 @@
 # GroupGuard 当前任务交接
 
-更新时间：2026-07-31 17:22 +08:00  
-状态：`production_deployed_and_verified`
+更新时间：2026-08-02 03:04 +08:00  
+状态：`napcat_decoupling_approved_pending_audit`
 
-## GFM-DELETE-002 已完成上线
+## 当前主任务
 
-PR #26 已通过 squash 合并：
-
-```text
-5753808b10a653e8a7f7805ff7b16c6cc3161204
-```
-
-生产部署成功：
+任务 ID：
 
 ```text
-Deployment ID: GFM-DELETE-002-20260731-171753-5753808b10a6
-Candidate SHA-256: f6bc5d602afbaf4a051a753ec323972e765bf6fa4359fb6ad09fc7a54c4a27fd
-Active entry SHA-256: f224225ec467ecf03133b66a1d2f1361d82936b6f1a942248bc735a04372293d
-Container: running
-Restart count: 0
-Rollback triggered: false
+OB-NAPCAT-DECOUPLING-001
 ```
 
-生产备份：
+用户已确认执行完整重构：
 
 ```text
-/mnt/sda1/groupguard/backups/GFM-DELETE-002-20260731-171753-5753808b10a6
+完整剥离 NapCat
+保留并强化纯 OneBot WebSocket 运行方式
+当前宿主为 SnowLuma
+未来允许接入其他第三方 OneBot WebSocket 框架
 ```
 
-配置和数据未覆盖，当前 5 个历史文件未被批量删除。
-
-详细记录：
+详细交接与执行计划：
 
 ```text
-docs/GFM_DELETE_002_PRODUCTION_DEPLOYMENT_RESULT_20260731.md
+docs/ONEBOT_NAPCAT_DECOUPLING_REFACTOR_HANDOFF_20260802.md
 ```
 
-## 资源占用判断
-
-切换前：
+## 当前生产基线
 
 ```text
-主机可用内存约 746 MB
-主机 Swap 已用约 540 MB / 总量约 2.5 GB
-容器 RSS 约 71 MB
-容器 Swap 约 10.8 MB
+Production commit: d0b79b6eab2514492196036bd79f14819b2d4102
+Container: groupguard-snowluma
+Remote app: /mnt/sda1/groupguard/app
+OneBot WebSocket: ws://127.0.0.1:3001
+Upstream container: snowluma
+WebUI: 6108
+Backup: /mnt/sda1/groupguard/backups/project-wide-bugfix-d0b79b6e-20260801T133634Z
+Report: /mnt/sda1/groupguard/backups/project-wide-bugfix-d0b79b6e-20260801T133634Z/deployment-report.txt
 ```
 
-切换后：
+生产版本已通过：
 
 ```text
-主机可用内存约 720 MB
-主机 Swap 已用约 565 MB
-容器 RSS 约 117 MB
-容器 Swap 0
+UPSTREAM_READINESS_PRECHECK_OK=true
+CANDIDATE_VALIDATION_OK=true
+BACKUP_CAPTURE_OK=true
+SWITCH_OK=true
+HEALTH_OK=true
+PROVENANCE_OK=true
+DEPLOYMENT_OK=true
 ```
 
-当前证据不支持“GroupGuard 插件导致高 Swap”。登录横幅中的 79.5% / 2034 MB 是可用交换区，不是已用交换区。若后续仍怀疑内存或磁盘持续增长，需要按小时只读采集容器 RSS/PSS/Swap、Docker JSON 日志和目录大小趋势。
+重构完成并通过完整回归前，生产继续运行该版本。
 
-## 后续任务
+## 已确认的架构事实
 
-1. 等待下一次自然群文件搬运，确认旧文件删除并经过 0ms/1500ms/5000ms 验证后正常清除 pending；
-2. 当前 5 个存量历史文件作为独立任务处理，不夹带在状态机修复中；
-3. 资源占用仅在观察到持续增长时进入趋势诊断。
+当前外部连接已经是 OneBot WebSocket：
 
-当前不需要再次部署，也不要执行手动回滚。
+```text
+GroupGuard -> ws://127.0.0.1:3001 -> SnowLuma -> QQ
+```
+
+但内部仍通过伪造的 NapCat 上下文复用旧插件入口：
+
+```text
+SnowLuma OneBot WS
+  -> createStandaloneContext
+  -> fake NapCatPluginContext/NapCatConfig/pluginManager/router
+  -> src/index.ts NapCat 生命周期
+  -> GroupGuard 业务
+```
+
+主要 NapCat 绑定点：
+
+```text
+src/index.ts
+src/standalone/standalone_context.ts
+src/core/state-infra/plugin_state_context_adapter.ts
+package.json -> napcat-types/build:napcat
+```
+
+当前目标不是改成 SnowLuma 私有插件，而是：
+
+```text
+纯 OneBot 11 WebSocket 核心
++ SnowLuma Host Profile
++ Generic OneBot Profile
+```
+
+基础消息和群管动作可走通用 OneBot；群文件、消息历史等扩展动作必须由宿主 Profile 规范化，不得跨框架猜参数或返回结构。
+
+## 群文件故障状态
+
+用户截图证明：目标群存在实际未删除文件，但 GroupGuard 日志曾错误输出：
+
+```text
+absent>absent>absent
+删除旧群文件已确认消失
+```
+
+因此当前删除核验存在误报。
+
+此前生成的：
+
+```text
+GFM-DELETE-003
+groupguard-gfm-delete-003-safe-deployment.zip
+```
+
+基于 NapCat 接口假设，证据不足，**禁止运行**。
+
+后续必须记录 SnowLuma 的真实 OneBot 请求和原始响应，再在 Host Profile 中修复：
+
+```text
+删除前完整文件列表
+实际删除请求参数
+原始动作响应
+删除后完整文件列表
+分页、目录、file_id、busid、folder_id
+未知结构 fail-closed
+```
+
+## 新聊天执行顺序
+
+1. 读取：
+   - `docs/CURRENT_TASK_STATE.json`
+   - `docs/NEXT_CHAT_HANDOFF.md`
+   - `docs/ONEBOT_NAPCAT_DECOUPLING_REFACTOR_HANDOFF_20260802.md`
+   - `docs/PROJECT_IDENTITY.md`
+2. 核对 `main`、生产提交和工作树。
+3. 从当前 `main` 创建独立分支，建议：
+
+```text
+refactor/remove-napcat-onebot-runtime-20260802
+```
+
+4. 先完成 `OB-AUDIT-001`：全仓只读依赖审查、文件级清单、风险矩阵、验收矩阵和机器可读执行计划。
+5. 审查完成后再按阶段执行：
+
+```text
+OB-RUNTIME-001
+OB-CORE-001
+OB-PROTOCOL-001
+OB-HOST-PROFILE-001
+OB-SNOWLUMA-001
+OB-NAPCAT-REMOVE-001
+OB-REGRESSION-001
+OB-PRODUCTION-001
+```
+
+6. 完整回归前禁止合并、部署或修改生产。
+
+## 完成门槛
+
+```text
+无 napcat-types
+无 NapCatPluginContext
+无 NapCatConfig/pluginManager shim
+无 adapter/config 四参数动作调用
+SnowLuma 直接接入 GroupGuardRuntime
+纯 OneBot WS 运行通过
+SnowLuma Profile 契约通过
+Generic OneBot 模拟契约通过
+全部现有功能回归通过
+群文件误报删除回归测试通过
+安全部署和回滚验证通过
+```
+
+## 新聊天启动语句
+
+```text
+继续 GroupGuard 项目，按仓库 docs/CURRENT_TASK_STATE.json、docs/NEXT_CHAT_HANDOFF.md 和 docs/ONEBOT_NAPCAT_DECOUPLING_REFACTOR_HANDOFF_20260802.md 开始 OB-NAPCAT-DECOUPLING-001。先完成全仓只读审查和机器可读规划，再在独立分支执行完整剥离 NapCat：建立纯 OneBot 运行时、SnowLuma Profile 和 Generic OneBot Profile，完整回归后再合并和安全部署。禁止运行 GFM-DELETE-003，禁止依据 NapCat 参数推断 SnowLuma 扩展接口。
+```
