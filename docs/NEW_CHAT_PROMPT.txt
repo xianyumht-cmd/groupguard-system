@@ -1,13 +1,59 @@
-继续 GroupGuard 的 GG-BATTLE-DELIVERY-001 战绩图片交付插件端只读链路诊断任务。
+继续 GroupGuard 项目，开始 OB-NAPCAT-DECOUPLING-001：完整剥离 NapCat，建立纯 OneBot WebSocket 运行时，并保留 SnowLuma 与未来第三方 OneBot 框架的宿主能力适配。
 
 仓库：https://github.com/xianyumht-cmd/groupguard-system
-工作分支：codex/gg-battle-delivery-diagnosis-20260731
 
 先读取：
 - docs/CURRENT_TASK_STATE.json
 - docs/NEXT_CHAT_HANDOFF.md
+- docs/ONEBOT_NAPCAT_DECOUPLING_REFACTOR_HANDOFF_20260802.md
 - docs/PROJECT_IDENTITY.md
 
-已知结论：lolapisevers 的 P009 已成功部署到 d2416c90c6a37cc27fed2ccde4c71aa40c81a53b；接口诊断确认战绩请求 preferred=auto、image=true，返回 delivery.kind=segments、image/png、373591 字节且没有 delivery_fallback。不要重复排查接口端，也不要先改 6178 或 6108 配置。
+当前生产基线：
+- commit: d0b79b6eab2514492196036bd79f14819b2d4102
+- container: groupguard-snowluma
+- app: /mnt/sda1/groupguard/app
+- OneBot WS: ws://127.0.0.1:3001
+- upstream: snowluma
+- WebUI: 6108
+- production backup: /mnt/sda1/groupguard/backups/project-wide-bugfix-d0b79b6e-20260801T133634Z
 
-下一步直接审查 onebot-plugin-groupguard 的完整链路：实际请求参数、delivery segment 解析、Base64 解码、SnowLuma/OneBot 图片发送调用、返回结果、异常和文字回退条件。随后生成经过审查的一键只读诊断包。第一阶段禁止修改生产配置、重启、部署、覆盖文件或合并 main；报告必须脱敏且不得保存完整 Base64。
+用户已确认：
+- 不再需要 NapCat 运行模式；
+- 完整删除 napcat-types、NapCatPluginContext、NapCatConfig、pluginManager shim、NapCat 生命周期与 build:napcat；
+- 当前 SnowLuma 通过 OneBot WebSocket 接入，不改成 SnowLuma 私有插件；
+- 最终架构必须是纯 OneBot 核心 + SnowLumaProfile + GenericOneBotProfile；
+- 群文件、消息历史等非标准扩展动作必须由 Host Profile 处理，禁止业务代码直接假设宿主参数和返回结构。
+
+第一阶段先执行 OB-AUDIT-001，不要直接大面积改代码：
+1. 核对 main、生产提交、当前工作树与构建基线；
+2. 从当前 main 创建独立分支，建议 refactor/remove-napcat-onebot-runtime-20260802；
+3. 全仓搜索并分类所有 NapCat 编译时、运行时、动作调用、事件、WebUI、构建、测试和文档依赖；
+4. 审查所有 OneBot 扩展动作及宿主响应解析；
+5. 生成：
+   - docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.md
+   - docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.json
+   - docs/OB_NAPCAT_REFACTOR_PLAN_001.md
+6. 给出文件级改造顺序、风险矩阵、验收矩阵和阶段提交计划；
+7. 审查与规划完成后继续执行，不要停留在只给建议。
+
+执行阶段顺序：
+- OB-RUNTIME-001
+- OB-CORE-001
+- OB-PROTOCOL-001
+- OB-HOST-PROFILE-001
+- OB-SNOWLUMA-001
+- OB-NAPCAT-REMOVE-001
+- OB-REGRESSION-001
+- OB-PRODUCTION-001
+
+群文件故障必须纳入重构验收：用户截图证明目标群文件实际存在，但日志错误报告 absent>absent>absent 和删除成功。此前 GFM-DELETE-003 基于未经验证的 NapCat 参数假设，禁止运行。必须采集 SnowLuma 的真实请求与原始响应；任何未知文件列表或删除响应必须 fail-closed、保留 pendingCleanup，不能再误报成功。
+
+约束：
+- 审查和开发期间不修改、重启或部署生产；
+- 不直接在生产目录开发；
+- 不在完整回归前合并 main；
+- 不删除配置、SQLite、群文件搬运状态和备份；
+- 不依据 NapCat 文档推断 SnowLuma 扩展接口；
+- 完整回归和安全部署门槛未通过前，生产继续运行 d0b79b6e。
+
+完成标准：代码与依赖中无 NapCat 运行时；SnowLuma 直接创建 GroupGuardRuntimeContext；动作调用统一为 call(action, params)；纯 OneBot WS、SnowLumaProfile、GenericOneBotProfile 和全部现有功能回归通过；最后使用旧生产预检、候选验证、备份、原子切换、健康/来源验证和失败自动回滚的安全流程部署。
