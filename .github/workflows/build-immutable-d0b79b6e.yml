@@ -124,10 +124,8 @@ jobs:
           const source = bytes.toString('utf8');
           for (const required of [
             "$BuildInfoPath = Join-Path (Join-Path $ExtractPath 'dist') 'build-info.json'",
-            "$EntryPath = Join-Path (Join-Path $ExtractPath 'dist') 'snowluma-service.mjs'",
-            'Package fix   : v2'
+            "$EntryPath = Join-Path (Join-Path $ExtractPath 'dist') 'snowluma-service.mjs'"
           ]) {
-            if (required.startsWith('Package fix')) continue;
             if (!source.includes(required)) throw new Error(`corrected Windows path is missing: ${required}`);
           }
           const match = source.match(/\$RemoteScriptBase64 = '([^']+)'/);
