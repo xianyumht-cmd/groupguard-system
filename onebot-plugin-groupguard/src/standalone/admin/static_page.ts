@@ -225,7 +225,7 @@ var currentGroup = null;
 var statusLabels = {
   workDir:'工作目录', processCwd:'进程目录', configPath:'配置文件', dataDir:'数据目录', sqlitePath:'数据库',
   backupDir:'备份目录', dynamicCommandsPath:'动态命令配置', wsUrl:'WebSocket地址', botId:'机器人QQ',
-  adapterName:'适配器', dynamicCommandsCount:'动态命令数量', feature:'功能开关快照', exists:'文件存在状态'
+  hostProfileId:'宿主能力配置', dynamicCommandsCount:'动态命令数量', feature:'功能开关快照', exists:'文件存在状态'
 };
 var actionOptions = [
   ['recall','仅撤回'],

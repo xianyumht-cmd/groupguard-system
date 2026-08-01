@@ -115,8 +115,7 @@ async function main() {
     contextStateService.setDataDir(path.join(tempRoot, 'data'));
     contextStateService.setConfigPath(path.join(tempRoot, 'config.json'));
     contextStateService.setDynamicCommandsConfigPath(path.join(tempRoot, 'dynamic-commands.json'));
-    contextStateService.setAdapterName('smoke');
-    contextStateService.setNetworkConfig({});
+    contextStateService.setHostProfileId('smoke');
     contextStateService.setActions({
       async call(actionName: string, params: unknown) {
         sent.push({ action: actionName, params });

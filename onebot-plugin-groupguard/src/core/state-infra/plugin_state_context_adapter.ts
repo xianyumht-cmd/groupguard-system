@@ -150,8 +150,6 @@ export class PluginStateContextAdapter {
     const rawCall = actions.call.bind(actions);
     qunGuanjiaService.bindRuntime({
       rawCall,
-      getAdapterName: () => pluginState.adapterName,
-      getNetworkConfig: () => pluginState.networkConfig,
       getDataDir: () => pluginState.dataDir,
       getGroupSettings: (groupId: string) => pluginState.getGroupSettings(groupId),
       log: (level, message) => pluginState.log(level, message)
@@ -159,7 +157,7 @@ export class PluginStateContextAdapter {
     pluginState.actions = {
       ...actions,
       __groupGuardSendWrapper: true,
-      call: async (actionName: string, params: unknown, adapter: string, config: any): Promise<any> => {
+      call: async (actionName: string, params: unknown = {}): Promise<any> => {
         const sanitizedParams = this.sanitizeSendParams(actionName, params);
         if (actionName === 'send_group_msg') {
           const route = await qunGuanjiaService.routeGroupMessage(sanitizedParams as any, this.getSendScene(params));
@@ -179,9 +177,9 @@ export class PluginStateContextAdapter {
         if (this.shouldWrapGroupSend(actionName, params)) {
           const wrappedParams = this.buildForwardGroupMessageParams(params as any);
           loggingStateService.warn(`forward_send_direct source=send_wrapper group=${String((wrappedParams as any).group_id || '')}`);
-          return rawCall('send_group_forward_msg', wrappedParams, adapter, config);
+          return rawCall('send_group_forward_msg', wrappedParams);
         }
-        return rawCall(actionName, sanitizedParams, adapter, config);
+        return rawCall(actionName, sanitizedParams);
       }
     };
   }
@@ -194,20 +192,12 @@ export class PluginStateContextAdapter {
     pluginState.logger = logger;
   }
 
-  getAdapterName(): string {
-    return pluginState.adapterName;
+  getHostProfileId(): string {
+    return pluginState.hostProfileId;
   }
 
-  setAdapterName(adapterName: string): void {
-    pluginState.adapterName = adapterName;
-  }
-
-  getNetworkConfig() {
-    return pluginState.networkConfig;
-  }
-
-  setNetworkConfig(networkConfig: any): void {
-    pluginState.networkConfig = networkConfig;
+  setHostProfileId(hostProfileId: string): void {
+    pluginState.hostProfileId = String(hostProfileId || '').trim();
   }
 
   getWorkDir(): string {

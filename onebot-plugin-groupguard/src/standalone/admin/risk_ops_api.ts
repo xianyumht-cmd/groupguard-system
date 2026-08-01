@@ -233,7 +233,7 @@ export async function getHealthDashboard(options: SnowLumaAdminServerOptions) {
   const now = Date.now();
   const safeWsUrl = redactWebSocketUrl(options.wsUrl);
   const botId = identityStateService.getBotId() || '';
-  const adapterName = contextStateService.getAdapterName() || '';
+  const hostProfileId = contextStateService.getHostProfileId() || '';
   const oneBot = options.getOneBotStatus?.() || {
     status: 'unknown',
     connected: false,
@@ -251,7 +251,7 @@ export async function getHealthDashboard(options: SnowLumaAdminServerOptions) {
   const warnings: string[] = [];
   if (oneBot.connected !== true) warnings.push('OneBot 传输连接未就绪，消息收发暂不可用。');
   if (!botId && oneBot.connected === true) warnings.push('OneBot 已连接，但机器人账号身份尚未刷新。');
-  if (!adapterName) warnings.push('适配器为空，OneBot/SnowLuma 连接可能未初始化。');
+  if (!hostProfileId) warnings.push('宿主能力配置为空，OneBot 运行时可能未初始化。');
   if (botChanged) warnings.push(`账号发生切换：${previous.botId} -> ${botId}`);
   if (botSend.failed > 0) warnings.push(`最近10分钟发送失败 ${botSend.failed} 次。`);
   if (botSend.dropped > 0) warnings.push(`最近10分钟发送丢弃 ${botSend.dropped} 次。`);
@@ -267,7 +267,7 @@ export async function getHealthDashboard(options: SnowLumaAdminServerOptions) {
       ? 'degraded'
       : 'healthy';
   const ready = oneBot.connected === true;
-  writeHealthState(options.dataDir, { botId, adapterName, wsUrl: safeWsUrl, checkedAt: now, status });
+  writeHealthState(options.dataDir, { botId, hostProfileId, wsUrl: safeWsUrl, checkedAt: now, status });
   return {
     ok: true,
     status,
@@ -307,7 +307,7 @@ export async function getHealthDashboard(options: SnowLumaAdminServerOptions) {
       botId,
       previousBotId: previous.botId || '',
       botChanged,
-      adapterName,
+      hostProfileId,
       wsUrl: safeWsUrl,
       processCwd: process.cwd(),
       oneBot

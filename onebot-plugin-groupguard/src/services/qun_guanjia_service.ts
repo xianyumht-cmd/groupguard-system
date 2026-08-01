@@ -43,12 +43,10 @@ export interface QunGuanjiaRouteResult {
   error?: string;
 }
 
-type RawActionCall = (actionName: string, params: unknown, adapter: string, config: any) => Promise<any>;
+type RawActionCall = (actionName: string, params?: unknown) => Promise<any>;
 
 interface RuntimeBinding {
   rawCall: RawActionCall;
-  getAdapterName: () => string;
-  getNetworkConfig: () => any;
   getDataDir: () => string;
   getGroupSettings: (groupId: string) => any;
   log: (level: 'info' | 'warn' | 'error', message: string) => void;
@@ -276,9 +274,7 @@ class QunGuanjiaService {
 
   private async callAction(actionName: string, params: unknown): Promise<any> {
     const runtime = this.requireRuntime();
-    const networkConfig = runtime.getNetworkConfig();
-    if (!networkConfig) throw new Error('SnowLuma 网络配置尚未就绪');
-    return runtime.rawCall(actionName, params, runtime.getAdapterName(), networkConfig);
+    return runtime.rawCall(actionName, params);
   }
 
   private getStorePath(): string {

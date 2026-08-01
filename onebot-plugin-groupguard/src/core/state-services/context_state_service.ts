@@ -17,20 +17,12 @@ export class ContextStateService {
     pluginStateContextAdapter.setLogger(logger);
   }
 
-  getAdapterName(): string {
-    return pluginStateContextAdapter.getAdapterName();
+  getHostProfileId(): string {
+    return pluginStateContextAdapter.getHostProfileId();
   }
 
-  setAdapterName(adapterName: string): void {
-    pluginStateContextAdapter.setAdapterName(adapterName);
-  }
-
-  getNetworkConfig() {
-    return pluginStateContextAdapter.getNetworkConfig();
-  }
-
-  setNetworkConfig(networkConfig: any): void {
-    pluginStateContextAdapter.setNetworkConfig(networkConfig);
+  setHostProfileId(hostProfileId: string): void {
+    pluginStateContextAdapter.setHostProfileId(hostProfileId);
   }
 
   getWorkDir(): string {

@@ -1,6 +1,7 @@
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import type { PluginConfig, GroupGuardSettings } from '../types';
 import { configStateService } from '../core/state-services/config_state_service';
+import { contextStateService } from '../core/state-services/context_state_service';
 import { identityStateService } from '../core/state-services/identity_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { runtimeControlService } from '../core/state-services/runtime_control_service';
@@ -328,7 +329,7 @@ export function registerRuntimeRoutes(
 
   router.getNoAuth('/groups', async (_req: any, res: any) => {
     try {
-      const result = await ctx.actions.call('get_group_list', {} as never, ctx.adapterName, ctx.pluginManager.config);
+      const result = await contextStateService.getActions()?.call('get_group_list', {});
       res.json({ code: 0, data: result || [] });
     } catch (e) { res.status(500).json({ code: -1, message: String(e) }); }
   });

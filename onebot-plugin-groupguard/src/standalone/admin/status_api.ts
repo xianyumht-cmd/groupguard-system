@@ -23,7 +23,7 @@ export function getStatus(options: SnowLumaAdminServerOptions) {
     build: getBuildInfo(),
     oneBot: options.getOneBotStatus?.() || { status: 'unknown', connected: false },
     botId: identityStateService.getBotId() || '',
-    adapterName: contextStateService.getAdapterName() || '',
+    hostProfileId: contextStateService.getHostProfileId() || '',
     dynamicCommandsCount: dynamicCommands.length,
     feature: getFeatureGateSnapshot(),
     exists: {

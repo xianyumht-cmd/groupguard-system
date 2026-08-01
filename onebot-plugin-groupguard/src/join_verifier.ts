@@ -1,5 +1,4 @@
 // 入群验证逻辑核心模块 (商用重构)
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import type { JoinLogEntry } from './types';
 import { authStateService } from './core/state-services/auth_state_service';
 import { configStateService } from './core/state-services/config_state_service';
@@ -30,7 +29,7 @@ export class GroupJoinVerifier {
    * 返回 true 表示已处理（无论同意还是拒绝），false 表示交给后续逻辑
    */
   static async handleJoinRequest(
-    ctx: NapCatPluginContext,
+    ctx: unknown,
     event: { 
       group_id: string; 
       user_id: string; 
@@ -125,27 +124,25 @@ export class GroupJoinVerifier {
     return false; // 交给管理员手动
   }
 
-  static async approve(ctx: NapCatPluginContext, flag: string) {
+  static async approve(_ctx: unknown, flag: string) {
     const actions = contextStateService.getActions();
-    const networkConfig = contextStateService.getNetworkConfig();
-    if (!actions || !networkConfig) return;
+    if (!actions) return;
     try {
       await actions.call('set_group_add_request', {
         flag, sub_type: 'add', approve: true
-      } as never, contextStateService.getAdapterName(), networkConfig);
+      });
     } catch (e) {
       loggingStateService.error(`自动同意失败: ${e}`);
     }
   }
 
-  static async reject(ctx: NapCatPluginContext, flag: string, reason: string) {
+  static async reject(_ctx: unknown, flag: string, reason: string) {
     const actions = contextStateService.getActions();
-    const networkConfig = contextStateService.getNetworkConfig();
-    if (!actions || !networkConfig) return;
+    if (!actions) return;
     try {
       await actions.call('set_group_add_request', {
         flag, sub_type: 'add', approve: false, reason
-      } as never, contextStateService.getAdapterName(), networkConfig);
+      });
     } catch (e) {
       loggingStateService.error(`自动拒绝失败: ${e}`);
     }

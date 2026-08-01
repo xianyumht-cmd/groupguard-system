@@ -127,9 +127,12 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
     throw new Error('incompatible_runtime_context');
   }
   contextStateService.setLogger(ctx.logger);
-  contextStateService.setActions(ctx.actions);
-  contextStateService.setAdapterName(ctx.adapterName);
-  contextStateService.setNetworkConfig(ctx.pluginManager.config);
+  contextStateService.setActions({
+    call: (actionName: string, params: unknown = {}) => ctx.actions.call(
+      actionName, params as never, ctx.adapterName, ctx.pluginManager.config
+    )
+  });
+  contextStateService.setHostProfileId('legacy-napcat-bridge');
   const runtimePaths = resolveRuntimePaths(ctx);
   (ctx as any).configPath = runtimePaths.configPath;
   contextStateService.setWorkDir(runtimePaths.workDir);
@@ -216,7 +219,7 @@ const plugin_init: PluginModule['plugin_init'] = async (ctx: NapCatPluginContext
 
   // 获取机器人QQ号
   try {
-    const loginInfo = await ctx.actions.call('get_login_info', {} as never, ctx.adapterName, ctx.pluginManager.config) as { user_id?: number | string; } | undefined;
+    const loginInfo = await contextStateService.getActions()?.call('get_login_info', {}) as { user_id?: number | string; } | undefined;
     contextStateService.setBotId(loginInfo?.user_id ? String(loginInfo.user_id) : '');
     if (identityStateService.getBotId()) loggingStateService.info(`机器人QQ: ${identityStateService.getBotId()}`);
   } catch { /* ignore */ }
