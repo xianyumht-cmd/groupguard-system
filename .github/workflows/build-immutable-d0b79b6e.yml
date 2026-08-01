@@ -7,12 +7,14 @@ on:
     paths:
       - .github/workflows/build-immutable-d0b79b6e.yml
       - deployment/build-immutable-d0b79b6e.mjs
+      - deployment/fix-immutable-d0b79b6e-v2.mjs
   pull_request:
     branches:
       - main
     paths:
       - .github/workflows/build-immutable-d0b79b6e.yml
       - deployment/build-immutable-d0b79b6e.mjs
+      - deployment/fix-immutable-d0b79b6e-v2.mjs
 
 permissions:
   contents: read
@@ -23,7 +25,7 @@ jobs:
     timeout-minutes: 30
     env:
       TARGET_COMMIT: d0b79b6eab2514492196036bd79f14819b2d4102
-      PACKAGE_NAME: groupguard-production-safe-deployment-d0b79b6e
+      PACKAGE_NAME: groupguard-production-safe-deployment-d0b79b6e-v2
 
     steps:
       - name: Checkout packager branch
@@ -90,6 +92,8 @@ jobs:
             work/candidate-dist-d0b79b6e.tar.gz \
             work/output \
             "$TARGET_COMMIT"
+          node packager/deployment/fix-immutable-d0b79b6e-v2.mjs \
+            work/output/deploy-groupguard-d0b79b6e.ps1
 
       - name: Validate generated Windows launcher
         shell: bash
@@ -110,7 +114,22 @@ jobs:
           grep -Fq 'Any failure after the switch invokes automatic rollback.' "$PS1_PATH"
           node <<'NODE'
           const fs = require('fs');
-          const source = fs.readFileSync(process.env.PS1_PATH, 'utf8');
+          const bytes = fs.readFileSync(process.env.PS1_PATH);
+          for (let index = 0; index < bytes.length; index += 1) {
+            const value = bytes[index];
+            if (value < 0x20 && value !== 0x09 && value !== 0x0a && value !== 0x0d) {
+              throw new Error(`launcher contains illegal control byte 0x${value.toString(16).padStart(2, '0')} at offset ${index}`);
+            }
+          }
+          const source = bytes.toString('utf8');
+          for (const required of [
+            "$BuildInfoPath = Join-Path (Join-Path $ExtractPath 'dist') 'build-info.json'",
+            "$EntryPath = Join-Path (Join-Path $ExtractPath 'dist') 'snowluma-service.mjs'",
+            'Package fix   : v2'
+          ]) {
+            if (required.startsWith('Package fix')) continue;
+            if (!source.includes(required)) throw new Error(`corrected Windows path is missing: ${required}`);
+          }
           const match = source.match(/\$RemoteScriptBase64 = '([^']+)'/);
           if (!match) throw new Error('embedded remote script payload is missing');
           const remote = Buffer.from(match[1], 'base64').toString('utf8');
@@ -132,6 +151,8 @@ jobs:
             if (!remote.includes(marker)) throw new Error(`remote deployment marker is missing: ${marker}`);
           }
           NODE
+          grep -Fq 'Package fix   : v2' work/output/README.txt
+          grep -Fq 'package_revision=2' work/output/PACKAGE-MANIFEST.txt
 
       - name: Create package checksum and summary
         shell: bash
@@ -142,10 +163,11 @@ jobs:
             sha256sum * > PACKAGE-FILES.sha256
           )
           {
-            echo "## Immutable GroupGuard deployment package"
+            echo "## Immutable GroupGuard deployment package v2"
             echo
             echo "- Target commit: \`$TARGET_COMMIT\`"
             echo "- Candidate archive SHA-256: \`$(cut -d' ' -f1 work/candidate-dist-d0b79b6e.tar.gz.sha256)\`"
+            echo "- Windows local candidate paths are validated and contain no illegal control bytes."
             echo "- Production stays running during preflight and candidate validation."
             echo "- The remote switch replaces only \`/mnt/sda1/groupguard/app/dist\`."
             echo "- Readiness, liveness and build provenance are checked after restart."
@@ -155,7 +177,7 @@ jobs:
       - name: Upload immutable deployment package
         uses: actions/upload-artifact@v4
         with:
-          name: groupguard-production-safe-deployment-d0b79b6e
+          name: groupguard-production-safe-deployment-d0b79b6e-v2
           path: work/output/*
           if-no-files-found: error
           retention-days: 30
