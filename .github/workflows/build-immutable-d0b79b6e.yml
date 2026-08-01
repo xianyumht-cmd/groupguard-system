@@ -108,8 +108,30 @@ jobs:
           '
           grep -Fq "$TARGET_COMMIT" "$PS1_PATH"
           grep -Fq 'Any failure after the switch invokes automatic rollback.' "$PS1_PATH"
-          grep -Fq 'PREFLIGHT_OK=true' "$PS1_PATH"
-          grep -Fq 'ROLLBACK_OK=true' "$PS1_PATH"
+          node <<'NODE'
+          const fs = require('fs');
+          const source = fs.readFileSync(process.env.PS1_PATH, 'utf8');
+          const match = source.match(/\$RemoteScriptBase64 = '([^']+)'/);
+          if (!match) throw new Error('embedded remote script payload is missing');
+          const remote = Buffer.from(match[1], 'base64').toString('utf8');
+          const markers = [
+            'PREFLIGHT_OK=true',
+            'CANDIDATE_VALIDATION_OK=true',
+            'BACKUP_CAPTURE_OK=true',
+            'SWITCH_OK=true',
+            'HEALTH_OK=true',
+            'PROVENANCE_OK=true',
+            'ROLLBACK_OK=true',
+            'DEPLOYMENT_OK=true',
+            '/api/livez',
+            '/api/readyz',
+            '/api/build-info',
+            'dist-live'
+          ];
+          for (const marker of markers) {
+            if (!remote.includes(marker)) throw new Error(`remote deployment marker is missing: ${marker}`);
+          }
+          NODE
 
       - name: Create package checksum and summary
         shell: bash
