@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "task_id": "OB-NAPCAT-DECOUPLING-001",
+  "updated_at": "2026-08-02T04:21:00+08:00",
+  "branch": "refactor/remove-napcat-onebot-runtime-20260802",
+  "production_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
+  "constraints": {
+    "gfm_delete_003_forbidden": true,
+    "napcat_to_snowluma_extension_inference_forbidden": true,
+    "unknown_host_response_policy": "fail_closed_preserve_retry_state",
+    "merge_allowed": false,
+    "deployment_allowed": false
+  },
+  "remote_head_before_state_commit": "0b13deb8aa517178407b78d2e721a352236949c2",
+  "completed_on_branch": [
+    "OB-AUDIT-001 full-repository audit and machine-readable plan",
+    "GroupGuard-owned OneBot action/event contracts",
+    "SnowLumaProfile and GenericOneBotProfile boundaries",
+    "two-argument OneBot action migration for shared state"
+  ],
+  "validated_local_candidate_not_yet_synced": {
+    "pure_groupguard_runtime_lifecycle": true,
+    "direct_snowluma_runtime_context": true,
+    "generic_onebot_profile_selection": true,
+    "group_file_extensions_routed_through_host_profile": true,
+    "unknown_snowluma_list_delete_is_indeterminate": true,
+    "napcat_types_and_build_bindings_removed": true,
+    "npm_test": "passed",
+    "typecheck": "passed",
+    "host_profile_contracts": "passed",
+    "onebot_runtime_static_gate": "passed",
+    "group_file_fail_closed_regression": "passed",
+    "onebot_build": "pending_remote_ci_dependency_environment",
+    "snowluma_build": "pending_remote_ci_dependency_environment"
+  },
+  "next": [
+    "synchronize the validated candidate tree against the current remote branch head",
+    "run full GitHub CI with npm install and OneBot/SnowLuma builds",
+    "resolve every regression before updating active handoff documents",
+    "keep the pull request draft and do not merge or deploy"
+  ]
+}
