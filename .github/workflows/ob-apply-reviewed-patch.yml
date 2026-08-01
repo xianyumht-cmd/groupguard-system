@@ -59,8 +59,8 @@ jobs:
           test -f "$PATCH_DIR/GZIP_SHA256"
           cp "$PATCH_DIR/MESSAGE" /tmp/ob-patch-message
 
-          chunks=(000 001 002 003)
-          sizes=(8000 8000 8000 8080)
+          chunks=(000 001 002a 002b 003)
+          sizes=(8000 8000 4000 4000 8080)
           : > /tmp/ob-reviewed.patch.gz.b64
           for index in "${!chunks[@]}"; do
             file="$PATCH_DIR/${chunks[$index]}.b64"
