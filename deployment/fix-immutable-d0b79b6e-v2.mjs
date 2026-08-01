@@ -73,4 +73,4 @@ if (!readme.includes('Package fix   : v2')) {
 fs.writeFileSync(readmePath, readme, 'utf8');
 
 console.log(`corrected generated launcher and package metadata: ${outputDir}`);
-console.log('v2 validation trigger: 2026-08-01');
+console.log('v2 validation trigger: final');
