@@ -1,0 +1,133 @@
+name: Build immutable deployment d0b79b6e
+
+on:
+  push:
+    branches:
+      - deploy/immutable-d0b79b6e-20260801
+    paths:
+      - .github/workflows/build-immutable-d0b79b6e.yml
+      - deployment/build-immutable-d0b79b6e.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET_COMMIT: d0b79b6eab2514492196036bd79f14819b2d4102
+      PACKAGE_NAME: groupguard-production-safe-deployment-d0b79b6e
+
+    steps:
+      - name: Checkout packager branch
+        uses: actions/checkout@v4
+        with:
+          path: packager
+
+      - name: Checkout immutable candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: d0b79b6eab2514492196036bd79f14819b2d4102
+          path: candidate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: candidate/onebot-plugin-groupguard/package-lock.json
+
+      - name: Install, test and build exact candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd candidate/onebot-plugin-groupguard
+          npm ci
+          npm test
+          export GROUPGUARD_COMMIT_SHA="$TARGET_COMMIT"
+          export GROUPGUARD_BUILD_TIME_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          npm run build:snowluma
+          node --check dist/snowluma-service.mjs
+          node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("dist/build-info.json","utf8")); if(p.commit_sha!==process.env.TARGET_COMMIT) throw new Error(`build commit mismatch: ${p.commit_sha}`); if(p.artifact!=="snowluma-service.mjs") throw new Error(`artifact mismatch: ${p.artifact}`);'
+
+      - name: Assemble immutable candidate archive
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p work/payload work/output
+          cp -a candidate/onebot-plugin-groupguard/dist work/payload/dist
+          cat > work/payload/DEPLOYMENT-METADATA.json <<JSON
+          {
+            "repository": "xianyumht-cmd/groupguard-system",
+            "commit": "$TARGET_COMMIT",
+            "artifact": "onebot-plugin-groupguard/dist",
+            "entry": "dist/snowluma-service.mjs",
+            "built_at_utc": "$BUILD_TIME",
+            "deployment_mode": "immutable-dist-atomic-switch",
+            "remote_app": "/mnt/sda1/groupguard/app",
+            "container": "groupguard-snowluma"
+          }
+          JSON
+          (
+            cd work/payload
+            find dist DEPLOYMENT-METADATA.json -type f -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > MANIFEST.sha256
+          )
+          tar -C work/payload --sort=name --owner=0 --group=0 --numeric-owner -cf - \
+            dist MANIFEST.sha256 DEPLOYMENT-METADATA.json \
+            | gzip -n > work/candidate-dist-d0b79b6e.tar.gz
+          sha256sum work/candidate-dist-d0b79b6e.tar.gz | tee work/candidate-dist-d0b79b6e.tar.gz.sha256
+          node packager/deployment/build-immutable-d0b79b6e.mjs \
+            work/candidate-dist-d0b79b6e.tar.gz \
+            work/output \
+            "$TARGET_COMMIT"
+
+      - name: Validate generated Windows launcher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PS1_PATH="work/output/deploy-groupguard-d0b79b6e.ps1"
+          pwsh -NoProfile -Command '
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
+          ' "$PS1_PATH"
+          grep -Fq "$TARGET_COMMIT" "$PS1_PATH"
+          grep -Fq 'Any failure after the switch invokes automatic rollback.' "$PS1_PATH"
+          grep -Fq 'PREFLIGHT_OK=true' "$PS1_PATH"
+          grep -Fq 'ROLLBACK_OK=true' "$PS1_PATH"
+
+      - name: Create package checksum and summary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          (
+            cd work/output
+            sha256sum * > PACKAGE-FILES.sha256
+          )
+          {
+            echo "## Immutable GroupGuard deployment package"
+            echo
+            echo "- Target commit: \`$TARGET_COMMIT\`"
+            echo "- Candidate archive SHA-256: \`$(cut -d' ' -f1 work/candidate-dist-d0b79b6e.tar.gz.sha256)\`"
+            echo "- Production stays running during preflight and candidate validation."
+            echo "- The remote switch replaces only \`/mnt/sda1/groupguard/app/dist\`."
+            echo "- Readiness, liveness and build provenance are checked after restart."
+            echo "- Every post-switch failure automatically restores the previous dist."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload immutable deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-production-safe-deployment-d0b79b6e
+          path: work/output/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
