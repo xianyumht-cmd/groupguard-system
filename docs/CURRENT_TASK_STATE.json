@@ -1,56 +1,141 @@
 {
-  "schema_version": 1,
-  "updated_at": "2026-07-31T17:22:00+08:00",
-  "task_id": "GFM-DELETE-002",
-  "status": "production_deployed_and_verified",
+  "schema_version": 2,
+  "updated_at": "2026-08-02T03:04:00+08:00",
+  "task_id": "OB-NAPCAT-DECOUPLING-001",
+  "status": "approved_pending_audit_and_plan",
   "repository": "xianyumht-cmd/groupguard-system",
-  "pull_request": {
-    "number": 26,
-    "merged": true,
-    "method": "squash",
-    "merge_commit": "5753808b10a653e8a7f7805ff7b16c6cc3161204"
+  "user_decision": {
+    "remove_napcat_completely": true,
+    "napcat_runtime_required": false,
+    "current_host": "snowluma",
+    "target_transport": "onebot_websocket",
+    "future_host_support": "generic_third_party_onebot_websocket",
+    "execution_mode": "audit_then_plan_then_execute_on_isolated_branch"
   },
-  "deployment": {
-    "result": "success",
-    "deployment_id": "GFM-DELETE-002-20260731-171753-5753808b10a6",
-    "target_commit": "5753808b10a653e8a7f7805ff7b16c6cc3161204",
-    "candidate_sha256": "f6bc5d602afbaf4a051a753ec323972e765bf6fa4359fb6ad09fc7a54c4a27fd",
-    "active_entry_sha256": "f224225ec467ecf03133b66a1d2f1361d82936b6f1a942248bc735a04372293d",
-    "backup": "/mnt/sda1/groupguard/backups/GFM-DELETE-002-20260731-171753-5753808b10a6",
-    "container_status": "running",
-    "container_restart_count": 0,
-    "automatic_rollback_triggered": false,
-    "config_overwrite": false,
-    "data_overwrite": false,
-    "historical_files_mass_deleted": false,
-    "result_document": "docs/GFM_DELETE_002_PRODUCTION_DEPLOYMENT_RESULT_20260731.md"
+  "production_baseline": {
+    "commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
+    "container": "groupguard-snowluma",
+    "remote_app": "/mnt/sda1/groupguard/app",
+    "onebot_ws_url": "ws://127.0.0.1:3001",
+    "upstream_container": "snowluma",
+    "webui_port": 6108,
+    "backup": "/mnt/sda1/groupguard/backups/project-wide-bugfix-d0b79b6e-20260801T133634Z",
+    "deployment_report": "/mnt/sda1/groupguard/backups/project-wide-bugfix-d0b79b6e-20260801T133634Z/deployment-report.txt",
+    "deployment_result": "success",
+    "health_verified": true,
+    "provenance_verified": true,
+    "must_remain_running_until_refactor_verified": true
   },
-  "resource_snapshot": {
-    "host_mem_available_kb_before": 764148,
-    "host_mem_available_kb_after": 737356,
-    "host_swap_used_kb_before": 552872,
-    "host_swap_used_kb_after": 578116,
-    "container_rss_kb_before": 73056,
-    "container_rss_kb_after": 119936,
-    "container_swap_kb_before": 11052,
-    "container_swap_kb_after": 0,
-    "container_log_bytes": 8394869,
-    "interpretation": "单次快照不支持 GroupGuard 导致高 Swap；需要多时间点只读趋势采集才能判断是否存在持续增长。"
+  "architecture_facts": {
+    "external_connection": "OneBot WebSocket to SnowLuma",
+    "uses_snowluma_sdk": false,
+    "uses_snowluma_internal_plugin_api": false,
+    "internal_napcat_shim_present": true,
+    "napcat_bound_files": [
+      "onebot-plugin-groupguard/src/index.ts",
+      "onebot-plugin-groupguard/src/standalone/standalone_context.ts",
+      "onebot-plugin-groupguard/src/core/state-infra/plugin_state_context_adapter.ts",
+      "onebot-plugin-groupguard/package.json"
+    ],
+    "target_architecture": "GroupGuard core -> GroupGuardRuntime -> OneBot11 protocol -> host profile -> WebSocket transport",
+    "required_profiles": [
+      "SnowLumaProfile",
+      "GenericOneBotProfile"
+    ]
   },
-  "completed": [
-    "完成 GFM 删除确认与 pending 保留修复",
-    "PR #26 合并 main",
-    "完整 CI 与 SnowLuma 构建通过",
-    "生产 dist 原子切换成功",
-    "目标提交、容器运行状态和构建信息验证通过",
-    "生产备份已保存",
-    "配置和数据未覆盖",
-    "记录生产部署结果"
+  "group_file_incident": {
+    "status": "confirmed_false_positive_deletion_verification",
+    "user_visible_evidence": "Target group file library contains undeleted files while GroupGuard logged absent>absent>absent and deletion confirmed.",
+    "current_root_cause": "Not yet proven at SnowLuma protocol level; NapCat-specific parameter assumptions are invalid.",
+    "required_evidence": [
+      "raw file-list response before deletion",
+      "actual delete_group_file request params",
+      "raw SnowLuma action response",
+      "raw file-list response after deletion",
+      "pagination and folder metadata",
+      "actual file_id busid folder_id formats"
+    ],
+    "verification_policy": "fail_closed_on_unknown_response_shape",
+    "prohibited_package": {
+      "id": "GFM-DELETE-003",
+      "filename": "groupguard-gfm-delete-003-safe-deployment.zip",
+      "reason": "Built from an unverified NapCat-specific interface assumption; must not be run."
+    }
+  },
+  "phases": [
+    {
+      "id": "OB-AUDIT-001",
+      "status": "next",
+      "goal": "Full repository read-only NapCat dependency and OneBot extension audit with machine-readable plan."
+    },
+    {
+      "id": "OB-RUNTIME-001",
+      "status": "pending",
+      "goal": "Create GroupGuard-owned runtime contracts."
+    },
+    {
+      "id": "OB-CORE-001",
+      "status": "pending",
+      "goal": "Extract core lifecycle from NapCat plugin entry."
+    },
+    {
+      "id": "OB-PROTOCOL-001",
+      "status": "pending",
+      "goal": "Normalize OneBot actions, events and responses."
+    },
+    {
+      "id": "OB-HOST-PROFILE-001",
+      "status": "pending",
+      "goal": "Implement SnowLuma and Generic OneBot host capability profiles."
+    },
+    {
+      "id": "OB-SNOWLUMA-001",
+      "status": "pending",
+      "goal": "Connect SnowLuma directly to the new runtime without NapCat shims."
+    },
+    {
+      "id": "OB-NAPCAT-REMOVE-001",
+      "status": "pending",
+      "goal": "Remove NapCat types, lifecycle, configuration shims, build targets and metadata."
+    },
+    {
+      "id": "OB-REGRESSION-001",
+      "status": "pending",
+      "goal": "Complete functional, protocol, host-profile and group-file regression testing."
+    },
+    {
+      "id": "OB-PRODUCTION-001",
+      "status": "pending",
+      "goal": "Merge and deploy only after all gates pass, using pre-switch readiness and rollback protection."
+    }
   ],
-  "remaining": [
-    "观察下一次自然搬运是否成功删除旧文件并清除 pending",
-    "单独处理当前 5 个存量历史文件",
-    "按需执行 Swap、RSS、日志和磁盘多时间点只读趋势诊断"
+  "required_audit_deliverables": [
+    "docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.md",
+    "docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.json",
+    "docs/OB_NAPCAT_REFACTOR_PLAN_001.md"
   ],
-  "next_action": "优先等待下一次自然群文件搬运进行业务验收；不要立即手动批量删除现有历史文件。"
+  "completion_gates": [
+    "No napcat-types dependency",
+    "No NapCatPluginContext usage",
+    "No NapCatConfig or pluginManager compatibility shim",
+    "No adapter/config four-argument action calls",
+    "SnowLuma directly creates GroupGuardRuntimeContext",
+    "Pure OneBot WebSocket runtime passes",
+    "SnowLuma profile contract passes",
+    "Generic OneBot profile contract passes",
+    "All existing GroupGuard functions pass regression",
+    "Group-file false deletion success regression passes",
+    "Safe production deployment and rollback verification passes"
+  ],
+  "constraints": [
+    "Do not modify or restart production during audit and development.",
+    "Do not merge main before complete regression.",
+    "Do not deploy incomplete candidates.",
+    "Do not infer SnowLuma extension behavior from NapCat documentation or parameters.",
+    "Unknown host responses must fail closed and preserve retry state.",
+    "Do not delete user configuration, SQLite data, mirror state or backups."
+  ],
+  "handoff_document": "docs/ONEBOT_NAPCAT_DECOUPLING_REFACTOR_HANDOFF_20260802.md",
+  "recommended_branch": "refactor/remove-napcat-onebot-runtime-20260802",
+  "next_action": "Read the handoff documents, verify repository and production baselines, create the isolated refactor branch, and complete OB-AUDIT-001 before changing runtime code."
 }
