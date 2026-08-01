@@ -8,13 +8,7 @@ on:
       - .github/workflows/build-immutable-d0b79b6e.yml
       - deployment/build-immutable-d0b79b6e.mjs
       - deployment/fix-immutable-d0b79b6e-v2.mjs
-  pull_request:
-    branches:
-      - main
-    paths:
-      - .github/workflows/build-immutable-d0b79b6e.yml
-      - deployment/build-immutable-d0b79b6e.mjs
-      - deployment/fix-immutable-d0b79b6e-v2.mjs
+      - deployment/fix-immutable-d0b79b6e-v3.mjs
 
 permissions:
   contents: read
@@ -25,7 +19,7 @@ jobs:
     timeout-minutes: 30
     env:
       TARGET_COMMIT: d0b79b6eab2514492196036bd79f14819b2d4102
-      PACKAGE_NAME: groupguard-production-safe-deployment-d0b79b6e-v2
+      PACKAGE_NAME: groupguard-production-safe-deployment-d0b79b6e-v3
 
     steps:
       - name: Checkout packager branch
@@ -59,7 +53,7 @@ jobs:
           node --check dist/snowluma-service.mjs
           node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("dist/build-info.json","utf8")); if(p.commit_sha!==process.env.TARGET_COMMIT) throw new Error(`build commit mismatch: ${p.commit_sha}`); if(p.artifact!=="snowluma-service.mjs") throw new Error(`artifact mismatch: ${p.artifact}`);'
 
-      - name: Assemble immutable candidate archive
+      - name: Assemble immutable candidate archive and v3 launcher
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -94,8 +88,12 @@ jobs:
             "$TARGET_COMMIT"
           node packager/deployment/fix-immutable-d0b79b6e-v2.mjs \
             work/output/deploy-groupguard-d0b79b6e.ps1
+          node packager/deployment/fix-immutable-d0b79b6e-v3.mjs \
+            work/output/deploy-groupguard-d0b79b6e.ps1 \
+            work/output/README.txt \
+            work/output/PACKAGE-MANIFEST.txt
 
-      - name: Validate generated Windows launcher
+      - name: Validate generated Windows and remote launchers
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -111,7 +109,8 @@ jobs:
             }
           '
           grep -Fq "$TARGET_COMMIT" "$PS1_PATH"
-          grep -Fq 'Any failure after the switch invokes automatic rollback.' "$PS1_PATH"
+          grep -Fq 'GroupGuard immutable production deployment package v3' "$PS1_PATH"
+          grep -Fq 'WebUI token compatibility is resolved automatically before the switch.' "$PS1_PATH"
           node <<'NODE'
           const fs = require('fs');
           const bytes = fs.readFileSync(process.env.PS1_PATH);
@@ -131,7 +130,16 @@ jobs:
           const match = source.match(/\$RemoteScriptBase64 = '([^']+)'/);
           if (!match) throw new Error('embedded remote script payload is missing');
           const remote = Buffer.from(match[1], 'base64').toString('utf8');
+          fs.writeFileSync('/tmp/groupguard-remote-v3.sh', remote, 'utf8');
           const markers = [
+            'TOKEN_COMPATIBILITY_OK=true',
+            'TOKEN_MIGRATION_OK=true',
+            'TOKEN_SOURCE=',
+            'validated_legacy_token',
+            'persistent_token_file',
+            'container_environment',
+            'restore_token_file',
+            'docker restart -t 20 "$CONTAINER"',
             'PREFLIGHT_OK=true',
             'CANDIDATE_VALIDATION_OK=true',
             'BACKUP_CAPTURE_OK=true',
@@ -149,8 +157,11 @@ jobs:
             if (!remote.includes(marker)) throw new Error(`remote deployment marker is missing: ${marker}`);
           }
           NODE
-          grep -Fq 'Package fix   : v2' work/output/README.txt
-          grep -Fq 'package_revision=2' work/output/PACKAGE-MANIFEST.txt
+          bash -n /tmp/groupguard-remote-v3.sh
+          grep -Fq 'Package fix   : v3' work/output/README.txt
+          grep -Fq 'package_revision=3' work/output/PACKAGE-MANIFEST.txt
+          grep -Fq 'token_compatibility=auto-env-legacy-file' work/output/PACKAGE-MANIFEST.txt
+          grep -Fq 'automatic_token_rollback=true' work/output/PACKAGE-MANIFEST.txt
 
       - name: Create package checksum and summary
         shell: bash
@@ -161,21 +172,22 @@ jobs:
             sha256sum * > PACKAGE-FILES.sha256
           )
           {
-            echo "## Immutable GroupGuard deployment package v2"
+            echo "## Immutable GroupGuard deployment package v3"
             echo
             echo "- Target commit: \`$TARGET_COMMIT\`"
             echo "- Candidate archive SHA-256: \`$(cut -d' ' -f1 work/candidate-dist-d0b79b6e.tar.gz.sha256)\`"
-            echo "- Windows local candidate paths are validated and contain no illegal control bytes."
+            echo "- Windows PowerShell launcher parsing passed."
+            echo "- Embedded remote Bash syntax validation passed."
+            echo "- Production WebUI token source is resolved before the switch."
+            echo "- Legacy token migration is checksummed and included in rollback."
             echo "- Production stays running during preflight and candidate validation."
-            echo "- The remote switch replaces only \`/mnt/sda1/groupguard/app/dist\`."
-            echo "- Readiness, liveness and build provenance are checked after restart."
-            echo "- Every post-switch failure automatically restores the previous dist."
+            echo "- Every post-switch failure restores the previous dist and token state."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload immutable deployment package
         uses: actions/upload-artifact@v4
         with:
-          name: groupguard-production-safe-deployment-d0b79b6e-v2
+          name: groupguard-production-safe-deployment-d0b79b6e-v3
           path: work/output/*
           if-no-files-found: error
           retention-days: 30
