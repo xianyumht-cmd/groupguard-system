@@ -7,6 +7,12 @@ on:
     paths:
       - .github/workflows/build-immutable-d0b79b6e.yml
       - deployment/build-immutable-d0b79b6e.mjs
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-immutable-d0b79b6e.yml
+      - deployment/build-immutable-d0b79b6e.mjs
 
 permissions:
   contents: read
