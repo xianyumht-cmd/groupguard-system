@@ -95,16 +95,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          PS1_PATH="work/output/deploy-groupguard-d0b79b6e.ps1"
+          PS1_PATH="$(realpath work/output/deploy-groupguard-d0b79b6e.ps1)"
+          export PS1_PATH
           pwsh -NoProfile -Command '
             $tokens = $null
             $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$tokens, [ref]$errors) | Out-Null
+            [System.Management.Automation.Language.Parser]::ParseFile($env:PS1_PATH, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
               $errors | ForEach-Object { Write-Error $_.Message }
               exit 1
             }
-          ' "$PS1_PATH"
+          '
           grep -Fq "$TARGET_COMMIT" "$PS1_PATH"
           grep -Fq 'Any failure after the switch invokes automatic rollback.' "$PS1_PATH"
           grep -Fq 'PREFLIGHT_OK=true' "$PS1_PATH"
