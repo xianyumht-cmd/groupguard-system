@@ -57,10 +57,24 @@ jobs:
           test -f "$PATCH_DIR/MESSAGE"
           test -f "$PATCH_DIR/PATCH_SHA256"
           cp "$PATCH_DIR/MESSAGE" /tmp/ob-patch-message
-          find "$PATCH_DIR" -maxdepth 1 -type f -name '*.b64' -print0 \
-            | sort -z \
-            | xargs -0 cat \
-            | base64 --decode > /tmp/ob-reviewed.patch
+
+          chunks=(000 001 002 003 004)
+          sizes=(8000 8000 8000 8000 3352)
+          : > /tmp/ob-reviewed.b64
+          for index in "${!chunks[@]}"; do
+            file="$PATCH_DIR/${chunks[$index]}.b64"
+            expected="${sizes[$index]}"
+            test -f "$file"
+            actual="$(wc -c < "$file")"
+            if [ "$actual" -lt "$expected" ]; then
+              echo "Patch chunk ${chunks[$index]} is truncated: expected at least $expected bytes, got $actual" >&2
+              exit 1
+            fi
+            head -c "$expected" "$file" >> /tmp/ob-reviewed.b64
+          done
+
+          test "$(wc -c < /tmp/ob-reviewed.b64)" -eq 35352
+          base64 --decode /tmp/ob-reviewed.b64 > /tmp/ob-reviewed.patch
           test -s /tmp/ob-reviewed.patch
           printf '%s  %s\n' "$(cat "$PATCH_DIR/PATCH_SHA256")" /tmp/ob-reviewed.patch | sha256sum -c -
           git apply --check /tmp/ob-reviewed.patch
