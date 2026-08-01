@@ -1,0 +1,1 @@
+refactor(runtime): migrate shared state to two-argument OneBot actions
