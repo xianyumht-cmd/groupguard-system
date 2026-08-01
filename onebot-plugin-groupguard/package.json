@@ -36,7 +36,7 @@
     "arch:hints:system-write": "node --experimental-strip-types scripts/arch-hints-system-write.ts",
     "arch:help": "node --experimental-strip-types scripts/arch-help-system-write.ts",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run arch:check:system-write:strict && npm run arch:check:risk-policy && npm run verify:action-queue && npm run verify:core-stability && npm run verify:query-contracts && npm run verify:groupguard-delivery-contract && npm run verify:intranet-shard-command && npm run verify:all-query-fast-migration && npm run verify:intranet-battle-command && npm run verify:hidden-retired && npm run verify:video-retired && npm run verify:intranet-risk-command && npm run verify:intranet-dynamic-command && npm run verify:four-query-three-mode && npm run verify:webui-ios-glass && npm run verify:all-query-client-boundary && npm run verify:lanzou-update && npm run verify:admin-health && npm run verify:contract-runner && npm run verify:release-safety && npm run verify:content-risk && npm run verify:group-file-mirror && npm run verify:project-wide-bugfixes",
+    "test": "npm run typecheck && npm run verify:host-profiles && npm run arch:check:system-write:strict && npm run arch:check:risk-policy && npm run verify:action-queue && npm run verify:core-stability && npm run verify:query-contracts && npm run verify:groupguard-delivery-contract && npm run verify:intranet-shard-command && npm run verify:all-query-fast-migration && npm run verify:intranet-battle-command && npm run verify:hidden-retired && npm run verify:video-retired && npm run verify:intranet-risk-command && npm run verify:intranet-dynamic-command && npm run verify:four-query-three-mode && npm run verify:webui-ios-glass && npm run verify:all-query-client-boundary && npm run verify:lanzou-update && npm run verify:admin-health && npm run verify:contract-runner && npm run verify:release-safety && npm run verify:content-risk && npm run verify:group-file-mirror && npm run verify:project-wide-bugfixes",
     "build": "npm run build:release",
     "build:napcat": "npm run build:release",
     "build:release": "npm run typecheck && npm run arch:check:system-write:strict && npm run arch:check:risk-policy && npm run verify:intranet-shard-command && npm run verify:all-query-fast-migration && npm run verify:intranet-battle-command && npm run verify:hidden-retired && npm run verify:video-retired && npm run verify:intranet-risk-command && npm run verify:intranet-dynamic-command && npm run verify:four-query-three-mode && npm run verify:webui-ios-glass && npm run verify:all-query-client-boundary && npm run verify:group-file-mirror && vite build --mode release",
@@ -71,6 +71,7 @@
     "report:scene": "node scene_coverage_report.mjs",
     "report:commands": "node scripts/command_coverage_report.mjs",
     "verify:video-retired": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-video-retired.ts",
-    "verify:project-wide-bugfixes": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-project-wide-bugfixes.ts"
+    "verify:project-wide-bugfixes": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-project-wide-bugfixes.ts",
+    "verify:host-profiles": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-host-profiles.ts"
   }
 }
