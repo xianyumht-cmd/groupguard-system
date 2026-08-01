@@ -7,6 +7,11 @@ on:
     paths:
       - 'automation/ob-patches/**'
       - '.github/workflows/ob-apply-reviewed-patch.yml'
+  pull_request:
+    branches:
+      - main
+    types:
+      - reopened
 
 permissions:
   contents: write
