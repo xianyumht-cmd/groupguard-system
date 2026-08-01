@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { HostProfile } from '../hosts/host_profile';
 
 export const QUN_GUANJIA_UIN = 2854196310;
 const QUN_DOMAIN = 'qun.qq.com';
@@ -253,6 +254,7 @@ function getMessageSenderId(message: any): string {
 
 class QunGuanjiaService {
   private runtime: RuntimeBinding | null = null;
+  private hostProfile: HostProfile | null = null;
   private session: GuanjiaSession | null = null;
   private store: TokenStore = { version: 1, groups: {} };
   private loadedStorePath = '';
@@ -261,6 +263,10 @@ class QunGuanjiaService {
 
   bindRuntime(runtime: RuntimeBinding): void {
     this.runtime = runtime;
+  }
+
+  bindHostProfile(hostProfile: HostProfile | null): void {
+    this.hostProfile = hostProfile;
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string): void {
@@ -487,13 +493,13 @@ class QunGuanjiaService {
   }
 
   private async getHistory(groupId: string): Promise<any[]> {
-    const result = await this.callAction('get_group_msg_history', {
-      group_id: Number(groupId),
-      message_id: 0,
-      count: 50
-    });
-    const data = unwrapActionData(result);
-    return Array.isArray(data?.messages) ? data.messages : Array.isArray(result?.messages) ? result.messages : [];
+    const profile = this.hostProfile;
+    if (!profile) throw new Error('host_profile_unavailable_for_group_message_history');
+    const result = await profile.getGroupMessageHistory({ groupId, anchorMessageId: '0', count: 50 });
+    if (result.state !== 'success' || !Array.isArray(result.data?.messages)) {
+      throw new Error(`group_message_history_${result.state}:${result.reason || 'unavailable'}`);
+    }
+    return result.data.messages;
   }
 
   private findTokenInHistory(messages: any[]): string {

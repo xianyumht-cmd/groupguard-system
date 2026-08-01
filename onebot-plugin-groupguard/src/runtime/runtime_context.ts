@@ -26,10 +26,16 @@ export interface RuntimeRouter {
   post?(route: string, handler: (...args: any[]) => unknown): void;
 }
 
-export interface GroupGuardRuntimeContext {
+/**
+ * The only runtime object that GroupGuard business code may receive.
+ * Host-specific transport/config objects must be normalized before this boundary.
+ */
+export interface GroupGuardRuntimeContext extends RuntimePaths {
   logger: RuntimeLogger;
   actions: OneBotActionClient;
   hostProfile: HostProfile;
+  router: RuntimeRouter;
   paths: RuntimePaths;
-  router?: RuntimeRouter;
 }
+
+export type GroupGuardCommandContext = Pick<GroupGuardRuntimeContext, 'configPath'>;

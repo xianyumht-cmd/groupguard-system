@@ -1,5 +1,5 @@
-﻿import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import type { GroupGuardSettings, QAEntry } from '../types';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+﻿import type { GroupGuardSettings, QAEntry } from '../types';
 import { isQueryOnlyBotRole, shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { cacheStateService } from '../core/state-services/cache_state_service';
@@ -288,7 +288,7 @@ export async function executeSendWelcomeMessage(groupId: string, userId: string)
   }
 }
 
-export async function executeHandleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[], ctx?: NapCatPluginContext): Promise<boolean> {
+export async function executeHandleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[], ctx?: GroupGuardRuntimeContext): Promise<boolean> {
   return handleContentRiskFilter({ groupId, userId, messageId, raw, messageSegments, ctx });
 }
 
@@ -317,7 +317,7 @@ export async function executeHandleBlacklist(groupId: string, userId: string, me
   return false;
 }
 
-export async function executeHandleFilterKeywords(groupId: string, userId: string, messageId: string, raw: string, ctx: NapCatPluginContext): Promise<boolean> {
+export async function executeHandleFilterKeywords(groupId: string, userId: string, messageId: string, raw: string, ctx: GroupGuardRuntimeContext): Promise<boolean> {
   const settings = configStateService.resolveGroupSettings(groupId);
   const groupKw = settings.filterKeywords || [];
   const globalKw = configStateService.getConfig().filterKeywords || [];

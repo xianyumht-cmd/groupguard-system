@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
 import type { PluginConfig, GroupGuardSettings } from '../types';
 import { configStateService } from '../core/state-services/config_state_service';
 import { contextStateService } from '../core/state-services/context_state_service';
@@ -100,7 +100,7 @@ function extractQueueTaskIdsFromAuditPayload(payloadText: string): string[] {
 }
 
 export function registerRuntimeRoutes(
-  ctx: NapCatPluginContext,
+  ctx: GroupGuardRuntimeContext,
   collectPersonaAuditForConfig: (config: PluginConfig) => any
 ): void {
   const router = (ctx as any).router;

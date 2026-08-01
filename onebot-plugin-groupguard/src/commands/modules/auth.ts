@@ -1,5 +1,5 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../../protocol/onebot11/types';
 import type { AuthCommand } from '../../app/use-cases/auth/types';
 import { executeAuthCommand } from '../../services/auth_service';
 
@@ -68,7 +68,7 @@ function toAuthCommand(text: string, userId: string, groupId: string): AuthComma
   return null;
 }
 
-export async function handleAuthCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
+export async function handleAuthCommand(event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext): Promise<boolean> {
   const raw = event.raw_message || '';
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
   const userId = String(event.user_id);

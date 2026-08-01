@@ -1,7 +1,7 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 
+import type { GroupGuardRuntimeContext } from '../../runtime/runtime_context';
 export interface SnowLumaAdminServerOptions {
-  ctx: NapCatPluginContext;
+  ctx: GroupGuardRuntimeContext;
   workDir: string;
   dataDir: string;
   configPath: string;

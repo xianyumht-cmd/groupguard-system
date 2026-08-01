@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { HostOperationResult, HostProfile } from '../hosts/host_profile';
 
 export interface GroupFileMirrorRule {
   id: string;
@@ -87,7 +88,7 @@ interface MirrorStateStore {
 }
 
 interface RuntimeBinding {
-  callAction: (action: string, params: unknown) => Promise<any>;
+  hostProfile: HostProfile;
   workDir: string;
   dataDir: string;
   configPath: string;
@@ -547,19 +548,38 @@ export class GroupFileMirrorService {
     });
   }
 
-  private async callWithRetry(rule: GroupFileMirrorRule, action: string, params: unknown): Promise<any> {
-    if (!this.runtime) throw new Error('group_file_mirror_runtime_not_bound');
+  private async runWithRetry<T>(
+    rule: GroupFileMirrorRule,
+    operation: string,
+    execute: () => Promise<T>,
+  ): Promise<T> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= rule.retryCount; attempt += 1) {
       try {
-        return await this.runtime.callAction(action, params);
+        return await execute();
       } catch (error) {
         lastError = error;
         if (attempt >= rule.retryCount) break;
         await sleep(rule.retryDelayMs * (attempt + 1));
       }
     }
-    throw lastError instanceof Error ? lastError : new Error(String(lastError || `action_failed:${action}`));
+    throw lastError instanceof Error ? lastError : new Error(String(lastError || `operation_failed:${operation}`));
+  }
+
+  private requireRuntime(): RuntimeBinding {
+    if (!this.runtime) throw new Error('group_file_mirror_runtime_not_bound');
+    return this.runtime;
+  }
+
+  private requireHostSuccess<T>(operation: string, result: HostOperationResult<T>): T {
+    if (result.state === 'success' && result.data !== undefined) return result.data;
+    const reason = result.reason || `host_operation_${result.state}`;
+    throw new Error(`${operation}:${reason}`);
+  }
+
+  private callCoreActionWithRetry(rule: GroupFileMirrorRule, action: string, params: unknown): Promise<unknown> {
+    const runtime = this.requireRuntime();
+    return this.runWithRetry(rule, action, () => runtime.hostProfile.actions.call(action, params));
   }
 
   private async mirrorUpload(rule: GroupFileMirrorRule, uploaderId: string, file: GroupFileDescriptor): Promise<void> {
@@ -571,24 +591,28 @@ export class GroupFileMirrorService {
 
     await this.cleanupPending(rule, state);
 
-    const sourceUrlResult = await this.callWithRetry(rule, 'get_group_file_url', {
-      group_id: groupParam(rule.sourceGroupId),
-      file_id: file.id,
-      busid: file.busid,
-    });
-    const sourceUrlData = unwrapActionData(sourceUrlResult);
-    const sourceUrl = normalizeId(sourceUrlData?.url ?? sourceUrlResult?.url);
+    const runtime = this.requireRuntime();
+    const sourceUrlData = this.requireHostSuccess(
+      'group_file_url',
+      await this.runWithRetry(rule, 'group_file_url', () => runtime.hostProfile.getGroupFileUrl({
+        groupId: rule.sourceGroupId,
+        fileId: file.id,
+        busid: file.busid,
+      })),
+    );
+    const sourceUrl = normalizeId(sourceUrlData.url);
     if (!/^https?:\/\//i.test(sourceUrl)) throw new Error(`未取得可用的群文件下载地址: ${file.name}`);
 
-    const uploadResult = await this.callWithRetry(rule, 'upload_group_file', {
-      group_id: groupParam(rule.targetGroupId),
-      file: sourceUrl,
-      name: file.name,
-      folder: rule.targetFolderId,
-      upload_file: true,
-    });
-    const uploadData = unwrapActionData(uploadResult);
-    const targetFileId = normalizeId(uploadData?.file_id ?? uploadData?.fileId ?? uploadResult?.file_id ?? uploadResult?.fileId);
+    const uploadData = this.requireHostSuccess(
+      'group_file_upload',
+      await this.runWithRetry(rule, 'group_file_upload', () => runtime.hostProfile.uploadGroupFile({
+        groupId: rule.targetGroupId,
+        source: sourceUrl,
+        fileName: file.name,
+        folderId: rule.targetFolderId,
+      })),
+    );
+    const targetFileId = normalizeId(uploadData.fileId);
     if (!targetFileId) throw new Error(`目标群上传成功但未返回 file_id: ${file.name}`);
 
     const sourceMessage = this.findRecentMessage(rule.sourceGroupId, file.id, file.name, file.size);
@@ -677,16 +701,18 @@ export class GroupFileMirrorService {
     item: CleanupRecord,
   ): Promise<TargetFilePresence> {
     const folderId = normalizeId(item.targetFolderId) || rule.targetFolderId || '/';
-    const action = folderId === '/' ? 'get_group_root_files' : 'get_group_files_by_folder';
-    const params: Record<string, unknown> = { group_id: groupParam(item.targetGroupId) };
-    if (folderId !== '/') {
-      params.folder_id = folderId;
-      params.folder = folderId;
-    }
-
     try {
-      const result = await this.callWithRetry(rule, action, params);
-      return listedGroupFileExists(result, item.targetFileId) ? 'present' : 'absent';
+      const runtime = this.requireRuntime();
+      const result = await this.runWithRetry(rule, 'group_file_list', () => runtime.hostProfile.listGroupFiles({
+        groupId: item.targetGroupId,
+        folderId,
+      }));
+      if (result.state !== 'success' || !result.data) {
+        this.log('debug', `规则 ${rule.id} 目标群文件列表无法确认 file=${item.targetFileId} state=${result.state} reason=${result.reason || 'none'}`);
+        return 'unknown';
+      }
+      if (result.data.files.some(file => file.fileId === item.targetFileId)) return 'present';
+      return result.data.complete === true ? 'absent' : 'unknown';
     } catch (error) {
       this.log('debug', `规则 ${rule.id} 核验目标群文件状态失败 file=${item.targetFileId}: ${String(error)}`);
       return 'unknown';
@@ -713,7 +739,7 @@ export class GroupFileMirrorService {
   private async cleanupTarget(rule: GroupFileMirrorRule, item: CleanupRecord): Promise<void> {
     if (rule.recallPreviousTargetMessage && item.targetMessageId && !item.messageRecalled) {
       try {
-        await this.callWithRetry(rule, 'delete_msg', { message_id: item.targetMessageId });
+        await this.callCoreActionWithRetry(rule, 'delete_msg', { message_id: item.targetMessageId });
         item.messageRecalled = true;
       } catch (error) {
         if (isAlreadyGoneError(error)) item.messageRecalled = true;
@@ -722,36 +748,28 @@ export class GroupFileMirrorService {
     }
 
     if (rule.deletePreviousTargetFile && item.targetFileId && !item.fileDeleted) {
-      let deleteError: unknown = null;
+      const runtime = this.requireRuntime();
+      let deleteResult: HostOperationResult<{ confirmed: boolean }>;
       try {
-        await this.callWithRetry(rule, 'delete_group_file', {
-          group_id: groupParam(item.targetGroupId),
-          file_id: item.targetFileId,
-        });
+        deleteResult = await this.runWithRetry(rule, 'group_file_delete', () => runtime.hostProfile.deleteGroupFile({
+          groupId: item.targetGroupId,
+          fileId: item.targetFileId,
+          folderId: item.targetFolderId || rule.targetFolderId || '/',
+        }));
       } catch (error) {
-        deleteError = error;
+        deleteResult = { state: 'failed', reason: String((error as Error)?.message || error) };
       }
 
       const verification = await this.verifyTargetFileDeletion(rule, item);
       const observationText = verification.observations.join('>');
       if (verification.presence === 'absent') {
         item.fileDeleted = true;
-        if (deleteError) {
-          const outcome = isAlreadyGoneError(deleteError) ? 'already_gone' : 'error_but_absent';
-          this.log('info', `规则 ${rule.id} 删除旧群文件已确认消失 file=${item.targetFileId} outcome=${outcome} observations=${observationText}`);
-        } else {
-          this.log('info', `规则 ${rule.id} 删除旧群文件已确认消失 file=${item.targetFileId} outcome=success observations=${observationText}`);
-        }
+        this.log('info', `规则 ${rule.id} 删除旧群文件已确认消失 file=${item.targetFileId} actionState=${deleteResult.state} observations=${observationText}`);
         return;
       }
 
-      const outcome = deleteError
-        ? (isAlreadyGoneError(deleteError) ? 'already_gone_error' : 'action_error')
-        : 'action_success';
-      const errorText = deleteError
-        ? String((deleteError as Error)?.message || deleteError).replace(/\s+/g, ' ').slice(0, 300)
-        : 'none';
-      this.log('warn', `规则 ${rule.id} 删除旧群文件后未确认消失 file=${item.targetFileId} outcome=${outcome} presence=${verification.presence} observations=${observationText} error=${errorText}; 保留待清理`);
+      const reason = String(deleteResult.reason || 'none').replace(/\s+/g, ' ').slice(0, 300);
+      this.log('warn', `规则 ${rule.id} 删除旧群文件后未确认消失 file=${item.targetFileId} actionState=${deleteResult.state} presence=${verification.presence} observations=${observationText} reason=${reason}; 保留待清理`);
     }
   }
 
@@ -775,17 +793,17 @@ export class GroupFileMirrorService {
     for (let attempt = 0; attempt < rule.messageLookupAttempts; attempt += 1) {
       await sleep(rule.messageLookupDelayMs);
       try {
-        const result = await this.callWithRetry(rule, 'get_group_msg_history', {
-          group_id: groupParam(rule.targetGroupId),
-          message_id: 0,
+        const runtime = this.requireRuntime();
+        const result = await this.runWithRetry(rule, 'group_message_history', () => runtime.hostProfile.getGroupMessageHistory({
+          groupId: rule.targetGroupId,
+          anchorMessageId: '0',
           count: 50,
-        });
-        const data = unwrapActionData(result);
-        const messages = Array.isArray(data?.messages)
-          ? data.messages
-          : Array.isArray(result?.messages)
-            ? result.messages
-            : [];
+        }));
+        if (result.state !== 'success' || !result.data) {
+          this.log('debug', `规则 ${rule.id} 查询目标文件消息无法确认 state=${result.state} reason=${result.reason || 'none'}`);
+          continue;
+        }
+        const messages = result.data.messages;
         for (let index = messages.length - 1; index >= 0; index -= 1) {
           const message = messages[index];
           const files = extractFileSegmentsFromMessage(message);

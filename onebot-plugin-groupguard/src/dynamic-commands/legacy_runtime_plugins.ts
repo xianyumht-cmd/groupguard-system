@@ -1,5 +1,5 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import {
   AUTH_EXACT,
   AUTH_PREFIXES,
@@ -36,7 +36,7 @@ import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
 import { captureCommandResponseDeliveries } from './response_capture_runtime';
 
-type LegacyHandler = (event: OB11Message, ctx: NapCatPluginContext) => Promise<boolean>;
+type LegacyHandler = (event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext) => Promise<boolean>;
 
 interface LegacyModuleDescriptor {
   domain: 'auth' | 'moderation' | 'interaction' | 'risk' | 'qa' | 'system';

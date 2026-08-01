@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
 import {
   executeCacheMessage,
   executeHandleAntiRecall,
@@ -43,7 +43,7 @@ export async function sendWelcomeMessage(groupId: string, userId: string): Promi
   await executeSendWelcomeMessage(groupId, userId);
 }
 
-export async function handleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[], ctx?: NapCatPluginContext): Promise<boolean> {
+export async function handleMsgTypeFilter(groupId: string, userId: string, messageId: string, raw: string, messageSegments: any[], ctx?: GroupGuardRuntimeContext): Promise<boolean> {
   return executeHandleMsgTypeFilter(groupId, userId, messageId, raw, messageSegments, ctx);
 }
 
@@ -51,7 +51,7 @@ export async function handleBlacklist(groupId: string, userId: string, messageId
   return executeHandleBlacklist(groupId, userId, messageId);
 }
 
-export async function handleFilterKeywords(groupId: string, userId: string, messageId: string, raw: string, ctx: NapCatPluginContext): Promise<boolean> {
+export async function handleFilterKeywords(groupId: string, userId: string, messageId: string, raw: string, ctx: GroupGuardRuntimeContext): Promise<boolean> {
   return executeHandleFilterKeywords(groupId, userId, messageId, raw, ctx);
 }
 

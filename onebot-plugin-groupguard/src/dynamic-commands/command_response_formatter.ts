@@ -1,8 +1,8 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
+import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import { send } from './response_capture_runtime';
 import type { UnifiedCommandResponse } from './types';
 
-function inferResponseScene(event: OB11Message): string {
+function inferResponseScene(event: OneBotMessageEvent): string {
   const text = String(event.raw_message || '').replace(/\[CQ:[^\]]+\]/g, '').trim();
   if (!text) return 'raw_text';
   const queryPrefixes = [
@@ -87,7 +87,7 @@ export function formatUnifiedCommandResponse(response: UnifiedCommandResponse): 
   }
 }
 
-export async function sendUnifiedCommandResponse(event: OB11Message, response: UnifiedCommandResponse): Promise<void> {
+export async function sendUnifiedCommandResponse(event: OneBotMessageEvent, response: UnifiedCommandResponse): Promise<void> {
   const inferredScene = inferResponseScene(event);
   if (response.type === 'structured') {
     const deliveries = getStructuredDeliveries(response.payload);

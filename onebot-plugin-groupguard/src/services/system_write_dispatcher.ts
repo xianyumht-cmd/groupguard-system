@@ -1,4 +1,3 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { broadcastLicensedGroups } from '../app/use-cases/system/write/messaging/broadcast_licensed_groups';
 import { createScheduledTaskUseCase } from '../app/use-cases/system/write/config/create_scheduled_task';
 import { deleteScheduledTaskUseCase } from '../app/use-cases/system/write/config/delete_scheduled_task';
@@ -8,7 +7,7 @@ import { updateWelcomeMessageUseCase } from '../app/use-cases/system/write/confi
 import { buildGroupConfigCleanupWarningUseCase } from '../app/use-cases/system/write/maintenance/build_group_config_cleanup_warning';
 import { clearGroupConfigUseCase } from '../app/use-cases/system/write/maintenance/clear_group_config';
 import { resetSystemQueue } from '../app/use-cases/system/write/queue/reset_system_queue';
-import type { SystemWriteUseCaseContext } from '../app/use-cases/system/write/ports';
+import type { SystemWriteRuntimeContext, SystemWriteUseCaseContext } from '../app/use-cases/system/write/ports';
 import type { SystemWriteCommand, SystemWriteUseCaseResult } from '../app/use-cases/system/write/types';
 import { createSystemWriteContext, createSystemWriteMessagingPort } from '../infra/adapters/systemWriteAdapterFactory';
 import { presentSystemWriteResult } from './system_write_presenter';
@@ -44,7 +43,7 @@ const ACTION_EXECUTORS: Record<SystemWriteCommand['action'], (command: SystemWri
   )
 };
 
-export async function executeSystemWriteCommand(command: SystemWriteCommand, ctx: NapCatPluginContext): Promise<SystemWriteUseCaseResult> {
+export async function executeSystemWriteCommand(command: SystemWriteCommand, ctx: SystemWriteRuntimeContext): Promise<SystemWriteUseCaseResult> {
   const useCaseContext = createSystemWriteContext(ctx);
   const policy = evaluateSystemWritePolicy(command, {
     isOwner: useCaseContext.authPort.isOwner(command.actorUserId),

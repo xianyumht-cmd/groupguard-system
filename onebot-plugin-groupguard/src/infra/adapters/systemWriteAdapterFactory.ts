@@ -1,5 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import type { ISystemWriteMessagingPort, SystemWriteUseCaseContext } from '../../app/use-cases/system/write/ports';
+import type { ISystemWriteMessagingPort, SystemWriteRuntimeContext, SystemWriteUseCaseContext } from '../../app/use-cases/system/write/ports';
 import { AuthAdapter } from './system-write/auth_adapter';
 import { ConfigAdapter } from './system-write/config_adapter';
 import { QueueAdapter } from './system-write/queue_adapter';
@@ -8,7 +7,7 @@ import { LoggingAdapter } from './system-write/logging_adapter';
 import { RuntimeAdapter } from './system-write/runtime_adapter';
 import { MaintenanceAdapter } from './system-write/maintenance_adapter';
 
-export function createSystemWriteContext(ctx: NapCatPluginContext): SystemWriteUseCaseContext {
+export function createSystemWriteContext(ctx: SystemWriteRuntimeContext): SystemWriteUseCaseContext {
   return {
     configPort: new ConfigAdapter(ctx),
     queuePort: new QueueAdapter(),
