@@ -1,10 +1,12 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "task_id": "OB-NAPCAT-DECOUPLING-001",
-  "updated_at": "2026-08-02T15:35:00+08:00",
+  "updated_at": "2026-08-02T15:41:00+08:00",
   "branch": "refactor/remove-napcat-onebot-runtime-20260802",
   "pull_request": 30,
-  "pull_request_draft": true,
+  "pull_request_draft": false,
+  "pull_request_merged": true,
+  "merge_commit": "0838c546b186cb5d588397efdaf35053b0766b8b",
   "production_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
   "production_previous_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
   "implementation_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
@@ -18,7 +20,7 @@
     "OB-NAPCAT-REMOVE-001": "complete",
     "OB-REGRESSION-001": "complete",
     "OB-PRODUCTION-001": "complete_accepted",
-    "OB-MERGE-001": "pending"
+    "OB-MERGE-001": "complete"
   },
   "constraints": {
     "gfm_delete_003_forbidden": true,
@@ -35,6 +37,8 @@
     "final_ci_run_id": 30717204473,
     "final_build_run_id": 30717204475,
     "final_audit_run_id": 30717204512,
+    "pre_merge_docs_ci_run_id": 30738196132,
+    "pre_merge_docs_build_run_id": 30738196144,
     "final_conclusion": "success",
     "npm_test": "passed",
     "build_onebot": "passed",
@@ -60,13 +64,13 @@
   "merge_readiness": {
     "code_gates": "passed",
     "production_gate": "passed",
-    "pull_request_state": "draft_pending_ready_transition",
-    "merge_executed": false,
-    "reason_not_merged": "production acceptance has just completed; status documents are being finalized"
+    "pull_request_state": "merged",
+    "merge_executed": true,
+    "merge_commit": "0838c546b186cb5d588397efdaf35053b0766b8b",
+    "reason_not_merged": null
   },
   "next_actions": [
-    "mark pull request 30 ready for review",
-    "merge pull request 30 into main",
-    "record final merge commit and post-merge checks"
+    "retain production backup and rollback state until the next stable release cycle",
+    "use a new task ID for future feature work"
   ]
 }
