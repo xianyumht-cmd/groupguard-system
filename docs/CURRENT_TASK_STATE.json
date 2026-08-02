@@ -1,11 +1,13 @@
 {
-  "updated_at": "2026-08-02T15:35:00+08:00",
+  "updated_at": "2026-08-02T15:41:00+08:00",
   "repository": "xianyumht-cmd/groupguard-system",
   "task_id": "OB-NAPCAT-DECOUPLING-001",
-  "status": "production_accepted_pending_pr_merge",
+  "status": "complete_production_accepted_merged_main",
   "branch": "refactor/remove-napcat-onebot-runtime-20260802",
   "pull_request": 30,
-  "pull_request_draft": true,
+  "pull_request_draft": false,
+  "pull_request_merged": true,
+  "merge_commit": "0838c546b186cb5d588397efdaf35053b0766b8b",
   "implementation_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
   "production_source_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
   "production_previous_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
@@ -25,7 +27,8 @@
     "immutable production candidate construction and validation",
     "production backup and atomic switch",
     "production health, OneBot connection and bot identity verification",
-    "operator smoke test with normal production behavior"
+    "operator smoke test with normal production behavior",
+    "PR 30 marked ready and merged into main"
   ],
   "verification": {
     "controlled_regression_run": 30717036168,
@@ -33,6 +36,8 @@
     "final_ci_run": 30717204473,
     "final_build_run": 30717204475,
     "final_audit_run": 30717204512,
+    "pre_merge_docs_ci_run": 30738196132,
+    "pre_merge_docs_build_run": 30738196144,
     "production_ready": true,
     "production_onebot_connected": true,
     "production_bot_id": "755396669",
@@ -54,12 +59,12 @@
     "snowluma_extension_inference_from_napcat": "forbidden_not_used",
     "unknown_group_file_response": "indeterminate_fail_closed_preserve_retry_state",
     "deployment": "completed_with_verified_backup_and_rollback",
-    "merge": "pending"
+    "merge": "completed"
   },
   "next": [
-    "mark PR 30 ready for review",
-    "merge PR 30 into main without additional production code changes",
-    "record the final merge commit and post-merge CI status"
+    "treat OB-NAPCAT-DECOUPLING-001 as closed",
+    "retain production backup and rollback state until the next stable release cycle",
+    "start a new task ID for any future feature or host extension work"
   ],
   "references": [
     "docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.md",
