@@ -1,0 +1,127 @@
+name: Build OB NapCat production candidate
+
+on:
+  push:
+    branches:
+      - release/ob-napcat-decoupling-001-package-20260802
+    paths:
+      - '.github/workflows/build-ob-napcat-production-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout immutable target
+        uses: actions/checkout@v4
+        with:
+          ref: 8c049a0b6bb5fab5ca65ce77050e021c468f1a84
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install locked dependencies
+        working-directory: onebot-plugin-groupguard
+        run: npm ci
+
+      - name: Run complete regression
+        working-directory: onebot-plugin-groupguard
+        run: npm test
+
+      - name: Build immutable SnowLuma candidate
+        working-directory: onebot-plugin-groupguard
+        env:
+          GROUPGUARD_COMMIT_SHA: 8c049a0b6bb5fab5ca65ce77050e021c468f1a84
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GROUPGUARD_BUILD_TIME_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          npm run build:snowluma
+          node --check dist/snowluma-service.mjs
+
+      - name: Add provenance and package candidate
+        working-directory: onebot-plugin-groupguard
+        env:
+          TARGET_COMMIT: 8c049a0b6bb5fab5ca65ce77050e021c468f1a84
+          PRODUCTION_BASELINE: d0b79b6eab2514492196036bd79f14819b2d4102
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-out
+          artifact_sha="$(sha256sum dist/snowluma-service.mjs | awk '{print $1}')"
+          export ARTIFACT_SHA="$artifact_sha"
+          export PACKAGED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'dist/build-info.json';
+          const info = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (info.commit_sha !== process.env.TARGET_COMMIT) throw new Error('commit mismatch');
+          if (info.dirty !== false) throw new Error('dirty build');
+          if (info.service !== 'groupguard') throw new Error('service mismatch');
+          if (info.artifact !== 'snowluma-service.mjs') throw new Error('artifact mismatch');
+          info.artifact_sha256 = process.env.ARTIFACT_SHA;
+          info.packaged_at_utc = process.env.PACKAGED_AT_UTC;
+          info.production_baseline = process.env.PRODUCTION_BASELINE;
+          info.release_task = 'OB-NAPCAT-DECOUPLING-001';
+          info.ci_run_id = process.env.GITHUB_RUN_ID;
+          fs.writeFileSync(path, JSON.stringify(info, null, 2) + '\n');
+          NODE
+          (
+            cd dist
+            find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+          ) > release-out/candidate-files.sha256
+          tar --sort=name --mtime='UTC 2026-08-02 00:00:00' --owner=0 --group=0 --numeric-owner \
+            -czf release-out/groupguard-snowluma-8c049a0b6bb5-candidate.tgz -C dist .
+          archive_sha="$(sha256sum release-out/groupguard-snowluma-8c049a0b6bb5-candidate.tgz | awk '{print $1}')"
+          export ARCHIVE_SHA="$archive_sha"
+          export FILE_COUNT="$(find dist -type f | wc -l | tr -d ' ')"
+          node <<'NODE'
+          const fs = require('fs');
+          const manifest = {
+            schema_version: 1,
+            task_id: 'OB-NAPCAT-DECOUPLING-001',
+            target_commit: process.env.TARGET_COMMIT,
+            production_baseline: process.env.PRODUCTION_BASELINE,
+            service: 'groupguard',
+            runtime: 'snowluma-onebot',
+            artifact: 'snowluma-service.mjs',
+            artifact_sha256: process.env.ARTIFACT_SHA,
+            candidate_archive: 'groupguard-snowluma-8c049a0b6bb5-candidate.tgz',
+            candidate_archive_sha256: process.env.ARCHIVE_SHA,
+            file_checksums: 'candidate-files.sha256',
+            file_count: Number(process.env.FILE_COUNT),
+            packaged_at_utc: process.env.PACKAGED_AT_UTC,
+            github_run_id: process.env.GITHUB_RUN_ID,
+            regression: {
+              npm_test: 'passed',
+              build_snowluma: 'passed',
+              node_check: 'passed'
+            },
+            constraints: {
+              gfm_delete_003_forbidden: true,
+              napcat_to_snowluma_extension_inference_forbidden: true,
+              unknown_host_response_policy: 'fail_closed_preserve_retry_state'
+            }
+          };
+          fs.writeFileSync('release-out/candidate-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+          cp dist/build-info.json release-out/build-info.json
+          sha256sum release-out/* > release-out/SHA256SUMS.txt
+          cat release-out/candidate-manifest.json
+
+      - name: Upload immutable candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-ob-napcat-production-candidate-8c049a0b6bb5
+          path: onebot-plugin-groupguard/release-out
+          if-no-files-found: error
+          retention-days: 30
