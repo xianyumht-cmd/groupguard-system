@@ -43,7 +43,8 @@ function manualChunks(id: string): string | undefined {
 export default defineConfig(({ mode }) => {
   const isDebug = mode === 'debug';
   const isSnowLuma = mode === 'snowluma';
-  const entryName = isSnowLuma ? 'snowluma-service.mjs' : 'index.mjs';
+  const isOneBot = mode === 'onebot';
+  const entryName = isSnowLuma ? 'snowluma-service.mjs' : isOneBot ? 'onebot-service.mjs' : 'onebot-runtime.mjs';
   const subGameplayResourcesDir = resolve(__dirname, 'resources/sub-gameplay');
   const commitSha = process.env.GROUPGUARD_COMMIT_SHA || gitOutput(['rev-parse', 'HEAD']) || 'unknown';
   const dirty = gitOutput(['status', '--porcelain', '--', '.']).length > 0;
@@ -68,7 +69,7 @@ export default defineConfig(({ mode }) => {
       target: 'esnext',
       minify: false,
       lib: {
-        entry: resolve(__dirname, isSnowLuma ? 'src/standalone/snowluma_service.ts' : 'src/index.ts'),
+        entry: resolve(__dirname, isSnowLuma || isOneBot ? 'src/standalone/snowluma_service.ts' : 'src/index.ts'),
         formats: ['es'],
         fileName: () => entryName,
       },

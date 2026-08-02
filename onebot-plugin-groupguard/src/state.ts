@@ -1,6 +1,6 @@
 // 插件全局状态管理
-import type { PluginLogger } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import type { NetworkAdapterConfig } from 'napcat-types/napcat-onebot/config/config';
+import type { RuntimeLogger } from './runtime/runtime_context';
+import type { OneBotActionClient } from './protocol/onebot11/action_client';
 import type { PluginConfig, VerifySession, GroupGuardSettings, ActivityRecord, SigninData, InviteData, BotSendEventRecord } from './types';
 import { DEFAULT_PLUGIN_CONFIG } from './config';
 import { getBuildInfo } from './build_info';
@@ -38,19 +38,14 @@ interface GroupSendTask {
   reject: (err?: any) => void;
 }
 
-interface ActionCaller {
-  call(actionName: string, params: unknown, adapter: string, config: NetworkAdapterConfig): Promise<any>;
-}
-
 class PluginState {
   /** 插件版本（运行时从 package.json 读取） */
   version: string = getPluginVersion();
   /** NapCat 配置页 HTML，由运行时适配器读取。 */
   configSchemaHtml = '';
-  logger: PluginLogger | null = null;
-  actions: ActionCaller | undefined;
-  adapterName = '';
-  networkConfig: NetworkAdapterConfig | null = null;
+  logger: RuntimeLogger | null = null;
+  actions: OneBotActionClient | undefined;
+  hostProfileId = '';
   workDir = '';
   configPath = '';
   configDir = '';
@@ -541,7 +536,7 @@ class PluginState {
   }
 
   private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; requireDelivery?: boolean; applyTemplate?: boolean; scene?: string; templateApplied?: boolean; suffixApplied?: boolean; suffixMode?: string; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) {
+    if (!this.actions) {
       return options?.requireDelivery
         ? Promise.reject(new Error('group_send_transport_unavailable'))
         : Promise.resolve();
@@ -727,11 +722,11 @@ class PluginState {
   }
 
   private async sendGroupMessageRaw(groupId: string, message: any[]): Promise<{ messageId: string; sentAt: number; selfRecallDueAt: number; }> {
-    if (!this.actions || !this.networkConfig) throw new Error('group_send_transport_unavailable');
+    if (!this.actions) throw new Error('group_send_transport_unavailable');
     const res = await this.actions.call('send_group_msg', {
       group_id: groupId,
       message
-    } as never, this.adapterName, this.networkConfig) as { message_id?: number | string };
+    } as never) as { message_id?: number | string };
     const messageId = this.extractSendMessageId(res);
     this.debug(`[SelfRecall] message_sent groupId=${groupId} msgId=${messageId || 'missing'}`);
     const selfRecallDueAt = this.scheduleSelfRecall(groupId, messageId, 'send_group_msg');
@@ -740,7 +735,7 @@ class PluginState {
 
   /** 发送群消息 (Text) */
   private async sendGroupForwardFallback(task: GroupSendTask, reason: string, randomDelayMs = 0): Promise<boolean> {
-    if (!this.actions || !this.networkConfig) return false;
+    if (!this.actions) return false;
     const settings = this.getGlobalSettings();
     if (settings.botAntiRiskLimitFallbackMode !== 'forward') return false;
     try {
@@ -754,7 +749,7 @@ class PluginState {
             content: task.message
           }
         }]
-      } as never, this.adapterName, this.networkConfig) as { message_id?: number | string };
+      } as never) as { message_id?: number | string };
       this.log('warn', `forward_send_direct source=send_queue_fallback group=${task.groupId} reason=${reason}`);
       const messageId = this.extractSendMessageId(res);
       const sentAt = Date.now();
@@ -788,7 +783,7 @@ class PluginState {
   }
 
   async sendGroupText (groupId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) {
+    if (!this.actions) {
       if (options?.requireDelivery) throw new Error('group_send_transport_unavailable');
       return;
     }
@@ -826,7 +821,7 @@ class PluginState {
 
   /** 发送群消息 (Array) */
   async sendGroupMsg (groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) {
+    if (!this.actions) {
       if (options?.requireDelivery) throw new Error('group_send_transport_unavailable');
       return;
     }
@@ -875,7 +870,7 @@ class PluginState {
 
   /** 发送私聊消息 (Text) */
   async sendPrivateMsg (userId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; requireDelivery?: boolean; }): Promise<void> {
-    if (!this.actions || !this.networkConfig) {
+    if (!this.actions) {
       if (options?.requireDelivery) throw new Error('private_send_transport_unavailable');
       return;
     }
@@ -906,7 +901,7 @@ class PluginState {
       await this.actions.call('send_private_msg', {
         user_id: userId,
         message: outgoingMessage
-      } as never, this.adapterName, this.networkConfig);
+      } as never);
     } catch (e) {
       this.log('error', `发送私聊消息失败: ${e}`);
       if (options?.requireDelivery) throw e;
@@ -915,7 +910,7 @@ class PluginState {
 
   /** 调用 API */
   async callApi (action: string, params: any): Promise<any> {
-    if (!this.actions || !this.networkConfig) return;
+    if (!this.actions) return;
     
     // 针对 delete_msg 做特殊处理 (类型转换 + 重试机制)
     if (action === 'delete_msg' && params && params.message_id) {
@@ -944,7 +939,7 @@ class PluginState {
     }
 
     try {
-      return await this.actions.call(action, params as never, this.adapterName, this.networkConfig);
+      return await this.actions.call(action, params as never);
     } catch (e: any) {
       const errMsg = String(e);
       
@@ -962,8 +957,8 @@ class PluginState {
   /** 检查机器人是否为管理员 */
   async isBotAdmin(groupId: string): Promise<boolean> {
     if (!this.botId) throw new Error('bot_identity_unavailable');
-    if (!this.actions || !this.networkConfig) throw new Error('group_send_transport_unavailable');
-    const info = await this.actions.call('get_group_member_info', { group_id: groupId, user_id: this.botId } as never, this.adapterName, this.networkConfig) as any;
+    if (!this.actions) throw new Error('group_send_transport_unavailable');
+    const info = await this.actions.call('get_group_member_info', { group_id: groupId, user_id: this.botId } as never) as any;
     return info?.role === 'admin' || info?.role === 'owner';
   }
 }

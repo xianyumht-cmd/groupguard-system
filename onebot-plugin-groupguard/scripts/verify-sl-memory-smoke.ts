@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_PLUGIN_CONFIG, normalizePluginConfig } from '../src/config.ts';
 import { plugin_init, plugin_onmessage, plugin_cleanup } from '../src/index.ts';
-import { createStandaloneContext } from '../src/standalone/standalone_context.ts';
+import { createStandaloneRuntimeContext } from '../src/standalone/standalone_context.ts';
+import { GenericOneBotProfile } from '../src/hosts/generic_onebot_profile.ts';
 import { cacheStateService } from '../src/core/state-services/cache_state_service.ts';
 import { contextStateService } from '../src/core/state-services/context_state_service.ts';
 
@@ -98,13 +99,13 @@ async function main() {
       return { message_id: sent.length };
     }
   };
-  const ctx = createStandaloneContext({
+  const ctx = createStandaloneRuntimeContext({
     actions,
+    hostProfile: new GenericOneBotProfile(actions, { selfMessageEvents: true }),
     workDir: tempRoot,
     dataDir,
     configPath,
     dynamicCommandsConfigPath,
-    adapterName: 'snowluma-onebot',
     logger: console
   });
 

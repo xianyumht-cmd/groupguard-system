@@ -1,0 +1,72 @@
+{
+  "schema_version": 4,
+  "task_id": "OB-NAPCAT-DECOUPLING-001",
+  "updated_at": "2026-08-02T15:35:00+08:00",
+  "branch": "refactor/remove-napcat-onebot-runtime-20260802",
+  "pull_request": 30,
+  "pull_request_draft": true,
+  "production_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
+  "production_previous_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
+  "implementation_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
+  "phase_status": {
+    "OB-AUDIT-001": "complete",
+    "OB-RUNTIME-001": "complete",
+    "OB-CORE-001": "complete",
+    "OB-PROTOCOL-001": "complete",
+    "OB-HOST-PROFILE-001": "complete",
+    "OB-SNOWLUMA-001": "complete",
+    "OB-NAPCAT-REMOVE-001": "complete",
+    "OB-REGRESSION-001": "complete",
+    "OB-PRODUCTION-001": "complete_accepted",
+    "OB-MERGE-001": "pending"
+  },
+  "constraints": {
+    "gfm_delete_003_forbidden": true,
+    "gfm_delete_003_executed": false,
+    "napcat_to_snowluma_extension_inference_forbidden": true,
+    "napcat_to_snowluma_extension_inference_used": false,
+    "unknown_host_response_policy": "fail_closed_preserve_retry_state",
+    "rollback_entry_preserved": true
+  },
+  "regression": {
+    "controlled_workflow_run_id": 30717036168,
+    "controlled_job_id": 91414108890,
+    "controlled_conclusion": "success",
+    "final_ci_run_id": 30717204473,
+    "final_build_run_id": 30717204475,
+    "final_audit_run_id": 30717204512,
+    "final_conclusion": "success",
+    "npm_test": "passed",
+    "build_onebot": "passed",
+    "build_snowluma": "passed",
+    "active_napcat_runtime_bindings": 0,
+    "four_argument_action_calls": 0
+  },
+  "production_acceptance": {
+    "accepted_at": "2026-08-02T15:35:00+08:00",
+    "candidate_file_count": 362,
+    "candidate_validation": "passed",
+    "backup_capture": "passed",
+    "atomic_switch": "passed",
+    "health_check": "passed_after_startup_retry",
+    "ready": true,
+    "onebot_connected": true,
+    "bot_id": "755396669",
+    "host_profile": "snowluma",
+    "operator_smoke_test": "passed_user_reported",
+    "automatic_rollback_triggered": false,
+    "backup_path": "backups/ob-napcat-decoupling-001-20260802-153053-e20fde3d"
+  },
+  "merge_readiness": {
+    "code_gates": "passed",
+    "production_gate": "passed",
+    "pull_request_state": "draft_pending_ready_transition",
+    "merge_executed": false,
+    "reason_not_merged": "production acceptance has just completed; status documents are being finalized"
+  },
+  "next_actions": [
+    "mark pull request 30 ready for review",
+    "merge pull request 30 into main",
+    "record final merge commit and post-merge checks"
+  ]
+}

@@ -220,11 +220,11 @@ function isDeleteMsgCallbackTimeout(error: unknown): boolean {
 }
 
 async function callDeleteMsgOnce(messageId: string): Promise<'ok' | 'unknown_timeout' | 'fail_api'> {
-  if (!pluginState.actions || !pluginState.networkConfig) return 'fail_api';
+  if (!pluginState.actions) return 'fail_api';
   try {
     const res = await pluginState.actions.call('delete_msg', {
       message_id: String(messageId)
-    } as never, pluginState.adapterName, pluginState.networkConfig);
+    });
     return res === null ? 'fail_api' : 'ok';
   } catch (error) {
     if (isDeleteMsgCallbackTimeout(error)) {

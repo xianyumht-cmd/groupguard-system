@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "task_id": "OB-NAPCAT-DECOUPLING-001",
+  "audit_id": "OB-AUDIT-001",
+  "generated_at": "2026-08-02T03:40:00+08:00",
+  "repository": "xianyumht-cmd/groupguard-system",
+  "branch": "refactor/remove-napcat-onebot-runtime-20260802",
+  "baseline": {
+    "main_commit": "45a4bff4443b137638d008082910a9db5a441772",
+    "audit_snapshot_commit": "8c27c539eef365ceccc91c30f61705b79d4a8880",
+    "production_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
+    "workflow_run_id": 30714678707,
+    "artifact_id": 8822957965,
+    "tracked_file_count": 758
+  },
+  "constraints": {
+    "production_unchanged": true,
+    "forbidden_package": "GFM-DELETE-003",
+    "forbid_napcat_to_snowluma_inference": true,
+    "unknown_host_response_policy": "fail_closed_preserve_retry_state",
+    "merge_before_full_regression": false,
+    "deploy_before_full_regression": false
+  },
+  "counts": {
+    "napcat_type_import_files": 35,
+    "napcat_type_import_lines": 50,
+    "four_argument_action_calls": 7,
+    "host_extension_reference_lines": 18,
+    "runtime_binding_files": 44
+  },
+  "conclusion": "The external transport is already OneBot WebSocket, but lifecycle, event types, action calling, route context, shared state, package metadata and release builds remain NapCat-bound. Complete removal requires a staged GroupGuard-owned runtime and host-profile boundary; deleting napcat-types alone is unsafe.",
+  "dependency_categories": {
+    "lifecycle": [
+      "onebot-plugin-groupguard/src/index.ts",
+      "onebot-plugin-groupguard/src/standalone/standalone_context.ts",
+      "onebot-plugin-groupguard/src/standalone/snowluma_service.ts"
+    ],
+    "action_context": [
+      "onebot-plugin-groupguard/src/core/state-infra/plugin_state_context_adapter.ts",
+      "onebot-plugin-groupguard/src/state.ts",
+      "onebot-plugin-groupguard/src/index.ts",
+      "onebot-plugin-groupguard/src/runtime/runtime_routes.ts",
+      "onebot-plugin-groupguard/src/services/qun_guanjia_service.ts",
+      "onebot-plugin-groupguard/src/services/action_guard_service.ts",
+      "onebot-plugin-groupguard/src/join_verifier.ts"
+    ],
+    "event_types": [
+      "onebot-plugin-groupguard/src/runtime/runtime_message_pipeline.ts",
+      "onebot-plugin-groupguard/src/runtime/runtime_event_pipeline.ts",
+      "onebot-plugin-groupguard/src/commands.ts",
+      "onebot-plugin-groupguard/src/commands/dispatcher.ts",
+      "onebot-plugin-groupguard/src/commands/modules/*.ts",
+      "onebot-plugin-groupguard/src/dynamic-commands/*.ts",
+      "onebot-plugin-groupguard/src/services/command_service_types.ts"
+    ],
+    "webui_router": [
+      "onebot-plugin-groupguard/src/index.ts",
+      "onebot-plugin-groupguard/src/runtime/runtime_routes.ts",
+      "onebot-plugin-groupguard/src/standalone/standalone_context.ts",
+      "onebot-plugin-groupguard/src/standalone/admin/types.ts"
+    ],
+    "host_extensions": [
+      "onebot-plugin-groupguard/src/services/group_file_mirror_service.ts",
+      "onebot-plugin-groupguard/src/services/group_file_mirror_message_adapter.ts",
+      "onebot-plugin-groupguard/src/services/qun_guanjia_service.ts",
+      "onebot-plugin-groupguard/src/standalone/admin/qun_guanjia_page.ts",
+      "onebot-plugin-groupguard/src/standalone/snowluma_service.ts"
+    ],
+    "build_release": [
+      "onebot-plugin-groupguard/package.json",
+      "onebot-plugin-groupguard/package-lock.json",
+      "onebot-plugin-groupguard/tsconfig.json",
+      "onebot-plugin-groupguard/vite.config.ts",
+      "onebot-plugin-groupguard/scripts/build-all-clean.mjs",
+      ".github/workflows/plugin-release.yml"
+    ],
+    "napcat_shims": [
+      "onebot-plugin-groupguard/src/shims/napcat-types/napcat-onebot/config/config.d.ts",
+      "onebot-plugin-groupguard/src/shims/napcat-types/napcat-onebot/network/plugin-manger.d.ts",
+      "onebot-plugin-groupguard/src/shims/napcat-types/napcat-onebot/types/index.d.ts"
+    ]
+  },
+  "four_argument_action_calls": [
+    "onebot-plugin-groupguard/src/state.ts:947",
+    "onebot-plugin-groupguard/src/state.ts:966",
+    "onebot-plugin-groupguard/src/index.ts:219",
+    "onebot-plugin-groupguard/src/runtime/runtime_routes.ts:331",
+    "onebot-plugin-groupguard/src/services/qun_guanjia_service.ts:281",
+    "onebot-plugin-groupguard/src/core/state-infra/plugin_state_context_adapter.ts:182",
+    "onebot-plugin-groupguard/src/core/state-infra/plugin_state_context_adapter.ts:184"
+  ],
+  "host_extension_actions": {
+    "actions": [
+      "get_group_file_url",
+      "upload_group_file",
+      "delete_group_file",
+      "get_group_root_files",
+      "get_group_files_by_folder",
+      "get_group_msg_history"
+    ],
+    "classification": "host_profile_required",
+    "snowluma_contract_status": "unproven_for_delete_and_list_response_semantics",
+    "required_raw_evidence": [
+      "complete pre-delete file-list response",
+      "actual delete_group_file params",
+      "raw delete action response",
+      "complete post-delete file-list response",
+      "pagination and folder metadata",
+      "actual file_id busid folder_id formats"
+    ]
+  },
+  "risk_matrix": [
+    {
+      "id": "R1",
+      "severity": "critical",
+      "risk": "Lifecycle extraction changes initialization ordering or readiness gating.",
+      "controls": ["single idempotent runtime lifecycle", "pending event buffer", "startup failure reset", "reconnect identity refresh"]
+    },
+    {
+      "id": "R2",
+      "severity": "critical",
+      "risk": "Unknown SnowLuma group-file shapes are misclassified as deletion success.",
+      "controls": ["host capability boundary", "raw evidence logging", "strict normalization", "unknown means indeterminate", "preserve pendingCleanup"]
+    },
+    {
+      "id": "R3",
+      "severity": "high",
+      "risk": "Two-argument action migration bypasses send wrappers, queue semantics or Q群管家 routing.",
+      "controls": ["single RuntimeActionClient wrapper", "wrapper regression", "queue regression", "Q群管家 fallback regression"]
+    },
+    {
+      "id": "R4",
+      "severity": "high",
+      "risk": "Project-owned event types reject host variants or break message_sent handling.",
+      "controls": ["permissive event envelope", "boundary normalizer", "raw field preservation", "message and message_sent fixtures"]
+    },
+    {
+      "id": "R5",
+      "severity": "high",
+      "risk": "Router extraction breaks WebUI configuration and admin APIs.",
+      "controls": ["RuntimeRouter contract", "standalone router implementation", "all-route regression", "config save regression"]
+    },
+    {
+      "id": "R6",
+      "severity": "medium",
+      "risk": "Removing legacy build leaves stale index.mjs or release metadata.",
+      "controls": ["clean dist", "single OneBot build", "static no-NapCat gate", "release artifact entry validation"]
+    }
+  ],
+  "acceptance_gates": [
+    "no napcat-types dependency, imports, tsconfig paths or active shims",
+    "no NapCatPluginContext, PluginModule, NapCatConfig or pluginManager.config",
+    "no adapter/config four-argument action calls",
+    "SnowLuma launcher directly creates GroupGuardRuntimeContext",
+    "pure OneBot WebSocket runtime contract passes",
+    "SnowLumaProfile contract passes",
+    "GenericOneBotProfile contract passes",
+    "unknown host list/delete shapes fail closed",
+    "pendingCleanup survives indeterminate deletion",
+    "all existing npm tests pass",
+    "OneBot and SnowLuma builds pass",
+    "no merge or production deployment before every gate passes"
+  ],
+  "phases": [
+    {"id": "OB-AUDIT-001", "status": "complete", "deliverables": ["docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.md", "docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.json", "docs/OB_NAPCAT_REFACTOR_PLAN_001.md"]},
+    {"id": "OB-RUNTIME-001", "status": "next"},
+    {"id": "OB-CORE-001", "status": "pending"},
+    {"id": "OB-PROTOCOL-001", "status": "pending"},
+    {"id": "OB-HOST-PROFILE-001", "status": "pending"},
+    {"id": "OB-SNOWLUMA-001", "status": "pending"},
+    {"id": "OB-NAPCAT-REMOVE-001", "status": "pending"},
+    {"id": "OB-REGRESSION-001", "status": "pending"},
+    {"id": "OB-PRODUCTION-001", "status": "blocked_until_all_gates_pass"}
+  ]
+}

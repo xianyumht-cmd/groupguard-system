@@ -1,17 +1,24 @@
 import fs from 'fs';
 import path from 'path';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { DEFAULT_PLUGIN_CONFIG } from '../config';
+import type { HostProfile } from '../hosts/host_profile';
+import type { OneBotActionClient } from '../protocol/onebot11/action_client';
+import type {
+  GroupGuardRuntimeContext,
+  RuntimeLogger,
+  RuntimeRouter,
+} from '../runtime/runtime_context';
 
 export interface StandaloneContextOptions {
-  actions: any;
+  actions: OneBotActionClient;
+  hostProfile: HostProfile;
   workDir: string;
   dataDir: string;
   configPath?: string;
   backupDir?: string;
   dynamicCommandsConfigPath?: string;
-  adapterName?: string;
-  logger?: Console;
+  logger?: Console | RuntimeLogger;
+  router?: RuntimeRouter;
 }
 
 function ensureDir(dir: string): void {
@@ -24,18 +31,7 @@ function ensureConfigFile(configPath: string): void {
   fs.writeFileSync(configPath, JSON.stringify(mainConfig, null, 2), 'utf-8');
 }
 
-function createNapCatConfigShim() {
-  return {
-    combine: (...items: unknown[]) => items,
-    html: (html: string) => ({ type: 'html', html }),
-    text: (key: string, label: string, defaultValue = '', description = '') => ({ type: 'text', key, label, defaultValue, description }),
-    boolean: (key: string, label: string, defaultValue = false, description = '') => ({ type: 'boolean', key, label, defaultValue, description }),
-    number: (key: string, label: string, defaultValue = 0, description = '') => ({ type: 'number', key, label, defaultValue, description }),
-    select: (key: string, label: string, defaultValue = '', options: unknown[] = [], description = '') => ({ type: 'select', key, label, defaultValue, options, description })
-  };
-}
-
-function createLoggerShim(logger: Console = console) {
+function createLogger(logger: Console | RuntimeLogger = console): RuntimeLogger {
   return {
     info: (message: string) => logger.info(message),
     warn: (message: string) => logger.warn(message),
@@ -47,7 +43,7 @@ function createLoggerShim(logger: Console = console) {
   };
 }
 
-function createRouterShim() {
+function createRouter(): RuntimeRouter {
   const noop = () => undefined;
   return {
     static: noop,
@@ -55,36 +51,33 @@ function createRouterShim() {
     getNoAuth: noop,
     postNoAuth: noop,
     get: noop,
-    post: noop
+    post: noop,
   };
 }
 
-export function createStandaloneContext(options: StandaloneContextOptions): NapCatPluginContext {
+export function createStandaloneRuntimeContext(options: StandaloneContextOptions): GroupGuardRuntimeContext {
   const workDir = path.resolve(options.workDir);
   const dataDir = path.resolve(options.dataDir);
   const configPath = path.resolve(options.configPath || path.join(workDir, 'config.json'));
+  const configDir = path.dirname(configPath);
   const backupDir = path.resolve(options.backupDir || path.join(workDir, 'backups'));
-  const dynamicCommandsConfigPath = path.resolve(options.dynamicCommandsConfigPath || path.join(workDir, 'config', 'dynamic-commands', 'commands.json'));
+  const dynamicCommandsConfigPath = path.resolve(
+    options.dynamicCommandsConfigPath || path.join(workDir, 'config', 'dynamic-commands', 'commands.json')
+  );
   ensureDir(workDir);
   ensureDir(dataDir);
   ensureDir(backupDir);
   ensureDir(path.dirname(dynamicCommandsConfigPath));
-  ensureDir(path.dirname(configPath));
+  ensureDir(configDir);
   ensureConfigFile(configPath);
 
-  const ctx = {
-    logger: createLoggerShim(options.logger),
+  const paths = { workDir, dataDir, configPath, configDir, backupDir, dynamicCommandsConfigPath };
+  return {
+    logger: createLogger(options.logger),
     actions: options.actions,
-    adapterName: options.adapterName || 'snowluma-onebot',
-    pluginManager: { config: {} },
-    NapCatConfig: createNapCatConfigShim(),
-    workDir,
-    dataDir,
-    backupDir,
-    dynamicCommandsConfigPath,
-    configPath,
-    router: createRouterShim()
+    hostProfile: options.hostProfile,
+    router: options.router || createRouter(),
+    paths,
+    ...paths,
   };
-
-  return ctx as unknown as NapCatPluginContext;
 }

@@ -166,7 +166,6 @@ export const systemWriteArchitectureRules: ArchitectureRulesConfig = {
         type: 'import',
         operator: 'inSet',
         value: [
-          'napcat-types/napcat-onebot/network/plugin-manger',
           '../app/use-cases/system/write/',
           '../infra/adapters/systemWriteAdapterFactory',
           './system_write_policy',
@@ -247,7 +246,6 @@ export const systemWriteArchitectureRules: ArchitectureRulesConfig = {
         type: 'import',
         operator: 'inSet',
         value: [
-          'napcat-types/napcat-onebot/network/plugin-manger',
           '../../app/use-cases/system/write/ports',
           './system-write/'
         ]

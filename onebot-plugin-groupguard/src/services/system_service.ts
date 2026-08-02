@@ -146,7 +146,7 @@ function buildOwnerDiagnostics(): string {
     `dynamicCommandsAccountPath: ${accountDynamicPath || '-'}`,
     `backupDir: ${backupDir || '-'}`,
     `botId: ${identityStateService.getBotId() || '-'}`,
-    `adapterName: ${contextStateService.getAdapterName() || '-'}`,
+    `hostProfileId: ${contextStateService.getHostProfileId() || '-'}`,
     `dynamicCommandsCount: ${dynamicCommands.length}`,
     `accountCommandsExists: ${pathExists(accountDynamicPath) ? 'yes' : 'no'}`,
     `legacyCommandsFallback: ${dynamicCommandsPath === accountDynamicPath ? 'no' : 'yes'}`,

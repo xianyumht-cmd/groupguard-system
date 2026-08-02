@@ -1,5 +1,5 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../../protocol/onebot11/types';
 import { executeSystemCommand } from '../../services/system_service';
 
 export const SYSTEM_PREFIXES = [
@@ -41,7 +41,7 @@ export const SYSTEM_EXACT = [
   '关闭入群私聊'
 ];
 
-export async function handleSystemCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
+export async function handleSystemCommand(event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext): Promise<boolean> {
   const raw = event.raw_message || '';
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
   const userId = String(event.user_id);

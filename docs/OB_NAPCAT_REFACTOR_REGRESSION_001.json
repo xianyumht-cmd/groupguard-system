@@ -1,0 +1,65 @@
+{
+  "schema_version": 2,
+  "task_id": "OB-NAPCAT-DECOUPLING-001",
+  "regression_id": "OB-REGRESSION-001",
+  "updated_at": "2026-08-02T05:02:00+08:00",
+  "repository": "xianyumht-cmd/groupguard-system",
+  "branch": "refactor/remove-napcat-onebot-runtime-20260802",
+  "candidate_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
+  "state_commit": "2ed7e9ecf8044b1734662b5f1bef96a4be692fbd",
+  "production_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
+  "controlled_workflow": {
+    "run_id": 30717036168,
+    "job_id": 91414108890,
+    "conclusion": "success",
+    "patch_gzip_sha256": "2dfb72952d185207c6123540d766a2bccac157cb615cd220ba5db14b96106672",
+    "patch_sha256": "e7345c5d8df98e4f5048207c4a30b43e0ae9601930f0b57a1842df673f87c8a7",
+    "git_apply_check": "passed",
+    "npm_ci": "passed",
+    "npm_test": "passed",
+    "build_onebot": "passed",
+    "build_snowluma": "passed",
+    "atomic_source_commit": "passed"
+  },
+  "normal_branch_verification": {
+    "ci_run_id": 30717204473,
+    "build_run_id": 30717204475,
+    "audit_run_id": 30717204512,
+    "conclusion": "success",
+    "active_napcat_type_imports": 0,
+    "active_four_argument_actions": 0,
+    "active_napcat_plugin_contexts": 0,
+    "active_napcat_shims": 0,
+    "active_build_napcat_commands": 0,
+    "remaining_napcat_text": "historical documentation/comments and upstream LAPI compat=napcat wire-format selector only"
+  },
+  "architecture_gates": {
+    "project_owned_runtime_context": "passed",
+    "project_owned_onebot_events": "passed",
+    "two_argument_action_client": "passed",
+    "snowluma_profile": "passed",
+    "generic_onebot_profile": "passed",
+    "direct_snowluma_runtime_boot": "passed",
+    "no_napcat_types_dependency": "passed",
+    "no_napcat_runtime_shims": "passed",
+    "no_build_napcat": "passed",
+    "host_extensions_profile_only": "passed",
+    "unknown_group_file_response_fail_closed": "passed",
+    "pending_cleanup_preserved_when_indeterminate": "passed"
+  },
+  "snowluma_extension_policy": {
+    "group_file_url": "enabled_from_existing_verified_runtime_behavior",
+    "group_file_upload": "enabled_from_existing_verified_runtime_behavior",
+    "message_history": "enabled_from_existing_verified_runtime_behavior",
+    "group_file_list": "indeterminate_until_real_snowluma_contract_evidence",
+    "group_file_delete": "indeterminate_until_real_snowluma_contract_evidence",
+    "napcat_inference_used": false,
+    "gfm_delete_003_executed": false
+  },
+  "not_executed": {
+    "merge_to_main": true,
+    "production_deployment": true,
+    "production_restart": true,
+    "production_file_or_database_change": true
+  }
+}

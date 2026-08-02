@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
 import type { ContentRiskAction, ContentRiskRule, ContentRiskSettings, ContentRiskType, StandardAuditPayload } from '../types';
 import { authStateService } from '../core/state-services/auth_state_service';
 import { configStateService } from '../core/state-services/config_state_service';
@@ -284,7 +284,7 @@ async function executeRiskAction(input: {
   match: RiskMatch;
   rule: ContentRiskRule;
   settings: ContentRiskSettings;
-  ctx?: NapCatPluginContext;
+  ctx?: GroupGuardRuntimeContext;
 }): Promise<ActionResult> {
   const queueTaskIds: string[] = [];
   const failed: string[] = [];
@@ -358,7 +358,7 @@ export async function handleContentRiskFilter(input: {
   messageId: string;
   raw: string;
   messageSegments: any[];
-  ctx?: NapCatPluginContext;
+  ctx?: GroupGuardRuntimeContext;
 }): Promise<boolean> {
   if (authStateService.isWhitelisted(input.userId)) return false;
   const settings = configStateService.resolveGroupSettings(input.groupId).contentRisk;

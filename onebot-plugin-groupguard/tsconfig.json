@@ -6,13 +6,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "napcat-types/napcat-onebot/network/plugin-manger": ["src/shims/napcat-types/napcat-onebot/network/plugin-manger.d.ts"],
-      "napcat-types/napcat-onebot/types/index": ["src/shims/napcat-types/napcat-onebot/types/index.d.ts"],
-      "napcat-types/napcat-onebot/config/config": ["src/shims/napcat-types/napcat-onebot/config/config.d.ts"]
-    },
+    "types": [
+      "node"
+    ],
     "declaration": false,
     "outDir": "dist",
     "rootDir": "src"

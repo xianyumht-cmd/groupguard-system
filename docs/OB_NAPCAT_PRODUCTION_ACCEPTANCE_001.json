@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "task_id": "OB-NAPCAT-DECOUPLING-001",
+  "accepted_at": "2026-08-02T15:35:00+08:00",
+  "production": {
+    "previous_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
+    "running_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
+    "container": "groupguard-snowluma",
+    "bot_id": "755396669",
+    "host_profile": "snowluma",
+    "ready": true,
+    "onebot_connected": true,
+    "operator_smoke_test": "passed_user_reported"
+  },
+  "deployment": {
+    "candidate_file_count": 362,
+    "candidate_archive_sha256": "bfa6957f985079d4500af0acde6eca27ee0c57a733c688153a630702b94b6b33",
+    "candidate_artifact_sha256": "97e5c12fa383f31bee491cea28b4e5e45728fb3be8087342a94b280b7492bbb5",
+    "candidate_validation": "passed",
+    "backup_capture": "passed",
+    "atomic_switch": "passed",
+    "health_check": "passed_after_startup_retry",
+    "automatic_rollback_triggered": false,
+    "backup_path": "backups/ob-napcat-decoupling-001-20260802-153053-e20fde3d",
+    "state_file": "deployment-state/OB-NAPCAT-DECOUPLING-001-latest.json"
+  },
+  "constraints": {
+    "gfm_delete_003_executed": false,
+    "napcat_to_snowluma_extension_inference_used": false,
+    "unknown_host_response_policy": "fail_closed_preserve_retry_state",
+    "rollback_entry_preserved": true
+  },
+  "acceptance": "passed",
+  "next": "mark_pr_30_ready_and_merge_main"
+}

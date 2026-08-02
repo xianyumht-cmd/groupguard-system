@@ -1,5 +1,5 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { shouldBlockByBotRole } from '../core/bot_role';
 import type { CommandContext } from '../commands/dispatcher';
@@ -94,7 +94,7 @@ function logPluginEngineEvent(
 
 function buildNormalizedInput(
   matched: DynamicCommandMatchResult,
-  event: Pick<OB11Message, 'message_type' | 'user_id' | 'group_id' | 'raw_message'>,
+  event: Pick<OneBotMessageEvent, 'message_type' | 'user_id' | 'group_id' | 'raw_message'>,
   commandContext: Pick<CommandContext, 'cleanedText' | 'source'>
 ): UnifiedCommandNormalizedInput {
   return {
@@ -244,8 +244,8 @@ function recordExecution(input: {
 
 export async function executeDynamicCommand(
   matched: DynamicCommandMatchResult,
-  event: OB11Message,
-  _ctx: NapCatPluginContext,
+  event: OneBotMessageEvent,
+  _ctx: GroupGuardRuntimeContext,
   commandContext: CommandContext,
   startedAt = Date.now(),
   rawMessage = event.raw_message || ''

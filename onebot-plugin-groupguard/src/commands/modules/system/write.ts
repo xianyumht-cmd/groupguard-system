@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../../../runtime/runtime_context';
 import type { SystemWriteCommand } from '../../../app/use-cases/system/write/types';
 
 export interface SystemWriteParseContext {
@@ -6,7 +6,7 @@ export interface SystemWriteParseContext {
   text: string;
   groupId: string;
   userId: string;
-  ctx: NapCatPluginContext;
+  ctx: GroupGuardRuntimeContext;
 }
 
 function parsePrivateSystemWriteCommand(context: SystemWriteParseContext): SystemWriteCommand | null {

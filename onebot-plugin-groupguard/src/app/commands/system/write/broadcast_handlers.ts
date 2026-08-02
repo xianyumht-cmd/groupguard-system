@@ -1,11 +1,11 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../../../../runtime/runtime_context';
 import { broadcastLicensedGroups } from '../../../use-cases/system/write/messaging/broadcast_licensed_groups';
 import { createSystemWriteContext } from '../../../../infra/adapters/systemWriteAdapterFactory';
 import type { SystemWriteCommandResult } from './types';
 
 export async function broadcastToLicensedGroups(
   content: string,
-  ctx: NapCatPluginContext,
+  ctx: GroupGuardRuntimeContext,
   actorUserId = ''
 ): Promise<SystemWriteCommandResult> {
   return broadcastLicensedGroups({

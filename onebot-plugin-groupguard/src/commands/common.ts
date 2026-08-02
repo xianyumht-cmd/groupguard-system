@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardCommandContext } from '../runtime/runtime_context';
 import fs from 'fs';
 import path from 'path';
 import { authStateService } from '../core/state-services/auth_state_service';
@@ -67,7 +67,7 @@ function writeTextFileAtomically(filePath: string, content: string): void {
   }
 }
 
-export function saveConfig(ctx: NapCatPluginContext): void {
+export function saveConfig(ctx: GroupGuardCommandContext): void {
   if (!ctx?.configPath) return;
   try {
     saveConfigStrict(ctx);
@@ -77,7 +77,7 @@ export function saveConfig(ctx: NapCatPluginContext): void {
   }
 }
 
-export function saveConfigStrict(ctx: NapCatPluginContext): void {
+export function saveConfigStrict(ctx: GroupGuardCommandContext): void {
   if (!ctx?.configPath) throw new Error('missing_config_path');
   const config = configStateService.getConfig();
   const mainConfig = { ...config, groups: {} };

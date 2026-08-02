@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
 import { authManager } from '../auth';
 import { isQaOnlyBotRole, isQueryOnlyBotRole, shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
@@ -21,7 +21,7 @@ function blockEventByRole(rawMessage: string, intent: BotRoleIntent): boolean {
   return true;
 }
 
-export async function handlePluginEvent(ctx: NapCatPluginContext, event: unknown): Promise<void> {
+export async function handlePluginEvent(ctx: GroupGuardRuntimeContext, event: unknown): Promise<void> {
   const e = event as {
     post_type?: string; request_type?: string; notice_type?: string; sub_type?: string;
     group_id?: number | string; user_id?: number | string; operator_id?: number | string;

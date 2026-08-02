@@ -114,7 +114,6 @@ async function verifySendQueueSettlement(): Promise<void> {
   const original = {
     config: state.config,
     actions: state.actions,
-    networkConfig: state.networkConfig,
     activeWorkers: state.activeWorkers,
     globalSendQueue: state.globalSendQueue,
     groupSendQueues: state.groupSendQueues,
@@ -124,7 +123,6 @@ async function verifySendQueueSettlement(): Promise<void> {
   try {
     state.config = structuredClone(DEFAULT_PLUGIN_CONFIG);
     state.actions = { call: async () => ({ message_id: 'test' }) };
-    state.networkConfig = {};
     state.activeWorkers = 1;
 
     let globalEvicted = 0;
@@ -171,7 +169,6 @@ async function verifySendQueueSettlement(): Promise<void> {
   } finally {
     state.config = original.config;
     state.actions = original.actions;
-    state.networkConfig = original.networkConfig;
     state.activeWorkers = original.activeWorkers;
     state.globalSendQueue = original.globalSendQueue;
     state.groupSendQueues = original.groupSendQueues;

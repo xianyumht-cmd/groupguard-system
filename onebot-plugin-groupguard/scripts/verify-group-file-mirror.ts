@@ -319,13 +319,18 @@ function main(): void {
     path.resolve(process.cwd(), 'src/services/group_file_mirror_service.ts'),
     'utf-8',
   );
-  assert.match(serviceSource, /get_group_file_url/);
-  assert.match(serviceSource, /upload_group_file/);
-  assert.match(serviceSource, /get_group_root_files/);
-  assert.match(serviceSource, /get_group_files_by_folder/);
+  assert.match(serviceSource, /hostProfile\.getGroupFileUrl/);
+  assert.match(serviceSource, /hostProfile\.uploadGroupFile/);
+  assert.match(serviceSource, /hostProfile\.listGroupFiles/);
+  assert.match(serviceSource, /hostProfile\.deleteGroupFile/);
+  assert.match(serviceSource, /hostProfile\.getGroupMessageHistory/);
+  assert.match(serviceSource, /result\.data\.complete === true \? 'absent' : 'unknown'/);
   assert.match(serviceSource, /presence=/);
-  assert.match(serviceSource, /delete_group_file/);
+  assert.match(serviceSource, /actionState=/);
   assert.match(serviceSource, /delete_msg/);
+  assert.doesNotMatch(serviceSource, /get_group_root_files/);
+  assert.doesNotMatch(serviceSource, /get_group_files_by_folder/);
+  assert.doesNotMatch(serviceSource, /runtime\.hostProfile\.actions\.call\('delete_group_file'/);
   assert.match(serviceSource, /TARGET_FILE_DELETE_VERIFY_DELAYS_MS = \[0, 1500, 5000\]/);
   assert.match(serviceSource, /verifyTargetFileDeletion/);
   assert.match(serviceSource, /删除旧群文件后未确认消失/);

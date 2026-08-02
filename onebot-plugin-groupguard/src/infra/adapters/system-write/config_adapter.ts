@@ -1,7 +1,6 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
 import { saveConfig } from '../../../commands/common';
 import { configStateService } from '../../../core/state-services/config_state_service';
-import type { ISystemWriteConfigPort } from '../../../app/use-cases/system/write/ports';
+import type { ISystemWriteConfigPort, SystemWriteRuntimeContext } from '../../../app/use-cases/system/write/ports';
 import type { ScheduledTask, GroupGuardSettings } from '../../../types';
 
 function ensureGroupSettings(groupId: string): GroupGuardSettings {
@@ -13,7 +12,7 @@ function ensureGroupSettings(groupId: string): GroupGuardSettings {
 }
 
 export class ConfigAdapter implements ISystemWriteConfigPort {
-  constructor(private readonly ctx: NapCatPluginContext) {}
+  constructor(private readonly ctx: SystemWriteRuntimeContext) {}
 
   getStoredScheduledTasks(groupId: string): ScheduledTask[] | undefined {
     return configStateService.getGroupSettings(groupId)?.scheduledTasks;

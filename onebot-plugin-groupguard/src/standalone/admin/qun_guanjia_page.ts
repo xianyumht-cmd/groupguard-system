@@ -59,7 +59,7 @@ export function renderQunGuanjiaPage(): string {
 
   <section class="card">
     <h2>使用条件</h2>
-    <div class="hint">群内已添加 Q群管家；机器人 QQ 为群管理员或群主；SnowLuma 的 get_cookies 与 get_group_msg_history 动作可用。</div>
+    <div class="hint">群内已添加 Q群管家；机器人 QQ 为群管理员或群主；当前宿主 Profile 已启用 Q群管家所需的 Cookie 与群消息历史能力。</div>
   </section>
 </div>
 <script>

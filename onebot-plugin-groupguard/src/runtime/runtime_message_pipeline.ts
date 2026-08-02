@@ -1,5 +1,5 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import { authManager } from '../auth';
 import { isQaOnlyBotRole, isQueryOnlyBotRole, shouldBlockByBotRole } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
@@ -16,7 +16,7 @@ import { handleVerifyAnswer } from '../verify';
 import { runWithForcedResponseScene } from '../dynamic-commands/response_capture_runtime';
 import { shouldBypassGroupFileMirrorGlobalRecall } from '../services/group_file_mirror_message_adapter';
 
-export async function handlePluginMessage(ctx: NapCatPluginContext, event: OB11Message): Promise<void> {
+export async function handlePluginMessage(ctx: GroupGuardRuntimeContext, event: OneBotMessageEvent): Promise<void> {
   if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
 
   const userId = String(event.user_id);

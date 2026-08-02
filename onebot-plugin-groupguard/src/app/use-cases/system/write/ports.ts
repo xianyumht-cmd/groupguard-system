@@ -2,6 +2,10 @@ import type { DomainResponseNotice } from '../../../../domain/shared/response_no
 import type { ScheduledTask, GroupGuardSettings } from '../../../../types';
 import type { SystemWriteScene } from './types';
 
+export interface SystemWriteRuntimeContext {
+  configPath: string;
+}
+
 export interface ISystemWriteConfigPort {
   getStoredScheduledTasks(groupId: string): ScheduledTask[] | undefined;
   appendScheduledTask(groupId: string, task: ScheduledTask): void;

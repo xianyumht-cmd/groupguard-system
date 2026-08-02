@@ -9,6 +9,8 @@ import { configStateService } from '../src/core/state-services/config_state_serv
 import { storageAdapter } from '../src/storage_adapter.ts';
 import { registerRuntimeRoutes } from '../src/runtime/runtime_routes.ts';
 import { getRuntimeSchemaCatalog } from '../src/runtime/command_schema_catalog.ts';
+import { GenericOneBotProfile } from '../src/hosts/generic_onebot_profile.ts';
+import { createStandaloneRuntimeContext } from '../src/standalone/standalone_context.ts';
 
 interface SentMessage {
   action: string;
@@ -115,8 +117,7 @@ async function main() {
     contextStateService.setDataDir(path.join(tempRoot, 'data'));
     contextStateService.setConfigPath(path.join(tempRoot, 'config.json'));
     contextStateService.setDynamicCommandsConfigPath(path.join(tempRoot, 'dynamic-commands.json'));
-    contextStateService.setAdapterName('smoke');
-    contextStateService.setNetworkConfig({});
+    contextStateService.setHostProfileId('smoke');
     contextStateService.setActions({
       async call(actionName: string, params: unknown) {
         sent.push({ action: actionName, params });
@@ -168,13 +169,19 @@ async function main() {
     configStateService.setConfig(config);
     storageAdapter.init(tempRoot);
     initCommandValidation();
-    registerRuntimeRoutes({
+    const runtimeActions = contextStateService.getActions();
+    if (!runtimeActions) throw new Error('smoke_actions_unavailable');
+    const runtimeContext = createStandaloneRuntimeContext({
       router,
-      actions: contextStateService.getActions(),
-      adapterName: 'smoke',
-      pluginManager: { config: {} },
-      configPath: path.join(tempRoot, 'config.json')
-    } as any, () => ({ summary: { total: 0, high: 0, medium: 0, low: 0 }, issues: [] }));
+      actions: runtimeActions,
+      hostProfile: new GenericOneBotProfile(runtimeActions, { selfMessageEvents: true }),
+      workDir: tempRoot,
+      dataDir: path.join(tempRoot, 'data'),
+      configPath: path.join(tempRoot, 'config.json'),
+      dynamicCommandsConfigPath: path.join(tempRoot, 'dynamic-commands.json'),
+      logger: console,
+    });
+    registerRuntimeRoutes(runtimeContext, () => ({ summary: { total: 0, high: 0, medium: 0, low: 0 }, issues: [] }));
 
     async function emit(raw: string, userId = '10001', messageType: 'group' | 'private' = 'group'): Promise<string> {
       const before = sent.length;

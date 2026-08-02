@@ -2,20 +2,31 @@ import path from 'path';
 import { fileURLToPath } from 'node:url';
 import { OneBotWsClient } from './onebot_ws_client';
 import { OneBotActionCaller } from './onebot_action_caller';
-import { createStandaloneContext } from './standalone_context';
+import { createStandaloneRuntimeContext } from './standalone_context';
 import { startSnowLumaAdminServer, type SnowLumaAdminServerRuntime } from './snowluma_admin_server';
-import { plugin_init, plugin_onmessage, plugin_onevent, plugin_cleanup } from '../index';
+import {
+  handleGroupGuardEvent,
+  handleGroupGuardMessage,
+  initializeGroupGuard,
+  shutdownGroupGuard,
+} from '../index';
 import { getGroupGuardBotRole } from '../core/bot_role';
 import { contextStateService } from '../core/state-services/context_state_service';
 import { identityStateService } from '../core/state-services/identity_state_service';
 import { groupFileMirrorService } from '../services/group_file_mirror_service';
+import { SnowLumaProfile } from '../hosts/snowluma_profile';
+import { GenericOneBotProfile } from '../hosts/generic_onebot_profile';
+import type { HostProfile } from '../hosts/host_profile';
+import type { OneBotActionClient } from '../protocol/onebot11/action_client';
+import { isOneBotMessageEvent, normalizeOneBotEvent } from '../protocol/onebot11/types';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
 import {
   installQunGuanjiaRealtimeCapture,
   observeQunGuanjiaRealtimeMessage
 } from '../services/qun_guanjia_realtime_capture';
 
 type RuntimeState = {
-  ctx: any;
+  ctx: GroupGuardRuntimeContext;
   client: OneBotWsClient;
   adminServer?: SnowLumaAdminServerRuntime;
 };
@@ -27,13 +38,20 @@ function env(name: string, fallback = ''): string {
   return value === undefined || value === null || value === '' ? fallback : value;
 }
 
+function canonicalEnv(primary: string, legacy: string, fallback = ''): string {
+  const primaryValue = env(primary);
+  if (primaryValue) return primaryValue;
+  const legacyValue = env(legacy);
+  if (legacyValue) {
+    console.warn(`[GroupGuard:OneBot] ${legacy} is a temporary compatibility alias; migrate to ${primary}`);
+    return legacyValue;
+  }
+  return fallback;
+}
+
 function numberEnv(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function isMessageEvent(event: any): boolean {
-  return event?.post_type === 'message' || event?.post_type === 'message_sent';
 }
 
 function generatedUploadKey(groupId: unknown, fileName: unknown): string {
@@ -53,7 +71,7 @@ function resolveGroupFileMirrorConfigPath(configPath: string): string {
 }
 
 function createLogger() {
-  const prefix = '[GroupGuard:SnowLuma]';
+  const prefix = '[GroupGuard:OneBot]';
   return {
     info: (message: string) => console.info(`${prefix} ${message}`),
     warn: (message: string) => console.warn(`${prefix} ${message}`),
@@ -66,11 +84,18 @@ function createLogger() {
   };
 }
 
+function createHostProfile(id: string, actions: OneBotActionClient): HostProfile {
+  if (id === 'snowluma') return new SnowLumaProfile(actions);
+  if (id === 'generic-onebot') return new GenericOneBotProfile(actions);
+  throw new Error(`unsupported_onebot_host_profile:${id}`);
+}
+
 async function start(): Promise<RuntimeState> {
   const logger = createLogger();
   const workDir = path.resolve(process.cwd());
-  const wsUrl = env('SNOWLUMA_WS_URL', env('ONEBOT_WS_URL', 'ws://127.0.0.1:3001'));
-  const accessToken = env('SNOWLUMA_ACCESS_TOKEN', env('ONEBOT_ACCESS_TOKEN', ''));
+  const wsUrl = canonicalEnv('ONEBOT_WS_URL', 'SNOWLUMA_WS_URL', 'ws://127.0.0.1:3001');
+  const accessToken = canonicalEnv('ONEBOT_ACCESS_TOKEN', 'SNOWLUMA_ACCESS_TOKEN', '');
+  const hostProfileId = env('ONEBOT_HOST_PROFILE', 'snowluma').trim().toLowerCase();
   const dataDir = path.resolve(env('GROUPGUARD_DATA_DIR', path.join(workDir, 'data')));
   const configPath = path.resolve(env('GROUPGUARD_CONFIG_PATH', path.join(workDir, 'config.json')));
   const groupFileMirrorConfigPath = resolveGroupFileMirrorConfigPath(configPath);
@@ -79,11 +104,8 @@ async function start(): Promise<RuntimeState> {
   const timeoutMs = numberEnv('ONEBOT_ACTION_TIMEOUT_MS', 10000);
   const reconnectDelayMs = numberEnv('ONEBOT_RECONNECT_DELAY_MS', 3000);
   const botRole = getGroupGuardBotRole();
-  logger.info(`GroupGuard bot role: ${botRole}`);
+  logger.info(`GroupGuard bot role: ${botRole}; host profile: ${hostProfileId}`);
 
-  // Production currently stores the main config at /app/config/config.json.
-  // This default also supports the legacy /app/config.json layout while keeping
-  // the independent mirror config at /app/config/group-file-mirror.json.
   if (!String(process.env.GROUP_FILE_MIRROR_CONFIG_PATH || '').trim()) {
     process.env.GROUP_FILE_MIRROR_CONFIG_PATH = groupFileMirrorConfigPath;
   }
@@ -96,19 +118,7 @@ async function start(): Promise<RuntimeState> {
     logger
   });
 
-  const actions = new OneBotActionCaller(client);
-  const ctx = createStandaloneContext({
-    actions,
-    workDir,
-    dataDir,
-    configPath,
-    backupDir,
-    dynamicCommandsConfigPath,
-    adapterName: 'snowluma-onebot',
-    logger: console
-  });
-
-  // Prevent mirror-created uploads from triggering another mirror rule.
+  const rawActions = new OneBotActionCaller(client);
   const generatedFileUploads = new Map<string, number>();
   const pruneGeneratedUploads = () => {
     const now = Date.now();
@@ -116,23 +126,11 @@ async function start(): Promise<RuntimeState> {
       if (expiresAt <= now) generatedFileUploads.delete(key);
     }
   };
-  const consumeGeneratedUploadEvent = (event: any): boolean => {
-    if (event?.post_type !== 'notice' || event?.notice_type !== 'group_upload') return false;
-    pruneGeneratedUploads();
-    const uploaderId = String(event?.user_id ?? event?.operator_id ?? '').trim();
-    const botId = identityStateService.getBotId();
-    if (!botId || uploaderId !== botId) return false;
-    const key = generatedUploadKey(event?.group_id, event?.file?.name ?? event?.file?.file_name);
-    if (!key || !generatedFileUploads.has(key)) return false;
-    generatedFileUploads.delete(key);
-    logger.debug(`ignored mirror-generated group_upload group=${String(event?.group_id || '')} file=${String(event?.file?.name || event?.file?.file_name || '')}`);
-    return true;
-  };
 
-  groupFileMirrorService.bindRuntime({
-    callAction: async (action, params) => {
-      if (action !== 'upload_group_file') return actions.call(action, params);
-      const raw = params && typeof params === 'object' ? params as Record<string, any> : {};
+  const actions: OneBotActionClient = {
+    call: async (action, params = {}) => {
+      if (action !== 'upload_group_file') return rawActions.call(action, params);
+      const raw = params && typeof params === 'object' ? params as Record<string, unknown> : {};
       pruneGeneratedUploads();
       const key = generatedUploadKey(raw.group_id ?? raw.groupId, raw.name);
       if (key) {
@@ -143,12 +141,41 @@ async function start(): Promise<RuntimeState> {
         generatedFileUploads.set(key, Date.now() + GENERATED_FILE_UPLOAD_TTL_MS);
       }
       try {
-        return await actions.call(action, params);
+        return await rawActions.call(action, params);
       } catch (error) {
         if (key) generatedFileUploads.delete(key);
         throw error;
       }
-    },
+    }
+  };
+
+  const hostProfile = createHostProfile(hostProfileId, actions);
+  const ctx = createStandaloneRuntimeContext({
+    actions,
+    hostProfile,
+    workDir,
+    dataDir,
+    configPath,
+    backupDir,
+    dynamicCommandsConfigPath,
+    logger
+  });
+
+  const consumeGeneratedUploadEvent = (event: Record<string, any>): boolean => {
+    if (event.post_type !== 'notice' || event.notice_type !== 'group_upload') return false;
+    pruneGeneratedUploads();
+    const uploaderId = String(event.user_id ?? event.operator_id ?? '').trim();
+    const botId = identityStateService.getBotId();
+    if (!botId || uploaderId !== botId) return false;
+    const key = generatedUploadKey(event.group_id, event.file?.name ?? event.file?.file_name);
+    if (!key || !generatedFileUploads.has(key)) return false;
+    generatedFileUploads.delete(key);
+    logger.debug(`ignored mirror-generated group_upload group=${String(event.group_id || '')} file=${String(event.file?.name || event.file?.file_name || '')}`);
+    return true;
+  };
+
+  groupFileMirrorService.bindRuntime({
+    hostProfile,
     workDir,
     dataDir,
     configPath,
@@ -163,19 +190,20 @@ async function start(): Promise<RuntimeState> {
   installQunGuanjiaRealtimeCapture();
 
   let runtimeReady = false;
-  const pendingEvents: any[] = [];
+  const pendingEvents: unknown[] = [];
   const MAX_PENDING_EVENTS = 500;
-  const dispatchEvent = async (event: any): Promise<void> => {
-    if (!event || typeof event !== 'object') return;
+  const dispatchEvent = async (rawEvent: unknown): Promise<void> => {
+    const event = normalizeOneBotEvent(rawEvent);
+    if (!event) return;
     const eventSelfId = String(event.self_id || '').trim();
     if (eventSelfId && eventSelfId !== identityStateService.getBotId()) contextStateService.setBotId(eventSelfId);
-    if (!consumeGeneratedUploadEvent(event)) groupFileMirrorService.observeEvent(event);
-    if (isMessageEvent(event)) {
+    if (!consumeGeneratedUploadEvent(event as Record<string, any>)) groupFileMirrorService.observeEvent(event);
+    if (isOneBotMessageEvent(event)) {
       observeQunGuanjiaRealtimeMessage(event);
-      await plugin_onmessage(ctx, event as any);
+      await handleGroupGuardMessage(event, ctx);
       return;
     }
-    await plugin_onevent(ctx, event);
+    await handleGroupGuardEvent(event, ctx);
   };
 
   client.onEvent(async (event) => {
@@ -189,7 +217,7 @@ async function start(): Promise<RuntimeState> {
 
   const refreshBotIdentity = async (): Promise<void> => {
     try {
-      const loginInfo = await client.call('get_login_info', {});
+      const loginInfo = await actions.call('get_login_info', {}) as { user_id?: string | number } | undefined;
       const botId = String(loginInfo?.user_id || '').trim();
       if (botId) {
         contextStateService.setBotId(botId);
@@ -203,7 +231,7 @@ async function start(): Promise<RuntimeState> {
   };
   client.onConnected(refreshBotIdentity);
 
-  await plugin_init(ctx);
+  await initializeGroupGuard(ctx);
   await client.start();
   await refreshBotIdentity();
   runtimeReady = true;
@@ -227,7 +255,7 @@ async function start(): Promise<RuntimeState> {
   });
 
   logger.info(`service started workDir=${workDir} config=${configPath} fileMirrorConfig=${groupFileMirrorConfigPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
-  logger.info('SnowLuma reminder: enable reportSelfMessage if you need message_sent events from host side. GroupGuard also schedules self-recall from send_group_msg responses.');
+  logger.info(`self-message capability=${hostProfile.capabilities.selfMessageEvents}; GroupGuard also schedules self-recall from send responses.`);
   return { ctx, client, adminServer };
 }
 
@@ -237,19 +265,13 @@ let stopping = false;
 async function stop(signal: string, exitCode = 0): Promise<void> {
   if (stopping) return;
   stopping = true;
-  console.info(`[GroupGuard:SnowLuma] stopping by ${signal}`);
-  try {
-    runtime?.client.close();
-  } catch { /* noop */ }
-  try {
-    await runtime?.adminServer?.close();
-  } catch (error) {
-    console.error(`[GroupGuard:SnowLuma] admin webui close failed: ${String(error)}`);
+  console.info(`[GroupGuard:OneBot] stopping by ${signal}`);
+  try { runtime?.client.close(); } catch { /* noop */ }
+  try { await runtime?.adminServer?.close(); } catch (error) {
+    console.error(`[GroupGuard:OneBot] admin webui close failed: ${String(error)}`);
   }
-  try {
-    await plugin_cleanup();
-  } catch (error) {
-    console.error(`[GroupGuard:SnowLuma] cleanup failed: ${String(error)}`);
+  try { await shutdownGroupGuard(); } catch (error) {
+    console.error(`[GroupGuard:OneBot] cleanup failed: ${String(error)}`);
   }
   process.exit(exitCode);
 }
@@ -257,10 +279,10 @@ async function stop(signal: string, exitCode = 0): Promise<void> {
 process.on('SIGINT', () => void stop('SIGINT'));
 process.on('SIGTERM', () => void stop('SIGTERM'));
 process.on('unhandledRejection', (reason) => {
-  console.error(`[GroupGuard:SnowLuma] unhandledRejection: ${String(reason)}`);
+  console.error(`[GroupGuard:OneBot] unhandledRejection: ${String(reason)}`);
 });
 process.on('uncaughtException', (error) => {
-  console.error(`[GroupGuard:SnowLuma] uncaughtException: ${String(error)}`);
+  console.error(`[GroupGuard:OneBot] uncaughtException: ${String(error)}`);
   void stop('uncaughtException', 1);
 });
 
@@ -268,7 +290,7 @@ const isDirectRun = (() => {
   try {
     const entry = process.argv[1] ? path.resolve(process.argv[1]) : '';
     const current = fileURLToPath(import.meta.url);
-    return entry === current || entry.endsWith('snowluma-service.mjs');
+    return entry === current || entry.endsWith('onebot-service.mjs') || entry.endsWith('snowluma-service.mjs');
   } catch {
     return true;
   }
@@ -278,7 +300,7 @@ if (isDirectRun) {
   start()
     .then((state) => { runtime = state; })
     .catch((error) => {
-      console.error(`[GroupGuard:SnowLuma] start failed: ${String(error)}`);
+      console.error(`[GroupGuard:OneBot] start failed: ${String(error)}`);
       process.exit(1);
     });
 }

@@ -1,4 +1,4 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../../../../runtime/runtime_context';
 import { buildGroupConfigCleanupWarningUseCase } from '../../../use-cases/system/write/maintenance/build_group_config_cleanup_warning';
 import { clearGroupConfigUseCase } from '../../../use-cases/system/write/maintenance/clear_group_config';
 import { createSystemWriteContext } from '../../../../infra/adapters/systemWriteAdapterFactory';
@@ -10,7 +10,7 @@ export function buildGroupConfigCleanupWarning(groupId = '', actorUserId = ''): 
   });
 }
 
-export function clearGroupConfig(groupId: string, userId: string, ctx: NapCatPluginContext): SystemWriteCommandResult {
+export function clearGroupConfig(groupId: string, userId: string, ctx: GroupGuardRuntimeContext): SystemWriteCommandResult {
   return clearGroupConfigUseCase({
     channel: 'group', action: 'clear_group_config', actorUserId: userId, originalText: '', groupId
   }, createSystemWriteContext(ctx));

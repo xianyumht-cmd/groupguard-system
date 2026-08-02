@@ -1,5 +1,5 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { checkFeatureGate } from '../core/feature_gate';
 import { shouldBlockByBotRole } from '../core/bot_role';
@@ -56,10 +56,10 @@ interface CommandCandidate {
   priority: number;
   match: DynamicCommandMatchResult;
   matchResult: CommandMatchResult;
-  execute: (event: OB11Message, ctx: NapCatPluginContext, commandContext: CommandContext) => Promise<boolean>;
+  execute: (event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext, commandContext: CommandContext) => Promise<boolean>;
 }
 
-function preprocessMessage(event: OB11Message): { rawText: string; cleanedText: string; } {
+function preprocessMessage(event: OneBotMessageEvent): { rawText: string; cleanedText: string; } {
   const rawText = event.raw_message || '';
   const cleanedText = rawText.replace(/\[CQ:[^\]]+\]/g, '').trim();
   return { rawText, cleanedText };
@@ -111,7 +111,7 @@ function collectCandidates(cleanedText: string): CommandCandidate[] {
   return candidates;
 }
 
-async function isCandidateAllowed(candidate: CommandCandidate, event: OB11Message, cleanedText: string): Promise<{ allowed: boolean; roleBlocked: boolean; }> {
+async function isCandidateAllowed(candidate: CommandCandidate, event: OneBotMessageEvent, cleanedText: string): Promise<{ allowed: boolean; roleBlocked: boolean; }> {
   const command = candidate.match.command;
   const record = getCommandPluginRecord(command.id);
   if (record && !record.enabled) {
@@ -190,7 +190,7 @@ function recordUserCommandFrequency(userId: string, commandId: string): void {
   }
 }
 
-function getCandidateContextScore(candidate: CommandCandidate, event: OB11Message): number {
+function getCandidateContextScore(candidate: CommandCandidate, event: OneBotMessageEvent): number {
   let score = 0;
   const userId = String(event.user_id || '');
   score += getUserCommandFrequencyScore(userId, candidate.commandId);
@@ -229,7 +229,7 @@ function trimRateLimitNoticeMap(): void {
   }
 }
 
-function shouldNotifyRateLimited(event: OB11Message, candidate: CommandCandidate, reason: string): boolean {
+function shouldNotifyRateLimited(event: OneBotMessageEvent, candidate: CommandCandidate, reason: string): boolean {
   if (event.message_type === 'private') return true;
   const groupId = String(event.group_id || '');
   const key = `${groupId}:${candidate.commandId}:${reason}`;
@@ -244,7 +244,7 @@ function shouldNotifyRateLimited(event: OB11Message, candidate: CommandCandidate
   return true;
 }
 
-async function notifyRateLimited(event: OB11Message, candidate: CommandCandidate, reason: string): Promise<void> {
+async function notifyRateLimited(event: OneBotMessageEvent, candidate: CommandCandidate, reason: string): Promise<void> {
   if (!shouldNotifyRateLimited(event, candidate, reason)) return;
   if (event.message_type === 'private') {
     await communicationStateService.sendPrivateMsg(String(event.user_id || ''), reason, {
@@ -262,7 +262,7 @@ async function notifyRateLimited(event: OB11Message, candidate: CommandCandidate
 }
 
 export class CommandDispatcher {
-  async handle(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
+  async handle(event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext): Promise<boolean> {
     await syncDynamicCommands();
     const preprocessed = preprocessMessage(event);
     if (!preprocessed.cleanedText) return false;

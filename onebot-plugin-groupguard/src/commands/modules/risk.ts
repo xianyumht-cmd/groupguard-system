@@ -1,5 +1,5 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../../protocol/onebot11/types';
 import { executeRiskCommand } from '../../services/risk_service';
 
 export const RISK_PREFIXES = [
@@ -74,7 +74,7 @@ export const RISK_EXACT = [
   '安全设置'
 ];
 
-export async function handleRiskCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
+export async function handleRiskCommand(event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext): Promise<boolean> {
   const raw = event.raw_message || '';
   const text = raw.replace(/\[CQ:[^\]]+\]/g, '').trim();
   const userId = String(event.user_id);

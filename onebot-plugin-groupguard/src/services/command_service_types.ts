@@ -1,9 +1,9 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 
 export interface CommandExecutionContext {
-  event: OB11Message;
-  ctx: NapCatPluginContext;
+  event: OneBotMessageEvent;
+  ctx: GroupGuardRuntimeContext;
   raw: string;
   text: string;
   userId: string;

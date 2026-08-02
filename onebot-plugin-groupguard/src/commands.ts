@@ -1,5 +1,5 @@
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
+import type { OneBotMessageEvent } from './protocol/onebot11/types';
+import type { GroupGuardRuntimeContext } from './runtime/runtime_context';
 import { loggingStateService } from './core/state-services/logging_state_service';
 import { initializeDynamicCommands, loadDynamicCommands } from './dynamic-commands/command_loader';
 import { assertCommandPluginRegistryReady, refreshCommandPluginRegistry } from './dynamic-commands/command_plugin_registry';
@@ -61,7 +61,7 @@ export async function initCommandValidation(): Promise<void> {
   }
 }
 
-export async function handleCommand(event: OB11Message, ctx: NapCatPluginContext): Promise<boolean> {
+export async function handleCommand(event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext): Promise<boolean> {
   await initCommandValidation();
   try {
     return await commandDispatcher.handle(event, ctx);

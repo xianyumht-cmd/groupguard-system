@@ -1,5 +1,5 @@
-import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin-manger';
-import type { OB11Message } from 'napcat-types/napcat-onebot/types/index';
+import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import type { FeaturePermission, FeatureScope, FeatureType } from '../types';
 
 export type DynamicCommandTriggerType = 'exact' | 'prefix';
@@ -109,8 +109,8 @@ export interface UnifiedCommandNormalizedInput {
 }
 
 export interface UnifiedCommandExecutionContext {
-  event: OB11Message;
-  pluginContext: NapCatPluginContext;
+  event: OneBotMessageEvent;
+  pluginContext: GroupGuardRuntimeContext;
   plugin: {
     metadata: CommandPluginMetadata;
     enabled: boolean;
