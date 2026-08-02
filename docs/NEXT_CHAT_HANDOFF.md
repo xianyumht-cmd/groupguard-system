@@ -1,11 +1,17 @@
 # GroupGuard 下一步交接
 
-更新时间：2026-08-02 15:35 +08:00  
-当前任务：`OB-NAPCAT-DECOUPLING-001`
+更新时间：2026-08-02 15:41 +08:00  
+已完成任务：`OB-NAPCAT-DECOUPLING-001`
 
-## 当前结论
+## 最终结论
 
-NapCat 运行时剥离已经完成开发、完整回归、不可变候选构建、生产安全部署和操作者实机验证。
+NapCat 运行时剥离已经完成开发、完整回归、不可变候选构建、生产安全部署、操作者实机验证和主分支合并。
+
+PR #30 已标记 Ready 并合并到 `main`：
+
+```text
+merge commit: 0838c546b186cb5d588397efdaf35053b0766b8b
+```
 
 生产当前运行：
 
@@ -17,6 +23,8 @@ OneBot connected: true
 bot: 755396669
 Host Profile: snowluma
 ```
+
+生产运行提交与仓库 merge commit 不同是正常的：`8c049a0b...` 是经过不可变候选验证并实际部署的代码提交；其后的提交只增加生产验收和状态文档，最后由 `0838c546...` 合并进 `main`，没有追加生产代码变化。
 
 操作者测试机器人后确认生产正常，没有感到用户侧行为变化。这符合本次任务目标：本次是运行时架构重构，不是业务功能改版。
 
@@ -78,9 +86,12 @@ npm run build:snowluma: passed
 CI 30717204473: success
 Build 30717204475: success
 Audit 30717204512: success
+Pre-merge docs CI 30738196132: success
+Pre-merge docs Build 30738196144: success
 活动 NapCat runtime bindings: 0
 四参数 action calls: 0
 生产实机验证: passed_user_reported
+PR #30: merged
 ```
 
 ## 安全状态
@@ -93,18 +104,11 @@ NapCat 参数推断 SnowLuma 扩展动作: 未使用
 生产备份: 已保留
 ```
 
-## 当前仓库状态
+## 后续规则
 
-PR #30 仍是 Draft、Open、未合并，但代码门槛和生产门槛均已通过。
+`OB-NAPCAT-DECOUPLING-001` 已关闭。后续功能、Host Profile 扩展或群文件动作研究必须创建新任务 ID，不得继续改写本任务的已验收结论。
 
-下一步按顺序执行：
-
-1. 将 PR #30 标记为 Ready。
-2. 合并 PR #30 到 `main`。
-3. 记录真实 merge commit。
-4. 核对合并后的 CI/Build。
-
-生产当前运行的是代码提交 `8c049a0b...`；后续在该提交上追加的内容只能是验收和状态文档，不再改动生产代码。
+生产备份和一键回滚状态至少保留到下一次稳定发布周期结束。
 
 ## 参考
 
