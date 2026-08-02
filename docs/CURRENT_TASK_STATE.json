@@ -6,7 +6,7 @@
   "branch": "refactor/remove-napcat-onebot-runtime-20260802",
   "pull_request": 30,
   "pull_request_draft": true,
-  "implementation_commit": "fffb2db1da99a1f5a81551431e3a58b55804b15",
+  "implementation_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
   "production_source_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
   "production_previous_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
   "production_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
