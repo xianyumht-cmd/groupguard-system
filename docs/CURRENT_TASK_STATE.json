@@ -1,16 +1,17 @@
 {
-  "updated_at": "2026-08-02T05:02:00+08:00",
+  "updated_at": "2026-08-02T15:35:00+08:00",
   "repository": "xianyumht-cmd/groupguard-system",
   "task_id": "OB-NAPCAT-DECOUPLING-001",
-  "status": "code_complete_merge_ready_production_blocked_no_safe_deployment_path",
+  "status": "production_accepted_pending_pr_merge",
   "branch": "refactor/remove-napcat-onebot-runtime-20260802",
   "pull_request": 30,
   "pull_request_draft": true,
-  "implementation_commit": "fffb2db1da99a1f5a815c7b8e70c3a450fa1f849",
-  "audit_and_state_commit": "2ed7e9ecf8044b1734662b5f1bef96a4be692fbd",
-  "temporary_audit_workflow_removed_commit": "82968af8aad7ed92ed9985471cd955456c841093",
-  "production_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
-  "production_changed": false,
+  "implementation_commit": "fffb2db1da99a1f5a81551431e3a58b55804b15",
+  "production_source_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
+  "production_previous_commit": "d0b79b6eab2514492196036bd79f14819b2d4102",
+  "production_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84",
+  "production_changed": true,
+  "production_acceptance": "passed",
   "completed": [
     "full repository read-only audit and machine-readable plan",
     "pure GroupGuard OneBot runtime",
@@ -21,7 +22,10 @@
     "host-profile-only extension action boundary",
     "full npm test and OneBot/SnowLuma dual build regression",
     "final normal CI, build and full-repository audit",
-    "temporary patch and audit workflows removed"
+    "immutable production candidate construction and validation",
+    "production backup and atomic switch",
+    "production health, OneBot connection and bot identity verification",
+    "operator smoke test with normal production behavior"
   ],
   "verification": {
     "controlled_regression_run": 30717036168,
@@ -29,21 +33,33 @@
     "final_ci_run": 30717204473,
     "final_build_run": 30717204475,
     "final_audit_run": 30717204512,
-    "final_audit_result": "zero active NapCat runtime bindings; remaining napcat text is historical documentation or upstream LAPI compat=napcat wire-format selection",
+    "production_ready": true,
+    "production_onebot_connected": true,
+    "production_bot_id": "755396669",
+    "production_host_profile": "snowluma",
+    "operator_smoke_test": "passed_user_reported",
     "result": "passed"
+  },
+  "deployment": {
+    "candidate_file_count": 362,
+    "candidate_archive_sha256": "bfa6957f985079d4500af0acde6eca27ee0c57a733c688153a630702b94b6b33",
+    "candidate_artifact_sha256": "97e5c12fa383f31bee491cea28b4e5e45728fb3be8087342a94b280b7492bbb5",
+    "backup_path": "backups/ob-napcat-decoupling-001-20260802-153053-e20fde3d",
+    "state_file": "deployment-state/OB-NAPCAT-DECOUPLING-001-latest.json",
+    "automatic_rollback_triggered": false,
+    "rollback_entry_preserved": true
   },
   "safety": {
     "GFM-DELETE-003": "forbidden_not_executed",
     "snowluma_extension_inference_from_napcat": "forbidden_not_used",
     "unknown_group_file_response": "indeterminate_fail_closed_preserve_retry_state",
-    "merge": "not_executed",
-    "deployment": "not_executed_no_safe_ssh_or_deployment_path"
+    "deployment": "completed_with_verified_backup_and_rollback",
+    "merge": "pending"
   },
   "next": [
-    "run final normal CI and build on this post-cleanup state commit",
-    "keep PR 30 draft until the repository owner chooses a merge window with an executable safe deployment path",
-    "before production switch capture old production ready=true, OneBot connected=true and bot identity known evidence",
-    "perform immutable candidate validation, backup, atomic switch and automatic rollback through a verified deployment path"
+    "mark PR 30 ready for review",
+    "merge PR 30 into main without additional production code changes",
+    "record the final merge commit and post-merge CI status"
   ],
   "references": [
     "docs/OB_NAPCAT_DEPENDENCY_AUDIT_001.md",
@@ -52,6 +68,8 @@
     "docs/OB_NAPCAT_REFACTOR_REGRESSION_001.md",
     "docs/OB_NAPCAT_REFACTOR_REGRESSION_001.json",
     "docs/OB_NAPCAT_REFACTOR_EXECUTION_STATE_001.json",
+    "docs/OB_NAPCAT_PRODUCTION_ACCEPTANCE_001.md",
+    "docs/OB_NAPCAT_PRODUCTION_ACCEPTANCE_001.json",
     "docs/NEXT_CHAT_HANDOFF.md"
   ]
 }
