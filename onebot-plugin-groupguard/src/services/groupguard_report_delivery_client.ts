@@ -49,9 +49,12 @@ export async function requestGroupGuardReportDelivery(
     timeoutMs?: number;
     fetchFn?: typeof fetch;
     maxResponseChars?: number;
+    writeToken?: string;
   } = {}
 ): Promise<GroupGuardQueryDeliveryEnvelope> {
   const endpoint = resolveGroupGuardReportEndpoint(baseUrl);
+  const writeToken = String(options.writeToken || '').trim();
+  if (!writeToken) throw new Error('delivery_write_token_required');
   const fetchFn = options.fetchFn || globalThis.fetch;
   const timeoutMs = Math.max(1_000, Math.min(Number(options.timeoutMs || 20_000), 120_000));
   const maxResponseChars = Math.max(1_024, Math.min(Number(options.maxResponseChars || MAX_RESPONSE_CHARS), MAX_RESPONSE_CHARS));
@@ -62,7 +65,8 @@ export async function requestGroupGuardReportDelivery(
       method: 'POST',
       headers: {
         accept: 'application/json',
-        'content-type': 'application/json'
+        'content-type': 'application/json',
+        'x-groupguard-token': writeToken
       },
       body: JSON.stringify(payload),
       signal: controller.signal
@@ -74,6 +78,9 @@ export async function requestGroupGuardReportDelivery(
     }
     const text = await response.text();
     if (text.length > maxResponseChars) throw new Error('delivery_response_too_large');
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`delivery_auth_failed_http_${response.status}`);
+    }
     let decoded: unknown;
     try {
       decoded = JSON.parse(text);
