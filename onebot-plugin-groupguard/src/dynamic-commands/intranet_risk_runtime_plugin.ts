@@ -21,6 +21,8 @@ import type {
 
 const PRIORITY = 90;
 const FALLBACK_TEXT = '内网查询服务暂时不可用，请稍后再试。';
+const REPORT_TOKEN_MISSING_TEXT = '未配置举报写入令牌，请联系机器人主人完成安全凭据配置。';
+const REPORT_TOKEN_INVALID_TEXT = '举报服务凭据无效或不一致，请联系机器人主人同步写入令牌。';
 
 type RiskCategory = 'scammer' | 'peer';
 type IdentifierType = 'qq' | 'wechat';
@@ -127,9 +129,26 @@ function requireBaseUrl(): string {
   return String(config?.lolApiBaseUrl || '').trim();
 }
 
+function requireReportWriteToken(): string {
+  const config = configStateService.getConfig() as any;
+  return String(
+    config?.lolApiWriteToken
+      || process.env.LOL_API_WRITE_TOKEN
+      || process.env.GROUPGUARD_WRITE_TOKEN
+      || ''
+  ).trim();
+}
+
 function safeErrorTag(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   return raw.replace(/https?:\/\/\S+/gi, '[redacted-url]').slice(0, 240);
+}
+
+function reportFailureText(error: unknown): string {
+  const tag = safeErrorTag(error);
+  if (tag === 'delivery_write_token_required') return REPORT_TOKEN_MISSING_TEXT;
+  if (/^delivery_auth_failed_http_(?:401|403)$/.test(tag)) return REPORT_TOKEN_INVALID_TEXT;
+  return '内网举报服务暂时不可用，请稍后再试。';
 }
 
 function categoryTitle(category: RiskCategory): string {
@@ -188,6 +207,8 @@ export async function executeRiskIntranetReport(
   if (!parsed.ok) return textResult(parsed.reason.replace('举报骗子', trigger));
   const baseUrl = requireBaseUrl();
   if (!baseUrl) return textResult('未配置 LOL API Base，请联系机器人主人完成内网服务地址配置。');
+  const writeToken = requireReportWriteToken();
+  if (!writeToken) return textResult(REPORT_TOKEN_MISSING_TEXT);
   const feature = category === 'peer' ? 'peer_report' : 'scammer_report';
   try {
     const { plan } = await requestIntranetReportDelivery({
@@ -204,6 +225,7 @@ export async function executeRiskIntranetReport(
       timeoutMs: resolveIntranetQueryTimeoutMs(),
       requestId: requestIdFromContext(feature, input, context),
       client: 'snowluma',
+      writeToken,
       ...(requestFn ? { requestFn } : {})
     });
     return buildIntranetStructuredResult(
@@ -215,7 +237,7 @@ export async function executeRiskIntranetReport(
     );
   } catch (error) {
     loggingStateService.warn(`[IntranetQuery] ${feature} request failed: ${safeErrorTag(error)}`);
-    return textResult('内网举报服务暂时不可用，请稍后再试。');
+    return textResult(reportFailureText(error));
   }
 }
 
