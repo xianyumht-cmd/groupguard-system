@@ -40,6 +40,7 @@ export interface IntranetReportRequestOptions {
   timeoutMs?: number;
   requestId: string;
   client?: string;
+  writeToken: string;
   requestFn?: IntranetReportRequestFn;
 }
 
@@ -101,6 +102,8 @@ export async function requestIntranetReportDelivery(
   }
   const requestId = String(options.requestId || '').trim();
   if (!requestId) throw new Error('delivery_request_id_required');
+  const writeToken = String(options.writeToken || '').trim();
+  if (!writeToken) throw new Error('delivery_write_token_required');
   const parameters = normalizeParameters(options.parameters);
   if (!Object.keys(parameters).length) throw new Error('delivery_parameters_required');
   const requestFn = options.requestFn || requestGroupGuardReportDelivery;
@@ -118,7 +121,10 @@ export async function requestIntranetReportDelivery(
       request_id: requestId,
       client: String(options.client || 'snowluma').slice(0, 64)
     },
-    { timeoutMs: options.timeoutMs }
+    {
+      timeoutMs: options.timeoutMs,
+      writeToken
+    }
   );
   if (envelope.feature !== feature) throw new Error('delivery_feature_mismatch');
   return {

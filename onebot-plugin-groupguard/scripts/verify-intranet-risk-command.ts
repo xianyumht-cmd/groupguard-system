@@ -12,7 +12,10 @@ import {
   parseRiskReportArgument
 } from '../src/dynamic-commands/intranet_risk_runtime_plugin.ts';
 import { parseGroupGuardQueryDelivery } from '../src/services/groupguard_query_delivery_client.ts';
-import { resolveGroupGuardReportEndpoint } from '../src/services/groupguard_report_delivery_client.ts';
+import {
+  requestGroupGuardReportDelivery,
+  resolveGroupGuardReportEndpoint
+} from '../src/services/groupguard_report_delivery_client.ts';
 
 const fixtureRoot = fileURLToPath(new URL('../contracts/fixtures/groupguard-query-contracts/', import.meta.url));
 const runtimeSourcePath = fileURLToPath(new URL('../src/dynamic-commands/intranet_risk_runtime_plugin.ts', import.meta.url));
@@ -71,7 +74,57 @@ assert.equal(INTERACTION_EXACT.includes('骗子接口状态'), false);
 assert.equal(resolveGroupGuardReportEndpoint('http://192.168.3.100:5001'), 'http://192.168.3.100:5001/api/v1/groupguard/report');
 assert.throws(() => resolveGroupGuardReportEndpoint('https://public.example.com'), /must_be_intranet/);
 
+const clientEnvelope = await textEnvelope('scammer_report', '✅ 骗子举报已收录');
+const clientPayload = {
+  feature: 'scammer_report' as const,
+  parameters: {
+    identifier_type: 'qq',
+    identifier: '123456789',
+    content: '测试证据',
+    group_id: '10001',
+    actor_id: '20002'
+  },
+  preferred: 'text' as const,
+  request_id: 'gg-scammer-report-10001-20002-30003',
+  client: 'snowluma'
+};
+let capturedRequestInit: RequestInit | undefined;
+const clientResult = await requestGroupGuardReportDelivery(
+  'http://192.168.3.100:5001',
+  clientPayload,
+  {
+    writeToken: 'test-write-token',
+    fetchFn: (async (_input: unknown, init?: RequestInit) => {
+      capturedRequestInit = init;
+      return new Response(JSON.stringify(clientEnvelope), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }) as typeof fetch
+  }
+);
+assert.equal(clientResult.feature, 'scammer_report');
+const capturedHeaders = new Headers(capturedRequestInit?.headers);
+assert.equal(capturedHeaders.get('x-groupguard-token'), 'test-write-token');
+assert.equal(String(capturedRequestInit?.body || '').includes('test-write-token'), false, 'write token must not enter report body');
+await assert.rejects(
+  () => requestGroupGuardReportDelivery('http://192.168.3.100:5001', clientPayload),
+  /delivery_write_token_required/
+);
+await assert.rejects(
+  () => requestGroupGuardReportDelivery(
+    'http://192.168.3.100:5001',
+    clientPayload,
+    {
+      writeToken: 'wrong-token',
+      fetchFn: (async () => new Response('{}', { status: 401 })) as typeof fetch
+    }
+  ),
+  /delivery_auth_failed_http_401/
+);
+
 const originalConfig = structuredClone(configStateService.getConfig() as any);
+const originalWriteToken = process.env.LOL_API_WRITE_TOKEN;
 try {
   const config = structuredClone(originalConfig) as any;
   config.lolApiBaseUrl = 'http://192.168.3.100:5001';
@@ -85,6 +138,7 @@ try {
     lolQueryOutputFormat: 'image'
   };
   configStateService.setConfig(config);
+  process.env.LOL_API_WRITE_TOKEN = 'test-write-token';
 
   const scammerEnvelope = await textEnvelope('scammer', '🔎 骗子查询\n暂未发现已收录风险记录');
   const peerReportEnvelope = await textEnvelope('peer_report', '✅ 同行举报已收录');
@@ -158,9 +212,10 @@ try {
 
   const reportRequestIds: string[] = [];
   let reportCount = 0;
-  const reportRequest = (async (baseUrl: string, payload: any) => {
+  const reportRequest = (async (baseUrl: string, payload: any, options: any) => {
     reportCount += 1;
     assert.equal(baseUrl, 'http://192.168.3.100:5001');
+    assert.equal(options.writeToken, 'test-write-token');
     reportRequestIds.push(payload.request_id);
     assert.equal(payload.feature, 'peer_report');
     assert.deepEqual(payload.parameters, {
@@ -170,6 +225,7 @@ try {
       group_id: '10001',
       actor_id: '20002'
     });
+    assert.equal(JSON.stringify(payload).includes('test-write-token'), false, 'write token must stay outside payload');
     return peerReportEnvelope;
   }) as any;
   const firstReport = await executeRiskIntranetReport('peer', '举报同行', reportInput, reportContext, reportRequest);
@@ -178,6 +234,21 @@ try {
   assert.equal(reportRequestIds[0], reportRequestIds[1], 'same message must produce stable idempotency request_id');
   assert.equal(firstReport.ok, true);
   assert.equal(secondReport.ok, true);
+
+  const authFailed = await executeRiskIntranetReport(
+    'peer',
+    '举报同行',
+    reportInput,
+    reportContext,
+    (async () => {
+      throw new Error('delivery_auth_failed_http_401');
+    }) as any
+  );
+  assert.equal(authFailed.ok, true);
+  if (authFailed.ok) {
+    assert.equal(authFailed.response.type, 'text');
+    assert.equal((authFailed.response as any).text, '举报服务凭据无效或不一致，请联系机器人主人同步写入令牌。');
+  }
 
   let failureCount = 0;
   const failed = await executeRiskIntranetQuery(
@@ -198,6 +269,8 @@ try {
   }
 } finally {
   configStateService.setConfig(originalConfig as any);
+  if (originalWriteToken === undefined) delete process.env.LOL_API_WRITE_TOKEN;
+  else process.env.LOL_API_WRITE_TOKEN = originalWriteToken;
 }
 
 const runtimeSource = (await readFile(runtimeSourcePath, 'utf8')).toLowerCase();
