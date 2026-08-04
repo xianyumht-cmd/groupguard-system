@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-08-05T03:38:00+08:00",
+  "updated_at": "2026-08-05T03:42:00+08:00",
   "repository": "xianyumht-cmd/groupguard-system",
   "task_id": "WEBUI-CONTROL-PANEL-003",
   "status": "implementation_and_browser_acceptance_passed_ready_to_merge",
@@ -10,7 +10,8 @@
   "production_changed": false,
   "production_acceptance": "not_started",
   "base_commit": "36fc9ef74a413062bdb583134ab3446a7d8b24e7",
-  "validated_head_commit": "69f2ad9837c98890d15f99ca2a2605eb1d844f1e",
+  "validated_code_commit": "69f2ad9837c98890d15f99ca2a2605eb1d844f1e",
+  "latest_documentation_commit": "2af7c5c6eb987fc4efff19e18ea23dbd009202e5",
   "completed": [
     "created dedicated WEBUI-CONTROL-PANEL-003 branch",
     "added independent control_panel_design.ts design-system module",
@@ -30,7 +31,8 @@
     "formatted raw OneBot and file-state JSON as operator-friendly status text",
     "renamed duplicate group-file-mirror section headings",
     "reviewed final desktop and mobile screenshots",
-    "passed full CI, build and browser gates"
+    "passed full CI, build and browser gates",
+    "updated changelog, handoff and design documentation"
   ],
   "verification": {
     "typescript_typecheck": "passed",
@@ -43,9 +45,9 @@
     "browser_dom_acceptance": "passed",
     "desktop_visual_acceptance": "passed_screenshot_review",
     "mobile_visual_acceptance": "passed_screenshot_review",
-    "latest_groupguard_ci_run": 30943939285,
-    "latest_groupguard_build_run": 30943943936,
-    "latest_browser_acceptance_run": 30943939249,
+    "latest_validated_code_ci_run": 30943939285,
+    "latest_validated_code_build_run": 30943943936,
+    "latest_validated_browser_run": 30943939249,
     "browser_acceptance_tests": 11,
     "browser_evidence_artifact": 8906297134,
     "browser_evidence_sha256": "c52ea13d0463b8e26542a79a56084d8bbbe717de853f11755c5c50743c468422",
@@ -77,6 +79,7 @@
     "production_deployment_before_merge": "forbidden"
   },
   "next": [
+    "wait for final documentation-head CI and build gates",
     "mark pull request 35 ready for review",
     "merge pull request 35 into main",
     "record the final merge commit",
