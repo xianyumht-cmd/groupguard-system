@@ -1,17 +1,18 @@
 {
-  "updated_at": "2026-08-05T03:42:00+08:00",
+  "updated_at": "2026-08-05T03:44:00+08:00",
   "repository": "xianyumht-cmd/groupguard-system",
   "task_id": "WEBUI-CONTROL-PANEL-003",
-  "status": "implementation_and_browser_acceptance_passed_ready_to_merge",
+  "status": "merged_main_pending_production_deployment",
   "branch": "codex/webui-control-panel-003-20260805",
   "pull_request": 35,
-  "pull_request_draft": true,
-  "pull_request_merged": false,
+  "pull_request_draft": false,
+  "pull_request_merged": true,
+  "merge_commit": "6b30b6cf04822893189c931e2419a1f1d9251de2",
   "production_changed": false,
   "production_acceptance": "not_started",
   "base_commit": "36fc9ef74a413062bdb583134ab3446a7d8b24e7",
   "validated_code_commit": "69f2ad9837c98890d15f99ca2a2605eb1d844f1e",
-  "latest_documentation_commit": "2af7c5c6eb987fc4efff19e18ea23dbd009202e5",
+  "final_pr_head": "6be8d143ba026ec43566c95645bebb98628b5ad3",
   "completed": [
     "created dedicated WEBUI-CONTROL-PANEL-003 branch",
     "added independent control_panel_design.ts design-system module",
@@ -20,19 +21,18 @@
     "added shared sidebar, topbar, breadcrumb, page heading, content and action regions",
     "restructured business sections into header, content and action areas",
     "replaced static overview copy with live readyz, status and build-info data",
-    "added dirty form tracking and beforeunload protection",
-    "made save state clear only after observable successful feedback",
+    "added reliable dirty form tracking and beforeunload protection",
     "added destructive-action confirmation without duplicating native confirmations",
     "added navigation search and hash-based home section routing",
     "made Microsoft YaHei UI and Microsoft YaHei the preferred Windows Chinese fonts",
     "added real Chromium desktop and mobile browser acceptance workflow",
-    "fixed mobile drawer search behavior and compact mobile topbar",
-    "converted page notices to non-layout-blocking toast feedback",
+    "fixed mobile drawer, compact topbar and Toast placement",
     "formatted raw OneBot and file-state JSON as operator-friendly status text",
     "renamed duplicate group-file-mirror section headings",
     "reviewed final desktop and mobile screenshots",
     "passed full CI, build and browser gates",
-    "updated changelog, handoff and design documentation"
+    "marked pull request 35 ready for review",
+    "merged pull request 35 into main"
   ],
   "verification": {
     "typescript_typecheck": "passed",
@@ -45,13 +45,13 @@
     "browser_dom_acceptance": "passed",
     "desktop_visual_acceptance": "passed_screenshot_review",
     "mobile_visual_acceptance": "passed_screenshot_review",
-    "latest_validated_code_ci_run": 30943939285,
-    "latest_validated_code_build_run": 30943943936,
-    "latest_validated_browser_run": 30943939249,
+    "final_pr_head_ci_run": 30944435831,
+    "final_pr_head_build_run": 30944435324,
+    "final_pr_head_browser_run": 30944435306,
     "browser_acceptance_tests": 11,
     "browser_evidence_artifact": 8906297134,
     "browser_evidence_sha256": "c52ea13d0463b8e26542a79a56084d8bbbe717de853f11755c5c50743c468422",
-    "result": "passed_ready_to_merge"
+    "result": "passed_merged_main"
   },
   "known_non_blocking_ci_warnings": [
     "existing npm dependency audit findings",
@@ -76,16 +76,14 @@
     "config_save_and_runtime_refresh": "preserved",
     "previous_deployment_package_commit": "36fc9ef74a413062bdb583134ab3446a7d8b24e7",
     "previous_deployment_package_valid_for_this_task": false,
-    "production_deployment_before_merge": "forbidden"
+    "deployment_source_must_be_merged_main": true
   },
   "next": [
-    "wait for final documentation-head CI and build gates",
-    "mark pull request 35 ready for review",
-    "merge pull request 35 into main",
-    "record the final merge commit",
-    "build a new immutable candidate from the merged main commit",
+    "build a new immutable candidate from merged main",
+    "run isolated full tests and SnowLuma build",
     "deploy with backup, health checks and automatic rollback",
-    "perform production desktop and mobile smoke acceptance"
+    "perform production desktop and mobile smoke acceptance",
+    "record production backup, running commit and rollback state"
   ],
   "references": [
     "docs/WEBUI_CONTROL_PANEL_003.md",
