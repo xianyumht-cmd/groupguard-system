@@ -1,15 +1,18 @@
 {
-  "updated_at": "2026-08-05T03:44:00+08:00",
+  "updated_at": "2026-08-05T04:13:00+08:00",
   "repository": "xianyumht-cmd/groupguard-system",
   "task_id": "WEBUI-CONTROL-PANEL-003",
-  "status": "merged_main_pending_production_deployment",
+  "status": "complete_production_accepted_merged_main",
   "branch": "codex/webui-control-panel-003-20260805",
   "pull_request": 35,
   "pull_request_draft": false,
   "pull_request_merged": true,
   "merge_commit": "6b30b6cf04822893189c931e2419a1f1d9251de2",
-  "production_changed": false,
-  "production_acceptance": "not_started",
+  "production_source_commit": "fa4f4a38f85962ba787c5bf9541426d9a5a57ad2",
+  "production_previous_commit": "7446e4f8225e5c3aff6f2e168acdad16d7b8e8d0",
+  "production_commit": "fa4f4a38f85962ba787c5bf9541426d9a5a57ad2",
+  "production_changed": true,
+  "production_acceptance": "passed",
   "base_commit": "36fc9ef74a413062bdb583134ab3446a7d8b24e7",
   "validated_code_commit": "69f2ad9837c98890d15f99ca2a2605eb1d844f1e",
   "final_pr_head": "6be8d143ba026ec43566c95645bebb98628b5ad3",
@@ -32,7 +35,12 @@
     "reviewed final desktop and mobile screenshots",
     "passed full CI, build and browser gates",
     "marked pull request 35 ready for review",
-    "merged pull request 35 into main"
+    "merged pull request 35 into main",
+    "built and hashed a 362-file immutable SnowLuma candidate",
+    "captured the complete pre-deployment production backup",
+    "reconciled the interrupted v3 switch with the v4 resume-safe deployment flow",
+    "verified the target commit, readiness, OneBot connection, bot identity and control-panel markers in production",
+    "created the persistent deployment state and manual rollback entry"
   ],
   "verification": {
     "typescript_typecheck": "passed",
@@ -51,8 +59,44 @@
     "browser_acceptance_tests": 11,
     "browser_evidence_artifact": 8906297134,
     "browser_evidence_sha256": "c52ea13d0463b8e26542a79a56084d8bbbe717de853f11755c5c50743c468422",
-    "result": "passed_merged_main"
+    "production_ready": true,
+    "production_onebot_connected": true,
+    "production_bot_id": "755396669",
+    "production_host_profile": "snowluma",
+    "production_control_panel_markers": "passed",
+    "production_resume_finalization": "passed",
+    "result": "passed"
   },
+  "deployment": {
+    "package_revision": "v4-resume-safe-stderr-fix",
+    "candidate_file_count": 362,
+    "candidate_archive_sha256": "b66ab1ee97de3be0b87a123893ed49e73ae3350df1dd7dfb00e7829b72bed780",
+    "deployment_bundle_sha256": "62e5d85d1e09583dac8d27f2eae9ef4736d27d5ef12d033309ca30380df20e8a",
+    "backup_path": "/mnt/sda1/groupguard/backups/webui-control-panel-003-20260804-200018-fa4f4a38f859",
+    "state_file": "deployment-state/WEBUI-CONTROL-PANEL-003-latest.json",
+    "local_state_file": "deployment-state/deployment-state-20260805-041003.json",
+    "rollback_launcher": "ROLLBACK-GROUPGUARD.cmd",
+    "reconciled_existing_target": true,
+    "automatic_rollback_triggered": false,
+    "rollback_entry_preserved": true
+  },
+  "deployment_attempt_history": [
+    {
+      "revision": "v2",
+      "result": "failed_before_remote_preflight",
+      "reason": "remote host did not provide node"
+    },
+    {
+      "revision": "v3",
+      "result": "target_switched_but_client_session_terminated_before_finalization",
+      "reason": "Windows PowerShell 5.1 treated SSH stderr from a transient health retry as a terminating error"
+    },
+    {
+      "revision": "v4",
+      "result": "success",
+      "mode": "reconciled_existing_target_and_finalized_release_state"
+    }
+  ],
   "known_non_blocking_ci_warnings": [
     "existing npm dependency audit findings",
     "GitHub actions Node runtime deprecation warning",
@@ -63,11 +107,17 @@
   "production": {
     "target_container": "groupguard-snowluma",
     "target_app": "/mnt/sda1/groupguard/app",
-    "deployed": false,
-    "candidate_built": false,
-    "backup_created": false,
-    "health_check": "not_started",
-    "rollback_entry": "not_created_for_this_task"
+    "deployed": true,
+    "candidate_built": true,
+    "backup_created": true,
+    "health_check": "passed",
+    "ready": true,
+    "onebot_connected": true,
+    "bot_id": "755396669",
+    "host_profile": "snowluma",
+    "control_panel": true,
+    "running_commit": "fa4f4a38f85962ba787c5bf9541426d9a5a57ad2",
+    "rollback_entry": "created_and_preserved"
   },
   "safety": {
     "backend_api_contracts": "unchanged",
@@ -76,17 +126,19 @@
     "config_save_and_runtime_refresh": "preserved",
     "previous_deployment_package_commit": "36fc9ef74a413062bdb583134ab3446a7d8b24e7",
     "previous_deployment_package_valid_for_this_task": false,
-    "deployment_source_must_be_merged_main": true
+    "deployment_source_was_merged_main": true,
+    "pre_deployment_backup_verified": true,
+    "manual_rollback_available": true
   },
   "next": [
-    "build a new immutable candidate from merged main",
-    "run isolated full tests and SnowLuma build",
-    "deploy with backup, health checks and automatic rollback",
-    "perform production desktop and mobile smoke acceptance",
-    "record production backup, running commit and rollback state"
+    "treat WEBUI-CONTROL-PANEL-003 as closed",
+    "retain the production backup and rollback state until the next stable release cycle",
+    "perform any future page-component extraction under a new task ID",
+    "handle dependency audit and build warnings under a separate maintenance task"
   ],
   "references": [
     "docs/WEBUI_CONTROL_PANEL_003.md",
+    "docs/WEBUI_CONTROL_PANEL_003_PRODUCTION_ACCEPTANCE.md",
     "docs/NEXT_CHAT_HANDOFF.md",
     "CHANGELOG.md",
     ".github/workflows/webui-browser-acceptance.yml"
