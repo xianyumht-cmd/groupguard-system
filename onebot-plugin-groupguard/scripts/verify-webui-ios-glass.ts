@@ -18,23 +18,34 @@ const pages = [
 ];
 
 for (const raw of pages) {
-  const themed = applyWebUiTheme(raw);
-  assert.match(themed, /id="groupguard-ios-theme-style"/);
-  assert.match(themed, /id="groupguard-ios-theme-bootstrap"/);
-  assert.match(themed, /id="groupguard-ios-theme-controller"/);
-  assert.ok(themed.includes(GROUPGUARD_WEBUI_THEME_STORAGE_KEY));
-  assert.ok(themed.includes("['light','☀ 日间']"));
-  assert.ok(themed.includes("['system','◐ 跟随']"));
-  assert.ok(themed.includes("['dark','☾ 夜间']"));
-  assert.ok(themed.includes('prefers-color-scheme: dark'));
-  assert.ok(themed.includes('backdrop-filter'));
-  assert.ok(themed.includes('mountAdminShell'));
-  assert.ok(themed.includes('gg-admin-shell'));
-  assert.ok(themed.includes('gg-sidebar'));
-  assert.ok(themed.includes('gg-overview'));
-  assert.ok(themed.includes("{title:'群管配置'"));
-  assert.ok(themed.includes("{title:'服务与风控'"));
-  assert.equal(applyWebUiTheme(themed), themed, 'theme injection must be idempotent');
+  const designed = applyWebUiTheme(raw);
+  assert.match(designed, /id="groupguard-control-panel-style"/);
+  assert.match(designed, /id="groupguard-control-panel-bootstrap"/);
+  assert.match(designed, /id="groupguard-control-panel-controller"/);
+  assert.ok(designed.includes(GROUPGUARD_WEBUI_THEME_STORAGE_KEY));
+  assert.ok(designed.includes("['light','☀ 日间']"));
+  assert.ok(designed.includes("['system','◐ 跟随']"));
+  assert.ok(designed.includes("['dark','☾ 夜间']"));
+  assert.ok(designed.includes('prefers-color-scheme: dark'));
+  assert.ok(designed.includes('Microsoft YaHei UI'));
+  assert.ok(designed.includes('backdrop-filter'));
+  assert.ok(designed.includes('mountControlPanel'));
+  assert.ok(designed.includes('gg-control-panel'));
+  assert.ok(designed.includes('gg-admin-shell'));
+  assert.ok(designed.includes('gg-sidebar'));
+  assert.ok(designed.includes('gg-page-header'));
+  assert.ok(designed.includes('gg-section-content'));
+  assert.ok(designed.includes('gg-section-actions'));
+  assert.ok(designed.includes('gg-live-dashboard'));
+  assert.ok(designed.includes('gg-savebar'));
+  assert.ok(designed.includes('mountDirtyState'));
+  assert.ok(designed.includes('mountDangerConfirm'));
+  assert.ok(designed.includes("api('/api/readyz')"));
+  assert.ok(designed.includes("api('/api/status')"));
+  assert.ok(designed.includes("api('/api/build-info')"));
+  assert.ok(designed.includes("['群管配置'"));
+  assert.ok(designed.includes("['服务与风控'"));
+  assert.equal(applyWebUiTheme(designed), designed, 'control panel injection must be idempotent');
 }
 
 assert.throws(() => applyWebUiTheme('<div>invalid</div>'), /webui_theme_invalid_html/);
@@ -74,10 +85,14 @@ assert.equal(overview.rows.find((row: any) => row.type === 'dynamic').outputForm
 
 const serverSource = await readFile(new URL('../src/standalone/admin/server.ts', import.meta.url), 'utf8');
 for (const renderer of ['renderMainPage()', 'renderQaPage()', 'renderQunGuanjiaPage()', 'renderGroupFileMirrorPage()']) {
-  assert.ok(serverSource.includes(`applyWebUiTheme(${renderer})`), `server must theme ${renderer}`);
+  assert.ok(serverSource.includes(`applyWebUiTheme(${renderer})`), `server must design ${renderer}`);
 }
 assert.ok(serverSource.includes('applyWebUiTheme(patchQueryPageHtml(renderQueryPage()))'));
 assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(getQueryOverview())'));
 assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(patchQueryConfig('));
 
-console.log('webui professional admin shell verification passed');
+const compatibilitySource = await readFile(new URL('../src/standalone/admin/webui_theme.ts', import.meta.url), 'utf8');
+assert.ok(compatibilitySource.includes("from './control_panel_design'"));
+assert.ok(compatibilitySource.includes('applyControlPanelDesign(page)'));
+
+console.log('webui unified control panel verification passed');
