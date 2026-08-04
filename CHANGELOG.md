@@ -4,6 +4,15 @@
 
 ## 2026-08-05
 
+### 统一控制台生产发布（WEBUI-CONTROL-PANEL-003）
+
+- 将合并后的 `main` 提交 `fa4f4a38f85962ba787c5bf9541426d9a5a57ad2` 构建为 362 文件不可变 SnowLuma 候选并发布到 `groupguard-snowluma`。
+- 发布前生产版本为 `7446e4f8225e5c3aff6f2e168acdad16d7b8e8d0`，已创建完整备份 `/mnt/sda1/groupguard/backups/webui-control-panel-003-20260804-200018-fa4f4a38f859`。
+- 最终生产检查确认 `ready=true`、OneBot 已连接、机器人账号 `755396669`、Host Profile 为 `snowluma`，新版统一控制台标记全部存在。
+- 创建生产状态文件 `deployment-state/WEBUI-CONTROL-PANEL-003-latest.json` 和手动回滚入口 `ROLLBACK-GROUPGUARD.cmd`。
+- v2 修复服务器宿主无 Node 的兼容问题；v3 修复候选语法检查运行位置；v4 增加中断后自恢复续跑、SSH stderr 兼容和发布状态补齐。
+- v4 检测到目标版本已健康运行后完成 resume-safe 最终化，最终输出 `HEALTH_OK`、`WEBUI_CONTROL_PANEL_OK`、`DEPLOYMENT_OK` 和 `RESUME_FINALIZATION_OK`。
+
 ### 统一控制台架构第一阶段（WEBUI-CONTROL-PANEL-003）
 
 - 停止继续向旧 `webui_theme.ts` 叠加整套控制台代码，新增独立设计系统模块 `control_panel_design.ts`。
