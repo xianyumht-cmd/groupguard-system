@@ -5,6 +5,7 @@ on:
     paths:
       - 'onebot-plugin-groupguard/src/standalone/admin/**'
       - 'onebot-plugin-groupguard/scripts/webui-browser-acceptance.spec.ts'
+      - 'onebot-plugin-groupguard/scripts/webui-visual-polish.spec.ts'
       - '.github/workflows/webui-browser-acceptance.yml'
   workflow_dispatch:
 
@@ -39,7 +40,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run desktop and mobile browser acceptance
-        run: npx playwright test scripts/webui-browser-acceptance.spec.ts --reporter=line --workers=1
+        run: npx playwright test scripts/webui-browser-acceptance.spec.ts scripts/webui-visual-polish.spec.ts --reporter=line --workers=1
 
       - name: Upload browser evidence
         if: always()
