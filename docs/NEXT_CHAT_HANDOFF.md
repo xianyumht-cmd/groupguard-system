@@ -1,59 +1,46 @@
 # GroupGuard 下一步交接
 
-更新时间：2026-08-05 03:25 +08:00  
+更新时间：2026-08-05 03:39 +08:00  
 当前任务：`WEBUI-CONTROL-PANEL-003`  
-当前状态：第一阶段代码与完整 CI/构建已通过，等待浏览器桌面/手机实机验收。
+当前状态：统一控制台第一阶段代码、完整 CI、SnowLuma 构建和真实 Chromium 桌面/手机验收均已通过，PR #35 可合并；生产尚未发布。
 
 ## 当前结论
 
-`WEBUI-ADMIN-CONSOLE-001` 只完成了控制台外壳，核心仍然是旧页面节点整体移入右侧工作区。本任务已经停止继续向旧 `webui_theme.ts` 叠加整套样式，开始建立独立设计系统、统一页面结构和公共交互。
+本任务不再继续给旧 `webui_theme.ts` 叠加整套 CSS。控制台实现已经拆到独立设计系统和浏览器交互加固模块，并统一了主页、问答管理、查询与接口、群文件搬运、Q群管家通道的信息架构。
 
 ```text
 branch: codex/webui-control-panel-003-20260805
 base: 36fc9ef74a413062bdb583134ab3446a7d8b24e7
 PR: #35
-validated head: a127d6ef4dd956b9e0eb7d4291f3a9ecdbda84d4
+validated head: 69f2ad9837c98890d15f99ca2a2605eb1d844f1e
 production: unchanged
 ```
 
-## 第一阶段已完成
-
-### 独立设计系统
-
-新增：
+## 已完成结构
 
 ```text
-onebot-plugin-groupguard/src/standalone/admin/control_panel_design.ts
-```
-
-原 `webui_theme.ts` 已缩减为兼容入口：
-
-```text
-applyWebUiTheme(page) -> applyControlPanelDesign(page)
-```
-
-控制台实现不再继续堆积在旧主题文件中。
-
-### 统一页面结构
-
-主页、问答管理、查询与接口、群文件搬运、Q群管家通道统一使用：
-
-```text
-侧边导航
-功能搜索
+统一侧边导航
+导航搜索
 顶部状态栏
 面包屑
 页面标题与说明
 页面级操作区
-结构化内容区
-区块标题
-区块内容
-区块底部操作栏
+区块标题、说明、内容和底部操作区
+手机抽屉导航
+日间、跟随系统、夜间主题
 ```
 
-主页继续复用原按钮、表单和事件监听器，但业务区块会被整理为明确的标题、内容和操作区域，而不是把旧卡片整体塞入右侧工作区。
+主要模块：
 
-### 真实运行仪表盘
+```text
+onebot-plugin-groupguard/src/standalone/admin/control_panel_design.ts
+onebot-plugin-groupguard/src/standalone/admin/control_panel_browser_fixes.ts
+onebot-plugin-groupguard/src/standalone/admin/webui_theme.ts
+```
+
+`webui_theme.ts` 只保留兼容组合入口，不再承载完整控制台实现。
+
+## 真实运行数据
 
 状态页直接读取：
 
@@ -63,82 +50,19 @@ GET /api/status
 GET /api/build-info
 ```
 
-显示服务就绪、OneBot 连接、机器人账号、运行版本、提交摘要、配置状态和动态命令数量。顶部状态会根据 readiness 和 OneBot 连接结果切换。
+显示服务就绪、OneBot 连接、机器人账号、运行版本、提交摘要、配置文件状态和动态命令数量。原始 OneBot 和文件状态 JSON 已转换为面向操作者的可读文本和状态标签。
 
-### 公共交互
+## 公共交互
 
-新增：
-
-- 导航搜索
-- URL Hash 功能区定位
-- 未保存修改提醒
-- 离开页面保护
-- 放弃修改并刷新
-- 删除、取消授权、清除等高风险操作二次确认
-- 手机端抽屉导航
-- 日间、跟随系统、夜间主题
-
-### 字体
-
-Windows 中文字体明确优先：
-
-```text
-Microsoft YaHei UI
-Microsoft YaHei
-```
-
-不再只依赖 `system-ui` 的中文回退。
-
-## 已通过验证
-
-PR #35 合并引用上的完整自动检查已经通过：
-
-```text
-GroupGuard CI run: 30941625296
-CI job: 92101162704
-result: success
-
-GroupGuard Build run: 30941620829
-Build job: 92101146780
-result: success
-```
-
-CI 已执行并通过：
-
-```text
-npm ci
-npm test
-tsc --noEmit
-verify:webui-ios-glass
-部署 PowerShell 语法检查
-npm run build:snowluma
-跨仓库只读 Mock 契约验证
-独立 GroupGuard Build
-```
-
-关键输出：
-
-```text
-webui unified control panel verification passed
-✓ 539 modules transformed
-✓ built in 5.71s
-```
-
-跨仓库契约验证为 9 项通过、0 项失败，1 项需要真实群发送授权的变更性用例未运行，符合只读 CI 约束。
-
-## 非阻断警告
-
-CI 同时报告以下既有依赖或构建警告，但未导致失败：
-
-```text
-npm audit: 19 moderate, 4 high
-GitHub Actions Node 运行时弃用提示
-undici 的 node:sqlite externalization 提示
-file-type 依赖 eval 提示
-现有动态/静态 import 分块提示
-```
-
-这些警告不是本次 WebUI 重构引入的编译失败，但后续应另立依赖治理任务处理。
+- 未保存修改提醒和离开页面保护。
+- 保存状态只在观察到成功反馈后清除，失败时继续保留提醒。
+- 删除、取消授权和清除操作统一二次确认，同时避免与原页面确认重复弹窗。
+- URL Hash 支持主页功能区直达。
+- 手机端点击导航搜索不会误关闭抽屉。
+- 手机主题按钮使用紧凑图标，不再竖排挤压顶部栏。
+- 页面提示改为 Toast，不再占据整张内容卡片；手机 Toast 位于底部，不遮挡页面标题。
+- 群文件搬运两个同名“设置”已改为“运行设置”和“搬运规则”。
+- Windows 中文字体明确优先 `Microsoft YaHei UI`、`Microsoft YaHei`。
 
 ## 兼容边界
 
@@ -146,11 +70,11 @@ file-type 依赖 eval 提示
 
 ```text
 后端 API 路径
-WebUI Token
-表单和按钮 ID
-业务事件监听器
+WebUI Token 行为
+业务表单和按钮 ID
+原业务事件监听器
 配置保存
-保存前备份
+保存前自动备份
 运行时配置刷新
 分群配置
 授权管理
@@ -160,49 +84,77 @@ WebUI Token
 Q群管家通道
 ```
 
-## 当前仍未完成
+## 自动验证
 
-下面项目仍然不能标记为通过：
+最终代码提交 `69f2ad9837c98890d15f99ca2a2605eb1d844f1e`：
 
 ```text
-真实浏览器 DOM 验收
-桌面端视觉验收
-手机端视觉验收
-旧页面局部 CSS 冲突检查
-生产不可变候选
-生产备份和部署
-生产健康检查
-生产自动回滚入口
+GroupGuard CI run: 30943939285  success
+GroupGuard Build run: 30943943936  success
+WebUI Browser Acceptance run: 30943939249  success
 ```
 
-代码和构建通过不等于界面视觉实机验收通过，也不得把当前分支标记为生产已发布。
+已通过：
 
-## 下一步执行顺序
+```text
+npm test
+tsc --noEmit
+verify:webui-ios-glass
+部署 PowerShell 语法检查
+npm run build:snowluma
+独立 GroupGuard Build
+跨仓库只读 Mock 契约验证
+真实 Chromium DOM 验收
+桌面 1440px 视觉与交互验收
+手机 390px 视觉与交互验收
+```
 
-1. 在真实浏览器检查主页和四个独立页面。
-2. 检查左侧导航、顶部栏、页面标题、区块操作栏和表单布局。
-3. 检查日间、夜间、跟随系统主题。
-4. 检查 860px 和 620px 以下手机布局。
-5. 重点检查旧页面 `.tabs`、`.top`、`.card` 等局部样式是否干扰统一结构。
-6. 修复视觉或交互缺陷并重新运行 CI。
-7. 记录浏览器验收证据后将 PR #35 转为可合并状态。
-8. 合并 `main` 后重新生成不可变候选和安全部署包。
-9. 按备份、原子切换、健康检查和自动回滚流程发布到 `groupguard-snowluma`。
+Chromium 共执行 11 项测试，覆盖 5 个 WebUI 页面、主题切换、实时仪表盘、页签路由、未保存提醒、移动抽屉、危险操作确认、状态格式化和截图驱动修复。
+
+截图证据：
+
+```text
+artifact id: 8906297134
+artifact sha256: c52ea13d0463b8e26542a79a56084d8bbbe717de853f11755c5c50743c468422
+```
+
+已人工复核最终桌面和手机截图：手机标题不再被 Toast 遮挡，抽屉完全收起，顶部栏保持单行；桌面状态页不再展示原始 JSON。
+
+## 非阻断警告
+
+现有 CI 仍报告依赖审计、Actions Node 运行时、`node:sqlite` externalization、依赖 `eval` 和分块提示。这些没有导致本任务失败，也不是本次控制台重构新增的运行错误，应另立依赖治理任务处理。
+
+## 当前未完成
+
+```text
+PR #35 尚未合并
+main 尚未包含最终提交
+生产不可变候选尚未生成
+生产备份、切换、健康检查和自动回滚尚未执行
+生产浏览器烟雾验收尚未执行
+```
+
+## 下一步
+
+1. 将 PR #35 标记为 Ready 并合并到 `main`。
+2. 记录最终 merge commit。
+3. 从合并后的 `main` 构建新的不可变候选，不得复用锁定 `36fc9ef...` 的旧部署包。
+4. 使用完整备份、原子切换、健康检查和自动回滚流程发布到 `groupguard-snowluma`。
+5. 生产发布后检查桌面与手机 WebUI，并记录生产验收结果。
 
 ## 发布警告
 
-此前生成的部署包锁定：
+此前生成的部署包目标提交为：
 
 ```text
 36fc9ef74a413062bdb583134ab3446a7d8b24e7
 ```
 
-它不包含 `WEBUI-CONTROL-PANEL-003`，不得用于发布本任务。合并后必须重新生成部署包。
+它不包含 `WEBUI-CONTROL-PANEL-003`，禁止用于发布当前任务。
 
 ## 参考
 
 - `docs/WEBUI_CONTROL_PANEL_003.md`
 - `docs/CURRENT_TASK_STATE.json`
 - `CHANGELOG.md`
-- `docs/WEBUI_ADMIN_CONSOLE_20260805.md`
-- `docs/OB_NAPCAT_PRODUCTION_ACCEPTANCE_001.md`
+- `.github/workflows/webui-browser-acceptance.yml`
