@@ -1,8 +1,8 @@
 {
-  "updated_at": "2026-08-05T03:23:00+08:00",
+  "updated_at": "2026-08-05T03:38:00+08:00",
   "repository": "xianyumht-cmd/groupguard-system",
   "task_id": "WEBUI-CONTROL-PANEL-003",
-  "status": "phase_1_ci_passed_pending_browser_acceptance",
+  "status": "implementation_and_browser_acceptance_passed_ready_to_merge",
   "branch": "codex/webui-control-panel-003-20260805",
   "pull_request": 35,
   "pull_request_draft": true,
@@ -10,27 +10,27 @@
   "production_changed": false,
   "production_acceptance": "not_started",
   "base_commit": "36fc9ef74a413062bdb583134ab3446a7d8b24e7",
-  "validated_head_commit": "a127d6ef4dd956b9e0eb7d4291f3a9ecdbda84d4",
+  "validated_head_commit": "69f2ad9837c98890d15f99ca2a2605eb1d844f1e",
   "completed": [
     "created dedicated WEBUI-CONTROL-PANEL-003 branch",
     "added independent control_panel_design.ts design-system module",
-    "reduced webui_theme.ts to a compatibility delegation entry",
-    "unified home, QA, query, group-file-mirror and QunGuanjia page shell",
+    "reduced webui_theme.ts to a compatibility composition entry",
+    "unified home, QA, query, group-file-mirror and QunGuanjia page architecture",
     "added shared sidebar, topbar, breadcrumb, page heading, content and action regions",
     "restructured business sections into header, content and action areas",
     "replaced static overview copy with live readyz, status and build-info data",
     "added dirty form tracking and beforeunload protection",
-    "added destructive-action confirmation",
+    "made save state clear only after observable successful feedback",
+    "added destructive-action confirmation without duplicating native confirmations",
     "added navigation search and hash-based home section routing",
     "made Microsoft YaHei UI and Microsoft YaHei the preferred Windows Chinese fonts",
-    "upgraded verify:webui-ios-glass assertions for control-panel architecture",
-    "added design document and changelog entry",
-    "opened pull request 35",
-    "passed full npm test on the pull-request merge ref",
-    "passed deployment PowerShell syntax validation",
-    "passed SnowLuma build",
-    "passed separate GroupGuard Build workflow",
-    "passed cross-repository read-only mock contracts"
+    "added real Chromium desktop and mobile browser acceptance workflow",
+    "fixed mobile drawer search behavior and compact mobile topbar",
+    "converted page notices to non-layout-blocking toast feedback",
+    "formatted raw OneBot and file-state JSON as operator-friendly status text",
+    "renamed duplicate group-file-mirror section headings",
+    "reviewed final desktop and mobile screenshots",
+    "passed full CI, build and browser gates"
   ],
   "verification": {
     "typescript_typecheck": "passed",
@@ -38,19 +38,21 @@
     "full_npm_test": "passed",
     "deployment_powershell_syntax": "passed",
     "snowluma_build": "passed",
+    "groupguard_build": "passed",
     "cross_repository_mock_contracts": "passed_9_not_run_1_mutating_case",
-    "groupguard_ci_run": 30941625296,
-    "groupguard_ci_job": 92101162704,
-    "groupguard_build_run": 30941620829,
-    "groupguard_build_job": 92101146780,
-    "build_log_artifact": 8905369534,
-    "browser_dom_acceptance": "pending",
-    "desktop_visual_acceptance": "pending",
-    "mobile_visual_acceptance": "pending",
-    "result": "code_and_build_passed_visual_acceptance_pending"
+    "browser_dom_acceptance": "passed",
+    "desktop_visual_acceptance": "passed_screenshot_review",
+    "mobile_visual_acceptance": "passed_screenshot_review",
+    "latest_groupguard_ci_run": 30943939285,
+    "latest_groupguard_build_run": 30943943936,
+    "latest_browser_acceptance_run": 30943939249,
+    "browser_acceptance_tests": 11,
+    "browser_evidence_artifact": 8906297134,
+    "browser_evidence_sha256": "c52ea13d0463b8e26542a79a56084d8bbbe717de853f11755c5c50743c468422",
+    "result": "passed_ready_to_merge"
   },
   "known_non_blocking_ci_warnings": [
-    "npm audit reported 19 moderate and 4 high dependency vulnerabilities",
+    "existing npm dependency audit findings",
     "GitHub actions Node runtime deprecation warning",
     "Vite node:sqlite externalization warning from undici",
     "file-type dependency eval warning",
@@ -72,28 +74,20 @@
     "config_save_and_runtime_refresh": "preserved",
     "previous_deployment_package_commit": "36fc9ef74a413062bdb583134ab3446a7d8b24e7",
     "previous_deployment_package_valid_for_this_task": false,
-    "production_deployment_before_browser_acceptance": "forbidden"
+    "production_deployment_before_merge": "forbidden"
   },
   "next": [
-    "perform browser DOM acceptance on the home page and four independent pages",
-    "perform desktop and mobile visual acceptance",
-    "check legacy page-local CSS conflicts with the shared sidebar and section layout",
-    "fix visual or interaction defects and rerun CI when required",
-    "mark pull request ready after recording validation evidence",
-    "merge only after browser acceptance passes",
-    "build a new immutable candidate and production safe deployment package",
-    "deploy with backup, health checks and automatic rollback"
+    "mark pull request 35 ready for review",
+    "merge pull request 35 into main",
+    "record the final merge commit",
+    "build a new immutable candidate from the merged main commit",
+    "deploy with backup, health checks and automatic rollback",
+    "perform production desktop and mobile smoke acceptance"
   ],
-  "closed_previous_task": {
-    "task_id": "OB-NAPCAT-DECOUPLING-001",
-    "status": "complete_production_accepted_merged_main",
-    "merge_commit": "0838c546b186cb5d588397efdaf35053b0766b8b",
-    "production_commit": "8c049a0b6bb5fab5ca65ce77050e021c468f1a84"
-  },
   "references": [
     "docs/WEBUI_CONTROL_PANEL_003.md",
     "docs/NEXT_CHAT_HANDOFF.md",
     "CHANGELOG.md",
-    "docs/OB_NAPCAT_PRODUCTION_ACCEPTANCE_001.md"
+    ".github/workflows/webui-browser-acceptance.yml"
   ]
 }
