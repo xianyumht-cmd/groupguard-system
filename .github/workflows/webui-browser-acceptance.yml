@@ -1,0 +1,51 @@
+name: WebUI Browser Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'onebot-plugin-groupguard/src/standalone/admin/**'
+      - 'onebot-plugin-groupguard/scripts/webui-browser-acceptance.spec.ts'
+      - '.github/workflows/webui-browser-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: onebot-plugin-groupguard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install browser test runner
+        run: npm install --no-save --no-package-lock @playwright/test@1.55.0
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run desktop and mobile browser acceptance
+        run: npx playwright test scripts/webui-browser-acceptance.spec.ts --reporter=line --workers=1
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-browser-acceptance-evidence
+          path: onebot-plugin-groupguard/test-results/
+          if-no-files-found: warn
+          retention-days: 30
