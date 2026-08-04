@@ -28,6 +28,12 @@ for (const raw of pages) {
   assert.ok(themed.includes("['dark','☾ 夜间']"));
   assert.ok(themed.includes('prefers-color-scheme: dark'));
   assert.ok(themed.includes('backdrop-filter'));
+  assert.ok(themed.includes('mountAdminShell'));
+  assert.ok(themed.includes('gg-admin-shell'));
+  assert.ok(themed.includes('gg-sidebar'));
+  assert.ok(themed.includes('gg-overview'));
+  assert.ok(themed.includes("{title:'群管配置'"));
+  assert.ok(themed.includes("{title:'服务与风控'"));
   assert.equal(applyWebUiTheme(themed), themed, 'theme injection must be idempotent');
 }
 
@@ -74,4 +80,4 @@ assert.ok(serverSource.includes('applyWebUiTheme(patchQueryPageHtml(renderQueryP
 assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(getQueryOverview())'));
 assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(patchQueryConfig('));
 
-console.log('webui iOS glass theme verification passed');
+console.log('webui professional admin shell verification passed');
