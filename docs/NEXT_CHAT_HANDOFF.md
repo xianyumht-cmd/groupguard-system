@@ -1,118 +1,119 @@
 # GroupGuard 下一步交接
 
-更新时间：2026-08-02 15:41 +08:00  
-已完成任务：`OB-NAPCAT-DECOUPLING-001`
+更新时间：2026-08-05 01:01 +08:00  
+当前任务：`WEBUI-ADMIN-CONSOLE-001`
 
-## 最终结论
+## 当前结论
 
-NapCat 运行时剥离已经完成开发、完整回归、不可变候选构建、生产安全部署、操作者实机验证和主分支合并。
+WebUI 主页已完成专业后台控制台改版开发，不再把全部功能入口平铺在页面顶部。新版使用侧边分组导航、顶部管理栏、状态摘要卡片和独立内容工作区，并提供手机端抽屉菜单。
 
-PR #30 已标记 Ready 并合并到 `main`：
+本次保持所有原业务节点、ID、事件监听器、Token、配置保存和接口路径不变，主要通过共享主题控制器重组现有 DOM，降低对核心功能的回归风险。
 
-```text
-merge commit: 0838c546b186cb5d588397efdaf35053b0766b8b
-```
-
-生产当前运行：
+## 当前分支
 
 ```text
-commit: 8c049a0b6bb5fab5ca65ce77050e021c468f1a84
-container: groupguard-snowluma
-ready: true
-OneBot connected: true
-bot: 755396669
-Host Profile: snowluma
+branch: codex/webui-admin-console-20260805
+base: main@2ac2c2f662605ea34c5a2d5f2f1f71dc26340762
 ```
 
-生产运行提交与仓库 merge commit 不同是正常的：`8c049a0b...` 是经过不可变候选验证并实际部署的代码提交；其后的提交只增加生产验收和状态文档，最后由 `0838c546...` 合并进 `main`，没有追加生产代码变化。
-
-操作者测试机器人后确认生产正常，没有感到用户侧行为变化。这符合本次任务目标：本次是运行时架构重构，不是业务功能改版。
-
-## 生产部署结果
+主要提交：
 
 ```text
-CANDIDATE_VALIDATION_OK=true
-BACKUP_CAPTURE_OK=true
-SWITCH_OK=true
-HEALTH_OK=true
-DEPLOYMENT_OK=true
+a846cf656c749d93b35969d5ab5635cff9095668  feat(webui): add professional admin console shell
+3cd3f4deb705bf09502a3a0d29ea15b8d67dac30  test(webui): cover professional console structure
+8dd5f29e4a825a773e55fc99d9d0a319c60c2512  docs: add consolidated recent changelog
+57f1200ac4e71eb18b4c0be7948ac330c3f9fdfc  docs: record WebUI admin console redesign
 ```
 
-生产备份：
+## 已完成内容
+
+- 桌面端 248px 固定侧边栏和右侧主工作区。
+- 菜单按概览、群管配置、服务与风控、扩展模块、高级设置分组。
+- 顶部保留刷新和主题切换，新增管理端状态提示。
+- 状态页新增四张摘要卡片。
+- 手机和平板端新增抽屉菜单、遮罩和菜单自动关闭。
+- 统一后台面板的卡片、表单、按钮、表格、状态和代码区样式。
+- 保留日间、跟随系统、夜间三种主题。
+- 扩展 WebUI 回归断言。
+- 新增根目录 `CHANGELOG.md`，整理 2026-08-01 至 2026-08-05 的重要更新。
+- 新增详细设计与发布说明 `docs/WEBUI_ADMIN_CONSOLE_20260805.md`。
+
+## 兼容边界
+
+未修改以下行为：
 
 ```text
-backups/ob-napcat-decoupling-001-20260802-153053-e20fde3d
+WebUI Token 读取和 localStorage 键
+配置读取与保存接口
+保存前自动备份
+运行时配置刷新
+分群配置
+授权管理
+备份管理
+问答管理
+查询配置
+发送与风控
+SUB玩法
+内容风险
+ELE构建
+config.json 编辑
+commands.json 编辑
 ```
 
-部署状态：
+原 `.tab`、`.tablink`、`data-tab`、表单节点和按钮节点被移动到新壳层，但没有被复制或替换，因此原事件监听器继续绑定在同一节点上。
+
+## 已执行静态检查
 
 ```text
-deployment-state/OB-NAPCAT-DECOUPLING-001-latest.json
+node --experimental-strip-types --check webui_theme.ts: passed
+node --experimental-strip-types --check verify-webui-ios-glass.ts: passed
+主题关键结构静态断言: passed
 ```
 
-首次健康探测在容器启动期间返回一次 `ECONNREFUSED 127.0.0.1:6108`，自动重试后通过，没有触发自动回滚。
+## 尚需完成
 
-## 代码层变化
+按顺序执行：
+
+1. 运行 `npm --prefix onebot-plugin-groupguard run verify:webui-ios-glass`。
+2. 运行 `npm --prefix onebot-plugin-groupguard test`。
+3. 运行 `npm --prefix onebot-plugin-groupguard run build:snowluma`。
+4. 创建 PR 并检查 CI。
+5. 合并到 `main` 后记录真实 merge commit。
+6. 按生产安全部署流程发布，并在浏览器强制刷新后进行桌面和手机端实机验收。
+
+## 实机验收重点
 
 ```text
-删除 napcat-types 依赖和 NapCat shim
-删除 NapCat Plugin Context / PluginModule / NapCatConfig 运行时绑定
-删除四参数 Action 调用状态和 build:napcat
-新增 GroupGuard 自有 OneBot 事件类型
-新增两参数 OneBot Action Client
-新增 GroupGuard Runtime Context
-新增 SnowLumaProfile
-新增 GenericOneBotProfile
-SnowLuma 启动器直接创建 GroupGuard Runtime
-群文件和消息历史扩展动作统一通过 Host Profile
-未知 SnowLuma 群文件列表/删除响应返回 indeterminate
-未知响应不确认删除成功、不确认文件不存在，并保留重试状态
+左侧菜单分组和滚动正常
+所有页签仍能切换
+问答管理和查询配置链接携带原 Token
+刷新按钮正常
+配置保存正常并产生备份
+分群配置读取/保存/删除正常
+日间/跟随/夜间主题正常
+820px 以下菜单可打开、遮罩可关闭、选项点击后自动收起
+运行状态载入后摘要卡片由“检查中”更新为“运行正常”或“需要检查”
 ```
 
-## 为什么用户侧没有明显变化
+## 既有已关闭任务
 
-查询、问答、风控、群管理、WebUI、SQLite 配置和 OneBot 连接方式的业务行为没有被重做。改变的是内部依赖方向：以前核心代码通过 NapCat 类型和伪造上下文运行；现在核心代码只依赖 GroupGuard 自有协议，SnowLuma 作为明确的 Host Profile 接入。
-
-因此正常情况下，群成员和管理员不应看到命令格式或回复结果变化。
-
-## 已通过验证
+`OB-NAPCAT-DECOUPLING-001` 已完成并合并，merge commit 为：
 
 ```text
-workflow 30717036168 / job 91414108890: success
-npm ci: passed
-npm test: passed
-npm run build:onebot: passed
-npm run build:snowluma: passed
-CI 30717204473: success
-Build 30717204475: success
-Audit 30717204512: success
-Pre-merge docs CI 30738196132: success
-Pre-merge docs Build 30738196144: success
-活动 NapCat runtime bindings: 0
-四参数 action calls: 0
-生产实机验证: passed_user_reported
-PR #30: merged
+0838c546b186cb5d588397efdaf35053b0766b8b
 ```
 
-## 安全状态
+生产曾验收运行提交：
 
 ```text
-GFM-DELETE-003: 未运行
-NapCat 参数推断 SnowLuma 扩展动作: 未使用
-未知响应策略: fail-closed，保留重试状态
-自动回滚入口: 已保留
-生产备份: 已保留
+8c049a0b6bb5fab5ca65ce77050e021c468f1a84
 ```
 
-## 后续规则
-
-`OB-NAPCAT-DECOUPLING-001` 已关闭。后续功能、Host Profile 扩展或群文件动作研究必须创建新任务 ID，不得继续改写本任务的已验收结论。
-
-生产备份和一键回滚状态至少保留到下一次稳定发布周期结束。
+该任务结论不得因本次 WebUI 改版被改写。
 
 ## 参考
 
+- `CHANGELOG.md`
+- `docs/WEBUI_ADMIN_CONSOLE_20260805.md`
 - `docs/OB_NAPCAT_PRODUCTION_ACCEPTANCE_001.md`
-- `docs/OB_NAPCAT_PRODUCTION_ACCEPTANCE_001.json`
-- `docs/OB_NAPCAT_REFACTOR_EXECUTION_STATE_001.json`
 - `docs/CURRENT_TASK_STATE.json`
