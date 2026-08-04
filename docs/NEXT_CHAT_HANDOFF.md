@@ -1,129 +1,207 @@
 # GroupGuard 下一步交接
 
-更新时间：2026-08-05 01:15 +08:00  
-已完成开发任务：`WEBUI-ADMIN-CONSOLE-001`
+更新时间：2026-08-05 03:15 +08:00  
+当前任务：`WEBUI-CONTROL-PANEL-003`  
+当前状态：第一阶段代码已完成，等待完整测试、浏览器验收和 PR 合并。
 
 ## 当前结论
 
-GroupGuard WebUI 专业后台控制台改版已完成并合并到 `main`。旧主页顶部十多个平铺入口已重构为侧边分组导航、顶部管理栏、状态摘要卡片和独立内容工作区；手机与平板宽度使用抽屉式菜单。
+`WEBUI-ADMIN-CONSOLE-001` 只完成了控制台外壳，核心仍然是旧页面节点整体移入右侧工作区。用户确认下一阶段停止继续叠加 CSS，改为重构统一设计系统、页面结构和信息架构。
 
-本次没有重写业务页面和接口。原业务节点、ID、`data-tab`、事件监听器、WebUI Token、配置保存、自动备份和运行时刷新逻辑均保留，主题控制器只移动原 DOM 节点并增加管理壳层。
-
-## 合并结果
+本次已在独立分支开始执行：
 
 ```text
-PR: #34
-branch: codex/webui-admin-console-20260805
-merge commit: 763ff93c7fd5425c17ea371dd9846fe04131e8ce
-base before merge: 2ac2c2f662605ea34c5a2d5f2f1f71dc26340762
-status: merged to main
+branch: codex/webui-control-panel-003-20260805
+base: 36fc9ef74a413062bdb583134ab3446a7d8b24e7
+production: unchanged
 ```
 
-主要实现提交：
+## 第一阶段已完成
+
+### 独立设计系统
+
+新增：
 
 ```text
-a846cf656c749d93b35969d5ab5635cff9095668  feat(webui): add professional admin console shell
-3cd3f4deb705bf09502a3a0d29ea15b8d67dac30  test(webui): cover professional console structure
-8dd5f29e4a825a773e55fc99d9d0a319c60c2512  docs: add consolidated recent changelog
-57f1200ac4e71eb18b4c0be7948ac330c3f9fdfc  docs: record WebUI admin console redesign
-74286ffe375edd1f0935437f7378f8409775ce31  docs: update handoff for WebUI console redesign
+onebot-plugin-groupguard/src/standalone/admin/control_panel_design.ts
 ```
 
-## 已完成内容
+原文件：
 
-- 桌面端 248px 固定侧边栏和右侧主工作区。
-- 菜单按“概览、群管配置、服务与风控、扩展模块、高级设置”分组。
-- 顶部保留刷新和主题切换，新增管理端在线提示。
-- 状态页新增服务状态、运行宿主、配置保护、控制台安全四张摘要卡片。
-- 手机和平板端新增抽屉菜单、遮罩关闭和选择菜单后自动收起。
-- 统一卡片、表单、按钮、表格、状态标签和代码结果区样式。
-- 保留日间、跟随系统、夜间三种主题及原主题存储键。
-- 扩展 `verify:webui-ios-glass`，增加管理壳层、侧边栏、摘要区和菜单分组断言。
-- 新增根目录 `CHANGELOG.md`，整理 2026-08-01 至 2026-08-05 的重要更新。
-- 新增专项文档 `docs/WEBUI_ADMIN_CONSOLE_20260805.md`。
+```text
+onebot-plugin-groupguard/src/standalone/admin/webui_theme.ts
+```
+
+现在只保留兼容入口并委托：
+
+```text
+applyWebUiTheme(page) -> applyControlPanelDesign(page)
+```
+
+控制台实现不再继续堆积在旧主题文件中。
+
+### 统一页面结构
+
+主页、问答管理、查询与接口、群文件搬运、Q群管家通道统一使用：
+
+```text
+侧边导航
+顶部状态栏
+面包屑
+页面标题与说明
+页面级操作区
+结构化内容区
+区块标题
+区块内容
+区块底部操作栏
+```
+
+主页菜单继续使用原按钮节点和原事件监听器，但页面区域不再以整张旧卡片直接塞进右侧区域，而是拆分为明确的标题、内容、操作区域。
+
+### 真实运行仪表盘
+
+状态页直接读取：
+
+```text
+/api/readyz
+/api/status
+/api/build-info
+```
+
+显示：
+
+- 服务就绪状态
+- OneBot 连接状态
+- 机器人账号
+- 运行版本与提交摘要
+- 配置文件状态
+- 动态命令数量
+
+顶部状态会根据真实 readiness 和 OneBot 连接结果切换。
+
+### 公共交互
+
+新增：
+
+- 导航搜索
+- URL Hash 功能区定位
+- 未保存修改提醒
+- 离开页面保护
+- 放弃修改并刷新
+- 删除、取消授权、清除等高风险操作二次确认
+- 手机端抽屉导航
+- 日间、跟随系统、夜间主题
+
+### 字体
+
+Windows 中文字体明确优先：
+
+```text
+Microsoft YaHei UI
+Microsoft YaHei
+```
+
+不再只依赖 `system-ui` 的中文字体回退。
 
 ## 兼容边界
 
-未修改以下行为：
+未修改：
 
 ```text
-WebUI Token 读取和 localStorage 键
-配置读取与保存接口
-保存前自动备份
+后端 API 路径
+WebUI Token
+表单和按钮 ID
+业务事件监听器
+配置保存
+保存前备份
 运行时配置刷新
 分群配置
 授权管理
-备份管理
 问答管理
 查询配置
-发送与风控
-SUB玩法
-内容风险
-ELE构建
-config.json 编辑
-commands.json 编辑
+群文件搬运
+Q群管家通道
 ```
 
-原 `.tab`、`.tablink`、表单和按钮节点没有被复制或替换，因此原事件监听器继续绑定在同一节点上。问答管理和查询配置链接仍由原页面脚本附加 Token。
+## 回归检查变化
 
-## 已执行检查
+`onebot-plugin-groupguard/scripts/verify-webui-ios-glass.ts` 已升级为统一控制台架构验证，新增检查：
 
 ```text
-node --experimental-strip-types --check webui_theme.ts: passed
-node --experimental-strip-types --check verify-webui-ios-glass.ts: passed
-主题关键结构静态断言: passed
-branch compare: ahead 5, behind 0
-PR mergeability: true
-PR #34 merge: passed
+control_panel_design.ts 独立模块
+兼容入口委托
+统一控制台根节点
+统一侧栏
+页面标题区
+区块内容区
+区块操作区
+实时状态 API
+未保存提醒
+危险操作确认
+微软雅黑字体栈
+五个 WebUI 页面接入
+重复注入幂等性
 ```
 
-GitHub 未为 PR 头提交或 merge commit 返回自动 workflow/status 项，因此不能把完整 `npm test`、SnowLuma 构建或生产实机验收标记为已通过。
+测试命令名称暂时不改，避免破坏现有 CI 和发布脚本。
 
-## 当前发布状态
+## 当前分支提交
 
 ```text
-repository main: 已包含新版 WebUI
-production container: 尚未部署本次改版
-production verification: 尚未执行
+201cb7ff149a5cdf1334355b0d269ebb23ddcd96  feat(webui): add unified control panel design system
+4d37f1b0587e750417da87669b174af571d2f545  refactor(webui): route legacy theme entry through control panel design system
+9ea59838028df51fb728793036a49083fe50eaff  test(webui): verify unified control panel architecture
+e933a230ca88850c1a8c0d8787b0138867ec78a1  docs: record unified control panel architecture
+d3e90760ab5b156e52c541ce2bf00750234ee1f9  docs: add control panel architecture changelog
+62ed999cf170577ce855d5d8bc934835e554b6e8  docs: mark WEBUI-CONTROL-PANEL-003 active state
 ```
 
-下一步应按现有生产安全部署流程：
+## 尚未完成和不得声称完成的内容
 
-1. 在完整仓库环境运行 `npm --prefix onebot-plugin-groupguard run verify:webui-ios-glass`。
-2. 运行 `npm --prefix onebot-plugin-groupguard test`。
-3. 运行 `npm --prefix onebot-plugin-groupguard run build:snowluma`。
-4. 构建不可变候选、备份生产、切换并执行健康检查。
-5. 浏览器强制刷新后进行桌面与手机端实机验收。
-6. 若失败，按现有自动回滚入口恢复，不得直接覆盖生产目录后手工试错。
-
-## 实机验收重点
+当前没有完整仓库执行环境的测试结果，因此以下项目仍为待办：
 
 ```text
-左侧菜单分组和滚动正常
-所有页签仍能切换
-问答管理和查询配置链接携带原 Token
-刷新按钮正常
-配置保存正常并产生备份
-分群配置读取/保存/删除正常
-日间/跟随/夜间主题正常
-820px 以下菜单可打开、遮罩可关闭、选项点击后自动收起
-运行状态载入后摘要卡片由“检查中”更新为“运行正常”或“需要检查”
+npm run verify:webui-ios-glass
+npm test
+npm run build:snowluma
+真实浏览器 DOM 验收
+桌面端视觉验收
+手机端视觉验收
+生产不可变候选
+生产备份和部署
+生产健康检查
+生产自动回滚入口
 ```
 
-## 既有已关闭任务
+不得把当前分支标记为已经生产验收。
 
-`OB-NAPCAT-DECOUPLING-001` 已完成并合并：
+## 下一步执行顺序
+
+1. 在完整仓库环境运行 WebUI 专项验证。
+2. 运行完整 `npm test`。
+3. 运行 `build:snowluma`。
+4. 使用浏览器检查主页和四个独立页面的 DOM、导航、表单、主题和响应式布局。
+5. 重点检查旧页面本地 CSS 是否与统一侧栏和结构组件冲突。
+6. 修复发现的问题并补回归断言。
+7. 创建 PR，记录验证证据。
+8. 验证通过后合并 `main`。
+9. 重新生成不可变候选和安全部署包。
+10. 按备份、原子切换、健康检查和自动回滚流程发布到 `groupguard-snowluma`。
+
+## 发布警告
+
+此前生成的部署包锁定：
 
 ```text
-merge commit: 0838c546b186cb5d588397efdaf35053b0766b8b
-production accepted commit: 8c049a0b6bb5fab5ca65ce77050e021c468f1a84
+36fc9ef74a413062bdb583134ab3446a7d8b24e7
 ```
 
-该任务结论不得因本次 WebUI 改版被改写。
+它不包含 `WEBUI-CONTROL-PANEL-003`，不得用于发布本任务。合并后必须重新生成部署包。
 
-## 参考
+## 参考文档
 
+- `docs/WEBUI_CONTROL_PANEL_003.md`
+- `docs/CURRENT_TASK_STATE.json`
 - `CHANGELOG.md`
 - `docs/WEBUI_ADMIN_CONSOLE_20260805.md`
 - `docs/OB_NAPCAT_PRODUCTION_ACCEPTANCE_001.md`
-- `docs/CURRENT_TASK_STATE.json`
