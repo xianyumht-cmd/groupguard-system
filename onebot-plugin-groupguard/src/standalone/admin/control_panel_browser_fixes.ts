@@ -5,7 +5,7 @@ const FIX_STYLE = String.raw`<style id="groupguard-control-panel-browser-fixes">
 .gg-status-summary{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 .gg-status-summary span{display:inline-flex;padding:2px 7px;border:1px solid var(--gg-line);border-radius:999px;background:var(--gg-soft);color:var(--gg-muted);font-size:11px}
 @media(max-width:620px){
-  #notice.card:not(.hidden){top:72px;right:14px;width:calc(100vw - 28px)}
+  #notice.card:not(.hidden){top:auto;right:14px;bottom:14px;width:calc(100vw - 28px)}
   .gg-topbar{gap:6px;padding:0 10px}
   .gg-system-chip{display:none!important}
   .gg-theme{flex:0 0 auto}
