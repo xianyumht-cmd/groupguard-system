@@ -12,8 +12,15 @@ export function getRawConfig(options: SnowLumaAdminServerOptions): JsonRecord {
 
 export function saveRawConfig(options: SnowLumaAdminServerOptions, nextConfig: any): void {
   const configObject = ensureObjectConfig(nextConfig);
-  const normalized = normalizePluginConfig(configObject as any);
   const previous = configStateService.getConfig();
+  const normalized = normalizePluginConfig(configObject as any);
+
+  // config.json intentionally persists `groups: {}` because SQLite owns all
+  // per-group settings. A global WebUI save must therefore carry the current
+  // in-memory group map forward instead of treating the JSON placeholder as a
+  // request to delete every SQLite group record.
+  normalized.groups = previous.groups || {};
+
   backupFile(options.configPath, options.backupDir, 'config.json');
   try {
     configStateService.setConfig(normalized);

@@ -1,5 +1,6 @@
 import { configStateService } from '../../core/state-services/config_state_service';
 import { saveConfigStrict } from '../../commands/common';
+import { storageAdapter } from '../../storage_adapter';
 import type { GroupGuardSettings } from '../../types';
 import { applyPatch } from './object_patch';
 import type { JsonRecord, SnowLumaAdminServerOptions } from './types';
@@ -79,7 +80,19 @@ export function patchGroupConfig(options: SnowLumaAdminServerOptions, groupId: s
 
 export function deleteGroupConfig(options: SnowLumaAdminServerOptions, groupId: string): ReturnType<typeof getGroupConfig> {
   const id = cleanGroupId(groupId);
+  const previous = configStateService.getGroupSettings(id);
   configStateService.deleteGroupSettings(id);
-  saveConfigStrict(options.ctx);
+  try {
+    // Deletion is intentionally explicit. Generic config saves are not allowed
+    // to infer a delete-all operation from an empty runtime group map.
+    storageAdapter.deleteGroupConfig(id);
+    saveConfigStrict(options.ctx);
+  } catch (error) {
+    if (previous) {
+      configStateService.setGroupSettings(id, previous);
+      try { storageAdapter.saveGroupConfig(id, previous); } catch { /* preserve original failure */ }
+    }
+    throw error;
+  }
   return getGroupConfig(id);
 }
