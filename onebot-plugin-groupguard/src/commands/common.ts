@@ -7,6 +7,7 @@ import { communicationStateService } from '../core/state-services/communication_
 import { configStateService } from '../core/state-services/config_state_service';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { send } from '../dynamic-commands/response_capture_runtime';
+import { selectGroupsForPersistence } from '../config_persistence_guard';
 import { storageAdapter } from '../storage_adapter';
 
 export function extractAt(raw: string): string | null {
@@ -80,13 +81,22 @@ export function saveConfig(ctx: GroupGuardCommandContext): void {
 export function saveConfigStrict(ctx: GroupGuardCommandContext): void {
   if (!ctx?.configPath) throw new Error('missing_config_path');
   const config = configStateService.getConfig();
+  const persistedGroups = storageAdapter.loadAllGroupConfigs();
+  const selection = selectGroupsForPersistence(config.groups, persistedGroups);
+  if (selection.preservedPersistedGroups) {
+    config.groups = selection.groups;
+    loggingStateService.warn(
+      `已阻止空分群配置覆盖 SQLite: runtimeGroups=${selection.runtimeCount} persistedGroups=${selection.persistedCount}`
+    );
+  }
+
   const mainConfig = { ...config, groups: {} };
   const serialized = JSON.stringify(mainConfig, null, 2);
   const existed = fs.existsSync(ctx.configPath);
   const previous = existed ? fs.readFileSync(ctx.configPath, 'utf-8') : null;
 
   try {
-    storageAdapter.replaceAllGroupConfigs(config.groups || {}, () => {
+    storageAdapter.replaceAllGroupConfigs(selection.groups, () => {
       writeTextFileAtomically(ctx.configPath, serialized);
     });
   } catch (error) {
