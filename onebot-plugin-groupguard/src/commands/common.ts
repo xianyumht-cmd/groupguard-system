@@ -81,7 +81,12 @@ export function saveConfig(ctx: GroupGuardCommandContext): void {
 export function saveConfigStrict(ctx: GroupGuardCommandContext): void {
   if (!ctx?.configPath) throw new Error('missing_config_path');
   const config = configStateService.getConfig();
-  const persistedGroups = storageAdapter.loadAllGroupConfigs();
+  let persistedGroups = config.groups || {};
+  try {
+    persistedGroups = storageAdapter.loadAllGroupConfigs();
+  } catch (error) {
+    if (!String((error as Error)?.message || error).includes('storage adapter not initialized')) throw error;
+  }
   const selection = selectGroupsForPersistence(config.groups, persistedGroups);
   if (selection.preservedPersistedGroups) {
     config.groups = selection.groups;
