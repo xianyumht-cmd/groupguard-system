@@ -78,7 +78,9 @@ export async function getTargetFilePushOverview(options: SnowLumaAdminServerOpti
       completedCount: local.completedCount,
       lastSuccessAt: local.lastSuccessAt,
       lastErrorAt: local.lastErrorAt,
-      lastError: local.lastError,
+      lastError: local.stateHealthy === false
+        ? '本地状态文件损坏，已停止自动上传；请点击“重新建立基线”安全恢复。'
+        : local.lastError,
     },
     remote,
     remoteError,
