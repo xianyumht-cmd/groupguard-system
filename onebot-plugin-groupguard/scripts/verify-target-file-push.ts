@@ -9,14 +9,25 @@ import {
   resolveTargetFilePushConfigDir,
 } from '../src/services/target_file_push_config.ts';
 import { targetFilePushCallbackToken } from '../src/services/target_file_push_credentials.ts';
+import { readTargetFileRetentionState } from '../src/services/target_file_push_delivery.ts';
 import { TargetFilePushService } from '../src/services/target_file_push_service.ts';
 import { renderTargetFilePushPage } from '../src/standalone/admin/target_file_push_page.ts';
+import { applyWebUiTheme } from '../src/standalone/admin/webui_theme.ts';
 
 function success<T>(data: T): HostOperationResult<T> {
   return { state: 'success', data };
 }
 
-function hostProfile(upload: (source: string, fileName: string) => Promise<HostOperationResult<{ fileId: string }>>): HostProfile {
+type DeleteHandler = (
+  groupId: string,
+  fileId: string,
+  folderId: string,
+) => Promise<HostOperationResult<{ confirmed: boolean }>>;
+
+function hostProfile(
+  upload: (source: string, fileName: string) => Promise<HostOperationResult<{ fileId: string }>>,
+  deleteFile?: DeleteHandler,
+): HostProfile {
   return {
     id: 'test',
     capabilities: {
@@ -25,13 +36,15 @@ function hostProfile(upload: (source: string, fileName: string) => Promise<HostO
       groupFileUrl: 'unsupported',
       groupFileUpload: 'supported',
       groupFileList: 'unsupported',
-      groupFileDelete: 'unsupported',
+      groupFileDelete: deleteFile ? 'supported' : 'unsupported',
     },
     actions: { call: async () => ({}) },
     getGroupFileUrl: async () => ({ state: 'unsupported', reason: 'test' }),
     uploadGroupFile: async (request) => upload(request.source, request.fileName),
     listGroupFiles: async () => ({ state: 'unsupported', reason: 'test' }),
-    deleteGroupFile: async () => ({ state: 'unsupported', reason: 'test' }),
+    deleteGroupFile: async (request) => deleteFile
+      ? deleteFile(request.groupId, request.fileId, request.folderId || '/')
+      : ({ state: 'unsupported', reason: 'test' }),
     getGroupMessageHistory: async () => ({ state: 'unsupported', reason: 'test' }),
   };
 }
@@ -129,6 +142,64 @@ async function main(): Promise<void> {
     /unauthorized/,
   );
 
+  const retentionDir = path.join(workDir, 'retention-case');
+  const retentionDataDir = path.join(retentionDir, 'data');
+  const retentionConfigPath = path.join(retentionDir, 'config.json');
+  fs.mkdirSync(retentionDataDir, { recursive: true });
+  fs.writeFileSync(retentionConfigPath, '{}\n', 'utf-8');
+  let retentionUploadCount = 0;
+  const deletedTargetFiles: string[] = [];
+  const retentionService = new TargetFilePushService();
+  retentionService.bindRuntime({
+    hostProfile: hostProfile(
+      async () => {
+        retentionUploadCount += 1;
+        return success({ fileId: `qq-retain-${retentionUploadCount}` });
+      },
+      async (_groupId, fileId) => {
+        deletedTargetFiles.push(fileId);
+        return success({ confirmed: true });
+      },
+    ),
+    workDir: retentionDir,
+    dataDir: retentionDataDir,
+    configPath: retentionConfigPath,
+    log: () => undefined,
+  });
+  retentionService.saveConfig({
+    enabled: true,
+    sourceUrl: 'https://abc.lanzou.com/iTEST',
+    targetGroupId: '12345678',
+    apiBaseUrl: 'http://127.0.0.1:5001',
+    callbackBaseUrl: 'http://127.0.0.1:6108',
+    checkIntervalSeconds: 300,
+    maxFileSizeMb: 32,
+    targetFolderId: '/',
+  });
+  const retentionToken = targetFilePushCallbackToken(resolveTargetFilePushConfigDir(retentionConfigPath));
+  const retainFirst = await retentionService.handleEvent({
+    ...event,
+    event_id: 'sha256:retain-a',
+    fingerprint: 'sha256:retain-file-a',
+    file: { ...event.file, name: 'retain-a.zip' },
+  }, retentionToken);
+  assert.equal(retainFirst.fileId, 'qq-retain-1');
+  assert.deepEqual(deletedTargetFiles, [], 'first successful upload must not delete the only target file');
+
+  const retainSecond = await retentionService.handleEvent({
+    ...event,
+    event_id: 'sha256:retain-b',
+    fingerprint: 'sha256:retain-file-b',
+    file: { ...event.file, name: 'retain-b.zip' },
+  }, retentionToken);
+  assert.equal(retainSecond.ok, true);
+  assert.equal(retainSecond.fileId, 'qq-retain-2');
+  assert.deepEqual(deletedTargetFiles, ['qq-retain-1'], 'new upload must delete only the previous target group file');
+  const retentionState = readTargetFileRetentionState(path.join(retentionService.getTempDir(), 'state-probe.bin'));
+  assert.equal(retentionState.latest?.fileId, 'qq-retain-2');
+  assert.equal(retentionState.latest?.fileName, 'retain-b.zip');
+  assert.deepEqual(retentionState.pendingCleanup, [], 'confirmed previous-file deletion clears pending cleanup');
+
   const failDir = path.join(workDir, 'failed-case');
   const failDataDir = path.join(failDir, 'data');
   const failConfigPath = path.join(failDir, 'config.json');
@@ -214,12 +285,21 @@ async function main(): Promise<void> {
   assert.match(page, /\/api\/target-file-push\/check/);
   assert.match(page, /\/api\/target-file-push\/rebaseline/);
 
+  const themedPage = applyWebUiTheme(page);
+  assert.match(themedPage, /groupguard-target-file-push-navigation-patch/);
+  assert.match(themedPage, /扩展模块 定向文件推送 蓝奏 群文件/);
+  assert.match(themedPage, /\/target-file-push\.html/);
+
   const adminServerSource = fs.readFileSync(path.resolve(process.cwd(), 'src/standalone/admin/server.ts'), 'utf-8');
   const callbackRouteIndex = adminServerSource.indexOf("url.pathname === '/api/target-file-push/event'");
   const firstGlobalAuthIndex = adminServerSource.indexOf('if (!requireAuth(req, res, url, token)) return;');
   assert.ok(callbackRouteIndex >= 0, 'target file callback route must exist');
   assert.ok(firstGlobalAuthIndex > callbackRouteIndex, 'dedicated callback-token route must run before WebUI global auth');
   assert.match(adminServerSource, /x-target-file-token/);
+
+  const webUiThemeSource = fs.readFileSync(path.resolve(process.cwd(), 'src/standalone/admin/webui_theme.ts'), 'utf-8');
+  assert.match(webUiThemeSource, /groupguard-target-file-push-navigation-patch/);
+  assert.match(webUiThemeSource, /ggTargetFilePush/);
 
   await fileServer.close();
   fs.rmSync(workDir, { recursive: true, force: true });
