@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { getRawConfig } from './config_api';
 import type { SnowLumaAdminServerOptions } from './types';
@@ -36,6 +37,38 @@ function derivedApiBaseUrl(options: SnowLumaAdminServerOptions): string {
   }
 }
 
+function privateIpv4Rank(address: string): number {
+  if (/^192\.168\./.test(address)) return 0;
+  if (/^10\./.test(address)) return 1;
+  const match = address.match(/^172\.(\d+)\./);
+  if (match) {
+    const second = Number(match[1]);
+    if (second >= 16 && second <= 31) return 2;
+  }
+  return 99;
+}
+
+function derivedCallbackBaseUrl(options: SnowLumaAdminServerOptions): string {
+  const parsedPort = Number(options.port || process.env.GROUPGUARD_WEBUI_PORT || 6108);
+  const port = Number.isFinite(parsedPort) && parsedPort > 0 ? Math.floor(parsedPort) : 6108;
+  const configuredHost = String(options.host || process.env.GROUPGUARD_WEBUI_HOST || '').trim();
+  if (configuredHost && !['0.0.0.0', '127.0.0.1', 'localhost', '::', '::1'].includes(configuredHost)) {
+    return `http://${configuredHost}:${port}`;
+  }
+
+  const candidates: string[] = [];
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const entry of entries || []) {
+      const family = typeof entry.family === 'string' ? entry.family : String(entry.family);
+      if (entry.internal || (family !== 'IPv4' && family !== '4')) continue;
+      const address = String(entry.address || '').trim();
+      if (privateIpv4Rank(address) < 99) candidates.push(address);
+    }
+  }
+  candidates.sort((a, b) => privateIpv4Rank(a) - privateIpv4Rank(b) || a.localeCompare(b));
+  return candidates[0] ? `http://${candidates[0]}:${port}` : '';
+}
+
 function recoverLocalStateAfterRemoteRebaseline(): string {
   const status = targetFilePushService.getLocalStatus();
   if (status.stateHealthy !== false) return '';
@@ -57,6 +90,7 @@ export async function getTargetFilePushOverview(options: SnowLumaAdminServerOpti
   const local = targetFilePushService.getLocalStatus();
   const editor = { ...local.config } as Record<string, any>;
   if (!editor.apiBaseUrl) editor.apiBaseUrl = derivedApiBaseUrl(options);
+  if (!editor.callbackBaseUrl) editor.callbackBaseUrl = derivedCallbackBaseUrl(options);
   let remote: Record<string, any> | null = null;
   let remoteError = '';
   if (editor.apiBaseUrl && local.apiTokenConfigured) {
@@ -117,7 +151,7 @@ export async function saveTargetFilePushFromWeb(options: SnowLumaAdminServerOpti
     message: syncError
       ? `本地设置已保存，但接口端同步/建立基线失败：${syncError}`
       : next.enabled && activation
-        ? '定向文件推送已开启，当前文件已建立基线；后续变化才会上传。'
+        ? '定向文件推送已开启，当前蓝奏目录已建立基线；后续新增或替换文件才会上传。'
         : '定向文件推送设置已保存，并已同步到接口端。',
   };
 }
