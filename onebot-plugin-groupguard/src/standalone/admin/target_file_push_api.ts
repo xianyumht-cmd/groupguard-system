@@ -2,6 +2,25 @@ import { getRawConfig } from './config_api';
 import type { SnowLumaAdminServerOptions } from './types';
 import { targetFilePushService } from '../../services/target_file_push_service';
 
+let runtimeBound = false;
+
+function ensureRuntime(options: SnowLumaAdminServerOptions): void {
+  if (runtimeBound) return;
+  targetFilePushService.bindRuntime({
+    hostProfile: options.ctx.hostProfile,
+    workDir: options.workDir,
+    dataDir: options.dataDir,
+    configPath: options.configPath,
+    log: (level, message) => {
+      if (level === 'error') options.ctx.logger.error(message);
+      else if (level === 'warn') options.ctx.logger.warn(message);
+      else if (level === 'debug') options.ctx.logger.debug(message);
+      else options.ctx.logger.info(message);
+    },
+  });
+  runtimeBound = true;
+}
+
 function safeError(error: unknown): string {
   return String((error as Error)?.message || error || 'unknown_error').slice(0, 300);
 }
@@ -16,6 +35,7 @@ function derivedApiBaseUrl(options: SnowLumaAdminServerOptions): string {
 }
 
 export async function getTargetFilePushOverview(options: SnowLumaAdminServerOptions) {
+  ensureRuntime(options);
   const local = targetFilePushService.getLocalStatus();
   const editor = { ...local.config } as Record<string, any>;
   if (!editor.apiBaseUrl) editor.apiBaseUrl = derivedApiBaseUrl(options);
@@ -47,6 +67,7 @@ export async function getTargetFilePushOverview(options: SnowLumaAdminServerOpti
 }
 
 export async function saveTargetFilePushFromWeb(options: SnowLumaAdminServerOptions, value: unknown) {
+  ensureRuntime(options);
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
   const configInput = raw.config && typeof raw.config === 'object' ? raw.config : raw;
   const apiToken = String(raw.apiToken || raw.api_token || '').trim();
@@ -73,15 +94,22 @@ export async function saveTargetFilePushFromWeb(options: SnowLumaAdminServerOpti
 }
 
 export async function checkTargetFilePushNow(options: SnowLumaAdminServerOptions) {
+  ensureRuntime(options);
   const result = await targetFilePushService.requestImmediateCheck();
   return { ...(await getTargetFilePushOverview(options)), check: result };
 }
 
 export async function rebaselineTargetFilePush(options: SnowLumaAdminServerOptions) {
+  ensureRuntime(options);
   const result = await targetFilePushService.requestRebaseline();
   return { ...(await getTargetFilePushOverview(options)), rebaseline: result };
 }
 
-export async function handleTargetFilePushEvent(payload: unknown, presentedToken: string) {
+export async function handleTargetFilePushEvent(
+  options: SnowLumaAdminServerOptions,
+  payload: unknown,
+  presentedToken: string,
+) {
+  ensureRuntime(options);
   return targetFilePushService.handleEvent(payload, presentedToken);
 }
