@@ -6,4 +6,5 @@ node_modules/
 **/config/target-file-push-api-token
 **/config/target-file-push-callback-token
 **/data/target-file-push-state.json
+**/data/target-file-push-target-state.json
 **/data/target-file-push-temp/
