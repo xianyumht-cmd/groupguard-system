@@ -62,6 +62,7 @@ export class TargetFilePushService {
   private runtime: TargetFilePushRuntimeBinding | null = null;
   private config: TargetFilePushConfig = { ...DEFAULT_TARGET_FILE_PUSH_CONFIG };
   private state: TargetFilePushState = emptyTargetFilePushState();
+  private stateHealthy = true;
   private readonly eventLocks = new Map<string, Promise<Record<string, any>>>();
 
   bindRuntime(runtime: TargetFilePushRuntimeBinding): void {
@@ -121,13 +122,16 @@ export class TargetFilePushService {
   private loadState(): void {
     try {
       this.state = loadTargetFilePushState(this.getStateFilePath());
+      this.stateHealthy = true;
     } catch (error) {
       this.state = emptyTargetFilePushState();
-      this.log('error', `状态读取失败，使用空状态且不会覆盖损坏文件: ${String((error as Error)?.message || error)}`);
+      this.stateHealthy = false;
+      this.log('error', `状态读取失败，为防止重复上传已停止事件处理且不会覆盖损坏文件: ${String((error as Error)?.message || error)}`);
     }
   }
 
   private saveState(): void {
+    if (!this.stateHealthy) throw new Error('target_file_push_state_unavailable');
     saveTargetFilePushState(this.getStateFilePath(), this.state);
   }
 
@@ -153,6 +157,7 @@ export class TargetFilePushService {
     this.loadState();
     return {
       config: { ...this.config },
+      stateHealthy: this.stateHealthy,
       apiTokenConfigured: Boolean(targetFilePushApiToken(this.secretDir())),
       callbackTokenConfigured: Boolean(targetFilePushCallbackToken(this.secretDir())),
       tempDir: this.getTempDir(),
@@ -221,6 +226,7 @@ export class TargetFilePushService {
     if (!targetFilePushTokenMatches(this.secretDir(), presentedToken)) throw new Error('target_file_push_callback_unauthorized');
     this.loadConfig();
     this.loadState();
+    if (!this.stateHealthy) throw new Error('target_file_push_state_unavailable');
     if (!this.config.enabled) throw new Error('target_file_push_disabled');
     if (!isRecord(payload) || payload.schema !== 'target-file-push.v1') throw new Error('target_file_push_invalid_schema');
 
@@ -242,11 +248,16 @@ export class TargetFilePushService {
 
     const existing = this.eventLocks.get(eventId);
     if (existing) return existing;
-    const task = this.processEvent({ eventId, fingerprint, directUrl, fileName })
-      .finally(() => {
-        if (this.eventLocks.get(eventId) === task) this.eventLocks.delete(eventId);
-      });
+    const task = this.processEvent({ eventId, fingerprint, directUrl, fileName });
     this.eventLocks.set(eventId, task);
+    task.then(
+      () => {
+        if (this.eventLocks.get(eventId) === task) this.eventLocks.delete(eventId);
+      },
+      () => {
+        if (this.eventLocks.get(eventId) === task) this.eventLocks.delete(eventId);
+      },
+    );
     return task;
   }
 
