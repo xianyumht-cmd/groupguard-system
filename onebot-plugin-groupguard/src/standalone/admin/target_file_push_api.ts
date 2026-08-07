@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { getRawConfig } from './config_api';
 import type { SnowLumaAdminServerOptions } from './types';
 import { targetFilePushService } from '../../services/target_file_push_service';
@@ -32,6 +34,22 @@ function derivedApiBaseUrl(options: SnowLumaAdminServerOptions): string {
   } catch {
     return '';
   }
+}
+
+function recoverLocalStateAfterRemoteRebaseline(): string {
+  const status = targetFilePushService.getLocalStatus();
+  if (status.stateHealthy !== false) return '';
+  const statePath = targetFilePushService.getStateFilePath();
+  if (!fs.existsSync(statePath)) {
+    targetFilePushService.getLocalStatus();
+    return '';
+  }
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+  const quarantinePath = `${statePath}.corrupt-${stamp}-${process.pid}`;
+  fs.renameSync(statePath, quarantinePath);
+  const recovered = targetFilePushService.getLocalStatus();
+  if (recovered.stateHealthy !== true) throw new Error('本地状态隔离后仍无法恢复');
+  return path.basename(quarantinePath);
 }
 
 export async function getTargetFilePushOverview(options: SnowLumaAdminServerOptions) {
@@ -110,8 +128,18 @@ export async function checkTargetFilePushNow(options: SnowLumaAdminServerOptions
 
 export async function rebaselineTargetFilePush(options: SnowLumaAdminServerOptions) {
   ensureRuntime(options);
-  const result = await targetFilePushService.requestRebaseline();
-  return { ...(await getTargetFilePushOverview(options)), rebaseline: result };
+  const remoteReset = await targetFilePushService.requestRebaseline();
+  const localQuarantineFile = recoverLocalStateAfterRemoteRebaseline();
+  const config = targetFilePushService.getConfig();
+  const baseline = config.enabled
+    ? await targetFilePushService.requestImmediateCheck()
+    : null;
+  return {
+    ...(await getTargetFilePushOverview(options)),
+    rebaseline: remoteReset,
+    baseline,
+    localQuarantineFile,
+  };
 }
 
 export async function handleTargetFilePushEvent(
