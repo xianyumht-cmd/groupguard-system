@@ -70,6 +70,7 @@ export class TargetFilePushService {
     this.loadConfig();
     this.loadState();
     targetFilePushCallbackToken(this.secretDir());
+    this.retryPendingCleanup();
     this.cleanupStaleTempFiles();
   }
 
@@ -135,6 +136,24 @@ export class TargetFilePushService {
     saveTargetFilePushState(this.getStateFilePath(), this.state);
   }
 
+  private retryPendingCleanup(): boolean {
+    if (!this.stateHealthy) return false;
+    const current = this.state.current;
+    if (!current || current.state !== 'cleanup_pending' || !current.localPath) return false;
+    try {
+      if (fs.existsSync(current.localPath)) fs.unlinkSync(current.localPath);
+      this.state.current = null;
+      this.saveState();
+      this.log('info', `已补偿清理上传成功后的本地临时文件: ${current.fileName}`);
+      return true;
+    } catch (error) {
+      current.lastError = `本地临时文件删除重试失败:${String((error as Error)?.message || error).slice(0, 240)}`;
+      current.updatedAt = Date.now();
+      try { this.saveState(); } catch { /* preserve pending cleanup */ }
+      return false;
+    }
+  }
+
   getConfig(): TargetFilePushConfig {
     this.loadConfig();
     return { ...this.config };
@@ -155,6 +174,7 @@ export class TargetFilePushService {
   getLocalStatus(): Record<string, any> {
     this.loadConfig();
     this.loadState();
+    this.retryPendingCleanup();
     return {
       config: { ...this.config },
       stateHealthy: this.stateHealthy,
@@ -227,6 +247,7 @@ export class TargetFilePushService {
     this.loadConfig();
     this.loadState();
     if (!this.stateHealthy) throw new Error('target_file_push_state_unavailable');
+    this.retryPendingCleanup();
     if (!this.config.enabled) throw new Error('target_file_push_disabled');
     if (!isRecord(payload) || payload.schema !== 'target-file-push.v1') throw new Error('target_file_push_invalid_schema');
 
