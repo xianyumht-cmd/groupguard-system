@@ -1,3 +1,9 @@
 node_modules/
 .plugin-zips/
 *.temp.zip
+
+**/config/target-file-push.json
+**/config/target-file-push-api-token
+**/config/target-file-push-callback-token
+**/data/target-file-push-state.json
+**/data/target-file-push-temp/
