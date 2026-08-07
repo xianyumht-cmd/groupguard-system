@@ -75,17 +75,15 @@ export async function saveTargetFilePushFromWeb(options: SnowLumaAdminServerOpti
   const previous = targetFilePushService.getConfig();
   if (apiToken) targetFilePushService.setApiToken(apiToken);
   const next = targetFilePushService.saveConfig(configInput);
+  const newlyActivated = next.enabled && (!previous.enabled || previous.sourceUrl !== next.sourceUrl);
 
   let sync: Record<string, any> | null = null;
   let activation: Record<string, any> | null = null;
   let syncError = '';
   try {
+    if (newlyActivated) await targetFilePushService.requestRebaseline();
     sync = await targetFilePushService.syncInterfaceConfig();
-    const newlyActivated = next.enabled && (!previous.enabled || previous.sourceUrl !== next.sourceUrl);
-    if (newlyActivated) {
-      await targetFilePushService.requestRebaseline();
-      activation = await targetFilePushService.requestImmediateCheck();
-    }
+    if (newlyActivated) activation = await targetFilePushService.requestImmediateCheck();
   } catch (error) {
     syncError = safeError(error);
   }
