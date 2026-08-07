@@ -59,7 +59,7 @@ function derivedCallbackBaseUrl(options: SnowLumaAdminServerOptions): string {
   const candidates: string[] = [];
   for (const entries of Object.values(os.networkInterfaces())) {
     for (const entry of entries || []) {
-      const family = typeof entry.family === 'string' ? entry.family : String(entry.family);
+      const family = String(entry.family);
       if (entry.internal || (family !== 'IPv4' && family !== '4')) continue;
       const address = String(entry.address || '').trim();
       if (privateIpv4Rank(address) < 99) candidates.push(address);
