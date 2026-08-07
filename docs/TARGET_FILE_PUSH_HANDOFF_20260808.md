@@ -1,22 +1,50 @@
-# 定向文件推送任务交接（2026-08-08 02:03 +08:00）
+# 定向文件推送任务交接（2026-08-08 03:52 +08:00）
 
-> 新聊天继续时，以本文为当前任务基线。不要从头重做已经完成的部署与设计。
+> 新聊天继续时，以本文为当前任务基线。当前部署阶段已经完成，5001 / 6178 / 6108 已经打通并成功建立 baseline。不要从头重做部署；下一次继续时直接从“首次新增文件真实投递测试”开始。
+
+## 0. 当前结论 / 暂停点
+
+当前任务已完成到：
+
+`部署完成 -> 5001 与 6108 内部鉴权打通 -> 6108 业务配置同步到 5001 -> 第一次 baseline 成功建立`
+
+当前已经确认：
+
+- GroupGuard 6108 在线。
+- LOLDataSystem 5001 在线。
+- LOLDataSystem 6178 定向文件监控页面在线。
+- 6108 -> 5001 网络通信正常。
+- 6108 -> 5001 内部 Token 鉴权已通过。
+- 5001 已接收到 6108 下发的定向监控配置。
+- 5001 后台监控循环运行中。
+- 当前 Provider：`lanzou_web`。
+- callback Token 已配置。
+- baseline 已成功建立，共 `1` 个现有文件。
+- 第一次建立 baseline 没有产生待投递事件，没有上传历史文件，符合设计要求。
+- 当前待投递事件为空。
+- 当前最近错误为空。
+
+**尚未执行：新增一个全新文件后的完整 QQ 群文件投递测试。**
+
+因此任务暂时告一段落。下次继续时不要再部署，直接做第 8 节的业务测试。
+
+---
 
 ## 1. 最终目标
 
 实现一条独立于旧蓝奏 watcher/event 业务的链路：
 
-`指定蓝奏目录 -> LOLDataSystem 5001 检测目录变化 -> 解析最新直链 -> 回调 GroupGuard 6108 -> ARM 临时下载 -> QQ 原生群文件上传`
+`指定蓝奏目录 -> LOLDataSystem 5001 检测目录变化 -> 解析直链 -> 回调 GroupGuard 6108 -> ARM 临时下载 -> QQ 原生群文件上传`
 
-当前固定业务目标：
+固定业务目标：
 
 - 蓝奏目录：`https://wwbvf.lanzn.com/b016kzvvmd`
 - QQ 群：`960957757`
-- GroupGuard：`192.168.3.89:6108`
-- Windows LOLDataSystem API：`127.0.0.1:5001`
-- Windows 管理 WebUI：`127.0.0.1:6178`
+- GroupGuard WebUI / callback：`192.168.3.89:6108`
+- LOLDataSystem 5001：Windows 主机 `192.168.3.100:5001`，本机访问可用 `127.0.0.1:5001`
+- LOLDataSystem 管理 WebUI：Windows 本机 `127.0.0.1:6178`
 
-必须满足：
+必须保持的业务语义：
 
 1. 第一次启用/第一次检查只建立 baseline，当前目录已有文件一个都不上传。
 2. 后续新增文件逐个上传。
@@ -33,9 +61,9 @@
 
 ---
 
-## 2. WebUI 职责已经确定
+## 2. WebUI 职责
 
-### GroupGuard 6108：业务配置中心
+### GroupGuard 6108：唯一业务配置中心
 
 负责：
 
@@ -43,113 +71,236 @@
 - 蓝奏目录 URL
 - 目标群号
 - 检查间隔
-- 接口端地址
-- callback 地址
+- LOLDataSystem 5001 API 地址
+- GroupGuard callback 地址
 - 最大文件大小
 - 群文件夹位置
 - 接口写入 Token（只保存，不回显）
 - 立即检查 / 重新建立 baseline
 - 上传与清理状态
 
-统一左侧导航应为：
+统一左侧导航：
 
 `扩展模块 -> 群文件搬运 / 定向文件推送 / Q群管家通道`
 
 ### LOLDataSystem 6178：监控与诊断中心
 
-负责只读展示和运维动作，不作为第二套业务配置源：
+只读展示和运维动作，不作为第二套业务配置源：
 
 - enabled / 后台 loop 状态
 - 当前 Provider
-- source URL、interval（只读，注明配置源 GroupGuard 6108）
-- callback 是否配置（不返回 Token）
+- source URL、interval（只读，配置源 GroupGuard 6108）
+- callback 是否配置
 - baseline 文件数与文件列表
 - pending delivery events
 - 最近检查/成功/投递/event
 - 最近安全错误
-- `立即检查`
-- `重新建立基线`
-- 跳转 Provider 配置 / API Debugger / 日志
+- 立即检查
+- 重新建立基线
+- Provider 配置 / API Debugger / 日志入口
 
-原因：避免 6108、6178 两套页面同时可编辑相同业务字段造成相互覆盖。
+原因：避免 6108、6178 两套页面同时编辑相同业务字段造成相互覆盖。
 
 ---
 
-## 3. LOLDataSystem / 6178 当前状态：已完成并成功部署
+## 3. 当前 6108 实际业务配置
 
-本地仓库：`D:\project2\lolapisevers`
+已在 GroupGuard `http://192.168.3.89:6108/target-file-push.html` 配置并成功同步：
 
-Windows 服务：`LOLDataSystem`
+- 总开关：已开启
+- 蓝奏 URL：`https://wwbvf.lanzn.com/b016kzvvmd`
+- 目标群：`960957757`
+- 检查间隔：`300` 秒
+- API Base：`http://192.168.3.100:5001`
+- Callback Base：`http://192.168.3.89:6108`
+- 单文件最大大小：当前页面为 `2048 MB`
+- 群文件位置：`/`
+- 接口写入 Token：已保存，禁止回显到聊天
 
-### 5001 定向文件监控后端
+6108 当前运行状态已看到：
 
-此前已经集成到生产。
+- 接口端状态：`接口端在线`
+- 接口监控运行：`运行中`
+- 接口端当前配置：`已启用 · 300 秒`
+- 本地临时目录：`/app/data/target-file-push-temp`
+- 最近错误：`无`
 
-v14 部署前生产提交：
+---
 
-`7696b96dd9dcb935805563a5e38a77a2ffecabf8`
+## 4. 当前 6178 / 5001 实际状态
 
-该提交包含定向文件监控后端链路。
-
-### 6178 独立页面
-
-GitHub UI 分支：
-
-`feat/target-file-watch-webui-20260808`
-
-GitHub UI 固定提交：
-
-`38335619f4def35eb64bc3d812077885d895bd09`
-
-在本机生产 `7696b96...` 上生成并部署的本地集成提交：
-
-`5c1ebf552479bf5ccd75435e2472b5a861430146`
-
-这个 `5c1ebf...` 是本机部署生成的 integration candidate，不要求 GitHub 上存在同 SHA。
-
-v14 最终结果：
-
-- 365 tests：`OK`
-- WebUI JS 生成校验：通过
-- `node --check`：通过
-- `APP_IMPORT_OK`
-- `Generate-BuildInfo.ps1`：`dirty=False`
-- `/target-file-watch`：HTTP 200 且页面标记通过
-- `/control-assets/target-file-watch.js`：通过
-- 5001 `/api/v1/target-file-watch/status` 后端路由：通过
-- 部署完成后 LOLDataSystem 正常运行
-
-最终页面：
+页面：
 
 `http://127.0.0.1:6178/target-file-watch`
 
-左侧入口：
+当前已确认：
 
-`蓝奏监控 -> 定向文件监控`
+- 功能状态：`已启用`
+- 后台循环：`运行中`
+- 当前 Provider：`lanzou_web`
+- Baseline 文件：`1`
+- 蓝奏目录：已正确显示目标目录
+- 检查间隔：`300 秒`
+- Callback：`http://192.168.3.89:6108/api/target-file-push/event`
+- Callback Token：`Token 已配置`
+- 最近检查：成功
+- 最近成功：成功
+- 最近投递：暂无
+- 最近事件：暂无
+- 待投递事件：无
 
-v14 日志：
+第一次 baseline 中记录了蓝奏目录当时已有的 1 个文件，但没有产生投递事件，也没有上传到 QQ 群。
 
-`deploy-6178-target-file-watch-webui-20260808-013951.log`
+这已经验证了关键规则：
 
-备份：
-
-`D:\project2\lolapisevers.deploy-backups\20260808-013951-6178-target-file-watch-webui`
-
-**结论：新聊天不要再部署/重做 6178。**
+**第一次启用只建立目录快照，不上传历史文件。**
 
 ---
 
-## 4. GroupGuard 功能代码状态
+## 5. 蓝奏解析 / WER Token 与内部 Token 的区别
 
-仓库：`xianyumht-cmd/groupguard-system`
+本次实际排查中出现了 Token 概念混淆，后续必须区分。
 
-分支：
+### WER 蓝奏解析 Token
 
-`feat/target-file-push-20260807`
+第三方解析服务：
 
-PR：`#37`（Draft/open/unmerged）
+`https://api2.wer.plus/api/lanzpro`
 
-当前固定功能提交：
+6178 “蓝奏全局配置”里 WER 解析器页面已经显示：
+
+`API Key 已配置`
+
+这个 Token 只用于：
+
+`LOLDataSystem 5001 -> api2.wer.plus`
+
+它不是 GroupGuard 的“接口写入 Token”，不要填到 6108。
+
+当前实际 baseline Provider 为 `lanzou_web`，说明本次基线由网页解析 Provider 成功完成；WER 继续作为接口端解析能力保留。
+
+### 6108 的“接口写入 Token”
+
+用途：
+
+`GroupGuard 6108 -> LOLDataSystem 5001`
+
+5001 后端鉴权优先级：
+
+1. `GROUPGUARD_WRITE_TOKEN`
+2. 如果没有，则回退 `WEBUI_ADMIN_TOKEN`
+
+6108 必须保存与 5001 实际服务端一致的值。
+
+**该 Token 也禁止发到聊天里。**
+
+### 6178 右上角“管理令牌”窗口
+
+该窗口只是把 `WEBUI_ADMIN_TOKEN` 保存到当前浏览器标签页的 session storage，用于当前浏览器请求管理接口；它不会把服务端现有 Token 明文展示出来，也不会自动读取 Windows 服务环境变量。
+
+---
+
+## 6. 本次碰到的问题与解决结果
+
+### 问题 A：6108 “保存并同步”提示“管理员凭据无效”
+
+现象：
+
+6108 本地配置可以保存，但同步 5001 时返回：
+
+`管理员凭据无效`
+
+判断：
+
+这不是网络不通。因为 6108 已经能拿到 5001 明确返回的 HTTP 鉴权错误，说明：
+
+`6108 -> 5001 网络链路是通的，只是 Token 不匹配。`
+
+根因：
+
+曾把 WER 第三方解析 Token 与 5001 内部写入 Token 混淆。
+
+解决：
+
+找出 5001 当前真正使用的 `GROUPGUARD_WRITE_TOKEN` / `WEBUI_ADMIN_TOKEN`，填入 6108“接口写入 Token”，再次“保存并同步”后成功。
+
+### 问题 B：不知道 5001 当前 Token 存在哪里
+
+为避免让用户手工翻 Windows 服务/NSSM/环境变量，生成了只读一键工具：
+
+`find-5001-groupguard-token-oneclick.zip`
+
+入口：
+
+`run-find-5001-token.cmd`
+
+工具行为：
+
+- 只读，不修改服务和配置
+- 检查 Machine/User/Process 环境变量
+- 检查 `LOLDataSystem` Windows 服务环境
+- 检查 NSSM `AppEnvironment` / `AppEnvironmentExtra`
+- 扫描 `D:\project2\lolapisevers` 常见 `.env` / 启动脚本 / 配置文件
+- 只提取 `GROUPGUARD_WRITE_TOKEN` / `WEBUI_ADMIN_TOKEN` 候选
+- 使用本机 `127.0.0.1:5001/api/v1/target-file-watch/status` 对候选值做只读鉴权验证
+- 找到有效值后自动复制到剪贴板
+- 控制台只显示 Token 尾部预览，不打印完整 Token
+
+用户已经明确反馈：**该查找 Token 脚本确实有用，并成功帮助完成 6108 / 5001 对接。**
+
+后续如果再有类似 Windows 服务密钥定位问题，优先采用这种“一键只读检测 + 本机验证 + 不回显完整 Secret”的方式。
+
+### 问题 C：v15 在线校验假失败
+
+v15 最后提示：
+
+`target-file-push page title missing`
+
+真实原因不是页面缺失，而是 ARM shell 用中文字符串 `grep` 产生 locale / 字符编码假阴性。
+
+后续 v16 改为 ASCII-only 页面标记验证。
+
+### 问题 D：v15 rollback 保护不完整
+
+v15 remote `fail()` 直接 `exit 1`，显式退出不一定触发 `ERR` trap。
+
+v16 已修复：生产替换开始后，显式失败也主动触发 rollback，不再只依赖 ERR trap。
+
+### 问题 E：v16 快速在线验证路径出现 `tarball not found`
+
+v16 开始时 ARM 已经是目标提交 `6d9e6fc...`，脚本尝试在线快速验证，但该路径出现：
+
+`[FAILED] tarball not found`
+
+随后脚本没有错误停止，而是安全进入完整 rebuild + atomic replace。
+
+最终：
+
+- tests 通过
+- `verify:target-file-push` 通过
+- SnowLuma build 通过
+- tar/scp/SHA256 通过
+- 停止并替换 GroupGuard dist
+- 重启容器
+- 最终远端输出 `GROUPGUARD TARGET FILE PUSH HOTFIX SUCCEEDED`
+- 最终本机输出 `[OK] GroupGuard 热修复已部署：6d9e6fc3f95db3dc1c1e5fff2ae28b7e47e71d2d`
+- `Hotfix deployment completed.`
+
+因此 **v16 部署已经完成，不要再生成/运行新的部署包。**
+
+---
+
+## 7. 代码与部署状态
+
+### GroupGuard
+
+Repo：`xianyumht-cmd/groupguard-system`
+
+Branch：`feat/target-file-push-20260807`
+
+PR：`#37` Draft/open/unmerged
+
+当前生产功能提交：
 
 `6d9e6fc3f95db3dc1c1e5fff2ae28b7e47e71d2d`
 
@@ -157,277 +308,154 @@ PR：`#37`（Draft/open/unmerged）
 
 `fix(webui): finalize target file push navigation entry`
 
-这个提交包含：
+功能包括：
 
 - `/target-file-push.html`
 - `/api/target-file-push`
 - check / rebaseline / callback/event 链路
-- `TARGET_FILE_PUSH_API_TOKEN` / `GROUPGUARD_WRITE_TOKEN` token 逻辑
-- WebUI 统一导航补丁
-- 只保留最新群文件的清理逻辑
-- 独立 retention 状态：`data/target-file-push-target-state.json`
+- `TARGET_FILE_PUSH_API_TOKEN` / `GROUPGUARD_WRITE_TOKEN` 逻辑
+- 统一 WebUI 导航
+- 只保留最新群文件逻辑
+- `data/target-file-push-target-state.json`
 - `pendingCleanup`
-- 复用 HostProfile 的 `delete_group_file` 能力
+- HostProfile `delete_group_file`
 - `verify:target-file-push`
 
-### 只保留最新文件的顺序
+旧文档提交 `88c64bd...` 只是 docs-only，不是新的生产功能版本；ARM 生产应保持 `6d9e6fc...`。
 
-必须保持：
+### LOLDataSystem backend / 6178
 
-`新文件上传 -> 获得新 fileId -> 保存最新 fileId -> 上一份 fileId 进入 pendingCleanup -> 删除旧群文件 -> 删除本地临时文件`
+Repo：`xianyumht-cmd/lolapisevers`
 
-禁止：先删旧群文件再上传新文件。
+5001 定向监控后端已经部署，不要重做。
 
----
+6178 独立页面已经部署：
 
-## 5. GroupGuard ARM 部署历史与当前关键状态
+- GitHub UI Branch：`feat/target-file-watch-webui-20260808`
+- PR：`#58`
+- GitHub UI commit：`38335619f4def35eb64bc3d812077885d895bd09`
+- 本机生产 integration commit：`5c1ebf552479bf5ccd75435e2472b5a861430146`
 
-ARM：`root@192.168.3.89`
+此前 v14 已完成 tests / JS 校验 / `node --check` / 页面 HTTP 200 / backend route 检查。
 
-生产目录：`/mnt/sda1/groupguard/app`
-
-容器：`groupguard-snowluma`
-
-### v12
-
-目标：部署 `6d9e6fc...`
-
-结果：
-
-- 全套 npm tests 通过
-- `verify:target-file-push` 通过
-- SnowLuma build 通过
-- 失败在 stage 3 SCP tar 上传：`Connection closed by 192.168.3.89 port 22`
-- 没有进入 ARM 替换阶段
-- 当时生产仍是 `380b6cb371a7f9512400296269875d1ad7c2b5c3`
-
-### v15
-
-v15 修复传输：
-
-- stage 1 小文件上传探针通过：`[OK] ARM 上传通道验证通过：scp`
-- stage 2 全套 tests/build 通过
-- stage 3 tar + remote script 上传及 SHA256 校验通过
-- stage 4 已实际执行：
-  - `Stopping groupguard-snowluma`
-  - `Replacing GroupGuard dist`
-  - `Starting groupguard-snowluma`
-- 容器启动初期出现两次 6108 connection refused，属于启动窗口
-- 后续已经可以访问在线 API/build-info
-- 最终失败信息：`target-file-push page title missing`
-
-v15 日志：
-
-`deploy-target-file-push-hotfix-20260808-015330.log`
-
-### v15 失败的真实原因
-
-不是源码页面缺失。
-
-GitHub 提交 `6d9e6fc...` 的 `target_file_push_page.ts` 明确包含：
-
-- `<title>定向文件推送</title>`
-- `<h1>定向文件推送</h1>`
-- `id="saveBtn"`
-
-`webui_theme.ts` 明确包含：
-
-- `groupguard-target-file-push-navigation-patch`
-- `data-gg-target-file-push`
-- `/target-file-push.html`
-
-v15 remote verifier 最后一层使用中文字符串 `grep`，ARM shell locale/字符编码产生假阴性。
-
-此外发现 v15 rollback 防护漏洞：remote `fail()` 直接 `exit 1`，显式 exit 不一定触发 `ERR` trap，因此日志没有出现 rollback。
-
-**所以 v15 很可能已经把 `6d9e6fc...` 留在 ARM 上，但在退出前没有做出可信的最终在线确认。不能直接宣称已经部署成功。**
+**不要重新部署 6178，也不要重做 5001 backend。**
 
 ---
 
-## 6. 下一步唯一要运行的包：GroupGuard v16
+## 8. 下次继续时唯一正确的测试顺序
 
-文件名：
+当前 baseline 已经建立完成，所以不要再重复“重新建立基线”。
 
-`TargetFilePush-Hotfix-20260808-v16.zip`
+### 第一步：首次全新文件投递测试
 
-SHA256：
+往目标蓝奏目录上传一个**全新的小文件**，建议几 KB 到几 MB，例如：
 
-`e16a2fe947ad3e2b3ba608acc6d2a5a8910087f63db451b4b79a45ceddd0a05b`
+`GG-test-001.txt` 或 `GG-test-001.zip`
 
-用户将在**新聊天**发送运行 v16 后的 CMD 窗口记录和 log。
+确认蓝奏目录里已经能看到该文件后，在 6178 或 6108 点一次：
 
-### v16 行为
+`立即检查`
 
-1. 读取 ARM 当前 build commit。
-2. 验证上传通道。
-3. 先上传小型 remote verifier/deploy shell。
-4. 如果 ARM 当前已经是：
-   `6d9e6fc3f95db3dc1c1e5fff2ae28b7e47e71d2d`
-   则不重建、不替换，先运行在线完整验证。
-5. 在线验证全部使用 ASCII-only 标记，避免中文 locale 假阴性：
-   - `/api/livez`
-   - `/api/build-info`
-   - `/target-file-push.html`
-   - 页面 `id="groupguard-target-file-push-navigation-patch"`
-   - 页面 `data-gg-target-file-push`
-   - 页面 `id="saveBtn"`
-   - `/api/target-file-push` HTTP 200
-6. 如果上述都通过，预期快速输出：
-   `GROUPGUARD TARGET FILE PUSH ONLINE VERIFICATION SUCCEEDED`
-   然后退出成功，不做重复构建。
-7. 如果 build-info 是目标提交但在线验证不完整，则进入完整 rebuild + atomic replace。
-8. v16 已修复 rollback：生产替换开始后，显式 `fail()` 也会主动调用 rollback，不再只依赖 ERR trap。
+验证完整链路：
 
-### 新聊天收到 v16 日志后的判断
+1. 5001 检测到新增文件
+2. 5001 获取/解析 direct URL
+3. 5001 产生 delivery event
+4. 5001 callback `192.168.3.89:6108`
+5. GroupGuard 下载到 `/app/data/target-file-push-temp`
+6. GroupGuard 以 QQ 原生群文件上传到群 `960957757`
+7. 获取新的群文件 `fileId`
+8. 6108 `completedCount / lastSuccessAt` 更新
+9. 6178 baseline 推进
+10. pending delivery 清空
+11. 成功后的本地临时文件被删除
 
-#### A. 最理想情况
+如果 callback / 上传失败，baseline 不应推进。
 
-若看到：
+### 第二步：测试“只保留最新一个”
 
-- ARM current commit = `6d9e6fc...`
-- `ONLINE VERIFICATION SUCCEEDED`
+第一次全链路成功后，再上传第二个全新小文件。
 
-则宣布 GroupGuard 部署阶段完成，**不要再发新的部署包**。
+正确顺序必须是：
 
-#### B. v16 自动完整重建
+`第二个文件先上传成功 -> 得到新 fileId -> 保存 latest -> 第一份进入 pendingCleanup -> 删除第一份群文件`
 
-如果它继续走 2/5~5/5，只要最终看到：
+最终 QQ 群里只保留第二个最新文件。
 
-`[OK] GroupGuard 热修复已部署：6d9e6fc3f95db3dc1c1e5fff2ae28b7e47e71d2d`
+如果删除第一份失败：
 
-并且在线 page/API 校验通过，也算部署完成。
+- 第二份仍然算上传成功
+- 第一份进入 `pendingCleanup`
+- 后续继续补删
 
-#### C. 仍失败
+禁止先删旧文件再上传新文件。
 
-按准确 stage 诊断；不要让用户手工执行一堆 SSH 命令，优先继续修一键包。
+### 第三步：最后测试同名替换
+
+前两个测试都通过后，再测试同名替换/同名同大小替换。
+
+不要把同名替换作为第一次真实投递测试。
 
 ---
 
-## 7. v16 成功后的真实业务测试顺序
+## 9. 不要重复做 / 安全规则
 
-**v16 成功后停止部署，进入真实功能测试。**
+后续继续时不要：
 
-### 第一步：确认 6108 UI
-
-刷新：
-
-`http://192.168.3.89:6108/`
-
-左侧“扩展模块”必须出现：
-
-- 群文件搬运
-- 定向文件推送
-- Q群管家通道
-
-也可以直接打开：
-
-`http://192.168.3.89:6108/target-file-push.html`
-
-如果需要控制台访问令牌，用户自己输入现有 WebUI token，**不要要求用户把 token 发到聊天里。**
-
-### 第二步：6108 配置确认
-
-应确认：
-
-- source URL = `https://wwbvf.lanzn.com/b016kzvvmd`
-- target group = `960957757`
-- interval 初始可用 `300`
-- target folder = `/`
-- callback base = GroupGuard 自身 6108 私网地址
-- API base = LOLDataSystem 5001 地址
-- 接口写入 Token：如果页面显示“已保存”，留空保存即可；不要回显或让用户粘贴到聊天
-
-### 第三步：建立 baseline
-
-开启总开关并 `保存并同步`。
-
-第一次 `立即检查` 或 `重新建立基线`：
-
-- 只记录当前蓝奏目录
-- 不上传已有文件
-- 6178 baseline file count 应出现当前数量
-
-### 第四步：测试第一次新增
-
-往蓝奏目录新增一个全新、小文件。
-
-然后在 6178 或 6108 点击 `立即检查`，验证：
-
-1. 5001 检测新增
-2. 解析最新 direct URL
-3. callback GroupGuard 成功
-4. ARM 临时下载
-5. QQ 群 `960957757` 出现原生群文件
-6. 6108 local completedCount / lastSuccessAt 更新
-7. 6178 baseline 推进且 pending 清空
-
-### 第五步：测试“只保留最新一个”
-
-再新增第二个全新小文件。
-
-预期：
-
-1. 第二个文件先上传成功
-2. 第一份群文件随后被删除
-3. QQ 群里最终只保留第二个最新文件
-4. `target-file-push-target-state.json` 中 current/latest 指向第二份
-5. 如果删除失败，第二份仍视为成功，第一份进入 `pendingCleanup`
-
-### 第六步：再测同名替换
-
-第一次全链路通过后，再测同名同大小/同名替换，不要把它作为首个测试。
-
----
-
-## 8. 不要重复做的事项
-
-新聊天中不要：
-
+- 再部署 GroupGuard v16 或生成 v17，除非真实业务测试发现代码问题
 - 重新部署 6178 v14
 - 重做 5001 backend
-- 把“群文件搬运”和“定向文件推送”当同一个 watcher
-- 改成两个 WebUI 都能编辑业务配置
-- 先删旧 QQ 群文件再上传新文件
-- 第一次启用就把蓝奏历史文件全部上传
-- 让用户在聊天里提供任何 Token/密码
-- 因 npm audit 显示 23 vulnerabilities 就擅自 `npm audit fix`；本任务当前不是依赖升级任务
-- 因 Vite dynamic import warning 判定构建失败；这些是 warning，v15 build 已成功
+- 把“群文件搬运”和“定向文件推送”当成同一个 watcher
+- 改成 6108、6178 两边都能编辑业务配置
+- 第一次启用时上传蓝奏历史文件
+- 在新文件成功上传前删除上一份 QQ 群文件
+- 把 WER Token 填到 6108“接口写入 Token”
+- 要求用户在聊天里发送 WER API Key、`GROUPGUARD_WRITE_TOKEN`、`WEBUI_ADMIN_TOKEN` 或任何密码
+- 因 npm audit vulnerabilities 擅自执行 `npm audit fix`
+- 把 Vite dynamic import warning 当成构建失败
+
+Secret 排查原则：
+
+- 尽量本机验证，不把 Secret 传出机器
+- 工具不打印完整 Token
+- 能自动复制剪贴板就不要显示明文
+- 优先只读诊断，不修改生产服务
 
 ---
 
-## 9. 相关 GitHub 工作
+## 10. 交接文档应该记录什么
 
-### GroupGuard
+本项目的交接文档应至少包含：
 
-- Repo: `xianyumht-cmd/groupguard-system`
-- Branch: `feat/target-file-push-20260807`
-- PR: `#37` Draft/open/unmerged
-- Feature head: `6d9e6fc3f95db3dc1c1e5fff2ae28b7e47e71d2d`
+1. **任务目标**：最终要实现什么，以及不可改变的业务规则。
+2. **架构与职责**：哪个组件负责检测、解析、配置、下载、上传、诊断。
+3. **当前真实状态**：哪些已部署、哪些已验证、目前停在哪一步。
+4. **关键配置**：URL、端口、群号、间隔、目录等非 Secret 配置。
+5. **代码/版本基线**：仓库、分支、PR、生产提交，避免下次拿错版本。
+6. **已经完成的操作**：避免新聊天重复部署、重复修复。
+7. **碰到的问题**：现象、根因、最终解决方法，而不只是记录“报错过”。
+8. **验证证据**：页面状态、baseline、日志关键成功标记等。
+9. **下一步操作顺序**：新聊天第一步具体做什么。
+10. **不要做的事**：已知高风险操作、重复工作、错误 Token 用法等。
+11. **Secret 处理规则**：只记录变量名和用途，不写真实 Token/密码。
+12. **有用的诊断工具**：例如本次只读 Token Finder，以及它解决了什么问题。
 
-### LOLDataSystem backend
+交接文档的核心目的不是记录全部聊天，而是让下一次接手的人能够在几分钟内回答三个问题：
 
-- Repo: `xianyumht-cmd/lolapisevers`
-- 原定向监控功能分支：`feat/target-file-push-20260807`
-- PR: `#57` Draft/open/unmerged
-- 曾固定 feature head: `af5baa43b484748ffd159e4495f85f8231fb139f`
-- 生产已通过本地 integration commit 集成，不要整分支覆盖生产
-
-### LOLDataSystem 6178 WebUI
-
-- Branch: `feat/target-file-watch-webui-20260808`
-- PR: `#58`
-- GitHub UI head: `38335619f4def35eb64bc3d812077885d895bd09`
-- 本机生产 integration commit: `5c1ebf552479bf5ccd75435e2472b5a861430146`
+- 现在做到哪里了？
+- 为什么现在是这个状态？
+- 下一步应该做什么，哪些事情绝对不要重做？
 
 ---
 
-## 10. 新聊天第一句话可直接这样理解
+## 11. 新聊天继续时直接执行
 
-用户会上传/粘贴 **GroupGuard 定向文件推送 v16** 的 CMD 记录与 log。
+用户如果说“继续定向文件推送”，直接理解为：
 
-收到后第一件事：
+- 部署已经结束
+- Token 对接已经完成
+- baseline 已成功建立为 1 个历史文件
+- 历史文件没有上传
+- 当前停在“首次新增文件真实投递测试”之前
 
-1. 查看 ARM 当前 commit；
-2. 判断 v16 是“verify-only 快速成功”还是“进入完整 rebuild/deploy”；
-3. 只根据日志实际结果判断 GroupGuard 是否真正上线；
-4. 若成功，直接进入 6108/6178/baseline/QQ 群真实测试，不再继续部署。
+下一步：让用户上传一个全新小文件到蓝奏目录，然后点击一次“立即检查”，观察 5001 -> 6108 -> QQ 群的完整链路。
