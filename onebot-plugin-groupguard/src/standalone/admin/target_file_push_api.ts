@@ -55,6 +55,7 @@ export async function getTargetFilePushOverview(options: SnowLumaAdminServerOpti
     callbackTokenConfigured: local.callbackTokenConfigured,
     tempDir: local.tempDir,
     local: {
+      stateHealthy: local.stateHealthy,
       current: local.current,
       completedCount: local.completedCount,
       lastSuccessAt: local.lastSuccessAt,
@@ -71,13 +72,20 @@ export async function saveTargetFilePushFromWeb(options: SnowLumaAdminServerOpti
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
   const configInput = raw.config && typeof raw.config === 'object' ? raw.config : raw;
   const apiToken = String(raw.apiToken || raw.api_token || '').trim();
+  const previous = targetFilePushService.getConfig();
   if (apiToken) targetFilePushService.setApiToken(apiToken);
-  targetFilePushService.saveConfig(configInput);
+  const next = targetFilePushService.saveConfig(configInput);
 
   let sync: Record<string, any> | null = null;
+  let activation: Record<string, any> | null = null;
   let syncError = '';
   try {
     sync = await targetFilePushService.syncInterfaceConfig();
+    const newlyActivated = next.enabled && (!previous.enabled || previous.sourceUrl !== next.sourceUrl);
+    if (newlyActivated) {
+      await targetFilePushService.requestRebaseline();
+      activation = await targetFilePushService.requestImmediateCheck();
+    }
   } catch (error) {
     syncError = safeError(error);
   }
@@ -86,10 +94,13 @@ export async function saveTargetFilePushFromWeb(options: SnowLumaAdminServerOpti
     ...overview,
     saved: true,
     sync,
+    activation,
     syncError,
     message: syncError
-      ? `本地设置已保存，但同步到接口端失败：${syncError}`
-      : '定向文件推送设置已保存，并已同步到接口端。',
+      ? `本地设置已保存，但接口端同步/建立基线失败：${syncError}`
+      : next.enabled && activation
+        ? '定向文件推送已开启，当前文件已建立基线；后续变化才会上传。'
+        : '定向文件推送设置已保存，并已同步到接口端。',
   };
 }
 
