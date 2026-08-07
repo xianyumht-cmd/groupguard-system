@@ -14,8 +14,8 @@ export interface TargetFilePushConfig {
 
 export const DEFAULT_TARGET_FILE_PUSH_CONFIG: TargetFilePushConfig = {
   enabled: false,
-  sourceUrl: '',
-  targetGroupId: '',
+  sourceUrl: 'https://wwbvf.lanzn.com/b016kzvvmd',
+  targetGroupId: '960957757',
   apiBaseUrl: '',
   callbackBaseUrl: '',
   checkIntervalSeconds: 300,
@@ -59,8 +59,8 @@ export function normalizeTargetFilePushConfig(value: unknown): TargetFilePushCon
   const raw = isRecord(value) && isRecord(value.config) ? value.config : isRecord(value) ? value : {};
   const config: TargetFilePushConfig = {
     enabled: raw.enabled === true,
-    sourceUrl: normalizeUrl(raw.sourceUrl ?? raw.source_url),
-    targetGroupId: String(raw.targetGroupId ?? raw.target_group_id ?? '').trim(),
+    sourceUrl: normalizeUrl(raw.sourceUrl ?? raw.source_url ?? DEFAULT_TARGET_FILE_PUSH_CONFIG.sourceUrl),
+    targetGroupId: String(raw.targetGroupId ?? raw.target_group_id ?? DEFAULT_TARGET_FILE_PUSH_CONFIG.targetGroupId).trim(),
     apiBaseUrl: normalizeUrl(raw.apiBaseUrl ?? raw.api_base_url),
     callbackBaseUrl: normalizeUrl(raw.callbackBaseUrl ?? raw.callback_base_url),
     checkIntervalSeconds: clampInteger(raw.checkIntervalSeconds ?? raw.check_interval_seconds, 300, 30, 86_400),
