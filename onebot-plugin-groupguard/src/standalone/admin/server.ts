@@ -9,6 +9,7 @@ import { renderQaPage } from './qa_page';
 import { renderQueryPage } from './query_page';
 import { renderQunGuanjiaPage } from './qun_guanjia_page';
 import { renderGroupFileMirrorPage } from './group_file_mirror_page';
+import { renderTargetFilePushPage } from './target_file_push_page';
 import { applyWebUiTheme } from './webui_theme';
 import { normalizeQueryOverviewForWebUi, patchQueryPageHtml } from './query_webui_facade';
 import {
@@ -16,6 +17,13 @@ import {
   saveGroupFileMirrorFromWeb,
   GroupFileMirrorConfigError,
 } from './group_file_mirror_api';
+import {
+  checkTargetFilePushNow,
+  getTargetFilePushOverview,
+  handleTargetFilePushEvent,
+  rebaselineTargetFilePush,
+  saveTargetFilePushFromWeb,
+} from './target_file_push_api';
 import { getStatus } from './status_api';
 import { getRawConfig, patchRawConfig, saveRawConfig } from './config_api';
 import { deleteGroupConfig, getGroupConfig, listGroups, patchGroupConfig, saveGroupConfig } from './group_api';
@@ -92,7 +100,7 @@ function renderMainPage(): string {
   return renderHomePage()
     .replaceAll('GroupGuard SnowLuma 控制台', '群管系统控制台')
     .replace('用于修改 SnowLuma 独立版群管配置。保存前会自动备份，并刷新运行时配置。', '用于管理机器人群管功能。保存前会自动备份，并立即刷新运行设置。')
-    .replace('<button class="tab" data-tab="send">发送与风控</button>', '<button class="tab" data-tab="send">发送与风控</button>\n    <a class="tablink" id="groupFileMirrorLink" href="/group-file-mirror.html">群文件搬运</a>\n    <a class="tablink" id="qunGuanjiaLink" href="/qun-guanjia.html">Q群管家通道</a>')
+    .replace('<button class="tab" data-tab="send">发送与风控</button>', '<button class="tab" data-tab="send">发送与风控</button>\n    <a class="tablink" id="groupFileMirrorLink" href="/group-file-mirror.html">群文件搬运</a>\n    <a class="tablink" id="targetFilePushLink" href="/target-file-push.html">定向文件推送</a>\n    <a class="tablink" id="qunGuanjiaLink" href="/qun-guanjia.html">Q群管家通道</a>')
     .replaceAll('SUB玩法', '娱乐玩法')
     .replaceAll('ELE构建', '构建工具')
     .replace('<option value="free">free</option><option value="pro" selected>pro</option><option value="enterprise">enterprise</option>', '<option value="free">免费版</option><option value="pro" selected>专业版</option><option value="enterprise">企业版</option>');
@@ -105,6 +113,24 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
   const server: Server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${host}:${port}`);
     try {
+      if (req.method === 'POST' && url.pathname === '/api/target-file-push/event') {
+        try {
+          const payload = JSON.parse(await readBody(req) || '{}');
+          const presentedToken = String(req.headers['x-target-file-token'] || '').trim();
+          const result = await handleTargetFilePushEvent(options, payload, presentedToken);
+          sendJson(res, 200, result);
+        } catch (error) {
+          const message = String((error as Error)?.message || error);
+          const statusCode = message.includes('unauthorized')
+            ? 401
+            : message.includes('invalid_') || message.includes('mismatch') || message.includes('disabled')
+              ? 400
+              : 502;
+          sendJson(res, statusCode, { ok: false, error: message.slice(0, 300) });
+        }
+        return;
+      }
+
       if (!requireAuth(req, res, url, token)) return;
 
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
@@ -132,6 +158,11 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/target-file-push.html') {
+        send(res, 200, applyWebUiTheme(renderTargetFilePushPage()), 'text/html; charset=utf-8');
+        return;
+      }
+
       if (!requireAuth(req, res, url, token)) return;
 
       if (req.method === 'GET' && url.pathname === '/api/group-file-mirror') {
@@ -142,6 +173,31 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       if (req.method === 'POST' && url.pathname === '/api/group-file-mirror') {
         const payload = JSON.parse(await readBody(req) || '{}');
         sendJson(res, 200, saveGroupFileMirrorFromWeb(payload));
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/target-file-push') {
+        sendJson(res, 200, await getTargetFilePushOverview(options));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/target-file-push') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        try {
+          sendJson(res, 200, await saveTargetFilePushFromWeb(options, payload));
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String((error as Error)?.message || error).slice(0, 300) });
+        }
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/target-file-push/check') {
+        sendJson(res, 200, await checkTargetFilePushNow(options));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/target-file-push/rebaseline') {
+        sendJson(res, 200, await rebaselineTargetFilePush(options));
         return;
       }
 
