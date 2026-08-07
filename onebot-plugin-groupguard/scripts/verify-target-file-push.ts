@@ -160,6 +160,52 @@ async function main(): Promise<void> {
   assert.equal(failedStatus.current?.state, 'failed');
   assert.ok(failedStatus.current?.localPath && fs.existsSync(failedStatus.current.localPath), 'failed upload keeps downloaded file for retry');
 
+  const cleanupDir = path.join(workDir, 'cleanup-case');
+  const cleanupDataDir = path.join(cleanupDir, 'data');
+  const cleanupConfigPath = path.join(cleanupDir, 'config.json');
+  const cleanupTempDir = path.join(cleanupDataDir, 'target-file-push-temp');
+  const cleanupLocalPath = path.join(cleanupTempDir, 'pending-cleanup.zip');
+  fs.mkdirSync(cleanupTempDir, { recursive: true });
+  fs.writeFileSync(cleanupConfigPath, '{}\n', 'utf-8');
+  fs.writeFileSync(cleanupLocalPath, 'already-uploaded', 'utf-8');
+  fs.writeFileSync(path.join(cleanupDataDir, 'target-file-push-state.json'), `${JSON.stringify({
+    version: 1,
+    current: {
+      eventId: 'sha256:cleanup-event',
+      fingerprint: 'sha256:cleanup-file',
+      fileName: 'pending-cleanup.zip',
+      localPath: cleanupLocalPath,
+      state: 'cleanup_pending',
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      lastError: 'simulated file lock',
+    },
+    completed: {
+      'sha256:cleanup-event': {
+        eventId: 'sha256:cleanup-event',
+        fingerprint: 'sha256:cleanup-file',
+        fileName: 'pending-cleanup.zip',
+        fileId: 'qq-file-cleanup',
+        uploadedAt: Date.now() - 500,
+      },
+    },
+    lastSuccessAt: Date.now() - 500,
+    lastErrorAt: 0,
+    lastError: '',
+  }, null, 2)}\n`, 'utf-8');
+  const cleanupService = new TargetFilePushService();
+  cleanupService.bindRuntime({
+    hostProfile: hostProfile(async () => { throw new Error('cleanup recovery must not upload again'); }),
+    workDir: cleanupDir,
+    dataDir: cleanupDataDir,
+    configPath: cleanupConfigPath,
+    log: () => undefined,
+  });
+  assert.equal(fs.existsSync(cleanupLocalPath), false, 'startup retries deletion for an already-uploaded cleanup_pending file');
+  const cleanupStatus = cleanupService.getLocalStatus();
+  assert.equal(cleanupStatus.current, null, 'successful cleanup retry clears pending state');
+  assert.equal(cleanupStatus.completedCount, 1, 'cleanup retry preserves completed event dedup history');
+
   const page = renderTargetFilePushPage();
   assert.match(page, /定向文件推送/);
   assert.match(page, /person setting url/);
@@ -167,6 +213,13 @@ async function main(): Promise<void> {
   assert.match(page, /上传成功后立即删除临时文件/);
   assert.match(page, /\/api\/target-file-push\/check/);
   assert.match(page, /\/api\/target-file-push\/rebaseline/);
+
+  const adminServerSource = fs.readFileSync(path.resolve(process.cwd(), 'src/standalone/admin/server.ts'), 'utf-8');
+  const callbackRouteIndex = adminServerSource.indexOf("url.pathname === '/api/target-file-push/event'");
+  const firstGlobalAuthIndex = adminServerSource.indexOf('if (!requireAuth(req, res, url, token)) return;');
+  assert.ok(callbackRouteIndex >= 0, 'target file callback route must exist');
+  assert.ok(firstGlobalAuthIndex > callbackRouteIndex, 'dedicated callback-token route must run before WebUI global auth');
+  assert.match(adminServerSource, /x-target-file-token/);
 
   await fileServer.close();
   fs.rmSync(workDir, { recursive: true, force: true });
