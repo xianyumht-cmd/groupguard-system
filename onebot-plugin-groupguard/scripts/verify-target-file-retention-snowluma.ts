@@ -25,6 +25,22 @@ class SnowLumaActions implements OneBotActionClient {
   }
 }
 
+class FlakySnowLumaActions implements OneBotActionClient {
+  readonly calls: Array<{ action: string; params: unknown }> = [];
+  private uploadCount = 0;
+
+  async call(action: string, params: unknown = {}): Promise<unknown> {
+    this.calls.push({ action, params });
+    if (action === 'upload_group_file') {
+      this.uploadCount += 1;
+      if (this.uploadCount === 1) throw new Error('simulated-upload-failure');
+      return { file_id: `qq-recovery-${this.uploadCount - 1}` };
+    }
+    if (action === 'delete_group_file') return {};
+    throw new Error(`unexpected_action:${action}`);
+  }
+}
+
 async function listen(body: Buffer): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((_req, res) => {
     res.statusCode = 200;
@@ -41,12 +57,32 @@ async function listen(body: Buffer): Promise<{ url: string; close: () => Promise
   };
 }
 
+function configureService(service: TargetFilePushService, configPath: string): string {
+  service.saveConfig({
+    enabled: true,
+    sourceUrl: 'https://abc.lanzou.com/iRETENTION',
+    targetGroupId: '960957757',
+    targetFolderId: '/',
+    apiBaseUrl: 'http://127.0.0.1:5001',
+    callbackBaseUrl: 'http://127.0.0.1:6108',
+    checkIntervalSeconds: 300,
+    maxFileSizeMb: 32,
+  });
+  return targetFilePushCallbackToken(resolveTargetFilePushConfigDir(configPath));
+}
+
 async function main(): Promise<void> {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-target-retention-snowluma-'));
   const dataDir = path.join(workDir, 'data');
   const configPath = path.join(workDir, 'config.json');
-  fs.mkdirSync(dataDir, { recursive: true });
+  const tempDir = path.join(dataDir, 'target-file-push-temp');
+  fs.mkdirSync(tempDir, { recursive: true });
   fs.writeFileSync(configPath, '{}\n', 'utf-8');
+
+  // Fresh service bind must discard recent orphan files that cannot be retried,
+  // while a referenced current.localPath is preserved by the state-aware cleanup.
+  const orphanPath = path.join(tempDir, 'recent-orphan.7z');
+  fs.writeFileSync(orphanPath, 'orphan', 'utf-8');
 
   const fileServer = await listen(Buffer.from('snowluma-retention-regression'));
   try {
@@ -59,18 +95,9 @@ async function main(): Promise<void> {
       configPath,
       log: () => undefined,
     });
-    service.saveConfig({
-      enabled: true,
-      sourceUrl: 'https://abc.lanzou.com/iRETENTION',
-      targetGroupId: '960957757',
-      targetFolderId: '/',
-      apiBaseUrl: 'http://127.0.0.1:5001',
-      callbackBaseUrl: 'http://127.0.0.1:6108',
-      checkIntervalSeconds: 300,
-      maxFileSizeMb: 32,
-    });
+    assert.equal(fs.existsSync(orphanPath), false, 'fresh bind must remove untracked temp files immediately');
 
-    const token = targetFilePushCallbackToken(resolveTargetFilePushConfigDir(configPath));
+    const token = configureService(service, configPath);
     const baseEvent = {
       schema: 'target-file-push.v1',
       source_url: 'https://abc.lanzou.com/iRETENTION',
@@ -106,6 +133,52 @@ async function main(): Promise<void> {
     assert.equal(retention.latest?.fileName, 'b.7z');
     assert.deepEqual(retention.pendingCleanup, [], 'successful SnowLuma delete must drain pending cleanup');
     assert.deepEqual(fs.readdirSync(service.getTempDir()), [], 'successful deliveries must leave no local temp files');
+
+    const failedWorkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-target-failed-temp-'));
+    try {
+      const failedDataDir = path.join(failedWorkDir, 'data');
+      const failedConfigPath = path.join(failedWorkDir, 'config.json');
+      fs.mkdirSync(failedDataDir, { recursive: true });
+      fs.writeFileSync(failedConfigPath, '{}\n', 'utf-8');
+
+      const flakyActions = new FlakySnowLumaActions();
+      const failedService = new TargetFilePushService();
+      failedService.bindRuntime({
+        hostProfile: new SnowLumaProfile(flakyActions),
+        workDir: failedWorkDir,
+        dataDir: failedDataDir,
+        configPath: failedConfigPath,
+        log: () => undefined,
+      });
+      const failedToken = configureService(failedService, failedConfigPath);
+
+      await assert.rejects(
+        () => failedService.handleEvent({
+          ...baseEvent,
+          event_id: 'sha256:failed-a',
+          fingerprint: 'sha256:failed-file-a',
+          file: { name: 'failed-a.7z', stable_id: 'failed-file-a' },
+        }, failedToken),
+        /snowluma_upload_group_file_failed/,
+      );
+
+      const failedStatus = failedService.getLocalStatus();
+      const failedLocalPath = String(failedStatus.current?.localPath || '');
+      assert.equal(failedStatus.current?.state, 'failed');
+      assert.ok(failedLocalPath && fs.existsSync(failedLocalPath), 'current failed event keeps its local file for retry');
+
+      const recovered = await failedService.handleEvent({
+        ...baseEvent,
+        event_id: 'sha256:failed-b',
+        fingerprint: 'sha256:failed-file-b',
+        file: { name: 'failed-b.7z', stable_id: 'failed-file-b' },
+      }, failedToken);
+      assert.equal(recovered.fileId, 'qq-recovery-1');
+      assert.equal(fs.existsSync(failedLocalPath), false, 'a different event must remove the superseded failed temp file');
+      assert.deepEqual(fs.readdirSync(failedService.getTempDir()), [], 'recovered success leaves no failed temp pile');
+    } finally {
+      fs.rmSync(failedWorkDir, { recursive: true, force: true });
+    }
 
     console.info('target file SnowLuma retention integration verified');
   } finally {
