@@ -5,42 +5,73 @@ Updated: 2026-08-09
 ## Canonical repository
 
 - Canonical development branch: `main`.
-- Change record for the target-file retention repair: PR #38, branch `fix/target-file-retention-cleanup-20260809` -> `main`.
-- The repair implementation passed GroupGuard CI run `31274824270` and GroupGuard Build run `31274824268` before merge. The CI log explicitly executed `verify:target-file-retention-snowluma` in both `npm test` and `build:snowluma` and reported success.
-- The ARM production runtime at `192.168.3.89` is separate from repository development and has **not** been deployed or restarted by this task.
+- `main` at the start of the current task: `f1bbc194e3bced122b43f3811432eb6b224b4068`.
+- Previous target-file retention repair: PR #38 -> `main`.
+- Active task branch: `fix/target-file-root-reconcile-20260809`.
+- Current task goal: replace historical-file-id retention with live QQ group-directory reconciliation for the dedicated target-file push group.
 
-## Verified production incident
+## Verified production state
 
-Runtime evidence captured on 2026-08-09 showed:
+The ARM GroupGuard runtime at `192.168.3.89` was successfully deployed on 2026-08-09 to:
 
-- `target-file-push-target-state.json` contained 14 `pendingCleanup` records.
-- Every pending record ended with `snowluma_group_file_delete_contract_not_verified`.
-- Attempt counts had grown to `27, 25, 23, ... 1`, proving repeated retention retries were occurring without a real SnowLuma delete action.
-- `/mnt/sda1/groupguard/app/data/target-file-push-temp` contained 14 files totaling about 235 MB.
-- The current failed item was retained intentionally after `onebot_action_timeout:upload_group_file`; older unreferenced failed temp files had no state entry capable of retrying them.
+- release commit: `f1bbc194e3bced122b43f3811432eb6b224b4068`
+- container: `groupguard-snowluma`
+- authenticated WebUI/API verification: HTTP 200
+- deployment backup: `/mnt/sda1/groupguard/backups/20260809-041531-target-retention-fix-f1bbc194e3bc`
 
-## Root cause
+The successful deployment report recorded:
 
-`SnowLumaProfile.deleteGroupFile()` was deliberately fail-closed when the OneBot host refactor was created because the SnowLuma delete contract had not yet been verified. The target-file retention feature later depended on that method, while its regression test used a fake HostProfile whose delete operation always succeeded. As a result, the retention state machine passed tests but production never sent `delete_group_file`.
+- `pendingCleanup`: `17 -> 17`
+- local target temp files: `1 -> 1`
+- the one retained local temp file was exactly the current retryable `current.localPath`
 
-The exact production host contract is verified against official SnowLuma `v1.12.4` source:
+The user subsequently manually deleted most QQ group files and intentionally left a small set for observation. This made the historical `pendingCleanup` records diverge further from the real QQ group directory. Production observation still showed multiple group files after new uploads, so the queue-based retention model did not achieve the actual product goal: one managed group file.
 
-- action: `delete_group_file`
-- parameters: `group_id`, `file_id`
-- SnowLuma awaits `groupFile.delete(group_id, file_id)` and returns an OK action response on success.
+## Current target-file design decision
 
-## Repository repair
+The target group uses the QQ group-file root directory `/` exclusively for this feature. The desired invariant is:
 
-PR #38:
+> After a successful replacement upload, the managed group-file root contains exactly one file: the newest successfully uploaded target file.
 
-- implements verified built-in SnowLuma group-file deletion using only `group_id + file_id`;
-- keeps group-file listing adapter-gated because this repair does not require list semantics;
-- adds a real `SnowLumaProfile -> TargetFilePushService` retention regression so a fake delete adapter cannot hide this integration failure again;
-- preserves the current failed temp file for retry, but removes unreferenced orphan temp files on service bind and removes a failed temp file once a different event supersedes it;
-- gates the new integration regression in normal test/build scripts.
+The active branch implements this as live reconciliation:
 
-Repository merge and production rollout are separate gates. Production remains unchanged until the user explicitly authorizes deployment/restart.
+1. detect a new/replaced Lanzou file;
+2. download it to the GroupGuard temp directory;
+3. upload the replacement QQ group file first;
+4. persist the returned new `file_id` as authoritative latest;
+5. read the real QQ group-file directory through SnowLuma;
+6. keep the authoritative new `file_id` and delete every other file in the managed root;
+7. re-list the QQ directory and verify it converged to one file;
+8. remove the local temp file after upload processing completes.
+
+No QQ group file is deleted before the replacement upload succeeds.
+
+## Verified SnowLuma contracts
+
+Against official SnowLuma `v1.12.4` source:
+
+- `upload_group_file` returns `file_id`;
+- `get_group_root_files` reads the root directory;
+- `get_group_files_by_folder` reads a specified folder;
+- the underlying `GroupFileApi.list()` performs its own pagination loop until `isEnd`, so the OneBot list action is a complete snapshot;
+- `delete_group_file` accepts `group_id + file_id` and awaits the delete operation.
+
+The current task therefore promotes SnowLuma group-file listing to a verified built-in HostProfile capability instead of keeping it adapter-gated.
+
+## Active implementation state
+
+On `fix/target-file-root-reconcile-20260809`:
+
+- SnowLuma built-in group-file listing is enabled and normalizes upload time;
+- target-file retention reconciles from the live group directory rather than trusting historical pending records;
+- a successful live reconciliation replaces stale `pendingCleanup` with actual remaining leftovers;
+- manual “立即检查并整理” first reconciles the managed group root and then requests the Lanzou check;
+- if the recorded latest file no longer exists during a manual reconcile, the newest real QQ file by `upload_time` is adopted rather than deleting every file blindly;
+- WebUI now explicitly states that `/` is an exclusive managed directory and exposes reconciliation status;
+- integration tests use the real `SnowLumaProfile` list/delete path and verify that a failed replacement upload performs no group-file deletion.
+
+CI/PR/merge verification is still pending for this active branch.
 
 ## Production next action
 
-A later authorized production rollout must preserve the current state files, verify the pending cleanup drains through real `delete_group_file` calls, verify only the intended latest QQ group file remains, and verify temp-directory cleanup without deleting the currently referenced failed item before rollout safety checks are complete.
+Do not deploy this active-branch redesign merely because repository implementation is finished. After CI passes and the PR is merged to `main`, production deployment/restart still requires explicit user authorization for this new rollout. Production acceptance must verify the real QQ group root converges to exactly one file and that local temp cleanup remains correct.
