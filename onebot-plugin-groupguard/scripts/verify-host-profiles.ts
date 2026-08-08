@@ -25,15 +25,36 @@ async function run(): Promise<void> {
   const actions = new FakeActions({
     get_group_file_url: { data: { url: 'https://example.test/file' } },
     upload_group_file: { data: { file_id: 'target-file' } },
+    delete_group_file: {},
     get_group_msg_history: { data: { messages: [{ message_id: 1 }] } },
   });
   const snowluma = new SnowLumaProfile(actions);
+  assert.equal(snowluma.capabilities.groupFileDelete, 'supported');
   assert.equal((await snowluma.getGroupFileUrl({ groupId: '123', fileId: 'source', busid: 7 })).state, 'success');
   assert.equal((await snowluma.uploadGroupFile({ groupId: '456', source: 'https://example.test/file', fileName: 'x.7z' })).state, 'success');
   assert.equal((await snowluma.getGroupMessageHistory({ groupId: '456' })).state, 'success');
   assert.equal((await snowluma.listGroupFiles({ groupId: '456' })).state, 'indeterminate');
-  assert.equal((await snowluma.deleteGroupFile({ groupId: '456', fileId: 'target-file' })).state, 'indeterminate');
-  assert.equal(actions.calls.some(call => call.action === 'delete_group_file'), false);
+
+  const deleted = await snowluma.deleteGroupFile({
+    groupId: '456',
+    fileId: 'target-file',
+    folderId: '/ignored-by-snowluma-contract',
+    busid: 102,
+  });
+  assert.equal(deleted.state, 'success');
+  assert.equal(deleted.data?.confirmed, true);
+  const deleteCall = actions.calls.find(call => call.action === 'delete_group_file');
+  assert.deepEqual(deleteCall?.params, {
+    group_id: 456,
+    file_id: 'target-file',
+  }, 'SnowLuma v1.12.4 delete_group_file must receive only group_id + file_id');
+
+  const failedDelete = new SnowLumaProfile(new FakeActions({
+    delete_group_file: new Error('simulated-delete-failure'),
+  }));
+  const failedDeleteResult = await failedDelete.deleteGroupFile({ groupId: '456', fileId: 'target-file' });
+  assert.equal(failedDeleteResult.state, 'failed');
+  assert.match(String(failedDeleteResult.reason || ''), /snowluma_delete_group_file_failed/);
 
   const unknownUrl = new SnowLumaProfile(new FakeActions({ get_group_file_url: { data: {} } }));
   assert.equal((await unknownUrl.getGroupFileUrl({ groupId: '1', fileId: 'f' })).state, 'indeterminate');

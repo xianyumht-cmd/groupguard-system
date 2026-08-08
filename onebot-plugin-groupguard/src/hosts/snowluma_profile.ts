@@ -52,9 +52,10 @@ function normalizeFileEntry(value: unknown): HostGroupFileEntry | null {
 
 export interface SnowLumaProfileOptions {
   /**
-   * Delete/list request and response semantics are deliberately disabled until
-   * real SnowLuma captures have been reviewed. Supplying these adapters means
-   * the caller owns that evidence and its strict normalization.
+   * Group-file listing remains adapter-gated until its pagination/completeness
+   * semantics are verified against the runtime. delete_group_file itself is
+   * verified in SnowLuma v1.12.4 and has a built-in implementation below; this
+   * optional adapter remains only as an explicit override for tests or hosts.
    */
   listGroupFiles?: (request: HostGroupFileListRequest, actions: OneBotActionClient) => Promise<HostOperationResult<HostGroupFileList>>;
   deleteGroupFile?: (request: HostGroupFileDeleteRequest, actions: OneBotActionClient) => Promise<HostOperationResult<{ confirmed: boolean }>>;
@@ -75,7 +76,7 @@ export class SnowLumaProfile implements HostProfile {
       groupFileUrl: 'supported',
       groupFileUpload: 'supported',
       groupFileList: options.listGroupFiles ? 'supported' : 'unsupported',
-      groupFileDelete: options.deleteGroupFile ? 'supported' : 'unsupported',
+      groupFileDelete: 'supported',
     };
   }
 
@@ -129,10 +130,23 @@ export class SnowLumaProfile implements HostProfile {
   }
 
   async deleteGroupFile(request: HostGroupFileDeleteRequest): Promise<HostOperationResult<{ confirmed: boolean }>> {
-    if (!this.options.deleteGroupFile) {
-      return indeterminateHostOperation('snowluma_group_file_delete_contract_not_verified');
+    if (this.options.deleteGroupFile) {
+      return this.options.deleteGroupFile(request, this.actions);
     }
-    return this.options.deleteGroupFile(request, this.actions);
+
+    let rawResponse: unknown;
+    try {
+      // SnowLuma v1.12.4 action contract: delete_group_file accepts only
+      // group_id + file_id, awaits bridge groupFile.delete(), then returns OK.
+      // folder_id/busid are intentionally not forwarded.
+      rawResponse = await this.actions.call('delete_group_file', {
+        group_id: groupParam(request.groupId),
+        file_id: request.fileId,
+      });
+    } catch (error) {
+      return failedHostOperation(`snowluma_delete_group_file_failed:${actionError(error)}`);
+    }
+    return { state: 'success', data: { confirmed: true }, rawResponse };
   }
 
   async getGroupMessageHistory(request: HostMessageHistoryRequest): Promise<HostOperationResult<{ messages: unknown[] }>> {

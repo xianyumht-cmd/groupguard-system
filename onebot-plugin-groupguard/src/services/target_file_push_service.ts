@@ -71,7 +71,10 @@ export class TargetFilePushService {
     this.loadState();
     targetFilePushCallbackToken(this.secretDir());
     this.retryPendingCleanup();
-    this.cleanupStaleTempFiles();
+    // A freshly bound service has no in-flight downloader. Any temp file not
+    // referenced by current is therefore an orphan from an older failed event
+    // and cannot be retried by the current state machine.
+    this.cleanupStaleTempFiles(true);
   }
 
   private requireRuntime(): TargetFilePushRuntimeBinding {
@@ -225,7 +228,7 @@ export class TargetFilePushService {
     return this.interfaceCall('/api/v1/target-file-watch/rebaseline', 'POST', {});
   }
 
-  private cleanupStaleTempFiles(): void {
+  private cleanupStaleTempFiles(removeAllUntracked = false): void {
     const dir = this.getTempDir();
     try {
       if (!fs.existsSync(dir)) return;
@@ -236,10 +239,27 @@ export class TargetFilePushService {
         try {
           if (keep && path.resolve(filePath) === keep) continue;
           const stat = fs.statSync(filePath);
-          if (stat.isFile() && now - stat.mtimeMs > STALE_TEMP_MS) fs.unlinkSync(filePath);
+          if (stat.isFile() && (removeAllUntracked || now - stat.mtimeMs > STALE_TEMP_MS)) {
+            fs.unlinkSync(filePath);
+          }
         } catch { /* best effort */ }
       }
     } catch { /* best effort */ }
+  }
+
+  private cleanupSupersededFailedLocalFile(localPath: string, fileName: string): void {
+    const candidate = path.resolve(String(localPath || ''));
+    const tempDir = path.resolve(this.getTempDir());
+    if (!candidate || candidate === tempDir || !candidate.startsWith(`${tempDir}${path.sep}`)) {
+      this.log('warn', `跳过清理不在临时目录内的失败文件路径: ${fileName}`);
+      return;
+    }
+    try {
+      if (fs.existsSync(candidate)) fs.unlinkSync(candidate);
+      this.log('info', `已清理被新事件取代的失败临时文件: ${fileName}`);
+    } catch (error) {
+      this.log('warn', `清理被取代的失败临时文件失败 ${fileName}: ${String((error as Error)?.message || error).slice(0, 240)}`);
+    }
   }
 
   async handleEvent(payload: unknown, presentedToken: string): Promise<Record<string, any>> {
@@ -291,6 +311,7 @@ export class TargetFilePushService {
         && fs.existsSync(this.state.current.localPath)) {
         localPath = this.state.current.localPath;
       } else {
+        const superseded = this.state.current;
         this.state.current = {
           eventId: input.eventId,
           fingerprint: input.fingerprint,
@@ -302,6 +323,9 @@ export class TargetFilePushService {
           lastError: '',
         };
         this.saveState();
+        if (superseded?.state === 'failed' && superseded.localPath) {
+          this.cleanupSupersededFailedLocalFile(superseded.localPath, superseded.fileName);
+        }
         localPath = await downloadTargetFile({
           eventId: input.eventId,
           fileName: input.fileName,
