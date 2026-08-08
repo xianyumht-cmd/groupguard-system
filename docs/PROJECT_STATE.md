@@ -29,9 +29,9 @@ The exact production host contract is now verified against official SnowLuma `v1
 - parameters: `group_id`, `file_id`
 - SnowLuma awaits `groupFile.delete(group_id, file_id)` and returns an OK action response on success.
 
-## Repair in progress
+## Repair state
 
-The active task branch now:
+The task branch:
 
 - implements verified built-in SnowLuma group-file deletion using only `group_id + file_id`;
 - keeps group-file listing adapter-gated because this repair does not require list semantics;
@@ -39,6 +39,8 @@ The active task branch now:
 - preserves the current failed temp file for retry, but removes unreferenced orphan temp files on service bind and removes a failed temp file once a different event supersedes it;
 - gates the new integration regression in normal test/build scripts.
 
+Repository merge and production rollout are separate gates. After this repair is merged to `main`, production will remain unchanged until the user explicitly authorizes deployment/restart.
+
 ## Production next action
 
-After repository CI and merge are complete, production remains unchanged until the user explicitly authorizes deployment/restart. A production rollout must preserve the current state files, verify the pending cleanup drains through real `delete_group_file` calls, verify only the intended latest QQ group file remains, and verify temp-directory cleanup without deleting the currently referenced failed item before rollout safety checks are complete.
+A later authorized production rollout must preserve the current state files, verify the pending cleanup drains through real `delete_group_file` calls, verify only the intended latest QQ group file remains, and verify temp-directory cleanup without deleting the currently referenced failed item before rollout safety checks are complete.
