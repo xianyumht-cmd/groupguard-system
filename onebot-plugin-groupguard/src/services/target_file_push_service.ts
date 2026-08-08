@@ -14,7 +14,13 @@ import {
   targetFilePushCallbackToken,
   targetFilePushTokenMatches,
 } from './target_file_push_credentials';
-import { downloadTargetFile, safeTargetFileName, uploadTargetFile } from './target_file_push_delivery';
+import {
+  downloadTargetFile,
+  readTargetFileRetentionState,
+  reconcileTargetFileRetention,
+  safeTargetFileName,
+  uploadTargetFile,
+} from './target_file_push_delivery';
 import { callTargetFilePushInterface } from './target_file_push_interface_client';
 import {
   emptyTargetFilePushState,
@@ -88,6 +94,10 @@ export class TargetFilePushService {
 
   private secretDir(): string {
     return resolveTargetFilePushConfigDir(this.requireRuntime().configPath);
+  }
+
+  private retentionProbePath(): string {
+    return path.join(this.getTempDir(), '__retention-state-probe__.bin');
   }
 
   getConfigFilePath(): string {
@@ -178,6 +188,29 @@ export class TargetFilePushService {
     this.loadConfig();
     this.loadState();
     this.retryPendingCleanup();
+
+    let retention: Record<string, any>;
+    try {
+      const state = readTargetFileRetentionState(this.retentionProbePath());
+      retention = {
+        latest: state.latest,
+        pendingCleanupCount: state.pendingCleanup.length,
+        pendingCleanup: state.pendingCleanup,
+        lastReconciledAt: state.lastReconciledAt || 0,
+        lastObservedFileCount: state.lastObservedFileCount || 0,
+        lastReconcileError: state.lastReconcileError || '',
+      };
+    } catch (error) {
+      retention = {
+        latest: null,
+        pendingCleanupCount: 0,
+        pendingCleanup: [],
+        lastReconciledAt: 0,
+        lastObservedFileCount: 0,
+        lastReconcileError: `群文件整理状态读取失败:${String((error as Error)?.message || error).slice(0, 240)}`,
+      };
+    }
+
     return {
       config: { ...this.config },
       stateHealthy: this.stateHealthy,
@@ -189,7 +222,29 @@ export class TargetFilePushService {
       lastSuccessAt: this.state.lastSuccessAt,
       lastErrorAt: this.state.lastErrorAt,
       lastError: this.state.lastError,
+      retention,
     };
+  }
+
+  async reconcileTargetFolderNow(): Promise<Record<string, any>> {
+    this.loadConfig();
+    this.loadState();
+    if (!this.stateHealthy) throw new Error('target_file_push_state_unavailable');
+    if (!this.config.enabled) throw new Error('target_file_push_disabled');
+    if (!this.config.targetGroupId) throw new Error('target_file_push_target_group_missing');
+
+    const result = await reconcileTargetFileRetention({
+      hostProfile: this.requireRuntime().hostProfile,
+      targetGroupId: this.config.targetGroupId,
+      targetFolderId: this.config.targetFolderId || '/',
+      localPath: this.retentionProbePath(),
+    });
+    if (result.ok) {
+      this.log('info', `群文件目录整理完成 group=${this.config.targetGroupId} kept=${result.keptFileName || 'none'} count=${result.observedAfter}`);
+    } else {
+      this.log('warn', `群文件目录整理未完全收敛 group=${this.config.targetGroupId} error=${result.error}`);
+    }
+    return result;
   }
 
   private interfaceCall(pathname: string, method = 'GET', body?: unknown): Promise<Record<string, any>> {
