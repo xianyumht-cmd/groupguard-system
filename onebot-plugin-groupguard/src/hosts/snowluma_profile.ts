@@ -44,6 +44,7 @@ function normalizeFileEntry(value: unknown): HostGroupFileEntry | null {
     fileId,
     fileName: normalizeId(value.file_name ?? value.fileName ?? value.name),
     fileSize: Math.max(0, Number(value.file_size ?? value.fileSize ?? value.size ?? 0) || 0),
+    uploadTime: Math.max(0, Number(value.upload_time ?? value.uploadTime ?? 0) || 0) || undefined,
     busid: Number.isFinite(Number(value.busid)) ? Number(value.busid) : undefined,
     folderId: normalizeId(value.folder_id ?? value.folderId ?? value.folder) || undefined,
     raw: value,
@@ -52,10 +53,8 @@ function normalizeFileEntry(value: unknown): HostGroupFileEntry | null {
 
 export interface SnowLumaProfileOptions {
   /**
-   * Group-file listing remains adapter-gated until its pagination/completeness
-   * semantics are verified against the runtime. delete_group_file itself is
-   * verified in SnowLuma v1.12.4 and has a built-in implementation below; this
-   * optional adapter remains only as an explicit override for tests or hosts.
+   * SnowLuma v1.12.4 verifies both group-file listing and deletion contracts.
+   * Optional adapters remain explicit overrides for tests or alternate hosts.
    */
   listGroupFiles?: (request: HostGroupFileListRequest, actions: OneBotActionClient) => Promise<HostOperationResult<HostGroupFileList>>;
   deleteGroupFile?: (request: HostGroupFileDeleteRequest, actions: OneBotActionClient) => Promise<HostOperationResult<{ confirmed: boolean }>>;
@@ -75,7 +74,7 @@ export class SnowLumaProfile implements HostProfile {
       messageHistory: 'supported',
       groupFileUrl: 'supported',
       groupFileUpload: 'supported',
-      groupFileList: options.listGroupFiles ? 'supported' : 'unsupported',
+      groupFileList: 'supported',
       groupFileDelete: 'supported',
     };
   }
@@ -123,10 +122,24 @@ export class SnowLumaProfile implements HostProfile {
   }
 
   async listGroupFiles(request: HostGroupFileListRequest): Promise<HostOperationResult<HostGroupFileList>> {
-    if (!this.options.listGroupFiles) {
-      return indeterminateHostOperation('snowluma_group_file_list_contract_not_verified');
+    if (this.options.listGroupFiles) {
+      return this.options.listGroupFiles(request, this.actions);
     }
-    return this.options.listGroupFiles(request, this.actions);
+
+    const folderId = normalizeId(request.folderId) || '/';
+    const action = folderId === '/' ? 'get_group_root_files' : 'get_group_files_by_folder';
+    let rawResponse: unknown;
+    try {
+      rawResponse = await this.actions.call(action, folderId === '/'
+        ? { group_id: groupParam(request.groupId) }
+        : { group_id: groupParam(request.groupId), folder_id: folderId });
+    } catch (error) {
+      return failedHostOperation(`snowluma_group_file_list_failed:${actionError(error)}`);
+    }
+
+    // SnowLuma v1.12.4's bridge GroupFileApi.list() owns pagination internally:
+    // it loops ListGroupFilesPage until isEnd before the OneBot action returns.
+    return normalizeVerifiedSnowLumaFileList(rawResponse, { complete: true });
   }
 
   async deleteGroupFile(request: HostGroupFileDeleteRequest): Promise<HostOperationResult<{ confirmed: boolean }>> {
