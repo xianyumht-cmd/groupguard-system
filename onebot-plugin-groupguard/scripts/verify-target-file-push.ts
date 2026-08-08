@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import type { HostOperationResult, HostProfile } from '../src/hosts/host_profile.ts';
+import type { HostGroupFileList, HostOperationResult, HostProfile } from '../src/hosts/host_profile.ts';
 import {
   normalizeTargetFilePushConfig,
   resolveTargetFilePushConfigDir,
@@ -24,9 +24,15 @@ type DeleteHandler = (
   folderId: string,
 ) => Promise<HostOperationResult<{ confirmed: boolean }>>;
 
+type ListHandler = (
+  groupId: string,
+  folderId: string,
+) => Promise<HostOperationResult<HostGroupFileList>>;
+
 function hostProfile(
   upload: (source: string, fileName: string) => Promise<HostOperationResult<{ fileId: string }>>,
   deleteFile?: DeleteHandler,
+  listFiles?: ListHandler,
 ): HostProfile {
   return {
     id: 'test',
@@ -35,13 +41,15 @@ function hostProfile(
       messageHistory: 'unsupported',
       groupFileUrl: 'unsupported',
       groupFileUpload: 'supported',
-      groupFileList: 'unsupported',
+      groupFileList: listFiles ? 'supported' : 'unsupported',
       groupFileDelete: deleteFile ? 'supported' : 'unsupported',
     },
     actions: { call: async () => ({}) },
     getGroupFileUrl: async () => ({ state: 'unsupported', reason: 'test' }),
     uploadGroupFile: async (request) => upload(request.source, request.fileName),
-    listGroupFiles: async () => ({ state: 'unsupported', reason: 'test' }),
+    listGroupFiles: async (request) => listFiles
+      ? listFiles(request.groupId, request.folderId || '/')
+      : ({ state: 'unsupported', reason: 'test' }),
     deleteGroupFile: async (request) => deleteFile
       ? deleteFile(request.groupId, request.fileId, request.folderId || '/')
       : ({ state: 'unsupported', reason: 'test' }),
@@ -149,17 +157,23 @@ async function main(): Promise<void> {
   fs.writeFileSync(retentionConfigPath, '{}\n', 'utf-8');
   let retentionUploadCount = 0;
   const deletedTargetFiles: string[] = [];
+  const managedFiles: Array<{ fileId: string; fileName: string; fileSize: number; uploadTime: number }> = [];
   const retentionService = new TargetFilePushService();
   retentionService.bindRuntime({
     hostProfile: hostProfile(
-      async () => {
+      async (_source, fileName) => {
         retentionUploadCount += 1;
-        return success({ fileId: `qq-retain-${retentionUploadCount}` });
+        const fileId = `qq-retain-${retentionUploadCount}`;
+        managedFiles.push({ fileId, fileName, fileSize: 100, uploadTime: 1000 + retentionUploadCount });
+        return success({ fileId });
       },
       async (_groupId, fileId) => {
         deletedTargetFiles.push(fileId);
+        const index = managedFiles.findIndex(file => file.fileId === fileId);
+        if (index >= 0) managedFiles.splice(index, 1);
         return success({ confirmed: true });
       },
+      async () => success({ files: managedFiles.map(file => ({ ...file })), complete: true }),
     ),
     workDir: retentionDir,
     dataDir: retentionDataDir,
@@ -184,8 +198,10 @@ async function main(): Promise<void> {
     file: { ...event.file, name: 'retain-a.zip' },
   }, retentionToken);
   assert.equal(retainFirst.fileId, 'qq-retain-1');
-  assert.deepEqual(deletedTargetFiles, [], 'first successful upload must not delete the only target file');
+  assert.deepEqual(deletedTargetFiles, [], 'first successful upload leaves the only root file untouched');
+  assert.deepEqual(managedFiles.map(file => file.fileId), ['qq-retain-1']);
 
+  managedFiles.push({ fileId: 'manual-extra', fileName: 'manual-extra.zip', fileSize: 200, uploadTime: 1500 });
   const retainSecond = await retentionService.handleEvent({
     ...event,
     event_id: 'sha256:retain-b',
@@ -194,11 +210,14 @@ async function main(): Promise<void> {
   }, retentionToken);
   assert.equal(retainSecond.ok, true);
   assert.equal(retainSecond.fileId, 'qq-retain-2');
-  assert.deepEqual(deletedTargetFiles, ['qq-retain-1'], 'new upload must delete only the previous target group file');
+  assert.deepEqual(deletedTargetFiles.sort(), ['manual-extra', 'qq-retain-1']);
+  assert.deepEqual(managedFiles.map(file => file.fileId), ['qq-retain-2'], 'live root listing must converge to exactly the new file');
   const retentionState = readTargetFileRetentionState(path.join(retentionService.getTempDir(), 'state-probe.bin'));
   assert.equal(retentionState.latest?.fileId, 'qq-retain-2');
   assert.equal(retentionState.latest?.fileName, 'retain-b.zip');
-  assert.deepEqual(retentionState.pendingCleanup, [], 'confirmed previous-file deletion clears pending cleanup');
+  assert.deepEqual(retentionState.pendingCleanup, [], 'verified root reconciliation clears stale pending cleanup');
+  assert.equal(retentionState.lastObservedFileCount, 1);
+  assert.equal(retentionState.lastReconcileError, '');
 
   const failDir = path.join(workDir, 'failed-case');
   const failDataDir = path.join(failDir, 'data');
@@ -281,7 +300,9 @@ async function main(): Promise<void> {
   assert.match(page, /定向文件推送/);
   assert.match(page, /person setting url/);
   assert.match(page, /person setting group/);
-  assert.match(page, /上传成功后立即删除临时文件/);
+  assert.match(page, /目标群根目录由本功能独占管理/);
+  assert.match(page, /只保留本次新文件/);
+  assert.match(page, /立即检查并整理/);
   assert.match(page, /\/api\/target-file-push\/check/);
   assert.match(page, /\/api\/target-file-push\/rebaseline/);
 
