@@ -5,8 +5,8 @@ Updated: 2026-08-09
 ## Canonical repository
 
 - Canonical development branch: `main`.
-- Active task branch: `fix/target-file-retention-cleanup-20260809`.
-- This task fixes retention cleanup for the target Lanzou file push feature added by PR #37.
+- Change record for the target-file retention repair: PR #38, branch `fix/target-file-retention-cleanup-20260809` -> `main`.
+- The repair implementation passed GroupGuard CI run `31274824270` and GroupGuard Build run `31274824268` before merge. The CI log explicitly executed `verify:target-file-retention-snowluma` in both `npm test` and `build:snowluma` and reported success.
 - The ARM production runtime at `192.168.3.89` is separate from repository development and has **not** been deployed or restarted by this task.
 
 ## Verified production incident
@@ -23,15 +23,15 @@ Runtime evidence captured on 2026-08-09 showed:
 
 `SnowLumaProfile.deleteGroupFile()` was deliberately fail-closed when the OneBot host refactor was created because the SnowLuma delete contract had not yet been verified. The target-file retention feature later depended on that method, while its regression test used a fake HostProfile whose delete operation always succeeded. As a result, the retention state machine passed tests but production never sent `delete_group_file`.
 
-The exact production host contract is now verified against official SnowLuma `v1.12.4` source:
+The exact production host contract is verified against official SnowLuma `v1.12.4` source:
 
 - action: `delete_group_file`
 - parameters: `group_id`, `file_id`
 - SnowLuma awaits `groupFile.delete(group_id, file_id)` and returns an OK action response on success.
 
-## Repair state
+## Repository repair
 
-The task branch:
+PR #38:
 
 - implements verified built-in SnowLuma group-file deletion using only `group_id + file_id`;
 - keeps group-file listing adapter-gated because this repair does not require list semantics;
@@ -39,7 +39,7 @@ The task branch:
 - preserves the current failed temp file for retry, but removes unreferenced orphan temp files on service bind and removes a failed temp file once a different event supersedes it;
 - gates the new integration regression in normal test/build scripts.
 
-Repository merge and production rollout are separate gates. After this repair is merged to `main`, production will remain unchanged until the user explicitly authorizes deployment/restart.
+Repository merge and production rollout are separate gates. Production remains unchanged until the user explicitly authorizes deployment/restart.
 
 ## Production next action
 
