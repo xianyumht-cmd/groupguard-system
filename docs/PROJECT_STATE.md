@@ -7,8 +7,9 @@ Updated: 2026-08-09
 - Canonical development branch: `main`.
 - `main` at the start of the current task: `f1bbc194e3bced122b43f3811432eb6b224b4068`.
 - Previous target-file retention repair: PR #38 -> `main`.
-- Active task branch: `fix/target-file-root-reconcile-20260809`.
+- Active task: PR #39, branch `fix/target-file-root-reconcile-20260809` -> `main`.
 - Current task goal: replace historical-file-id retention with live QQ group-directory reconciliation for the dedicated target-file push group.
+- PR #39 head `32b27b409c79b1a11124e71c2ee49a7d2913e98d` passed the first full validation round: GroupGuard Build run `31277586168`, GroupGuard CI run `31277586197`, and WebUI Browser Acceptance run `31277586167` all completed successfully. This documentation reconciliation commit must receive the same final checks before merge.
 
 ## Verified production state
 
@@ -33,7 +34,7 @@ The target group uses the QQ group-file root directory `/` exclusively for this 
 
 > After a successful replacement upload, the managed group-file root contains exactly one file: the newest successfully uploaded target file.
 
-The active branch implements this as live reconciliation:
+PR #39 implements this as live reconciliation:
 
 1. detect a new/replaced Lanzou file;
 2. download it to the GroupGuard temp directory;
@@ -60,7 +61,7 @@ The current task therefore promotes SnowLuma group-file listing to a verified bu
 
 ## Active implementation state
 
-On `fix/target-file-root-reconcile-20260809`:
+On PR #39 / `fix/target-file-root-reconcile-20260809`:
 
 - SnowLuma built-in group-file listing is enabled and normalizes upload time;
 - target-file retention reconciles from the live group directory rather than trusting historical pending records;
@@ -68,10 +69,9 @@ On `fix/target-file-root-reconcile-20260809`:
 - manual “立即检查并整理” first reconciles the managed group root and then requests the Lanzou check;
 - if the recorded latest file no longer exists during a manual reconcile, the newest real QQ file by `upload_time` is adopted rather than deleting every file blindly;
 - WebUI now explicitly states that `/` is an exclusive managed directory and exposes reconciliation status;
-- integration tests use the real `SnowLumaProfile` list/delete path and verify that a failed replacement upload performs no group-file deletion.
-
-CI/PR/merge verification is still pending for this active branch.
+- integration tests use the real `SnowLumaProfile` list/delete path and verify that a failed replacement upload performs no group-file deletion;
+- first-round CI and browser acceptance are green; final-head checks and PR merge remain.
 
 ## Production next action
 
-Do not deploy this active-branch redesign merely because repository implementation is finished. After CI passes and the PR is merged to `main`, production deployment/restart still requires explicit user authorization for this new rollout. Production acceptance must verify the real QQ group root converges to exactly one file and that local temp cleanup remains correct.
+Do not deploy this active-branch redesign merely because repository implementation is finished. After the final PR head passes CI and PR #39 is merged to `main`, production deployment/restart still requires explicit user authorization for this new rollout. Production acceptance must verify the real QQ group root converges to exactly one file and that local temp cleanup remains correct.
