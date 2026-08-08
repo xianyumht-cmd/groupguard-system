@@ -5,11 +5,12 @@ Updated: 2026-08-09
 ## Canonical repository
 
 - Canonical development branch: `main`.
-- `main` at the start of the current task: `f1bbc194e3bced122b43f3811432eb6b224b4068`.
+- `main` at the start of the target-file root reconciliation task: `f1bbc194e3bced122b43f3811432eb6b224b4068`.
 - Previous target-file retention repair: PR #38 -> `main`.
-- Active task: PR #39, branch `fix/target-file-root-reconcile-20260809` -> `main`.
-- Current task goal: replace historical-file-id retention with live QQ group-directory reconciliation for the dedicated target-file push group.
-- PR #39 head `32b27b409c79b1a11124e71c2ee49a7d2913e98d` passed the first full validation round: GroupGuard Build run `31277586168`, GroupGuard CI run `31277586197`, and WebUI Browser Acceptance run `31277586167` all completed successfully. This documentation reconciliation commit must receive the same final checks before merge.
+- Target-file live-root reconciliation change record: PR #39, branch `fix/target-file-root-reconcile-20260809` -> `main`.
+- PR #39 implementation head `32b27b409c79b1a11124e71c2ee49a7d2913e98d` passed GroupGuard Build run `31277586168`, GroupGuard CI run `31277586197`, and WebUI Browser Acceptance run `31277586167`.
+- Documentation-reconciled head `482cbcf48d1127500088388591a6b265dbf88ac8` also passed GroupGuard Build run `31277671015`, GroupGuard CI run `31277670995`, and WebUI Browser Acceptance run `31277670994`.
+- Repository acceptance and production rollout remain separate gates: a validated PR must still be merged/verified on `main`, while ARM deployment/restart requires explicit production authorization.
 
 ## Verified production state
 
@@ -57,21 +58,19 @@ Against official SnowLuma `v1.12.4` source:
 - the underlying `GroupFileApi.list()` performs its own pagination loop until `isEnd`, so the OneBot list action is a complete snapshot;
 - `delete_group_file` accepts `group_id + file_id` and awaits the delete operation.
 
-The current task therefore promotes SnowLuma group-file listing to a verified built-in HostProfile capability instead of keeping it adapter-gated.
+The target-file reconciliation change therefore promotes SnowLuma group-file listing to a verified built-in HostProfile capability instead of keeping it adapter-gated.
 
-## Active implementation state
+## PR #39 implementation
 
-On PR #39 / `fix/target-file-root-reconcile-20260809`:
-
-- SnowLuma built-in group-file listing is enabled and normalizes upload time;
-- target-file retention reconciles from the live group directory rather than trusting historical pending records;
-- a successful live reconciliation replaces stale `pendingCleanup` with actual remaining leftovers;
-- manual “立即检查并整理” first reconciles the managed group root and then requests the Lanzou check;
-- if the recorded latest file no longer exists during a manual reconcile, the newest real QQ file by `upload_time` is adopted rather than deleting every file blindly;
-- WebUI now explicitly states that `/` is an exclusive managed directory and exposes reconciliation status;
-- integration tests use the real `SnowLumaProfile` list/delete path and verify that a failed replacement upload performs no group-file deletion;
-- first-round CI and browser acceptance are green; final-head checks and PR merge remain.
+- SnowLuma built-in group-file listing is enabled and normalizes upload time.
+- Target-file retention reconciles from the live group directory rather than trusting historical pending records.
+- A successful live reconciliation replaces stale `pendingCleanup` with actual remaining leftovers.
+- Manual “立即检查并整理” first reconciles the managed group root and then requests the Lanzou check.
+- If the recorded latest file no longer exists during a manual reconcile, the newest real QQ file by `upload_time` is adopted rather than deleting every file blindly.
+- WebUI explicitly states that `/` is an exclusive managed directory and exposes reconciliation status.
+- Integration tests use the real `SnowLumaProfile` list/delete path and verify that a failed replacement upload performs no group-file deletion.
+- Both the implementation head and the documentation-reconciled head passed the full build, CI, and WebUI browser acceptance suites before repository acceptance.
 
 ## Production next action
 
-Do not deploy this active-branch redesign merely because repository implementation is finished. After the final PR head passes CI and PR #39 is merged to `main`, production deployment/restart still requires explicit user authorization for this new rollout. Production acceptance must verify the real QQ group root converges to exactly one file and that local temp cleanup remains correct.
+Production remains on `f1bbc194e3bced122b43f3811432eb6b224b4068` until a later explicitly authorized rollout of the accepted root-reconciliation change. Production acceptance must verify the real QQ group root converges to exactly one file and that local temp cleanup remains correct.
