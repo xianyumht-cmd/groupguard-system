@@ -115,6 +115,7 @@ export async function getTargetFilePushOverview(options: SnowLumaAdminServerOpti
       lastError: local.stateHealthy === false
         ? '本地状态文件损坏，已停止自动上传；请点击“重新建立基线”安全恢复。'
         : local.lastError,
+      retention: local.retention,
     },
     remote,
     remoteError,
@@ -158,8 +159,20 @@ export async function saveTargetFilePushFromWeb(options: SnowLumaAdminServerOpti
 
 export async function checkTargetFilePushNow(options: SnowLumaAdminServerOptions) {
   ensureRuntime(options);
+  let reconciliation: Record<string, any> | null = null;
+  let reconciliationError = '';
+  try {
+    reconciliation = await targetFilePushService.reconcileTargetFolderNow();
+  } catch (error) {
+    reconciliationError = safeError(error);
+  }
   const result = await targetFilePushService.requestImmediateCheck();
-  return { ...(await getTargetFilePushOverview(options)), check: result };
+  return {
+    ...(await getTargetFilePushOverview(options)),
+    reconciliation,
+    reconciliationError,
+    check: result,
+  };
 }
 
 export async function rebaselineTargetFilePush(options: SnowLumaAdminServerOptions) {
