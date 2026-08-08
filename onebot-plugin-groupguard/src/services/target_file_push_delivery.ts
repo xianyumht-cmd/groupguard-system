@@ -67,6 +67,7 @@ export async function downloadTargetFile(options: {
     await handle.close();
     handle = null;
     await fs.promises.rename(partPath, finalPath);
+    await fs.promises.chmod(finalPath, 0o644);
     return finalPath;
   } finally {
     clearTimeout(timer);
