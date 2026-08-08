@@ -5,48 +5,52 @@ Updated: 2026-08-09
 ## Canonical repository
 
 - Canonical development branch: `main`.
-- `main` at the start of the target-file root reconciliation task: `f1bbc194e3bced122b43f3811432eb6b224b4068`.
-- Previous target-file retention repair: PR #38 -> `main`.
-- Target-file live-root reconciliation change record: PR #39, branch `fix/target-file-root-reconcile-20260809` -> `main`.
-- PR #39 implementation head `32b27b409c79b1a11124e71c2ee49a7d2913e98d` passed GroupGuard Build run `31277586168`, GroupGuard CI run `31277586197`, and WebUI Browser Acceptance run `31277586167`.
-- Documentation-reconciled head `482cbcf48d1127500088388591a6b265dbf88ac8` also passed GroupGuard Build run `31277671015`, GroupGuard CI run `31277670995`, and WebUI Browser Acceptance run `31277670994`.
-- Repository acceptance and production rollout remain separate gates: a validated PR must still be merged/verified on `main`, while ARM deployment/restart requires explicit production authorization.
+- Target-file live-root reconciliation change record: PR #39 -> `main`.
+- PR #39 was merged as `d54a5ad9dac63f85db9bda1a8a6b6137f03e9712` after GroupGuard Build, GroupGuard CI, and WebUI Browser Acceptance all passed on the final PR head.
+- `main` then advanced to `b5d09d2287a937046c918353fbbcd3785650294a` via the repository's automatic `plugin.json` update; that auto-update changed only `plugin.json` relative to the PR #39 merge.
 
 ## Verified production state
 
-The ARM GroupGuard runtime at `192.168.3.89` was successfully deployed on 2026-08-09 to:
+The ARM GroupGuard runtime at `192.168.3.89` was successfully deployed on 2026-08-09 at about 05:02 +08:00 to:
 
-- release commit: `f1bbc194e3bced122b43f3811432eb6b224b4068`
+- release commit: `b5d09d2287a937046c918353fbbcd3785650294a`
+- previous release: `f1bbc194e3bced122b43f3811432eb6b224b4068`
 - container: `groupguard-snowluma`
-- authenticated WebUI/API verification: HTTP 200
-- deployment backup: `/mnt/sda1/groupguard/backups/20260809-041531-target-retention-fix-f1bbc194e3bc`
+- authenticated HTTP verification: `200`
+- root-reconciliation WebUI markers: verified
+- deployment backup: `/mnt/sda1/groupguard/backups/20260809-050151-target-root-reconcile-b5d09d2287a9`
+- deployment report status: `completed`
 
-The successful deployment report recorded:
+Deployment pre/post state:
 
-- `pendingCleanup`: `17 -> 17`
-- local target temp files: `1 -> 1`
-- the one retained local temp file was exactly the current retryable `current.localPath`
+- historical `pendingCleanup`: `0 -> 0`
+- local target temp files: `0 -> 0`
+- local target temp bytes reported by directory metadata: `4096 -> 4096`
+- `current.localPath`: empty before and after deployment
+- business root reconciliation was intentionally **not** triggered by the deployment script
 
-The user subsequently manually deleted most QQ group files and intentionally left a small set for observation. This made the historical `pendingCleanup` records diverge further from the real QQ group directory. Production observation still showed multiple group files after new uploads, so the queue-based retention model did not achieve the actual product goal: one managed group file.
+The deployment therefore proves the new build is live and the authenticated admin/UI checks pass, but it does not by itself prove that real QQ group-file deletion converges the root to one file. That destructive business acceptance remains a separate manual step.
 
 ## Current target-file design decision
 
 The target group uses the QQ group-file root directory `/` exclusively for this feature. The desired invariant is:
 
-> After a successful replacement upload, the managed group-file root contains exactly one file: the newest successfully uploaded target file.
+> After a successful replacement upload or an explicit manual reconciliation, the managed group-file root contains exactly one file: the newest authoritative target file.
 
-PR #39 implements this as live reconciliation:
+The production implementation uses live reconciliation:
 
 1. detect a new/replaced Lanzou file;
 2. download it to the GroupGuard temp directory;
 3. upload the replacement QQ group file first;
 4. persist the returned new `file_id` as authoritative latest;
-5. read the real QQ group-file directory through SnowLuma;
-6. keep the authoritative new `file_id` and delete every other file in the managed root;
-7. re-list the QQ directory and verify it converged to one file;
+5. read the real QQ group-file root through SnowLuma;
+6. keep the authoritative new `file_id` and delete every other root file;
+7. re-list the root and verify it converged to one file;
 8. remove the local temp file after upload processing completes.
 
-No QQ group file is deleted before the replacement upload succeeds.
+No QQ group file is deleted before a replacement upload succeeds.
+
+Manual `立即检查并整理` can reconcile the existing root without waiting for a new Lanzou upload. It first uses the recorded latest file when that file still exists; if the record is stale or missing, it adopts the newest actual QQ root file by `upload_time`, then deletes the other root files and verifies convergence.
 
 ## Verified SnowLuma contracts
 
@@ -58,19 +62,15 @@ Against official SnowLuma `v1.12.4` source:
 - the underlying `GroupFileApi.list()` performs its own pagination loop until `isEnd`, so the OneBot list action is a complete snapshot;
 - `delete_group_file` accepts `group_id + file_id` and awaits the delete operation.
 
-The target-file reconciliation change therefore promotes SnowLuma group-file listing to a verified built-in HostProfile capability instead of keeping it adapter-gated.
+The production target-file reconciliation therefore uses SnowLuma's built-in list + delete path rather than treating historical pending IDs as the authoritative group-directory state.
 
-## PR #39 implementation
+## Production acceptance next action
 
-- SnowLuma built-in group-file listing is enabled and normalizes upload time.
-- Target-file retention reconciles from the live group directory rather than trusting historical pending records.
-- A successful live reconciliation replaces stale `pendingCleanup` with actual remaining leftovers.
-- Manual “立即检查并整理” first reconciles the managed group root and then requests the Lanzou check.
-- If the recorded latest file no longer exists during a manual reconcile, the newest real QQ file by `upload_time` is adopted rather than deleting every file blindly.
-- WebUI explicitly states that `/` is an exclusive managed directory and exposes reconciliation status.
-- Integration tests use the real `SnowLumaProfile` list/delete path and verify that a failed replacement upload performs no group-file deletion.
-- Both the implementation head and the documentation-reconciled head passed the full build, CI, and WebUI browser acceptance suites before repository acceptance.
+Refresh the GroupGuard WebUI and run `立即检查并整理` once against the intentionally retained QQ root files. Production acceptance is complete only after verifying:
 
-## Production next action
+- the real QQ group-file root converges to exactly one file;
+- the kept file is the intended latest authoritative file;
+- WebUI reconciliation status reports success with no remaining cleanup items;
+- no local target temp file is left behind by the reconciliation path.
 
-Production remains on `f1bbc194e3bced122b43f3811432eb6b224b4068` until a later explicitly authorized rollout of the accepted root-reconciliation change. Production acceptance must verify the real QQ group root converges to exactly one file and that local temp cleanup remains correct.
+If the root does not converge, capture the WebUI reconciliation error and the relevant GroupGuard/SnowLuma log entries before doing further manual deletion so the list/delete contract can be diagnosed from real production evidence.
