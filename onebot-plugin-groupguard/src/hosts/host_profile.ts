@@ -14,6 +14,7 @@ export interface HostGroupFileEntry {
   fileId: string;
   fileName: string;
   fileSize: number;
+  uploadTime?: number;
   busid?: number;
   folderId?: string;
   raw?: unknown;
