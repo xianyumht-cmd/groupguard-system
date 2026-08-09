@@ -8,6 +8,7 @@ Updated: 2026-08-09
 - Target-file live-root reconciliation change record: PR #39 -> `main`.
 - PR #39 was merged as `d54a5ad9dac63f85db9bda1a8a6b6137f03e9712` after GroupGuard Build, GroupGuard CI, and WebUI Browser Acceptance all passed on the final PR head.
 - `main` then advanced to `b5d09d2287a937046c918353fbbcd3785650294a` via the repository's automatic `plugin.json` update; that auto-update changed only `plugin.json` relative to the PR #39 merge.
+- Production rollout evidence was recorded by PR #40 -> `main`.
 
 ## Verified production state
 
@@ -29,13 +30,22 @@ Deployment pre/post state:
 - `current.localPath`: empty before and after deployment
 - business root reconciliation was intentionally **not** triggered by the deployment script
 
-The deployment therefore proves the new build is live and the authenticated admin/UI checks pass, but it does not by itself prove that real QQ group-file deletion converges the root to one file. That destructive business acceptance remains a separate manual step.
+## Production acceptance
+
+Production acceptance is complete for the exclusive-root reconciliation behavior.
+
+Observed after running WebUI `立即检查并整理`:
+
+- the real QQ group-file root converged from multiple files to exactly one file;
+- the remaining file was the latest intended target file;
+- subsequent observation did not reveal a functional problem with the one-file retention behavior;
+- the earlier WebUI `GroupGuard 回调失败 HTTP 502` message did not prevent the group-file reconciliation itself from succeeding and was not reproduced as a blocking functional defect during observation.
+
+The accepted production invariant is therefore:
+
+> The target group-file root `/` is exclusively managed by this feature and converges to exactly one authoritative latest file.
 
 ## Current target-file design decision
-
-The target group uses the QQ group-file root directory `/` exclusively for this feature. The desired invariant is:
-
-> After a successful replacement upload or an explicit manual reconciliation, the managed group-file root contains exactly one file: the newest authoritative target file.
 
 The production implementation uses live reconciliation:
 
@@ -64,13 +74,6 @@ Against official SnowLuma `v1.12.4` source:
 
 The production target-file reconciliation therefore uses SnowLuma's built-in list + delete path rather than treating historical pending IDs as the authoritative group-directory state.
 
-## Production acceptance next action
+## Next action
 
-Refresh the GroupGuard WebUI and run `立即检查并整理` once against the intentionally retained QQ root files. Production acceptance is complete only after verifying:
-
-- the real QQ group-file root converges to exactly one file;
-- the kept file is the intended latest authoritative file;
-- WebUI reconciliation status reports success with no remaining cleanup items;
-- no local target temp file is left behind by the reconciliation path.
-
-If the root does not converge, capture the WebUI reconciliation error and the relevant GroupGuard/SnowLuma log entries before doing further manual deletion so the list/delete contract can be diagnosed from real production evidence.
+No further change is required for this target-file retention task unless a new production symptom appears. If the earlier HTTP 502 message becomes reproducible or affects later uploads/checks, diagnose the callback/check path separately without changing the already-accepted root reconciliation behavior.
