@@ -2,6 +2,7 @@ import http, { type Server } from 'node:http';
 import { test, expect } from '@playwright/test';
 import { applyWebUiTheme } from '../src/standalone/admin/webui_theme.ts';
 import { renderHomePage } from '../src/standalone/admin/static_page.ts';
+import { renderQaPage } from '../src/standalone/admin/qa_page.ts';
 
 let server: Server;
 let origin = '';
@@ -36,7 +37,8 @@ function apiPayload(pathname: string): unknown {
 }
 
 test.beforeAll(async () => {
-  const html = applyWebUiTheme(renderHomePage());
+  const homeHtml = applyWebUiTheme(renderHomePage());
+  const qaHtml = applyWebUiTheme(renderQaPage());
   server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     if (url.pathname.startsWith('/api/')) {
@@ -45,7 +47,7 @@ test.beforeAll(async () => {
     }
     res.statusCode = 200;
     res.setHeader('content-type', 'text/html; charset=utf-8');
-    res.end(html);
+    res.end(url.pathname === '/qa.html' ? qaHtml : homeHtml);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -58,7 +60,7 @@ test.afterAll(async () => {
 });
 
 test('global config is a distinct operator entry backed by global filter mode', async ({ page }) => {
-  await page.goto(`${origin}/#groups`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${origin}/?token=test#groups`, { waitUntil: 'domcontentloaded' });
   const globalEntry = page.locator('[data-gg-global-config="1"]');
   await expect(globalEntry).toBeVisible();
   await globalEntry.click();
@@ -66,6 +68,18 @@ test('global config is a distinct operator entry backed by global filter mode', 
   await expect(page.locator('#tab-advanced h2')).toHaveText('全局配置');
   await expect(page.locator('#advancedFilter')).toHaveValue('global.');
   await expect(page.locator('.gg-global-mode-note')).toContainText('全局默认');
+  await expect(page).toHaveURL(/#global-config$/);
+});
+
+test('global config entry on a standalone page navigates to the real global editor instead of a dead button', async ({ page }) => {
+  await page.goto(`${origin}/qa.html?token=test`, { waitUntil: 'domcontentloaded' });
+  const globalEntry = page.locator('[data-gg-global-config="1"]');
+  await expect(globalEntry).toBeVisible();
+  await expect(globalEntry).toHaveAttribute('href', /#global-config$/);
+  await globalEntry.click();
+  await expect(page).toHaveURL(/\?token=test#global-config$/);
+  await expect(page.locator('#tab-advanced h2')).toHaveText('全局配置');
+  await expect(page.locator('#advancedFilter')).toHaveValue('global.');
 });
 
 test('link-prompt bulk repair deletes only the field override so it keeps inheriting', async ({ page }) => {
@@ -79,7 +93,7 @@ test('link-prompt bulk repair deletes only the field override so it keeps inheri
     });
   });
   page.on('dialog', (dialog) => dialog.accept());
-  await page.goto(`${origin}/#groups`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${origin}/?token=test#groups`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#ggInheritQaLink')).toBeVisible();
   await page.locator('#ggInheritQaLink').click();
   await expect.poll(() => captured).not.toBeNull();
@@ -107,7 +121,7 @@ test('explicit bulk override reports protected dormant legacy rows instead of hi
     });
   });
   page.on('dialog', (dialog) => dialog.accept());
-  await page.goto(`${origin}/#groups`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${origin}/?token=test#groups`, { waitUntil: 'domcontentloaded' });
   await page.locator('#ggBatchField').selectOption('qaEnabled');
   await page.locator('#ggBatchValue').selectOption('false');
   await page.locator('#ggApplyCommonField').click();
