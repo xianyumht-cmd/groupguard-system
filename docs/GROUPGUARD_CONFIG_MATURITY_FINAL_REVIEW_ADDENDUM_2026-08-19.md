@@ -112,6 +112,25 @@ http://127.0.0.1:6108/api/readyz
 
 状态：`fixed_in_branch_pending_gate`
 
+## FINAL-OPS-003 — High — “目标版本已经在运行”时不能丢失一键回滚保证
+
+### 问题
+
+部署 helper 支持 resume/reconcile：如果生产 `dist/build-info.json` 已经等于目标 commit，就不再次切换代码。这对 SSH 中断后的续跑很重要。
+
+早期实现存在一个边界：如果目标代码已经在运行，但匹配的 pending/latest 状态中没有可用 backup，helper 仍可能写入一个 `BACKUP_PATH=''` 的最新 manifest 并返回成功。这样后续 `ROLLBACK-GROUPGUARD.cmd` 会因为没有真实备份而无法兑现“一键回滚”。更糟的是，这次 reconcile 还可能覆盖原来的 latest rollback pointer。
+
+### 整改
+
+- reconcile 只有在能恢复出位于受限 backup root 下的真实 `dist` 备份时才允许成功；
+- 必须存在 backup entry `snowluma-service.mjs`；
+- backup 自身 `build-info.json` 的 commit 必须是合法 40 位 SHA；
+- 若状态里的 `PREVIOUS_COMMIT` 已知，则必须和 backup build commit 一致；若状态里是 `unknown`，用受验证的 backup commit 补全；
+- 找不到真实回滚点时 fail closed，不写新的 latest manifest，也不覆盖之前的回滚指针；
+- CI 锁定 `RECONCILE_ROLLBACK_STATE_MISSING` 与 backup commit mismatch 防线。
+
+状态：`fixed_in_branch_pending_gate`
+
 ## FINAL-CI-001 — Medium — 浏览器验收门禁依赖系统 apt 安装导致环境型超时
 
 ### 问题
