@@ -4,10 +4,16 @@ on:
   push:
     paths:
       - "onebot-plugin-groupguard/**"
+      - "scripts/windows/**"
+      - "GROUPGUARD-UPDATE.cmd"
+      - "ROLLBACK-GROUPGUARD.cmd"
       - ".github/workflows/groupguard-ci.yml"
   pull_request:
     paths:
       - "onebot-plugin-groupguard/**"
+      - "scripts/windows/**"
+      - "GROUPGUARD-UPDATE.cmd"
+      - "ROLLBACK-GROUPGUARD.cmd"
       - ".github/workflows/groupguard-ci.yml"
 
 jobs:
@@ -28,11 +34,15 @@ jobs:
       - name: Validate deployment PowerShell syntax
         shell: pwsh
         run: |
-          Get-ChildItem scripts/ops/*.ps1 | ForEach-Object {
+          $files = @(
+            Get-ChildItem scripts/ops/*.ps1
+            Get-ChildItem ../scripts/windows/*.ps1
+          )
+          foreach ($file in $files) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
-              $_.FullName,
+              $file.FullName,
               [ref]$tokens,
               [ref]$errors
             ) | Out-Null
@@ -41,6 +51,10 @@ jobs:
               exit 1
             }
           }
+      - name: Validate remote deployment shell helpers
+        run: |
+          sh -n ../scripts/windows/groupguard-remote-deploy.sh
+          sh -n ../scripts/windows/groupguard-remote-rollback.sh
       - run: npm run build:snowluma
       - name: Verify cross-repository contracts with local mocks
         env:
