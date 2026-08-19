@@ -10,7 +10,9 @@ GroupGuard configuration is defined as three different concepts:
 2. SQLite `group_config`: sparse per-group overrides;
 3. effective group config: runtime-only deep-merged result.
 
-`useGlobal=true` means whole-group inheritance and does not delete dormant overrides. `useGlobal=false` means global defaults plus the stored group overlay. Missing fields inherit; explicit `false`, `0`, and empty string remain overrides. Nested objects deep-merge and arrays replace atomically.
+No group row means whole-group global inheritance. Explicit `useGlobal=true` also means whole-group inheritance and does not delete dormant overrides. `useGlobal=false` means global defaults plus the stored group overlay. For backward compatibility, an existing historical row with no `useGlobal` field remains an active group overlay rather than being reinterpreted as whole-group inheritance.
+
+Missing fields inherit; explicit `false`, `0`, and empty string remain overrides. Nested objects deep-merge and arrays replace atomically.
 
 ### Reason
 
@@ -18,28 +20,35 @@ The old model reused `GroupGuardSettings` as global configuration, persisted gro
 
 ### Consequences
 
-- Runtime resolution is centralized in `src/config_effective.ts` and is shared by state-service and PluginState call paths.
-- Existing historical SQLite paths are preserved as explicit values; the migration must not infer administrator intent merely from value equality.
+- Runtime resolution is centralized in `src/config_effective.ts` and shared by state-service and PluginState call paths.
+- Existing historical SQLite paths are preserved as explicit values; migration does not infer administrator intent merely from value equality.
 - New broad-form writes may compact only newly introduced values that equal the current global value.
-- Administrators can explicitly delete one group override path with “恢复继承”.
+- Administrators explicitly remove one group override path with “恢复继承”.
 - The WebUI exposes global, group, effective, and source information separately.
 
-## 2026-08-19 — Field-level bulk application is distinct from whole-group inheritance
+## 2026-08-19 — Field inheritance, explicit group override, and whole-group inheritance are three different operations
 
 ### Decision
 
-A global setting change does not silently overwrite every stored group override. The admin surface provides a field-level batch operation for intentional synchronization and a separate whole-group `useGlobal` operation.
+The admin model distinguishes:
 
-For example, disabling `global.qaLinkDelivery.enabled` can be applied to every known group by updating only `qaLinkDelivery.enabled`, leaving query, QA, dynamic-command, probability, cooldown, and other per-group differences untouched.
+1. **restore field inheritance** — delete one group override path; the field follows current and future global changes;
+2. **write explicit group override** — set one group path to a fixed value; future global changes do not replace it;
+3. **whole-group inheritance** — `useGlobal=true`; every stored group override becomes dormant without being deleted.
+
+For the original `qaLinkDelivery.enabled` mismatch, the preferred bulk repair is `restore-path(qaLinkDelivery.enabled)`, not copying the current global boolean into every group.
+
+A `useGlobal=true` historical row may contain dormant old overrides. A single-field `set-path` must not delete or silently activate those unrelated values. When that operation cannot be performed without changing dormant semantics, the group is skipped and returned in `skippedDormantGroupIds`. A `restore-path` remains safe because it removes only the requested path.
 
 ### Reason
 
-Using `useGlobal=true` merely to synchronize one setting is too destructive: it changes the behavior of all fields for that group. Conversely, silently rewriting all group rows whenever global config changes would destroy the meaning of explicit group overrides.
+Copying a global value into every group looks correct today but actually creates fixed per-group overrides and prevents later global changes from propagating. Using `useGlobal=true` merely to synchronize one field is also too broad because it changes every field for that group. Dormant historical values add a third risk: automatically switching the group back to active overlay mode could unexpectedly reactivate unrelated old settings.
 
 ### Consequences
 
-- “应用字段到全部群/选中群” modifies only the requested dotted path.
-- “全部群继承全局” is explicitly labeled as a whole-group mode change and keeps dormant stored overrides for reversibility.
+- “恢复该字段为全局继承” is the normal bulk tool when the administrator wants future propagation.
+- “将目标值写成分群覆盖” intentionally creates fixed group values and reports protected dormant rows instead of hiding data loss.
+- “全部群完全继承全局” is clearly labeled as a whole-group mode change.
 - Dynamic dotted paths reject prototype-pollution segments.
 
 ## 2026-08-19 — Production deployment is code-only, backup-first, and rollbackable
