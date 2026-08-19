@@ -35,6 +35,19 @@ function safeClone<T>(value: T): T {
   return out as T;
 }
 
+function deepEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((item, index) => deepEqual(item, right[index]));
+  }
+  if (!isPlainRecord(left) || !isPlainRecord(right)) return false;
+  const leftKeys = Object.keys(left).filter(isSafeKey).sort();
+  const rightKeys = Object.keys(right).filter(isSafeKey).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key, index) => key === rightKeys[index] && deepEqual(left[key], right[key]));
+}
+
 /**
  * Deeply merge configuration objects while keeping arrays atomic.
  * Undefined means "inherit"; false/0/empty-string are real overrides.
@@ -141,6 +154,48 @@ export function getGroupConfigSourceMap(
   const out: ConfigSourceMap = {};
   collectLeafSources(effective, override, useGlobal, [], out);
   return out;
+}
+
+/**
+ * Old group rows may already be full snapshots. Keep their explicit paths.
+ * For paths newly introduced by a broad WebUI form submit, remove values that
+ * merely repeat the global value so new/edited rows remain sparse.
+ */
+export function compactNewInheritedValues(
+  globalSettings: GroupGuardSettings,
+  previousGroupSettings: unknown,
+  candidateGroupSettings: unknown
+): GroupSettingsOverride {
+  const global = normalizeGroupSettings(globalSettings || {} as GroupGuardSettings) as unknown as Record<string, unknown>;
+  const previous = normalizeGroupOverride(previousGroupSettings) as Record<string, unknown>;
+  const candidate = normalizeGroupOverride(candidateGroupSettings) as Record<string, unknown>;
+
+  const compact = (globalNode: unknown, previousNode: unknown, candidateNode: unknown, root = false): unknown => {
+    if (!isPlainRecord(candidateNode)) return safeClone(candidateNode);
+    const globalRecord = isPlainRecord(globalNode) ? globalNode : {};
+    const previousRecord = isPlainRecord(previousNode) ? previousNode : {};
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(candidateNode)) {
+      if (!isSafeKey(key) || value === undefined) continue;
+      if (root && key === 'useGlobal') {
+        out[key] = safeClone(value);
+        continue;
+      }
+      const existedBefore = Object.prototype.hasOwnProperty.call(previousRecord, key);
+      const globalValue = globalRecord[key];
+      if (isPlainRecord(value)) {
+        const nested = compact(globalValue, previousRecord[key], value, false);
+        if (isPlainRecord(nested) && Object.keys(nested).length === 0 && !existedBefore) continue;
+        out[key] = nested;
+        continue;
+      }
+      if (!existedBefore && deepEqual(value, globalValue)) continue;
+      out[key] = safeClone(value);
+    }
+    return out;
+  };
+
+  return normalizeGroupOverride(compact(global, previous, candidate, true));
 }
 
 export function setGroupOverridePath(
