@@ -196,6 +196,13 @@ echo "CANDIDATE_VALIDATION_OK=true"
 
 current_commit=$(json_commit "$APP_DIR/dist/build-info.json")
 current_commit=${current_commit:-unknown}
+# The live build metadata is data too. Validate it before using even a short
+# prefix inside backup/staging paths; malformed metadata must never influence
+# filesystem destinations.
+if ! valid_commit_or_unknown "$current_commit"; then
+  echo "CURRENT_BUILD_COMMIT_INVALID=true" >&2
+  exit 14
+fi
 echo "CURRENT_COMMIT=$current_commit"
 echo "TARGET_COMMIT=$TARGET_COMMIT"
 
