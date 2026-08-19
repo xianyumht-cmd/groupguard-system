@@ -4,6 +4,7 @@ import {
   compactNewInheritedValues,
   deleteGroupOverridePath,
   getGroupConfigSourceMap,
+  isGroupFullyInherited,
   normalizeGroupOverride,
   setGroupOverridePath,
   type GroupSettingsOverride,
@@ -69,19 +70,28 @@ function persistGroupMutation<T>(options: SnowLumaAdminServerOptions, mutate: ()
   }
 }
 
+function hasDormantOverrides(settings: GroupSettingsOverride): boolean {
+  return Object.keys(settings).some(key => key !== 'useGlobal');
+}
+
+function sameOverride(left: GroupSettingsOverride, right: GroupSettingsOverride): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function listGroups() {
   const config = configStateService.getConfig();
   const groups = configStateService.getGroups() || {};
   const licenses = configStateService.getLicenses() || {};
   const groupIds = Array.from(new Set([...Object.keys(licenses), ...Object.keys(groups)])).sort((a, b) => Number(a) - Number(b));
   return groupIds.map(groupId => {
-    const sources = getGroupConfigSourceMap(config.global, groups[groupId]);
+    const stored = groups[groupId];
+    const sources = getGroupConfigSourceMap(config.global, stored);
     return {
       groupId,
-      configured: Boolean(groups[groupId]),
+      configured: Boolean(stored),
       licensed: Boolean(licenses[groupId]),
       license: licenses[groupId] || null,
-      useGlobal: groups[groupId]?.useGlobal ?? true,
+      useGlobal: isGroupFullyInherited(stored),
       overrideFieldCount: Object.values(sources).filter(source => source === 'group').length,
       name: (config as any).groupNames?.[groupId] || ''
     };
@@ -102,7 +112,7 @@ export function getGroupConfig(groupId: string) {
     effective,
     sources,
     configured: Boolean(stored),
-    useGlobal: stored?.useGlobal ?? true,
+    useGlobal: isGroupFullyInherited(stored),
     license: configStateService.getLicenses()?.[id] || null
   };
 }
@@ -126,6 +136,12 @@ export function patchGroupConfig(options: SnowLumaAdminServerOptions, groupId: s
       return batchPatchGroupConfigPath(options, {
         path: String(patch?.path || ''),
         value: patch?.value,
+        groupIds: patch?.groupIds,
+      });
+    }
+    if (operation === 'restore-path') {
+      return batchRestoreGroupConfigPath(options, {
+        path: String(patch?.path || ''),
         groupIds: patch?.groupIds,
       });
     }
@@ -164,7 +180,8 @@ export function restoreGroupConfigPath(
   const current = configStateService.getGroupSettings(id);
   const next = deleteGroupOverridePath(current, path);
   return persistGroupMutation(options, () => {
-    configStateService.setGroupSettings(id, next as GroupGuardSettings);
+    if (Object.keys(next).length === 0) configStateService.deleteGroupSettings(id);
+    else configStateService.setGroupSettings(id, next as GroupGuardSettings);
     return getGroupConfig(id);
   });
 }
@@ -179,15 +196,23 @@ export function batchPatchGroupConfigPath(
   if (!ids.length) throw new Error('没有可应用的群');
 
   const result = persistGroupMutation(options, () => {
+    const updated: string[] = [];
+    const skippedDormant: string[] = [];
     for (const id of ids) {
-      const stored = normalizeGroupOverride(configStateService.getGroupSettings(id));
-      // A legacy useGlobal=true row may contain dormant old overrides. Activating
-      // it wholesale would be surprising, so start a fresh sparse overlay.
-      const base: GroupSettingsOverride = stored.useGlobal === true ? { useGlobal: false } : stored;
-      const next = setGroupOverridePath({ ...base, useGlobal: false }, path, input.value);
+      const raw = configStateService.getGroupSettings(id);
+      const stored = normalizeGroupOverride(raw);
+      // An explicit useGlobal=true row may contain old dormant overrides. Never
+      // delete or reactivate those unknown historical values as a side effect of
+      // setting one field. Rows with no dormant data can safely enter override mode.
+      if (raw && stored.useGlobal === true && hasDormantOverrides(stored)) {
+        skippedDormant.push(id);
+        continue;
+      }
+      const next = setGroupOverridePath({ ...stored, useGlobal: false }, path, input.value);
       configStateService.setGroupSettings(id, next as GroupGuardSettings);
+      updated.push(id);
     }
-    return ids;
+    return { updated, skippedDormant };
   });
 
   return {
@@ -195,8 +220,45 @@ export function batchPatchGroupConfigPath(
     operation: 'set-path',
     path,
     value: input.value,
-    updated: result.length,
-    groupIds: result
+    updated: result.updated.length,
+    groupIds: result.updated,
+    skippedDormant: result.skippedDormant.length,
+    skippedDormantGroupIds: result.skippedDormant,
+    targetCount: ids.length
+  };
+}
+
+export function batchRestoreGroupConfigPath(
+  options: SnowLumaAdminServerOptions,
+  input: { path: string; groupIds?: unknown; }
+) {
+  const path = String(input?.path || '').trim();
+  if (!path || path === 'useGlobal') throw new Error('请选择可恢复继承的配置字段');
+  const ids = resolveTargetGroupIds(input?.groupIds);
+  if (!ids.length) throw new Error('没有可处理的群');
+
+  const changed = persistGroupMutation(options, () => {
+    const updated: string[] = [];
+    for (const id of ids) {
+      const raw = configStateService.getGroupSettings(id);
+      if (!raw) continue;
+      const current = normalizeGroupOverride(raw);
+      const next = deleteGroupOverridePath(current, path);
+      if (sameOverride(current, next)) continue;
+      if (Object.keys(next).length === 0) configStateService.deleteGroupSettings(id);
+      else configStateService.setGroupSettings(id, next as GroupGuardSettings);
+      updated.push(id);
+    }
+    return updated;
+  });
+
+  return {
+    ok: true,
+    operation: 'restore-path',
+    path,
+    updated: changed.length,
+    groupIds: changed,
+    targetCount: ids.length
   };
 }
 
@@ -208,17 +270,22 @@ export function batchSetGroupInheritance(
   const ids = resolveTargetGroupIds(input?.groupIds);
   if (!ids.length) throw new Error('没有可应用的群');
 
-  const result = persistGroupMutation(options, () => {
+  const changed = persistGroupMutation(options, () => {
+    const updated: string[] = [];
     for (const id of ids) {
-      const stored = normalizeGroupOverride(configStateService.getGroupSettings(id));
-      if (useGlobal && Object.keys(stored).length === 0) continue;
+      const raw = configStateService.getGroupSettings(id);
+      const stored = normalizeGroupOverride(raw);
+      const currentlyGlobal = isGroupFullyInherited(raw);
+      if (currentlyGlobal === useGlobal) continue;
+      if (useGlobal && !raw) continue;
       const next = { ...stored, useGlobal } as GroupSettingsOverride;
       configStateService.setGroupSettings(id, next as GroupGuardSettings);
+      updated.push(id);
     }
-    return ids;
+    return updated;
   });
 
-  return { ok: true, operation: 'set-inheritance', useGlobal, updated: result.length, groupIds: result };
+  return { ok: true, operation: 'set-inheritance', useGlobal, updated: changed.length, groupIds: changed, targetCount: ids.length };
 }
 
 export function deleteGroupConfig(options: SnowLumaAdminServerOptions, groupId: string): ReturnType<typeof getGroupConfig> {
