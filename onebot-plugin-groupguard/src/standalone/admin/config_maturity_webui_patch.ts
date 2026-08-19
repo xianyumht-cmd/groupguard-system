@@ -12,21 +12,28 @@ function text(node,value){if(node)node.textContent=value}
 function dispatchInput(node){if(!node)return;node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}))}
 function advancedSection(){return document.getElementById('tab-advanced')}
 function advancedTab(){return document.querySelector('button.tab[data-tab="advanced"],.tab[data-tab="advanced"]')}
+function globalSaveButton(){var section=advancedSection();return section?section.querySelector('[data-save-form="advancedForm"]'):null}
+function readFieldValue(input){if(input.type==='checkbox')return input.dataset.invert==='true'?!input.checked:input.checked;var v=String(input.value||'').trim();if(v==='true')return true;if(v==='false')return false;if(v==='null')return null;if(/^-?\d+(\.\d+)?$/.test(v))return Number(v);if((v.startsWith('[')&&v.endsWith(']'))||(v.startsWith('{')&&v.endsWith('}')))return JSON.parse(v);return input.value}
+function collectGlobalPatch(){var patch={},form=document.getElementById('advancedForm');if(!form)return patch;form.querySelectorAll('[data-config-key]').forEach(function(input){var key=String(input.dataset.configKey||'');if(key.startsWith('global.'))patch[key]=readFieldValue(input)});return patch}
+function globalNote(message,bad){var note=advancedSection()&&advancedSection().querySelector('.gg-global-mode-note');if(!note)return;note.textContent=message;note.style.color=bad?'var(--gg-danger)':'var(--gg-muted)'}
+async function saveGlobalDefaults(){var patch=collectGlobalPatch(),keys=Object.keys(patch);if(!keys.length)throw new Error('没有可保存的全局字段');var button=globalSaveButton();if(button)button.disabled=true;try{await api('/api/config/patch','POST',{patch:patch});globalNote('全局默认已保存，共 '+keys.length+' 个 global.* 字段。分群覆盖未被改写。',false)}finally{if(button)button.disabled=false}}
+function bindGlobalSaveGuard(){var button=globalSaveButton();if(!button||button.dataset.ggGlobalSaveBound==='1')return !!button;button.dataset.ggGlobalSaveBound='1';button.addEventListener('click',function(event){if(!globalMode)return;event.preventDefault();event.stopImmediatePropagation();saveGlobalDefaults().catch(function(error){globalNote('保存全局配置失败：'+error.message,true)})},true);return true}
 function setGlobalMode(enabled){
   globalMode=!!enabled;
-  var section=advancedSection(),filter=document.getElementById('advancedFilter');
+  var section=advancedSection(),filter=document.getElementById('advancedFilter'),save=globalSaveButton();
   if(filter){filter.value=globalMode?'global.':'';dispatchInput(filter)}
+  if(save)save.textContent=globalMode?'保存全局配置':'保存全量配置面板';
   if(section){
     var heading=section.querySelector('h2');
     if(heading)heading.textContent=globalMode?'全局配置':'全量配置';
     var old=section.querySelector('.gg-global-mode-note');if(old)old.remove();
-    if(globalMode){var note=document.createElement('div');note.className='gg-global-mode-note';note.textContent='这里仅显示 global.* 全局默认值。保存只修改全局默认；已有分群覆盖不会被偷偷改写。要让某字段以后持续跟随全局，请到“分群配置”使用“恢复字段继承”。';var anchor=section.querySelector('#advancedFilter')?.closest('label')||section.firstElementChild;if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(note,anchor.nextSibling);else section.prepend(note)}
+    if(globalMode){var note=document.createElement('div');note.className='gg-global-mode-note';note.textContent='这里仅显示并仅保存 global.* 全局默认值；已有分群覆盖不会被偷偷改写。要让某字段以后持续跟随全局，请到“分群配置”使用“恢复字段继承”。';var anchor=section.querySelector('#advancedFilter')?.closest('label')||section.firstElementChild;if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(note,anchor.nextSibling);else section.prepend(note)}
   }
   var own=document.querySelector('[data-gg-global-config="1"]');
   if(globalMode){document.querySelectorAll('.gg-nav .tab,.gg-nav-link').forEach(function(item){item.classList.remove('active')});if(own)own.classList.add('active');var crumb=document.querySelector('.gg-breadcrumb strong');text(crumb,'全局配置')}
   else if(own)own.classList.remove('active');
 }
-function openGlobalConfig(){var original=advancedTab();if(!original)return;openingGlobal=true;original.click();openingGlobal=false;setGlobalMode(true);setTimeout(function(){history.replaceState(null,'',location.pathname+location.search+'#global-config')},0)}
+function openGlobalConfig(){var original=advancedTab();if(!original)return;openingGlobal=true;original.click();openingGlobal=false;bindGlobalSaveGuard();setGlobalMode(true);setTimeout(function(){history.replaceState(null,'',location.pathname+location.search+'#global-config')},0)}
 function mountGlobalNavigation(){
   var nav=document.querySelector('.gg-nav');if(!nav||nav.querySelector('[data-gg-global-config="1"]'))return !!nav;
   var groups=[].slice.call(nav.querySelectorAll('.gg-menu-group'));var block=groups.find(function(item){var title=item.querySelector('.gg-menu-group-title');return title&&title.textContent.trim()==='群管配置'});if(!block)return false;
@@ -82,7 +89,7 @@ async function refreshSources(){
 }
 function scheduleSources(delay){clearTimeout(sourceTimer);sourceTimer=setTimeout(function(){refreshSources()},delay||180)}
 function bindSourceRefresh(){['loadGroupBtn','saveGroupBtn'].forEach(function(id){var node=document.getElementById(id);if(node)node.addEventListener('click',function(){scheduleSources(id==='saveGroupBtn'?650:250)})});var select=document.getElementById('groupSelect');if(select)select.addEventListener('change',function(){scheduleSources(250)});var form=document.getElementById('groupForm');if(form){var observer=new MutationObserver(function(list){if(refreshingSources)return;var relevant=list.some(function(item){return [].slice.call(item.addedNodes||[]).some(function(node){return !(node.nodeType===1&&node.classList&&node.classList.contains('gg-config-source'))})});if(relevant)scheduleSources(120)});observer.observe(form,{childList:true,subtree:true})}}
-function start(){mountGlobalNavigation();mountBatchPanel();bindSourceRefresh();renameInheritanceSwitch();scheduleSources(350);if(requestedGlobalMode&&advancedTab())setTimeout(openGlobalConfig,0);var observer=new MutationObserver(function(){mountGlobalNavigation();mountBatchPanel();renameInheritanceSwitch()});observer.observe(document.documentElement,{childList:true,subtree:true});setTimeout(function(){observer.disconnect();mountGlobalNavigation();mountBatchPanel()},3500)}
+function start(){mountGlobalNavigation();mountBatchPanel();bindGlobalSaveGuard();bindSourceRefresh();renameInheritanceSwitch();scheduleSources(350);if(requestedGlobalMode&&advancedTab())setTimeout(openGlobalConfig,0);var observer=new MutationObserver(function(){mountGlobalNavigation();mountBatchPanel();bindGlobalSaveGuard();renameInheritanceSwitch()});observer.observe(document.documentElement,{childList:true,subtree:true});setTimeout(function(){observer.disconnect();mountGlobalNavigation();mountBatchPanel();bindGlobalSaveGuard()},3500)}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',start):start();
 })();</script>`;
 
