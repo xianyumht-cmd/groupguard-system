@@ -57,10 +57,28 @@ function Quote-Remote([string]$Value) {
   return "'$Value'"
 }
 
+function Assert-SafeParameters {
+  if ($RemoteHost -notmatch '^[A-Za-z0-9.-]+$') { throw 'RemoteHost 格式不安全。' }
+  if ($RemoteUser -notmatch '^[A-Za-z0-9._-]+$') { throw 'RemoteUser 格式不安全。' }
+  if ($RemotePort -lt 1 -or $RemotePort -gt 65535) { throw 'RemotePort 必须在 1-65535。' }
+  foreach ($item in @(
+    @{ Name = 'RemoteAppDir'; Value = $RemoteAppDir },
+    @{ Name = 'RemoteBackupRoot'; Value = $RemoteBackupRoot }
+  )) {
+    $value = [string]$item.Value
+    if ($value -notmatch '^/mnt/sda1/groupguard/[A-Za-z0-9._/-]+$' -or $value.Contains('..') -or $value.EndsWith('/.')) {
+      throw "$($item.Name) 必须是 /mnt/sda1/groupguard/ 下的安全绝对路径。"
+    }
+  }
+  if ($RemoteAppDir.TrimEnd('/') -eq $RemoteBackupRoot.TrimEnd('/')) { throw '应用目录和备份目录不能相同。' }
+  if ($RemoteContainer -notmatch '^[A-Za-z0-9_.-]+$') { throw 'RemoteContainer 格式不安全。' }
+}
+
 try {
   Write-Host 'GroupGuard 一键更新 / 生产代码部署' -ForegroundColor Green
   Write-Host '只发布构建后的 dist；不会覆盖 config.json、SQLite/data、日志或密钥。'
 
+  Assert-SafeParameters
   foreach ($cmd in @('git', 'npm', 'ssh', 'scp', 'tar')) { Require-Command $cmd }
   if (-not (Test-Path -LiteralPath $RepoPath -PathType Container)) { throw "本地仓库不存在：$RepoPath" }
   if (-not (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))) { throw "不是 Git 仓库：$RepoPath" }
@@ -79,6 +97,7 @@ try {
   $commit = Get-NativeOutput 'git' @('-C', $RepoPath, 'rev-parse', 'HEAD')
   $originMain = Get-NativeOutput 'git' @('-C', $RepoPath, 'rev-parse', 'origin/main')
   if ($commit -ne $originMain) { throw "本地 main 与 origin/main 不一致：local=$commit origin=$originMain" }
+  if ($commit -notmatch '^[0-9a-fA-F]{40}$') { throw "Git commit 格式异常：$commit" }
   Write-Host "准备发布 commit：$commit" -ForegroundColor Green
 
   $core = Join-Path $RepoPath 'onebot-plugin-groupguard'
@@ -115,6 +134,7 @@ try {
   $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
   $shortCommit = $commit.Substring(0, 12)
   $releaseId = "config-maturity-$stamp-$shortCommit"
+  if ($releaseId -notmatch '^[A-Za-z0-9._-]+$') { throw 'releaseId 格式异常。' }
   $tempRoot = Join-Path ([IO.Path]::GetTempPath()) "groupguard-$releaseId"
   New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
   $archive = Join-Path $tempRoot "$releaseId.tar.gz"
