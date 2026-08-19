@@ -5,7 +5,7 @@ import type { PluginConfig, GroupGuardSettings } from './types';
 import type { OneBotMessageEvent, OneBotEvent } from './protocol/onebot11/types';
 import type { GroupGuardRuntimeContext } from './runtime/runtime_context';
 import { normalizePluginConfig } from './config';
-import { normalizeGroupOverride } from './config_effective';
+import { normalizeGroupOverride, resolveEffectiveGroupSettings } from './config_effective';
 import { authManager } from './auth';
 import { configStateService } from './core/state-services/config_state_service';
 import { contextStateService } from './core/state-services/context_state_service';
@@ -80,7 +80,11 @@ function backupInvalidConfig(configPath: string, backupDir: string): string | nu
 function collectPersonaAuditForConfig(config: PluginConfig) {
   const globalAudit = auditReplyTemplates(BUILTIN_REPLY_SCENE_TEMPLATES, config.global);
   const groups = Object.entries(config.groups || {}).map(([groupId, settings]) => {
-    const report = auditReplyTemplates(BUILTIN_REPLY_SCENE_TEMPLATES, settings as any);
+    // Group rows are sparse overlays. Audit the same effective config runtime
+    // will use; auditing the sparse row itself can report false coverage gaps
+    // for templates/persona mappings inherited from global settings.
+    const effective = resolveEffectiveGroupSettings(config.global, settings);
+    const report = auditReplyTemplates(BUILTIN_REPLY_SCENE_TEMPLATES, effective);
     return { groupId, report };
   }).filter(item => item.report.issueCount.total > 0);
   const groupIssueCount = groups.reduce((acc, item) => {
