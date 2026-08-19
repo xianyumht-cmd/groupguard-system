@@ -24,6 +24,24 @@ function isSafeKey(key: string): boolean {
   return Boolean(key) && !FORBIDDEN_PATH_SEGMENTS.has(key);
 }
 
+function splitGroupOverridePath(dottedPath: string): string[] {
+  const text = String(dottedPath || '').trim();
+  let parts: string[];
+  // featureSwitches is a Record whose business keys intentionally contain a
+  // dot (for example "query.lol_ban"). Keep those keys atomic, matching the
+  // existing config form/object-patch contract, instead of creating a nested
+  // { query: { lol_ban: ... } } object that runtime would not read.
+  if (text.startsWith('featureSwitches.query.')) {
+    parts = ['featureSwitches', `query.${text.slice('featureSwitches.query.'.length)}`];
+  } else if (text.startsWith('featureSwitches.builtin.')) {
+    parts = ['featureSwitches', `builtin.${text.slice('featureSwitches.builtin.'.length)}`];
+  } else {
+    parts = text.split('.').map(part => part.trim()).filter(Boolean);
+  }
+  if (!parts.length || parts.some(part => !isSafeKey(part))) return [];
+  return parts;
+}
+
 function safeClone<T>(value: T): T {
   if (Array.isArray(value)) return value.map(item => safeClone(item)) as T;
   if (!isPlainRecord(value)) return value;
@@ -213,8 +231,8 @@ export function setGroupOverridePath(
   dottedPath: string,
   value: unknown
 ): GroupSettingsOverride {
-  const parts = String(dottedPath || '').split('.').map(part => part.trim()).filter(Boolean);
-  if (!parts.length || parts.some(part => !isSafeKey(part))) throw new Error('invalid_group_config_path');
+  const parts = splitGroupOverridePath(dottedPath);
+  if (!parts.length) throw new Error('invalid_group_config_path');
 
   const next = safeClone(normalizeGroupOverride(groupSettings)) as Record<string, unknown>;
   let current = next;
@@ -228,8 +246,8 @@ export function setGroupOverridePath(
 }
 
 export function deleteGroupOverridePath(groupSettings: unknown, dottedPath: string): GroupSettingsOverride {
-  const parts = String(dottedPath || '').split('.').map(part => part.trim()).filter(Boolean);
-  if (!parts.length || parts.some(part => !isSafeKey(part))) throw new Error('invalid_group_config_path');
+  const parts = splitGroupOverridePath(dottedPath);
+  if (!parts.length) throw new Error('invalid_group_config_path');
 
   const next = safeClone(normalizeGroupOverride(groupSettings)) as Record<string, unknown>;
   const parents: Array<{ object: Record<string, unknown>; key: string }> = [];
