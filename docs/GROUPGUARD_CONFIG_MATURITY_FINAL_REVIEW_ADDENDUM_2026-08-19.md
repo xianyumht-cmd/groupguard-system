@@ -1,8 +1,8 @@
 # GroupGuard 配置成熟化最终复审补充（2026-08-19）
 
-状态：`engineering_complete_pending_merge`
+状态：`merged_awaiting_owner_production_acceptance`
 
-关联：`docs/GROUPGUARD_CONFIG_MATURITY_AUDIT_2026-08-19.md`、PR #42。
+关联：`docs/GROUPGUARD_CONFIG_MATURITY_AUDIT_2026-08-19.md`、已合并 PR #42、merge commit `9427c6577439acf8987a208909fa8ae3e9c09e2d`。
 
 本文件记录 1–6 阶段主体整改完成后，最终 diff / CI 复审继续发现的系统性问题。它们不是为了凑 Bug 数量，而是为了证明最终交付链本身也接受同一套成熟度标准。
 
@@ -113,17 +113,17 @@ resume/reconcile 场景中，如果目标 commit 已经在运行，但找不到�
 
 ## 最终工程门禁结果
 
-最终可执行代码与部署安全整改所在 head `cea0587ac179072a0c4639ae5b24012c3d86cfec` 已全部通过：
+最终 PR head `35e069cf6e590480cfc57f58b2f8a5cfbc9f3136` 全部通过：
 
-- GroupGuard CI `32279121749`: **success**；
-- GroupGuard Build `32279121847`: **success**；
-- WebUI Browser Acceptance `32279122039`: **success**。
+- GroupGuard CI `32279570278`: **success**；
+- GroupGuard Build `32279570228`: **success**；
+- WebUI Browser Acceptance `32279570212`: **success**。
 
-最终 diff 复审未留下未处理 High/Critical finding。该 head 当时相对 `main` 为 ahead、behind=0。其后的变更仅用于把 Operations / Project State / 本补充文档更新为最终工程状态；如果 GitHub 因 PR path 集合再次触发 exact-head gates，这些 gate 仍必须为 green 才能转 Ready 和合并。
+最终 diff 复审未留下未处理 High/Critical finding。PR #42 随后以 merge commit `9427c6577439acf8987a208909fa8ae3e9c09e2d` 合并到 `main`。该 merge commit 与最终 PR head 具有相同 tree `bf6f5f2b8fc0ffc1c6cdaa8ad1a6f50dcff7e317`，因此合并没有改变已验证的代码/文档树。
 
 ## 发布边界
 
-- 本任务至此仍未部署或重启 `192.168.3.89`；
-- PR #42 合并并完成 `main` push-side CI 前，不交给用户执行生产部署；
-- 最终只进行一轮人工业务验收：运行 `GROUPGUARD-UPDATE.cmd`；
+- 工程任务没有部署或重启 `192.168.3.89`；
+- `main` 已包含本轮成熟化结果和一键更新/回滚工具；
+- 剩余工作只有一轮人工生产验收：在 Windows 仓库根目录运行 `GROUPGUARD-UPDATE.cmd`；
 - 如真实业务行为异常，运行 `ROLLBACK-GROUPGUARD.cmd`，只恢复插件代码，不替换 `config.json`、SQLite/data、日志或 secrets。
