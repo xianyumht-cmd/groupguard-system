@@ -16,6 +16,9 @@ case "$APP_DIR" in
 esac
 case "$BACKUP_ROOT" in
   /mnt/sda1/groupguard/*) ;;
+esac
+case "$BACKUP_ROOT" in
+  /mnt/sda1/groupguard/*) ;;
   *) fail_unsafe backup_root ;;
 esac
 case "$APP_DIR:$BACKUP_ROOT" in
@@ -107,13 +110,64 @@ json_commit() {
   sed -n 's/.*"commit_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1
 }
 
+# The admin APIs are authenticated. Verify both readiness and the exact build
+# commit after every rollback switch. Support either an explicit token env or
+# the generated token file used by the standalone service.
 health_check() {
-  attempts=${1:-45}
+  expected_commit=${1:-unknown}
+  attempts=${2:-45}
+  valid_commit_or_unknown "$expected_commit" || return 1
   i=1
   while [ "$i" -le "$attempts" ]; do
     if docker inspect "$CONTAINER" >/dev/null 2>&1 && \
        docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q '^true$'; then
-      if docker exec "$CONTAINER" node -e "const h=require('http');const r=h.get('http://127.0.0.1:6108/api/readyz',x=>{let b='';x.on('data',d=>b+=d);x.on('end',()=>{let o={};try{o=JSON.parse(b)}catch{};process.exit(x.statusCode===200&&o&&o.ready===true?0:2)})});r.on('error',()=>process.exit(3));r.setTimeout(2500,()=>{r.destroy();process.exit(4)})" >/dev/null 2>&1; then
+      if docker exec -i "$CONTAINER" node - "$expected_commit" >/dev/null 2>&1 <<'NODE'
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const expectedCommit = String(process.argv[2] || 'unknown').toLowerCase();
+const port = Number(process.env.GROUPGUARD_WEBUI_PORT || 6108);
+const dataDir = path.resolve(process.env.GROUPGUARD_DATA_DIR || path.join(process.cwd(), 'data'));
+let token = String(process.env.GROUPGUARD_WEBUI_TOKEN || '').trim();
+if (!token) {
+  try { token = fs.readFileSync(path.join(dataDir, '.groupguard-webui-token'), 'utf8').trim(); } catch { /* fail below */ }
+}
+if (!token) process.exit(10);
+function getJson(pathname) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: pathname,
+      method: 'GET',
+      headers: { 'x-groupguard-token': token, accept: 'application/json' },
+      timeout: 3000,
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return reject(new Error(`${pathname} HTTP ${res.statusCode}`));
+        try { resolve(JSON.parse(body)); } catch { reject(new Error(`${pathname} invalid JSON`)); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error(`${pathname} timeout`)));
+    req.on('error', reject);
+    req.end();
+  });
+}
+(async () => {
+  const [build, health] = await Promise.all([getJson('/api/build-info'), getJson('/api/health')]);
+  const buildCommit = String(build && build.commit_sha || '').toLowerCase();
+  const healthCommit = String(health && health.build && health.build.commit_sha || '').toLowerCase();
+  if (health && health.ready !== true) throw new Error('service not ready');
+  if (expectedCommit !== 'unknown' && (buildCommit !== expectedCommit || healthCommit !== expectedCommit)) {
+    throw new Error('running build commit mismatch');
+  }
+  if (build && build.dirty === true) throw new Error('running build is dirty');
+})().then(() => process.exit(0)).catch(() => process.exit(11));
+NODE
+      then
         return 0
       fi
     fi
@@ -139,7 +193,7 @@ echo "ROLLBACK_TO_COMMIT=$backup_commit"
 echo "BACKUP_PATH=$backup_path"
 
 if [ "$current_commit" = "$backup_commit" ]; then
-  if health_check 30; then
+  if health_check "$backup_commit" 30; then
     echo "ROLLBACK_ALREADY_APPLIED=true"
     echo "HEALTH_OK=true"
     exit 0
@@ -175,7 +229,7 @@ if ! mv "$restore_stage" "$APP_DIR/dist"; then
 fi
 
 docker restart "$CONTAINER" >/dev/null 2>&1 || true
-if health_check 45; then
+if health_check "$backup_commit" 45; then
   rm -rf "$failed_stage"
   cat > "$STATE_DIR/last-code-rollback.json.tmp" <<EOF
 {
@@ -210,7 +264,7 @@ else
 fi
 
 docker restart "$CONTAINER" >/dev/null 2>&1 || true
-if health_check 45; then
+if health_check "$current_commit" 45; then
   rm -rf "$bad_restore"
   echo "ROLLBACK_REVERTED_TO_PREIMAGE=true" >&2
   exit 39
