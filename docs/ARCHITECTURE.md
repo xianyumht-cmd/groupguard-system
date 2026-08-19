@@ -1,5 +1,45 @@
 # GroupGuard Architecture
 
+## Configuration ownership and effective resolution
+
+GroupGuard configuration now has three explicit layers instead of treating one settings object as all three at once:
+
+```text
+config.json -> global full defaults
+SQLite group_config -> sparse per-group overrides
+                 \      /
+                  deep merge
+                     |
+                     v
+effective group config -> runtime-only resolved settings
+```
+
+### Sources of truth
+
+- `config.json` / `config.global` owns the complete global defaults.
+- SQLite `group_config` owns persistent per-group overrides.
+- `config.json.groups` is not an independent source of truth during normal persistence; the persistence guard keeps it empty while SQLite owns group rows.
+- Effective settings are computed at runtime and are never persisted as another full snapshot.
+
+### Inheritance semantics
+
+- `useGlobal=true`: the group uses the normalized global settings. Stored group overrides remain dormant and are not deleted.
+- `useGlobal=false`: the normalized global settings are the base and the stored sparse group overlay is recursively deep-merged over them.
+- Missing/`undefined` means inherit.
+- `false`, `0`, and empty string are valid explicit overrides.
+- Plain objects are merged recursively; arrays are atomic and a group array replaces the global array.
+- Dynamic config paths reject `__proto__`, `prototype`, and `constructor` segments.
+
+The canonical implementation lives in `onebot-plugin-groupguard/src/config_effective.ts`. Both `configStateService.resolveGroupSettings()` and legacy `PluginState.getGroupSettings()` must resolve through the same effective-config implementation; the PluginState adapter is a compatibility bridge while old call sites remain.
+
+### Migration compatibility
+
+Historical SQLite group rows may contain full snapshots produced by older normalization behavior. The system must not guess that values equal to global defaults are safe to delete, because they may have been deliberate administrator overrides. Existing stored paths therefore remain explicit. New broad-form writes only compact newly introduced values that merely repeat the current global value; administrators can explicitly remove one override path with “恢复继承”.
+
+### Admin API/UI model
+
+The admin group endpoint exposes four views for one group: `global`, stored sparse `group`, runtime `effective`, and a leaf-level `sources` map (`global` or `group`). Field-level batch operations can set one path across all or selected groups without replacing unrelated overrides. Whole-group inheritance remains a separate operation because it changes the behavior of every group field at once.
+
 ## Target-file push pipeline
 
 The target-file push feature spans two runtimes:
