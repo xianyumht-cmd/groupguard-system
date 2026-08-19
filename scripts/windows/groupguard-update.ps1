@@ -74,6 +74,18 @@ function Assert-SafeParameters {
   if ($RemoteContainer -notmatch '^[A-Za-z0-9_.-]+$') { throw 'RemoteContainer 格式不安全。' }
 }
 
+function Assert-CanonicalOrigin([string]$OriginUrl) {
+  $value = $OriginUrl.Trim()
+  $allowed = @(
+    '^https://github\.com/xianyumht-cmd/groupguard-system(?:\.git)?/?$',
+    '^git@github\.com:xianyumht-cmd/groupguard-system(?:\.git)?$',
+    '^ssh://git@github\.com/xianyumht-cmd/groupguard-system(?:\.git)?/?$'
+  )
+  if (-not ($allowed | Where-Object { $value -match $_ })) {
+    throw "origin 不是预期仓库 xianyumht-cmd/groupguard-system：$value"
+  }
+}
+
 try {
   Write-Host 'GroupGuard 一键更新 / 生产代码部署' -ForegroundColor Green
   Write-Host '只发布构建后的 dist；不会覆盖 config.json、SQLite/data、日志或密钥。'
@@ -82,6 +94,11 @@ try {
   foreach ($cmd in @('git', 'npm', 'ssh', 'scp', 'tar')) { Require-Command $cmd }
   if (-not (Test-Path -LiteralPath $RepoPath -PathType Container)) { throw "本地仓库不存在：$RepoPath" }
   if (-not (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))) { throw "不是 Git 仓库：$RepoPath" }
+
+  Write-Step '确认本地仓库来源'
+  $originUrl = Get-NativeOutput 'git' @('-C', $RepoPath, 'remote', 'get-url', 'origin')
+  Assert-CanonicalOrigin $originUrl
+  Write-Host "origin：$originUrl" -ForegroundColor Green
 
   Write-Step '检查本地仓库是否干净'
   $dirty = Get-NativeOutput 'git' @('-C', $RepoPath, 'status', '--porcelain')
