@@ -4,12 +4,38 @@ set -eu
 APP_DIR=${1:?app_dir_required}
 BACKUP_ROOT=${2:?backup_root_required}
 CONTAINER=${3:?container_required}
+
+fail_unsafe() {
+  echo "UNSAFE_ROLLBACK_PARAMETER=$1" >&2
+  exit 30
+}
+
+case "$APP_DIR" in
+  /mnt/sda1/groupguard/*) ;;
+  *) fail_unsafe app_dir ;;
+esac
+case "$BACKUP_ROOT" in
+  /mnt/sda1/groupguard/*) ;;
+  *) fail_unsafe backup_root ;;
+esac
+case "$APP_DIR:$BACKUP_ROOT" in
+  *..*) fail_unsafe parent_path ;;
+esac
+[ "$APP_DIR" != "$BACKUP_ROOT" ] || fail_unsafe overlapping_roots
+case "$CONTAINER" in
+  ''|*[!A-Za-z0-9_.-]*) fail_unsafe container ;;
+esac
+
 STATE_DIR="$APP_DIR/deployment-state"
 LATEST_ENV="$STATE_DIR/latest-code-deploy.env"
 
+[ -d "$APP_DIR" ] || { echo "ROLLBACK_APP_DIR_MISSING=$APP_DIR" >&2; exit 31; }
+command -v docker >/dev/null 2>&1 || { echo "ROLLBACK_DOCKER_MISSING=true" >&2; exit 31; }
+docker inspect --type container "$CONTAINER" >/dev/null 2>&1 || { echo "ROLLBACK_CONTAINER_MISSING=$CONTAINER" >&2; exit 31; }
+
 if [ ! -f "$LATEST_ENV" ]; then
   echo "ROLLBACK_STATE_MISSING=$LATEST_ENV" >&2
-  exit 31
+  exit 32
 fi
 
 # shellcheck disable=SC1090
@@ -19,9 +45,24 @@ target_commit=${TARGET_COMMIT:-unknown}
 previous_commit=${PREVIOUS_COMMIT:-unknown}
 release_id=${RELEASE_ID:-unknown}
 
+case "$backup_path" in
+  "$BACKUP_ROOT"/*) ;;
+  *) echo "ROLLBACK_BACKUP_OUTSIDE_ROOT=$backup_path" >&2; exit 33 ;;
+esac
+case "$backup_path" in
+  *..*) echo "ROLLBACK_BACKUP_UNSAFE=$backup_path" >&2; exit 33 ;;
+esac
+case "$release_id" in
+  ''|*[!A-Za-z0-9_.-]*) echo "ROLLBACK_RELEASE_ID_UNSAFE=$release_id" >&2; exit 33 ;;
+esac
+
 if [ -z "$backup_path" ] || [ ! -d "$backup_path/dist" ]; then
   echo "ROLLBACK_BACKUP_MISSING=$backup_path" >&2
-  exit 32
+  exit 34
+fi
+if [ ! -f "$backup_path/dist/snowluma-service.mjs" ]; then
+  echo "ROLLBACK_BACKUP_ENTRY_MISSING=$backup_path" >&2
+  exit 34
 fi
 
 json_commit() {
@@ -63,14 +104,14 @@ if [ "$current_commit" = "$backup_commit" ]; then
     exit 0
   fi
   echo "ROLLBACK_TARGET_ALREADY_PRESENT_BUT_UNHEALTHY=true" >&2
-  exit 33
+  exit 35
 fi
 
 ts=$(date -u '+%Y%m%d-%H%M%S')
 preimage="$BACKUP_ROOT/manual-rollback-preimage-$ts-$(printf '%s' "$current_commit" | cut -c1-12)"
 if [ -e "$preimage" ]; then
   echo "ROLLBACK_PREIMAGE_EXISTS=$preimage" >&2
-  exit 34
+  exit 36
 fi
 mkdir -p "$preimage"
 if [ -d "$APP_DIR/dist" ]; then cp -a "$APP_DIR/dist" "$preimage/dist"; fi
@@ -89,7 +130,7 @@ if [ -d "$APP_DIR/dist" ]; then mv "$APP_DIR/dist" "$failed_stage"; fi
 if ! mv "$restore_stage" "$APP_DIR/dist"; then
   [ -d "$failed_stage" ] && mv "$failed_stage" "$APP_DIR/dist"
   echo "ROLLBACK_SWITCH_FAILED=true" >&2
-  exit 35
+  exit 37
 fi
 
 docker restart "$CONTAINER" >/dev/null 2>&1 || true
@@ -123,15 +164,15 @@ elif [ -d "$preimage/dist" ]; then
   cp -a "$preimage/dist" "$APP_DIR/dist"
 else
   echo "ROLLBACK_PREIMAGE_SOURCE_MISSING=true" >&2
-  exit 36
+  exit 38
 fi
 
 docker restart "$CONTAINER" >/dev/null 2>&1 || true
 if health_check 45; then
   rm -rf "$bad_restore"
   echo "ROLLBACK_REVERTED_TO_PREIMAGE=true" >&2
-  exit 37
+  exit 39
 fi
 
 echo "ROLLBACK_AND_PREIMAGE_HEALTH_FAILED=true" >&2
-exit 38
+exit 40
