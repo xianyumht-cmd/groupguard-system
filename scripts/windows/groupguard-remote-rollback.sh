@@ -38,13 +38,45 @@ if [ ! -f "$LATEST_ENV" ]; then
   exit 32
 fi
 
-# shellcheck disable=SC1090
-. "$LATEST_ENV"
-backup_path=${BACKUP_PATH:-}
-target_commit=${TARGET_COMMIT:-unknown}
-previous_commit=${PREVIOUS_COMMIT:-unknown}
-release_id=${RELEASE_ID:-unknown}
+# Treat deployment state as data only. Never source/eval it: state files live
+# beside the application and must not be able to execute shell or replace the
+# CLI-validated APP_DIR/BACKUP_ROOT/CONTAINER values.
+state_value() {
+  file=$1
+  key=$2
+  case "$key" in
+    ''|*[!A-Z0-9_]*) return 1 ;;
+  esac
+  sed -n "s/^${key}='\([^']*\)'$/\1/p" "$file" | head -n 1
+}
 
+valid_commit_or_unknown() {
+  value=$1
+  [ "$value" = "unknown" ] && return 0
+  case "$value" in
+    ''|*[!0-9a-fA-F]*) return 1 ;;
+  esac
+  [ "${#value}" -eq 40 ]
+}
+
+backup_path=$(state_value "$LATEST_ENV" BACKUP_PATH)
+target_commit=$(state_value "$LATEST_ENV" TARGET_COMMIT)
+previous_commit=$(state_value "$LATEST_ENV" PREVIOUS_COMMIT)
+release_id=$(state_value "$LATEST_ENV" RELEASE_ID)
+state_app_dir=$(state_value "$LATEST_ENV" APP_DIR)
+state_container=$(state_value "$LATEST_ENV" CONTAINER)
+
+target_commit=${target_commit:-unknown}
+previous_commit=${previous_commit:-unknown}
+
+if [ -n "$state_app_dir" ] && [ "$state_app_dir" != "$APP_DIR" ]; then
+  echo "ROLLBACK_STATE_APP_MISMATCH=$state_app_dir" >&2
+  exit 33
+fi
+if [ -n "$state_container" ] && [ "$state_container" != "$CONTAINER" ]; then
+  echo "ROLLBACK_STATE_CONTAINER_MISMATCH=$state_container" >&2
+  exit 33
+fi
 case "$backup_path" in
   "$BACKUP_ROOT"/*) ;;
   *) echo "ROLLBACK_BACKUP_OUTSIDE_ROOT=$backup_path" >&2; exit 33 ;;
@@ -55,6 +87,10 @@ esac
 case "$release_id" in
   ''|*[!A-Za-z0-9_.-]*) echo "ROLLBACK_RELEASE_ID_UNSAFE=$release_id" >&2; exit 33 ;;
 esac
+if ! valid_commit_or_unknown "$target_commit" || ! valid_commit_or_unknown "$previous_commit"; then
+  echo "ROLLBACK_STATE_COMMIT_INVALID=true" >&2
+  exit 33
+fi
 
 if [ -z "$backup_path" ] || [ ! -d "$backup_path/dist" ]; then
   echo "ROLLBACK_BACKUP_MISSING=$backup_path" >&2
@@ -91,6 +127,11 @@ current_commit=$(json_commit "$APP_DIR/dist/build-info.json")
 backup_commit=$(json_commit "$backup_path/dist/build-info.json")
 current_commit=${current_commit:-unknown}
 backup_commit=${backup_commit:-$previous_commit}
+
+if ! valid_commit_or_unknown "$current_commit" || ! valid_commit_or_unknown "$backup_commit"; then
+  echo "ROLLBACK_BUILD_COMMIT_INVALID=true" >&2
+  exit 34
+fi
 
 echo "CURRENT_COMMIT=$current_commit"
 echo "ROLLBACK_FROM_TARGET=$target_commit"
@@ -149,6 +190,7 @@ if health_check 45; then
 }
 EOF
   mv "$STATE_DIR/last-code-rollback.json.tmp" "$STATE_DIR/last-code-rollback.json"
+  chmod 600 "$STATE_DIR/last-code-rollback.json" 2>/dev/null || true
   echo "ROLLBACK_OK=true"
   echo "ROLLBACK_PREIMAGE=$preimage"
   echo "HEALTH_OK=true"
