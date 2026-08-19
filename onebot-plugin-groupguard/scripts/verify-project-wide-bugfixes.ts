@@ -23,6 +23,9 @@ assert.equal(selectGroupsForPersistence(undefined, persistedGroups).preservedPer
 assert.deepEqual(selectGroupsForPersistence({}, persistedGroups).groups, persistedGroups);
 assert.equal(selectGroupsForPersistence({ '10003': { useGlobal: false } }, persistedGroups).preservedPersistedGroups, false);
 assert.equal(selectGroupsForPersistence({}, {}).preservedPersistedGroups, false);
+const explicitEmpty = selectGroupsForPersistence({}, persistedGroups, { allowEmptyRuntime: true });
+assert.equal(explicitEmpty.preservedPersistedGroups, false);
+assert.deepEqual(explicitEmpty.groups, {});
 
 const root = path.resolve(import.meta.dirname, '..');
 const state = fs.readFileSync(path.join(root, 'src/state.ts'), 'utf8');
@@ -31,8 +34,9 @@ const configApi = fs.readFileSync(path.join(root, 'src/standalone/admin/config_a
 const groupApi = fs.readFileSync(path.join(root, 'src/standalone/admin/group_api.ts'), 'utf8');
 assert.ok(state.includes('const force = options?.force === true'));
 assert.ok(!state.includes("return '1.0.0'"));
-assert.ok(common.includes('selectGroupsForPersistence(config.groups, persistedGroups)'));
+assert.ok(common.includes('allowEmptyRuntime: options.allowEmptyGroupPersistence === true'));
 assert.ok(common.includes('已阻止空分群配置覆盖 SQLite'));
 assert.ok(configApi.includes('normalized.groups = previous.groups || {}'));
 assert.ok(groupApi.includes('storageAdapter.deleteGroupConfig(id)'));
+assert.ok(groupApi.includes('allowEmptyGroupPersistence: explicitlyBecameEmpty'));
 console.log('project-wide bugfix regression passed');
