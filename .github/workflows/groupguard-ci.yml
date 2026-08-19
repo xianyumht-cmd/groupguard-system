@@ -73,9 +73,13 @@ jobs:
         shell: pwsh
         run: |
           & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-update.ps1 -RemoteAppDir '/tmp/not-groupguard'
-          if ($LASTEXITCODE -eq 0) { throw 'groupguard-update.ps1 accepted unsafe RemoteAppDir' }
+          $updateCode = $LASTEXITCODE
+          if ($updateCode -eq 0) { throw 'groupguard-update.ps1 accepted unsafe RemoteAppDir' }
           & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-rollback.ps1 -RemoteAppDir '/tmp/not-groupguard'
-          if ($LASTEXITCODE -eq 0) { throw 'groupguard-rollback.ps1 accepted unsafe RemoteAppDir' }
+          $rollbackCode = $LASTEXITCODE
+          if ($rollbackCode -eq 0) { throw 'groupguard-rollback.ps1 accepted unsafe RemoteAppDir' }
+          Write-Host "Unsafe-path guards rejected as expected: update=$updateCode rollback=$rollbackCode"
+          exit 0
       - run: npm run build:snowluma
       - name: Verify cross-repository contracts with local mocks
         env:
