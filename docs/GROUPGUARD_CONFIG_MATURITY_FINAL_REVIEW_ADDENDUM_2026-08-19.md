@@ -88,6 +88,30 @@
 
 状态：`fixed_in_branch`
 
+## FINAL-CI-001 — Medium — 浏览器验收门禁依赖系统 apt 安装导致环境型超时
+
+### 问题
+
+`WebUI Browser Acceptance` 原先使用：
+
+```text
+npx playwright install --with-deps chromium
+```
+
+在 GitHub Hosted `ubuntu-24.04` 上，这一步会主动进入 apt 镜像更新/系统依赖安装。2026-08-19 的最终门禁实际发生 Ubuntu/Azure 镜像源长时间无响应，20 分钟 job timeout 到期后被取消，真正的 Playwright 验收一条都没有执行。
+
+这不是产品代码失败，但属于发布门禁可靠性问题：外部系统包源不应成为 WebUI 自动验收的单点阻塞。
+
+### 整改
+
+- hosted runner 保留固定 Node 22；
+- 继续固定 `@playwright/test@1.55.0`；
+- 浏览器安装改为 `npx playwright install chromium`，只获取 Playwright 对应 Chromium binary，不在每次 PR 门禁重新跑 apt；
+- runner 镜像本身负责基础共享库；如果未来镜像变化导致真实缺库，验收应快速失败并给出具体 browser launch 错误，而不是长时间卡在系统源；
+- 原失败 run 保留作为环境故障证据，新 commit 触发 exact-head browser acceptance 重跑。
+
+状态：`fixed_in_branch_pending_gate`
+
 ## 最终门禁补充
 
 PR #42 在转 Ready/合并前还必须满足：
@@ -95,7 +119,7 @@ PR #42 在转 Ready/合并前还必须满足：
 - `GroupGuard CI` 成功；
 - `GroupGuard Build` 成功；
 - `WebUI Browser Acceptance` 成功；
-- 上述三个 final finding 对应的回归门禁均存在；
+- 上述 final finding 对应的回归门禁均存在；
 - 最终 diff 不再发现未处理 High/Critical；
 - 不自动连接、部署或重启 `192.168.3.89`；
 - 合并后才由用户在 Windows 端运行 `GROUPGUARD-UPDATE.cmd` 做唯一一轮人工业务验收；业务异常时运行 `ROLLBACK-GROUPGUARD.cmd`。
