@@ -1,5 +1,13 @@
 import { configStateService } from '../../core/state-services/config_state_service';
 import { saveConfigStrict } from '../../commands/common';
+import {
+  compactNewInheritedValues,
+  deleteGroupOverridePath,
+  getGroupConfigSourceMap,
+  normalizeGroupOverride,
+  setGroupOverridePath,
+  type GroupSettingsOverride,
+} from '../../config_effective';
 import { storageAdapter } from '../../storage_adapter';
 import type { GroupGuardSettings } from '../../types';
 import { applyPatch } from './object_patch';
@@ -32,6 +40,35 @@ function hasQueryGroupPatch(patch: JsonRecord): boolean {
   ));
 }
 
+function cloneGroups(): Record<string, GroupGuardSettings> {
+  return JSON.parse(JSON.stringify(configStateService.getGroups() || {}));
+}
+
+function allKnownGroupIds(): string[] {
+  const groups = configStateService.getGroups() || {};
+  const licenses = configStateService.getLicenses() || {};
+  return Array.from(new Set([...Object.keys(groups), ...Object.keys(licenses)]))
+    .filter(id => /^\d{4,20}$/.test(id))
+    .sort((a, b) => Number(a) - Number(b));
+}
+
+function resolveTargetGroupIds(groupIds?: unknown): string[] {
+  if (!Array.isArray(groupIds) || groupIds.length === 0) return allKnownGroupIds();
+  return Array.from(new Set(groupIds.map(id => cleanGroupId(String(id))))).sort((a, b) => Number(a) - Number(b));
+}
+
+function persistGroupMutation<T>(options: SnowLumaAdminServerOptions, mutate: () => T): T {
+  const previous = cloneGroups();
+  try {
+    const result = mutate();
+    saveConfigStrict(options.ctx);
+    return result;
+  } catch (error) {
+    configStateService.getConfig().groups = previous;
+    throw error;
+  }
+}
+
 export function listGroups() {
   const config = configStateService.getConfig();
   const groups = configStateService.getGroups() || {};
@@ -43,6 +80,9 @@ export function listGroups() {
     licensed: Boolean(licenses[groupId]),
     license: licenses[groupId] || null,
     useGlobal: groups[groupId]?.useGlobal ?? true,
+    overrideFieldCount: Object.keys(getGroupConfigSourceMap(config.global, groups[groupId])).filter(
+      key => getGroupConfigSourceMap(config.global, groups[groupId])[key] === 'group'
+    ).length,
     name: (config as any).groupNames?.[groupId] || ''
   }));
 }
@@ -50,32 +90,107 @@ export function listGroups() {
 export function getGroupConfig(groupId: string) {
   const id = cleanGroupId(groupId);
   const global = configStateService.getGlobalSettings();
-  const group = configStateService.getGroupSettings(id) || {} as Partial<GroupGuardSettings>;
+  const stored = configStateService.getGroupSettings(id);
+  const group = normalizeGroupOverride(stored);
   const effective = configStateService.resolveGroupSettings(id);
+  const sources = getGroupConfigSourceMap(global, stored);
   return {
     groupId: id,
     global,
     group,
     effective,
-    configured: Boolean(configStateService.getGroupSettings(id)),
+    sources,
+    configured: Boolean(stored),
+    useGlobal: stored?.useGlobal ?? true,
     license: configStateService.getLicenses()?.[id] || null
   };
 }
 
 export function saveGroupConfig(options: SnowLumaAdminServerOptions, groupId: string, groupSettings: JsonRecord): ReturnType<typeof getGroupConfig> {
   const id = cleanGroupId(groupId);
-  configStateService.setGroupSettings(id, groupSettings as GroupGuardSettings);
-  saveConfigStrict(options.ctx);
-  return getGroupConfig(id);
+  const normalized = normalizeGroupOverride(groupSettings);
+  return persistGroupMutation(options, () => {
+    configStateService.setGroupSettings(id, normalized as GroupGuardSettings);
+    return getGroupConfig(id);
+  });
 }
 
 export function patchGroupConfig(options: SnowLumaAdminServerOptions, groupId: string, patch: JsonRecord): ReturnType<typeof getGroupConfig> {
   const id = cleanGroupId(groupId);
-  const current = configStateService.getGroupSettings(id) || {} as JsonRecord;
-  const normalizedPatch = patch || {};
+  const current = normalizeGroupOverride(configStateService.getGroupSettings(id));
+  const normalizedPatch: JsonRecord = { ...(patch || {}) };
   if (hasQueryGroupPatch(normalizedPatch)) normalizedPatch.useGlobal = false;
-  const next = applyPatch(current as JsonRecord, normalizedPatch);
-  return saveGroupConfig(options, id, next);
+  const candidate = applyPatch(current as JsonRecord, normalizedPatch);
+  const next = compactNewInheritedValues(configStateService.getGlobalSettings(), current, candidate);
+  return persistGroupMutation(options, () => {
+    configStateService.setGroupSettings(id, next as GroupGuardSettings);
+    return getGroupConfig(id);
+  });
+}
+
+export function restoreGroupConfigPath(
+  options: SnowLumaAdminServerOptions,
+  groupId: string,
+  path: string
+): ReturnType<typeof getGroupConfig> {
+  const id = cleanGroupId(groupId);
+  const current = configStateService.getGroupSettings(id);
+  const next = deleteGroupOverridePath(current, path);
+  return persistGroupMutation(options, () => {
+    configStateService.setGroupSettings(id, next as GroupGuardSettings);
+    return getGroupConfig(id);
+  });
+}
+
+export function batchPatchGroupConfigPath(
+  options: SnowLumaAdminServerOptions,
+  input: { path: string; value: unknown; groupIds?: unknown; }
+) {
+  const path = String(input?.path || '').trim();
+  if (!path || path === 'useGlobal') throw new Error('请选择可覆盖的配置字段');
+  const ids = resolveTargetGroupIds(input?.groupIds);
+  if (!ids.length) throw new Error('没有可应用的群');
+
+  const result = persistGroupMutation(options, () => {
+    for (const id of ids) {
+      const stored = normalizeGroupOverride(configStateService.getGroupSettings(id));
+      // A legacy useGlobal=true row may contain dormant old overrides. Activating
+      // it wholesale would be surprising, so start a fresh sparse overlay.
+      const base: GroupSettingsOverride = stored.useGlobal === true ? { useGlobal: false } : stored;
+      const next = setGroupOverridePath({ ...base, useGlobal: false }, path, input.value);
+      configStateService.setGroupSettings(id, next as GroupGuardSettings);
+    }
+    return ids;
+  });
+
+  return {
+    ok: true,
+    path,
+    value: input.value,
+    updated: result.length,
+    groupIds: result
+  };
+}
+
+export function batchSetGroupInheritance(
+  options: SnowLumaAdminServerOptions,
+  input: { useGlobal: boolean; groupIds?: unknown; }
+) {
+  const useGlobal = input?.useGlobal === true;
+  const ids = resolveTargetGroupIds(input?.groupIds);
+  if (!ids.length) throw new Error('没有可应用的群');
+
+  const result = persistGroupMutation(options, () => {
+    for (const id of ids) {
+      const stored = normalizeGroupOverride(configStateService.getGroupSettings(id));
+      if (useGlobal && Object.keys(stored).length === 0) continue;
+      const next = { ...stored, useGlobal } as GroupSettingsOverride;
+      configStateService.setGroupSettings(id, next as GroupGuardSettings);
+    }
+    return ids;
+  });
+
+  return { ok: true, useGlobal, updated: result.length, groupIds: result };
 }
 
 export function deleteGroupConfig(options: SnowLumaAdminServerOptions, groupId: string): ReturnType<typeof getGroupConfig> {
