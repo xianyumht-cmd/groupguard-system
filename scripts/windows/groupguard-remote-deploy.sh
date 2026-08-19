@@ -259,6 +259,9 @@ echo "CURRENT_COMMIT=$current_commit"
 echo "TARGET_COMMIT=$TARGET_COMMIT"
 
 # Resume-safe reconciliation: if the target is already live, do not overwrite it.
+# A reconciliation is only considered successful when a real rollback snapshot
+# for that target can also be recovered. Never overwrite latest rollback state
+# with an empty backup pointer merely because the code already matches.
 if [ "$current_commit" = "$TARGET_COMMIT" ]; then
   backup_path=""
   previous_commit="unknown"
@@ -284,6 +287,22 @@ if [ "$current_commit" = "$TARGET_COMMIT" ]; then
   fi
   if ! validate_backup_state_path "$backup_path" || ! valid_commit_or_unknown "$previous_commit"; then
     echo "RECONCILE_STATE_INVALID=true" >&2
+    exit 15
+  fi
+  if [ -z "$backup_path" ] || [ ! -d "$backup_path/dist" ] || [ ! -f "$backup_path/dist/snowluma-service.mjs" ]; then
+    echo "RECONCILE_ROLLBACK_STATE_MISSING=true" >&2
+    exit 15
+  fi
+  backup_commit=$(json_commit "$backup_path/dist/build-info.json")
+  backup_commit=${backup_commit:-unknown}
+  if ! valid_commit_or_unknown "$backup_commit" || [ "$backup_commit" = "unknown" ]; then
+    echo "RECONCILE_BACKUP_COMMIT_INVALID=true" >&2
+    exit 15
+  fi
+  if [ "$previous_commit" = "unknown" ]; then
+    previous_commit=$backup_commit
+  elif [ "$previous_commit" != "$backup_commit" ]; then
+    echo "RECONCILE_BACKUP_COMMIT_MISMATCH expected=$previous_commit actual=$backup_commit" >&2
     exit 15
   fi
   if ! health_check "$TARGET_COMMIT" 45; then
