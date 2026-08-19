@@ -9,6 +9,50 @@ ARCHIVE=${5:?candidate_archive_required}
 RELEASE_ID=${6:?release_id_required}
 EXPECTED_SHA256=${7:?archive_sha256_required}
 
+fail_unsafe() {
+  echo "UNSAFE_DEPLOY_PARAMETER=$1" >&2
+  exit 10
+}
+
+case "$APP_DIR" in
+  /mnt/sda1/groupguard/*) ;;
+  *) fail_unsafe app_dir ;;
+esac
+case "$BACKUP_ROOT" in
+  /mnt/sda1/groupguard/*) ;;
+  *) fail_unsafe backup_root ;;
+esac
+case "$APP_DIR:$BACKUP_ROOT" in
+  *..*) fail_unsafe parent_path ;;
+esac
+[ "$APP_DIR" != "$BACKUP_ROOT" ] || fail_unsafe overlapping_roots
+case "$CONTAINER" in
+  ''|*[!A-Za-z0-9_.-]*) fail_unsafe container ;;
+esac
+case "$TARGET_COMMIT" in
+  ''|*[!0-9a-fA-F]*) fail_unsafe target_commit ;;
+esac
+[ "${#TARGET_COMMIT}" -eq 40 ] || fail_unsafe target_commit_length
+case "$RELEASE_ID" in
+  ''|*[!A-Za-z0-9_.-]*) fail_unsafe release_id ;;
+esac
+case "$EXPECTED_SHA256" in
+  ''|*[!0-9a-fA-F]*) fail_unsafe archive_sha256 ;;
+esac
+[ "${#EXPECTED_SHA256}" -eq 64 ] || fail_unsafe archive_sha256_length
+case "$ARCHIVE" in
+  /tmp/*) ;;
+  *) fail_unsafe candidate_archive ;;
+esac
+
+[ -d "$APP_DIR" ] || { echo "APP_DIR_MISSING=$APP_DIR" >&2; exit 11; }
+[ -d "$APP_DIR/config" ] || { echo "APP_CONFIG_DIR_MISSING=true" >&2; exit 11; }
+[ -d "$APP_DIR/data" ] || { echo "APP_DATA_DIR_MISSING=true" >&2; exit 11; }
+[ -d "$APP_DIR/dist" ] || { echo "APP_DIST_DIR_MISSING=true" >&2; exit 11; }
+command -v docker >/dev/null 2>&1 || { echo "DOCKER_MISSING=true" >&2; exit 11; }
+command -v tar >/dev/null 2>&1 || { echo "TAR_MISSING=true" >&2; exit 11; }
+docker inspect --type container "$CONTAINER" >/dev/null 2>&1 || { echo "CONTAINER_MISSING=$CONTAINER" >&2; exit 11; }
+
 BASE_DIR=$(dirname "$APP_DIR")
 STATE_DIR="$APP_DIR/deployment-state"
 RELEASE_ROOT="$BASE_DIR/releases"
@@ -94,7 +138,7 @@ EOF
 actual_sha=$(sha256_file "$ARCHIVE")
 if [ "$actual_sha" != "$EXPECTED_SHA256" ]; then
   echo "CANDIDATE_HASH_MISMATCH expected=$EXPECTED_SHA256 actual=$actual_sha" >&2
-  exit 11
+  exit 12
 fi
 
 echo "CANDIDATE_ARCHIVE_OK=$actual_sha"
@@ -104,13 +148,13 @@ tar -xzf "$ARCHIVE" -C "$RELEASE_DIR"
 
 if [ ! -f "$RELEASE_DIR/dist/snowluma-service.mjs" ] || [ ! -f "$RELEASE_DIR/dist/build-info.json" ]; then
   echo "CANDIDATE_LAYOUT_INVALID" >&2
-  exit 12
+  exit 13
 fi
 
 candidate_commit=$(json_commit "$RELEASE_DIR/dist/build-info.json")
 if [ "$candidate_commit" != "$TARGET_COMMIT" ]; then
   echo "CANDIDATE_COMMIT_MISMATCH expected=$TARGET_COMMIT actual=$candidate_commit" >&2
-  exit 13
+  exit 14
 fi
 
 echo "CANDIDATE_VALIDATION_OK=true"
@@ -143,7 +187,7 @@ if [ "$current_commit" = "$TARGET_COMMIT" ]; then
   fi
   if ! health_check 45; then
     echo "RECONCILED_TARGET_HEALTH_FAILED=true" >&2
-    exit 14
+    exit 15
   fi
   deployed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   write_manifest "$previous_commit" "$backup_path" true "$deployed_at"
@@ -157,12 +201,10 @@ short_current=$(printf '%s' "$current_commit" | cut -c1-12)
 backup_path="$BACKUP_ROOT/$RELEASE_ID-from-$short_current"
 if [ -e "$backup_path" ]; then
   echo "BACKUP_ALREADY_EXISTS=$backup_path" >&2
-  exit 15
+  exit 16
 fi
 mkdir -p "$backup_path"
-if [ -d "$APP_DIR/dist" ]; then
-  cp -a "$APP_DIR/dist" "$backup_path/dist"
-fi
+cp -a "$APP_DIR/dist" "$backup_path/dist"
 if [ -f "$APP_DIR/package.json" ]; then
   cp -a "$APP_DIR/package.json" "$backup_path/package.json"
 fi
@@ -173,10 +215,8 @@ target_commit=$TARGET_COMMIT
 created_at_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 EOF
 
-if [ -d "$APP_DIR/dist" ] && [ ! -d "$backup_path/dist" ]; then
-  echo "BACKUP_CAPTURE_FAILED=$backup_path" >&2
-  exit 16
-fi
+[ -d "$backup_path/dist" ] || { echo "BACKUP_CAPTURE_FAILED=$backup_path" >&2; exit 17; }
+[ -f "$backup_path/dist/snowluma-service.mjs" ] || { echo "BACKUP_ENTRY_MISSING=$backup_path" >&2; exit 17; }
 
 echo "BACKUP_CAPTURE_OK=true"
 echo "BACKUP_PATH=$backup_path"
@@ -192,13 +232,11 @@ mv "$PENDING_FILE.tmp" "$PENDING_FILE"
 
 old_dist="$APP_DIR/.dist-pre-$RELEASE_ID"
 rm -rf "$old_dist"
-if [ -d "$APP_DIR/dist" ]; then
-  mv "$APP_DIR/dist" "$old_dist"
-fi
+mv "$APP_DIR/dist" "$old_dist"
 if ! mv "$RELEASE_DIR/dist" "$APP_DIR/dist"; then
-  [ -d "$old_dist" ] && mv "$old_dist" "$APP_DIR/dist"
+  mv "$old_dist" "$APP_DIR/dist"
   echo "SWITCH_FAILED=true" >&2
-  exit 17
+  exit 18
 fi
 
 echo "SWITCH_OK=true"
@@ -228,7 +266,7 @@ elif [ -d "$backup_path/dist" ]; then
   cp -a "$backup_path/dist" "$APP_DIR/dist"
 else
   echo "AUTO_ROLLBACK_SOURCE_MISSING=true" >&2
-  exit 18
+  exit 19
 fi
 
 docker restart "$CONTAINER" >/dev/null 2>&1 || true
@@ -236,8 +274,8 @@ if health_check 45; then
   rm -rf "$bad_dist" "$RELEASE_DIR"
   rm -f "$PENDING_FILE"
   echo "AUTO_ROLLBACK_OK=true" >&2
-  exit 19
+  exit 20
 fi
 
 echo "AUTO_ROLLBACK_HEALTH_FAILED=true" >&2
-exit 20
+exit 21
