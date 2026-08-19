@@ -26,6 +26,10 @@ globalSettings.qaLinkDelivery = {
   delayMaxMs: 4300,
   wrapInCodeBlock: true,
 };
+globalSettings.featureSwitches = {
+  ...(globalSettings.featureSwitches || {}),
+  'query.lol_ban': true,
+};
 globalSettings.contentRisk = {
   ...(globalSettings.contentRisk || {}),
   enabled: true,
@@ -121,6 +125,16 @@ const withPath = setGroupOverridePath({ useGlobal: false }, 'qaLinkDelivery.enab
 assert.equal(withPath.qaLinkDelivery?.enabled, true);
 const withoutPath = deleteGroupOverridePath(withPath, 'qaLinkDelivery.enabled');
 assert.equal(withoutPath.qaLinkDelivery, undefined);
+
+// featureSwitches query keys contain a literal dot in the Record key. Field
+// restore/set must preserve that business key instead of inventing nested data.
+const withFeatureSwitch = setGroupOverridePath({ useGlobal: false }, 'featureSwitches.query.lol_ban', false);
+assert.equal(withFeatureSwitch.featureSwitches?.['query.lol_ban'], false);
+assert.equal((withFeatureSwitch.featureSwitches as any)?.query, undefined);
+const featureSourceMap = getGroupConfigSourceMap(changedGlobal, withFeatureSwitch);
+assert.equal(featureSourceMap['featureSwitches.query.lol_ban'], 'group');
+const withoutFeatureSwitch = deleteGroupOverridePath(withFeatureSwitch, 'featureSwitches.query.lol_ban');
+assert.equal(withoutFeatureSwitch.featureSwitches, undefined);
 
 // Restoring one field must not erase unrelated or dormant historical values.
 const dormantAfterRestore = deleteGroupOverridePath(dormantRow, 'qaLinkDelivery.enabled');
