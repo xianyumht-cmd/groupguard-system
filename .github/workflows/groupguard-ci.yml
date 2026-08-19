@@ -57,6 +57,24 @@ jobs:
         run: |
           sh -n ../scripts/windows/groupguard-remote-deploy.sh
           sh -n ../scripts/windows/groupguard-remote-rollback.sh
+      - name: Forbid executable deployment-state loading
+        shell: bash
+        run: |
+          set -euo pipefail
+          helpers=(
+            ../scripts/windows/groupguard-remote-deploy.sh
+            ../scripts/windows/groupguard-remote-rollback.sh
+          )
+          if grep -nE '^[[:space:]]*(\.|source)[[:space:]]+' "${helpers[@]}"; then
+            echo 'deployment helpers must parse state as data; source/dot execution is forbidden' >&2
+            exit 1
+          fi
+          if grep -nE '^[[:space:]]*eval[[:space:]]+' "${helpers[@]}"; then
+            echo 'deployment helpers must never eval persisted state' >&2
+            exit 1
+          fi
+          grep -q 'state_value()' ../scripts/windows/groupguard-remote-deploy.sh
+          grep -q 'state_value()' ../scripts/windows/groupguard-remote-rollback.sh
       - name: Verify deployment helpers reject unsafe remote paths before mutation
         shell: bash
         run: |
