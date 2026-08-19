@@ -116,13 +116,65 @@ sha256_file() {
   fi
 }
 
+# All WebUI API routes, including /api/readyz, are behind GroupGuard auth.
+# Verify the exact running build instead of treating a merely-running container
+# as a successful deployment. The service may use either an explicit token env
+# or its generated token file under GROUPGUARD_DATA_DIR.
 health_check() {
-  attempts=${1:-45}
+  expected_commit=${1:-unknown}
+  attempts=${2:-45}
+  valid_commit_or_unknown "$expected_commit" || return 1
   i=1
   while [ "$i" -le "$attempts" ]; do
     if docker inspect "$CONTAINER" >/dev/null 2>&1 && \
        docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q '^true$'; then
-      if docker exec "$CONTAINER" node -e "const h=require('http');const r=h.get('http://127.0.0.1:6108/api/readyz',x=>{let b='';x.on('data',d=>b+=d);x.on('end',()=>{let o={};try{o=JSON.parse(b)}catch{};process.exit(x.statusCode===200&&o&&o.ready===true?0:2)})});r.on('error',()=>process.exit(3));r.setTimeout(2500,()=>{r.destroy();process.exit(4)})" >/dev/null 2>&1; then
+      if docker exec -i "$CONTAINER" node - "$expected_commit" >/dev/null 2>&1 <<'NODE'
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const expectedCommit = String(process.argv[2] || 'unknown').toLowerCase();
+const port = Number(process.env.GROUPGUARD_WEBUI_PORT || 6108);
+const dataDir = path.resolve(process.env.GROUPGUARD_DATA_DIR || path.join(process.cwd(), 'data'));
+let token = String(process.env.GROUPGUARD_WEBUI_TOKEN || '').trim();
+if (!token) {
+  try { token = fs.readFileSync(path.join(dataDir, '.groupguard-webui-token'), 'utf8').trim(); } catch { /* fail below */ }
+}
+if (!token) process.exit(10);
+function getJson(pathname) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: pathname,
+      method: 'GET',
+      headers: { 'x-groupguard-token': token, accept: 'application/json' },
+      timeout: 3000,
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return reject(new Error(`${pathname} HTTP ${res.statusCode}`));
+        try { resolve(JSON.parse(body)); } catch { reject(new Error(`${pathname} invalid JSON`)); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error(`${pathname} timeout`)));
+    req.on('error', reject);
+    req.end();
+  });
+}
+(async () => {
+  const [build, health] = await Promise.all([getJson('/api/build-info'), getJson('/api/health')]);
+  const buildCommit = String(build && build.commit_sha || '').toLowerCase();
+  const healthCommit = String(health && health.build && health.build.commit_sha || '').toLowerCase();
+  if (health && health.ready !== true) throw new Error('service not ready');
+  if (expectedCommit !== 'unknown' && (buildCommit !== expectedCommit || healthCommit !== expectedCommit)) {
+    throw new Error('running build commit mismatch');
+  }
+  if (build && build.dirty === true) throw new Error('running build is dirty');
+})().then(() => process.exit(0)).catch(() => process.exit(11));
+NODE
+      then
         return 0
       fi
     fi
@@ -234,7 +286,7 @@ if [ "$current_commit" = "$TARGET_COMMIT" ]; then
     echo "RECONCILE_STATE_INVALID=true" >&2
     exit 15
   fi
-  if ! health_check 45; then
+  if ! health_check "$TARGET_COMMIT" 45; then
     echo "RECONCILED_TARGET_HEALTH_FAILED=true" >&2
     exit 15
   fi
@@ -297,7 +349,7 @@ else
   echo "CONTAINER_RESTARTED=true"
 fi
 
-if health_check 45; then
+if health_check "$TARGET_COMMIT" 45; then
   rm -rf "$old_dist" "$RELEASE_DIR"
   deployed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   write_manifest "$current_commit" "$backup_path" false "$deployed_at"
@@ -320,7 +372,7 @@ else
 fi
 
 docker restart "$CONTAINER" >/dev/null 2>&1 || true
-if health_check 45; then
+if health_check "$current_commit" 45; then
   rm -rf "$bad_dist" "$RELEASE_DIR"
   rm -f "$PENDING_FILE"
   echo "AUTO_ROLLBACK_OK=true" >&2
