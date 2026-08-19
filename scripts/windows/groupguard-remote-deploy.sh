@@ -1,0 +1,243 @@
+#!/bin/sh
+set -eu
+
+APP_DIR=${1:?app_dir_required}
+BACKUP_ROOT=${2:?backup_root_required}
+CONTAINER=${3:?container_required}
+TARGET_COMMIT=${4:?target_commit_required}
+ARCHIVE=${5:?candidate_archive_required}
+RELEASE_ID=${6:?release_id_required}
+EXPECTED_SHA256=${7:?archive_sha256_required}
+
+BASE_DIR=$(dirname "$APP_DIR")
+STATE_DIR="$APP_DIR/deployment-state"
+RELEASE_ROOT="$BASE_DIR/releases"
+RELEASE_DIR="$RELEASE_ROOT/$RELEASE_ID"
+PENDING_FILE="$STATE_DIR/pending-code-deploy.env"
+LATEST_ENV="$STATE_DIR/latest-code-deploy.env"
+LATEST_JSON="$STATE_DIR/latest-code-deploy.json"
+MANIFEST_JSON="$STATE_DIR/deployment-$RELEASE_ID.json"
+
+mkdir -p "$STATE_DIR" "$BACKUP_ROOT" "$RELEASE_ROOT"
+
+json_commit() {
+  file=$1
+  [ -f "$file" ] || return 0
+  sed -n 's/.*"commit_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1
+}
+
+sha256_file() {
+  file=$1
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v busybox >/dev/null 2>&1; then
+    busybox sha256sum "$file" | awk '{print $1}'
+  else
+    echo "sha256_tool_missing" >&2
+    return 1
+  fi
+}
+
+health_check() {
+  attempts=${1:-45}
+  i=1
+  while [ "$i" -le "$attempts" ]; do
+    if docker inspect "$CONTAINER" >/dev/null 2>&1 && \
+       docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q '^true$'; then
+      if docker exec "$CONTAINER" node -e "const h=require('http');const r=h.get('http://127.0.0.1:6108/api/readyz',x=>{let b='';x.on('data',d=>b+=d);x.on('end',()=>{let o={};try{o=JSON.parse(b)}catch{};process.exit(x.statusCode===200&&o&&o.ready===true?0:2)})});r.on('error',()=>process.exit(3));r.setTimeout(2500,()=>{r.destroy();process.exit(4)})" >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+    sleep 2
+    i=$((i + 1))
+  done
+  return 1
+}
+
+write_manifest() {
+  previous_commit=$1
+  backup_path=$2
+  reconciled=$3
+  deployed_at=$4
+  cat > "$MANIFEST_JSON.tmp" <<EOF
+{
+  "schema_version": 1,
+  "release_id": "$RELEASE_ID",
+  "target_commit": "$TARGET_COMMIT",
+  "previous_commit": "$previous_commit",
+  "backup_path": "$backup_path",
+  "container": "$CONTAINER",
+  "app_dir": "$APP_DIR",
+  "archive_sha256": "$EXPECTED_SHA256",
+  "reconciled_existing_target": $reconciled,
+  "deployed_at_utc": "$deployed_at",
+  "health": "passed"
+}
+EOF
+  mv "$MANIFEST_JSON.tmp" "$MANIFEST_JSON"
+  cp "$MANIFEST_JSON" "$LATEST_JSON.tmp"
+  mv "$LATEST_JSON.tmp" "$LATEST_JSON"
+  cat > "$LATEST_ENV.tmp" <<EOF
+RELEASE_ID='$RELEASE_ID'
+TARGET_COMMIT='$TARGET_COMMIT'
+PREVIOUS_COMMIT='$previous_commit'
+BACKUP_PATH='$backup_path'
+CONTAINER='$CONTAINER'
+APP_DIR='$APP_DIR'
+ARCHIVE_SHA256='$EXPECTED_SHA256'
+DEPLOYED_AT_UTC='$deployed_at'
+EOF
+  mv "$LATEST_ENV.tmp" "$LATEST_ENV"
+  rm -f "$PENDING_FILE"
+}
+
+actual_sha=$(sha256_file "$ARCHIVE")
+if [ "$actual_sha" != "$EXPECTED_SHA256" ]; then
+  echo "CANDIDATE_HASH_MISMATCH expected=$EXPECTED_SHA256 actual=$actual_sha" >&2
+  exit 11
+fi
+
+echo "CANDIDATE_ARCHIVE_OK=$actual_sha"
+rm -rf "$RELEASE_DIR"
+mkdir -p "$RELEASE_DIR"
+tar -xzf "$ARCHIVE" -C "$RELEASE_DIR"
+
+if [ ! -f "$RELEASE_DIR/dist/snowluma-service.mjs" ] || [ ! -f "$RELEASE_DIR/dist/build-info.json" ]; then
+  echo "CANDIDATE_LAYOUT_INVALID" >&2
+  exit 12
+fi
+
+candidate_commit=$(json_commit "$RELEASE_DIR/dist/build-info.json")
+if [ "$candidate_commit" != "$TARGET_COMMIT" ]; then
+  echo "CANDIDATE_COMMIT_MISMATCH expected=$TARGET_COMMIT actual=$candidate_commit" >&2
+  exit 13
+fi
+
+echo "CANDIDATE_VALIDATION_OK=true"
+
+current_commit=$(json_commit "$APP_DIR/dist/build-info.json")
+current_commit=${current_commit:-unknown}
+echo "CURRENT_COMMIT=$current_commit"
+echo "TARGET_COMMIT=$TARGET_COMMIT"
+
+# Resume-safe reconciliation: if the target is already live, do not overwrite it.
+if [ "$current_commit" = "$TARGET_COMMIT" ]; then
+  backup_path=""
+  previous_commit="unknown"
+  if [ -f "$PENDING_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$PENDING_FILE"
+    if [ "${PENDING_TARGET_COMMIT:-}" = "$TARGET_COMMIT" ]; then
+      backup_path=${PENDING_BACKUP_PATH:-}
+      previous_commit=${PENDING_PREVIOUS_COMMIT:-unknown}
+    fi
+  fi
+  if [ -z "$backup_path" ] && [ -f "$LATEST_ENV" ]; then
+    # shellcheck disable=SC1090
+    . "$LATEST_ENV"
+    if [ "${TARGET_COMMIT:-}" = "$current_commit" ]; then
+      backup_path=${BACKUP_PATH:-}
+      previous_commit=${PREVIOUS_COMMIT:-unknown}
+    fi
+    TARGET_COMMIT=$candidate_commit
+  fi
+  if ! health_check 45; then
+    echo "RECONCILED_TARGET_HEALTH_FAILED=true" >&2
+    exit 14
+  fi
+  deployed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  write_manifest "$previous_commit" "$backup_path" true "$deployed_at"
+  echo "RECONCILED_EXISTING_TARGET=true"
+  echo "HEALTH_OK=true"
+  echo "DEPLOYMENT_OK=true"
+  exit 0
+fi
+
+short_current=$(printf '%s' "$current_commit" | cut -c1-12)
+backup_path="$BACKUP_ROOT/$RELEASE_ID-from-$short_current"
+if [ -e "$backup_path" ]; then
+  echo "BACKUP_ALREADY_EXISTS=$backup_path" >&2
+  exit 15
+fi
+mkdir -p "$backup_path"
+if [ -d "$APP_DIR/dist" ]; then
+  cp -a "$APP_DIR/dist" "$backup_path/dist"
+fi
+if [ -f "$APP_DIR/package.json" ]; then
+  cp -a "$APP_DIR/package.json" "$backup_path/package.json"
+fi
+cat > "$backup_path/backup-meta.txt" <<EOF
+release_id=$RELEASE_ID
+previous_commit=$current_commit
+target_commit=$TARGET_COMMIT
+created_at_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+EOF
+
+if [ -d "$APP_DIR/dist" ] && [ ! -d "$backup_path/dist" ]; then
+  echo "BACKUP_CAPTURE_FAILED=$backup_path" >&2
+  exit 16
+fi
+
+echo "BACKUP_CAPTURE_OK=true"
+echo "BACKUP_PATH=$backup_path"
+
+cat > "$PENDING_FILE.tmp" <<EOF
+PENDING_RELEASE_ID='$RELEASE_ID'
+PENDING_TARGET_COMMIT='$TARGET_COMMIT'
+PENDING_PREVIOUS_COMMIT='$current_commit'
+PENDING_BACKUP_PATH='$backup_path'
+PENDING_ARCHIVE_SHA256='$EXPECTED_SHA256'
+EOF
+mv "$PENDING_FILE.tmp" "$PENDING_FILE"
+
+old_dist="$APP_DIR/.dist-pre-$RELEASE_ID"
+rm -rf "$old_dist"
+if [ -d "$APP_DIR/dist" ]; then
+  mv "$APP_DIR/dist" "$old_dist"
+fi
+if ! mv "$RELEASE_DIR/dist" "$APP_DIR/dist"; then
+  [ -d "$old_dist" ] && mv "$old_dist" "$APP_DIR/dist"
+  echo "SWITCH_FAILED=true" >&2
+  exit 17
+fi
+
+echo "SWITCH_OK=true"
+
+if ! docker restart "$CONTAINER" >/dev/null; then
+  echo "CONTAINER_RESTART_FAILED=true" >&2
+else
+  echo "CONTAINER_RESTARTED=true"
+fi
+
+if health_check 45; then
+  rm -rf "$old_dist" "$RELEASE_DIR"
+  deployed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  write_manifest "$current_commit" "$backup_path" false "$deployed_at"
+  echo "HEALTH_OK=true"
+  echo "DEPLOYMENT_OK=true"
+  exit 0
+fi
+
+echo "HEALTH_FAILED_AUTO_ROLLBACK=true" >&2
+bad_dist="$APP_DIR/.dist-failed-$RELEASE_ID"
+rm -rf "$bad_dist"
+if [ -d "$APP_DIR/dist" ]; then mv "$APP_DIR/dist" "$bad_dist"; fi
+if [ -d "$old_dist" ]; then
+  mv "$old_dist" "$APP_DIR/dist"
+elif [ -d "$backup_path/dist" ]; then
+  cp -a "$backup_path/dist" "$APP_DIR/dist"
+else
+  echo "AUTO_ROLLBACK_SOURCE_MISSING=true" >&2
+  exit 18
+fi
+
+docker restart "$CONTAINER" >/dev/null 2>&1 || true
+if health_check 45; then
+  rm -rf "$bad_dist" "$RELEASE_DIR"
+  rm -f "$PENDING_FILE"
+  echo "AUTO_ROLLBACK_OK=true" >&2
+  exit 19
+fi
+
+echo "AUTO_ROLLBACK_HEALTH_FAILED=true" >&2
+exit 20
