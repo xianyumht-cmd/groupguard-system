@@ -4,7 +4,7 @@ const CONFIG_MATURITY_STYLE = String.raw`<style id="groupguard-config-maturity-s
 </style>`;
 
 const CONFIG_MATURITY_SCRIPT = String.raw`<script id="groupguard-config-maturity-controller">(function(){
-var TOKEN_KEY='GROUPGUARD_WEBUI_TOKEN',openingGlobal=false,globalMode=false,refreshingSources=false,sourceTimer=0;
+var TOKEN_KEY='GROUPGUARD_WEBUI_TOKEN',openingGlobal=false,globalMode=false,refreshingSources=false,sourceTimer=0,requestedGlobalMode=location.hash==='#global-config';
 function token(){try{return new URL(location.href).searchParams.get('token')||localStorage.getItem(TOKEN_KEY)||''}catch(error){return''}}
 function withToken(path){var url=new URL(path,location.origin),value=token();if(value)url.searchParams.set('token',value);return url.pathname+url.search+url.hash}
 async function api(path,method,body){var res=await fetch(withToken(path),{method:method||'GET',headers:body?{'content-type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});var text=await res.text(),data={};try{data=text?JSON.parse(text):{}}catch(error){throw new Error(text||('HTTP '+res.status))}if(!res.ok||data.ok===false)throw new Error(data.error||data.message||('HTTP '+res.status));return data}
@@ -82,7 +82,7 @@ async function refreshSources(){
 }
 function scheduleSources(delay){clearTimeout(sourceTimer);sourceTimer=setTimeout(function(){refreshSources()},delay||180)}
 function bindSourceRefresh(){['loadGroupBtn','saveGroupBtn'].forEach(function(id){var node=document.getElementById(id);if(node)node.addEventListener('click',function(){scheduleSources(id==='saveGroupBtn'?650:250)})});var select=document.getElementById('groupSelect');if(select)select.addEventListener('change',function(){scheduleSources(250)});var form=document.getElementById('groupForm');if(form){var observer=new MutationObserver(function(list){if(refreshingSources)return;var relevant=list.some(function(item){return [].slice.call(item.addedNodes||[]).some(function(node){return !(node.nodeType===1&&node.classList&&node.classList.contains('gg-config-source'))})});if(relevant)scheduleSources(120)});observer.observe(form,{childList:true,subtree:true})}}
-function start(){mountGlobalNavigation();mountBatchPanel();bindSourceRefresh();renameInheritanceSwitch();scheduleSources(350);if(location.hash==='#global-config'&&advancedTab())setTimeout(openGlobalConfig,0);var observer=new MutationObserver(function(){mountGlobalNavigation();mountBatchPanel();renameInheritanceSwitch()});observer.observe(document.documentElement,{childList:true,subtree:true});setTimeout(function(){observer.disconnect();mountGlobalNavigation();mountBatchPanel()},3500)}
+function start(){mountGlobalNavigation();mountBatchPanel();bindSourceRefresh();renameInheritanceSwitch();scheduleSources(350);if(requestedGlobalMode&&advancedTab())setTimeout(openGlobalConfig,0);var observer=new MutationObserver(function(){mountGlobalNavigation();mountBatchPanel();renameInheritanceSwitch()});observer.observe(document.documentElement,{childList:true,subtree:true});setTimeout(function(){observer.disconnect();mountGlobalNavigation();mountBatchPanel()},3500)}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',start):start();
 })();</script>`;
 
