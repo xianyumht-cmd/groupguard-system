@@ -16,9 +16,6 @@ case "$APP_DIR" in
 esac
 case "$BACKUP_ROOT" in
   /mnt/sda1/groupguard/*) ;;
-esac
-case "$BACKUP_ROOT" in
-  /mnt/sda1/groupguard/*) ;;
   *) fail_unsafe backup_root ;;
 esac
 case "$APP_DIR:$BACKUP_ROOT" in
