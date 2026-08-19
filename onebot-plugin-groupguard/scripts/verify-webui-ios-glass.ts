@@ -22,6 +22,8 @@ for (const raw of pages) {
   assert.match(designed, /id="groupguard-control-panel-style"/);
   assert.match(designed, /id="groupguard-control-panel-bootstrap"/);
   assert.match(designed, /id="groupguard-control-panel-controller"/);
+  assert.match(designed, /id="groupguard-config-maturity-style"/);
+  assert.match(designed, /id="groupguard-config-maturity-controller"/);
   assert.ok(designed.includes(GROUPGUARD_WEBUI_THEME_STORAGE_KEY));
   assert.ok(designed.includes("['light','☀ 日间']"));
   assert.ok(designed.includes("['system','◐ 跟随']"));
@@ -45,6 +47,12 @@ for (const raw of pages) {
   assert.ok(designed.includes("api('/api/build-info')"));
   assert.ok(designed.includes("['群管配置'"));
   assert.ok(designed.includes("['服务与风控'"));
+  assert.ok(designed.includes("button.textContent='全局配置'"));
+  assert.ok(designed.includes("api('/api/groups/batch','POST'"));
+  assert.ok(designed.includes('__restorePath'));
+  assert.ok(designed.includes('同步全局链接提示开关到全部群'));
+  assert.ok(designed.includes('来源：本群'));
+  assert.ok(designed.includes('继承全局配置'));
   assert.equal(applyWebUiTheme(designed), designed, 'control panel injection must be idempotent');
 }
 
@@ -93,6 +101,14 @@ assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(patchQueryConfig
 
 const compatibilitySource = await readFile(new URL('../src/standalone/admin/webui_theme.ts', import.meta.url), 'utf8');
 assert.ok(compatibilitySource.includes("from './control_panel_design'"));
+assert.ok(compatibilitySource.includes("from './config_maturity_webui_patch'"));
 assert.ok(compatibilitySource.includes('applyControlPanelDesign(page)'));
+assert.ok(compatibilitySource.includes('applyConfigMaturityWebUiPatch(withTargetFilePush)'));
+
+const groupApiSource = await readFile(new URL('../src/standalone/admin/group_api.ts', import.meta.url), 'utf8');
+assert.ok(groupApiSource.includes("operation === 'set-path'"));
+assert.ok(groupApiSource.includes("operation === 'set-inheritance'"));
+assert.ok(groupApiSource.includes('__restorePath'));
+assert.ok(groupApiSource.includes('compactNewInheritedValues'));
 
 console.log('webui unified control panel verification passed');
