@@ -74,6 +74,15 @@ function hasDormantOverrides(settings: GroupSettingsOverride): boolean {
   return Object.keys(settings).some(key => key !== 'useGlobal');
 }
 
+function isEmptyActiveOverlay(settings: GroupSettingsOverride): boolean {
+  return settings.useGlobal !== true && !hasDormantOverrides(settings);
+}
+
+function storeGroupOverride(groupId: string, settings: GroupSettingsOverride): void {
+  if (isEmptyActiveOverlay(settings)) configStateService.deleteGroupSettings(groupId);
+  else configStateService.setGroupSettings(groupId, settings as GroupGuardSettings);
+}
+
 function sameOverride(left: GroupSettingsOverride, right: GroupSettingsOverride): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -121,7 +130,7 @@ export function saveGroupConfig(options: SnowLumaAdminServerOptions, groupId: st
   const id = cleanGroupId(groupId);
   const normalized = normalizeGroupOverride(groupSettings);
   return persistGroupMutation(options, () => {
-    configStateService.setGroupSettings(id, normalized as GroupGuardSettings);
+    storeGroupOverride(id, normalized);
     return getGroupConfig(id);
   });
 }
@@ -166,7 +175,7 @@ export function patchGroupConfig(options: SnowLumaAdminServerOptions, groupId: s
   const candidate = applyPatch(current as JsonRecord, normalizedPatch);
   const next = compactNewInheritedValues(configStateService.getGlobalSettings(), current, candidate);
   return persistGroupMutation(options, () => {
-    configStateService.setGroupSettings(id, next as GroupGuardSettings);
+    storeGroupOverride(id, next);
     return getGroupConfig(id);
   });
 }
@@ -180,8 +189,7 @@ export function restoreGroupConfigPath(
   const current = configStateService.getGroupSettings(id);
   const next = deleteGroupOverridePath(current, path);
   return persistGroupMutation(options, () => {
-    if (Object.keys(next).length === 0) configStateService.deleteGroupSettings(id);
-    else configStateService.setGroupSettings(id, next as GroupGuardSettings);
+    storeGroupOverride(id, next);
     return getGroupConfig(id);
   });
 }
@@ -245,8 +253,7 @@ export function batchRestoreGroupConfigPath(
       const current = normalizeGroupOverride(raw);
       const next = deleteGroupOverridePath(current, path);
       if (sameOverride(current, next)) continue;
-      if (Object.keys(next).length === 0) configStateService.deleteGroupSettings(id);
-      else configStateService.setGroupSettings(id, next as GroupGuardSettings);
+      storeGroupOverride(id, next);
       updated.push(id);
     }
     return updated;
@@ -277,9 +284,13 @@ export function batchSetGroupInheritance(
       const stored = normalizeGroupOverride(raw);
       const currentlyGlobal = isGroupFullyInherited(raw);
       if (currentlyGlobal === useGlobal) continue;
-      if (useGlobal && !raw) continue;
+      if (!raw) continue;
+      // Turning inheritance off only has meaning when there are dormant values
+      // to reactivate. Do not create a {useGlobal:false}-only row that looks like
+      // a group override but changes no effective field.
+      if (!useGlobal && !hasDormantOverrides(stored)) continue;
       const next = { ...stored, useGlobal } as GroupSettingsOverride;
-      configStateService.setGroupSettings(id, next as GroupGuardSettings);
+      storeGroupOverride(id, next);
       updated.push(id);
     }
     return updated;
