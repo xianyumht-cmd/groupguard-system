@@ -1,5 +1,6 @@
 import { applyControlPanelDesign, CONTROL_PANEL_THEME_STORAGE_KEY } from './control_panel_design';
 import { applyControlPanelBrowserFixes } from './control_panel_browser_fixes';
+import { applyConfigMaturityWebUiPatch } from './config_maturity_webui_patch';
 
 export const GROUPGUARD_WEBUI_THEME_STORAGE_KEY = CONTROL_PANEL_THEME_STORAGE_KEY;
 
@@ -45,5 +46,6 @@ function applyTargetFilePushNavigationPatch(page: string): string {
 
 export function applyWebUiTheme(page: string): string {
   const designed = applyControlPanelBrowserFixes(applyControlPanelDesign(page));
-  return applyTargetFilePushNavigationPatch(designed);
+  const withTargetFilePush = applyTargetFilePushNavigationPatch(designed);
+  return applyConfigMaturityWebUiPatch(withTargetFilePush);
 }
