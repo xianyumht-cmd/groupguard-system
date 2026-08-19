@@ -1,0 +1,101 @@
+# GroupGuard 配置成熟化最终复审补充（2026-08-19）
+
+状态：`final_engineering_gate`
+
+关联：`docs/GROUPGUARD_CONFIG_MATURITY_AUDIT_2026-08-19.md`、PR #42。
+
+本文件只记录在 1–6 阶段主体整改完成后，最终 diff / CI 复审继续发现的系统性问题。它们不是为了凑 Bug 数量，而是为了证明最终交付链本身也接受同一套成熟度标准。
+
+## FINAL-SAFE-001 — High — 部署状态文件曾以 shell 代码方式加载
+
+### 问题
+
+早期一键部署/回滚 helper 为了恢复上次部署状态，使用 shell dot/source 直接加载 `pending-code-deploy.env` / `latest-code-deploy.env`。
+
+即使状态文件由本工具生成，这仍有两个不应存在的能力：
+
+1. 状态文件一旦被篡改，可以执行 shell；
+2. 状态文件可以覆盖已经通过 CLI 校验的 `APP_DIR`、`CONTAINER`、`TARGET_COMMIT` 等变量，使“入口参数校验”失去权威性。
+
+### 整改
+
+- 远端 deploy / rollback helper 禁止 `source`、`.`、`eval` 读取持久化状态；
+- 统一通过 `state_value()` 把 `KEY='value'` 当数据解析；
+- 重新校验 commit、backup path、app/container 一致性；
+- CLI 参数始终是本次操作的权威值；
+- 状态/manifest 尽可能设置为 `0600`；
+- CI 新增静态门禁：deployment helper 中出现可执行式状态加载或 `eval` 直接失败。
+
+状态：`fixed_in_branch`
+
+## FINAL-DATA-001 — High — 通用“空 groups 防误删”保护会阻止最后一个 override 的明确删除
+
+### 问题
+
+历史上为了防止 `config.json.groups = {}` 被误解释成“清空 SQLite 所有分群配置”，`saveConfigStrict()` 会在 runtime groups 为空、SQLite 非空时保留 SQLite 数据。
+
+这个保护对普通配置保存是正确的，但对本轮新增的明确操作：
+
+```text
+恢复某字段继承
+→ 删除该字段 override
+→ 如果恰好删掉最后一条 group override
+→ runtime groups 变成 {}
+```
+
+会产生反效果：管理员明确要求删除，通用 guard 却把旧 SQLite 行保留下来，导致“恢复继承”表面成功、持久化后又回来。
+
+### 整改
+
+- `selectGroupsForPersistence()` 增加显式 `allowEmptyRuntime` 策略；默认仍保持防误删；
+- `saveConfigStrict()` 增加仅供明确 group mutation 使用的 `allowEmptyGroupPersistence`；
+- `group_api.persistGroupMutation()` 只有在“此前非空、明确 mutation 后变空”时启用该策略；
+- 自动回归同时证明：
+  - 普通空 runtime 仍不会删除 SQLite；
+  - 明确 mutation 产生的空 snapshot 可以真正持久化为空。
+
+状态：`fixed_in_branch`
+
+## FINAL-UI-001 — High — “全局配置”最初只是视觉过滤，保存仍可能提交非 global 字段
+
+### 问题
+
+最初实现把高级全量页的过滤器切换成 `global.` 并改标题为“全局配置”，但原高级保存按钮仍使用原来的表单收集逻辑。也就是说“只显示 global.*”不等于“只保存 global.*”。
+
+这违反本轮最重要的产品契约：页面叫“全局配置”时，保存动作不能偷偷修改其它配置域。
+
+### 整改
+
+- global mode 自己接管高级页保存按钮；
+- `collectGlobalPatch()` 只收集 `data-config-key` 以 `global.` 开头的字段；
+- 通过 `/api/config/patch` 只提交该 scoped patch；
+- global mode 保存按钮明确显示“保存全局配置”；
+- Playwright 验收动态向表单插入一个非 global 探针字段，再点击保存，断言请求 payload 中所有 key 都以 `global.` 开头且探针绝不出现。
+
+状态：`fixed_in_branch`
+
+## FINAL-OPS-001 — Medium — Windows 一键构建缺少 Node 基线预检
+
+### 问题
+
+仓库当前依赖和自动化基线运行在 Node 22/24，而一键 Windows 脚本早期只检查 `npm` 命令存在。旧 Node 环境可能拖到 `npm ci` 或 build 才失败，错误不够可解释。
+
+### 整改
+
+- 一键更新脚本显式要求 `node`；
+- 在改仓库、SSH、上传生产候选之前检查 Node major >= 22；
+- 不满足时直接停止并给出明确版本提示。
+
+状态：`fixed_in_branch`
+
+## 最终门禁补充
+
+PR #42 在转 Ready/合并前还必须满足：
+
+- `GroupGuard CI` 成功；
+- `GroupGuard Build` 成功；
+- `WebUI Browser Acceptance` 成功；
+- 上述三个 final finding 对应的回归门禁均存在；
+- 最终 diff 不再发现未处理 High/Critical；
+- 不自动连接、部署或重启 `192.168.3.89`；
+- 合并后才由用户在 Windows 端运行 `GROUPGUARD-UPDATE.cmd` 做唯一一轮人工业务验收；业务异常时运行 `ROLLBACK-GROUPGUARD.cmd`。
