@@ -98,6 +98,16 @@ export function normalizeGroupOverride(input: unknown): GroupSettingsOverride {
   return isPlainRecord(projected) ? projected as GroupSettingsOverride : {};
 }
 
+/**
+ * A missing group row inherits globally. An existing historical row without an
+ * explicit useGlobal flag keeps the legacy behavior: it is an active group
+ * overlay. Only an explicit true means whole-group global inheritance.
+ */
+export function isGroupFullyInherited(groupSettings?: unknown): boolean {
+  if (!isPlainRecord(groupSettings)) return true;
+  return normalizeGroupOverride(groupSettings).useGlobal === true;
+}
+
 /** Resolve the final settings used by runtime for one group. */
 export function resolveEffectiveGroupSettings(
   globalSettings: GroupGuardSettings,
@@ -149,7 +159,7 @@ export function getGroupConfigSourceMap(
   groupSettings?: unknown
 ): ConfigSourceMap {
   const override = normalizeGroupOverride(groupSettings);
-  const useGlobal = override.useGlobal === true || !isPlainRecord(groupSettings);
+  const useGlobal = isGroupFullyInherited(groupSettings);
   const effective = resolveEffectiveGroupSettings(globalSettings, groupSettings);
   const out: ConfigSourceMap = {};
   collectLeafSources(effective, override, useGlobal, [], out);
