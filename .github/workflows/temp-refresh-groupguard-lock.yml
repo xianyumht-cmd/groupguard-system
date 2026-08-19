@@ -1,0 +1,44 @@
+name: Temporary GroupGuard Lock Refresh
+
+on:
+  push:
+    branches:
+      - audit/config-maturity-20260819
+    paths:
+      - 'onebot-plugin-groupguard/package.json'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    if: github.repository == 'xianyumht-cmd/groupguard-system'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/config-maturity-20260819
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onebot-plugin-groupguard/package-lock.json
+      - name: Refresh lockfile without installing lifecycle scripts
+        working-directory: onebot-plugin-groupguard
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Verify production dependencies contain no high/critical advisory
+        working-directory: onebot-plugin-groupguard
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit only the generated lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add onebot-plugin-groupguard/package-lock.json
+          if git diff --cached --quiet; then
+            echo 'lockfile already current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: refresh GroupGuard dependency lock'
+          git push origin HEAD:audit/config-maturity-20260819
