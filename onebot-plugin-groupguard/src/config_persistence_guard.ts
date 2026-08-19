@@ -9,6 +9,16 @@ export interface GroupPersistenceSelection {
   persistedCount: number;
 }
 
+export interface GroupPersistencePolicy {
+  /**
+   * An empty runtime map normally means "do not infer delete-all" because the
+   * main JSON intentionally carries groups: {} while SQLite owns group rows.
+   * Set this only for an explicit, already-authorized group mutation where an
+   * empty result is itself the intended persisted snapshot.
+   */
+  allowEmptyRuntime?: boolean;
+}
+
 function normalizeGroupMap(value: unknown): GroupConfigMap {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as GroupConfigMap
@@ -18,19 +28,20 @@ function normalizeGroupMap(value: unknown): GroupConfigMap {
 /**
  * An empty runtime map is ambiguous because config.json intentionally stores
  * `groups: {}` while SQLite is the source of truth for per-group settings.
- * Never interpret that ambiguous empty value as a destructive delete-all.
- * Explicit group deletion must use StorageAdapter.deleteGroupConfig().
+ * Never interpret that ambiguous empty value as a destructive delete-all
+ * unless the caller explicitly marks the runtime snapshot as authoritative.
  */
 export function selectGroupsForPersistence(
   runtimeGroups: unknown,
-  persistedGroups: unknown
+  persistedGroups: unknown,
+  policy: GroupPersistencePolicy = {}
 ): GroupPersistenceSelection {
   const runtime = normalizeGroupMap(runtimeGroups);
   const persisted = normalizeGroupMap(persistedGroups);
   const runtimeCount = Object.keys(runtime).length;
   const persistedCount = Object.keys(persisted).length;
 
-  if (runtimeCount === 0 && persistedCount > 0) {
+  if (runtimeCount === 0 && persistedCount > 0 && policy.allowEmptyRuntime !== true) {
     return {
       groups: persisted,
       preservedPersistedGroups: true,

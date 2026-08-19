@@ -78,7 +78,19 @@ export function saveConfig(ctx: GroupGuardCommandContext): void {
   }
 }
 
-export function saveConfigStrict(ctx: GroupGuardCommandContext): void {
+export interface SaveConfigStrictOptions {
+  /**
+   * Only explicit group-mutation flows may opt in. Normal/periodic config
+   * saves keep the delete-all guard because config.json deliberately stores an
+   * empty groups object while SQLite is the group source of truth.
+   */
+  allowEmptyGroupPersistence?: boolean;
+}
+
+export function saveConfigStrict(
+  ctx: GroupGuardCommandContext,
+  options: SaveConfigStrictOptions = {}
+): void {
   if (!ctx?.configPath) throw new Error('missing_config_path');
   const config = configStateService.getConfig();
   let persistedGroups = config.groups || {};
@@ -87,7 +99,9 @@ export function saveConfigStrict(ctx: GroupGuardCommandContext): void {
   } catch (error) {
     if (!String((error as Error)?.message || error).includes('storage adapter not initialized')) throw error;
   }
-  const selection = selectGroupsForPersistence(config.groups, persistedGroups);
+  const selection = selectGroupsForPersistence(config.groups, persistedGroups, {
+    allowEmptyRuntime: options.allowEmptyGroupPersistence === true
+  });
   if (selection.preservedPersistedGroups) {
     config.groups = selection.groups;
     loggingStateService.warn(

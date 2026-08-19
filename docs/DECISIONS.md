@@ -1,5 +1,75 @@
 # GroupGuard Decisions
 
+## 2026-08-19 — Separate global defaults, sparse group overrides, and effective runtime config
+
+### Decision
+
+GroupGuard configuration is defined as three different concepts:
+
+1. `config.global`: complete global defaults;
+2. SQLite `group_config`: sparse per-group overrides;
+3. effective group config: runtime-only deep-merged result.
+
+No group row means whole-group global inheritance. Explicit `useGlobal=true` also means whole-group inheritance and does not delete dormant overrides. `useGlobal=false` means global defaults plus the stored group overlay. For backward compatibility, an existing historical row with no `useGlobal` field remains an active group overlay rather than being reinterpreted as whole-group inheritance.
+
+Missing fields inherit; explicit `false`, `0`, and empty string remain overrides. Nested objects deep-merge and arrays replace atomically.
+
+### Reason
+
+The old model reused `GroupGuardSettings` as global configuration, persisted group configuration, and final runtime configuration. Together with top-level shallow merge and normalization of stored group rows, this could turn omitted fields into accidental overrides and make later global changes stop propagating.
+
+### Consequences
+
+- Runtime resolution is centralized in `src/config_effective.ts` and shared by state-service and PluginState call paths.
+- Existing historical SQLite paths are preserved as explicit values; migration does not infer administrator intent merely from value equality.
+- New broad-form writes may compact only newly introduced values that equal the current global value.
+- Administrators explicitly remove one group override path with “恢复继承”.
+- The WebUI exposes global, group, effective, and source information separately.
+
+## 2026-08-19 — Field inheritance, explicit group override, and whole-group inheritance are three different operations
+
+### Decision
+
+The admin model distinguishes:
+
+1. **restore field inheritance** — delete one group override path; the field follows current and future global changes;
+2. **write explicit group override** — set one group path to a fixed value; future global changes do not replace it;
+3. **whole-group inheritance** — `useGlobal=true`; every stored group override becomes dormant without being deleted.
+
+For the original `qaLinkDelivery.enabled` mismatch, the preferred bulk repair is `restore-path(qaLinkDelivery.enabled)`, not copying the current global boolean into every group.
+
+A `useGlobal=true` historical row may contain dormant old overrides. A single-field `set-path` must not delete or silently activate those unrelated values. When that operation cannot be performed without changing dormant semantics, the group is skipped and returned in `skippedDormantGroupIds`. A `restore-path` remains safe because it removes only the requested path.
+
+### Reason
+
+Copying a global value into every group looks correct today but actually creates fixed per-group overrides and prevents later global changes from propagating. Using `useGlobal=true` merely to synchronize one field is also too broad because it changes every field for that group. Dormant historical values add a third risk: automatically switching the group back to active overlay mode could unexpectedly reactivate unrelated old settings.
+
+### Consequences
+
+- “恢复该字段为全局继承” is the normal bulk tool when the administrator wants future propagation.
+- “将目标值写成分群覆盖” intentionally creates fixed group values and reports protected dormant rows instead of hiding data loss.
+- “全部群完全继承全局” is clearly labeled as a whole-group mode change.
+- Dynamic dotted paths reject prototype-pollution segments.
+
+## 2026-08-19 — Production deployment is code-only, backup-first, and rollbackable
+
+### Decision
+
+The Windows deployment workflow builds and tests on the Windows development host, then deploys only the built GroupGuard `dist` to `192.168.3.89`. It must create a timestamped production backup and deployment manifest before switching code, must not overwrite runtime `config.json`, SQLite/data, logs, or secrets, and must automatically attempt restoration when post-switch health verification fails.
+
+A separate one-click rollback launcher restores the last recorded code backup.
+
+### Reason
+
+The ARM host is production state, not a build workspace. Keeping build/test local and making the remote operation code-only lowers the chance of configuration/data loss and makes a failed release recoverable without reconstructing the previous version manually.
+
+### Consequences
+
+- The deployment target is `groupguard-snowluma` under the recorded production application directory.
+- Native SSH process exit codes are authoritative; PowerShell 5.1 stderr text alone is not treated as failure.
+- Deployment helpers are designed to be resume-safe and manifest-backed.
+- Production deployment/restart still requires explicit user intent at execution time.
+
 ## 2026-08-09 — Target-file push owns the managed QQ group-file root and reconciles from the live directory
 
 ### Decision

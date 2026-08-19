@@ -6,6 +6,7 @@ on:
       - 'onebot-plugin-groupguard/src/standalone/admin/**'
       - 'onebot-plugin-groupguard/scripts/webui-browser-acceptance.spec.ts'
       - 'onebot-plugin-groupguard/scripts/webui-visual-polish.spec.ts'
+      - 'onebot-plugin-groupguard/scripts/config-maturity-browser.spec.ts'
       - '.github/workflows/webui-browser-acceptance.yml'
   workflow_dispatch:
 
@@ -36,11 +37,14 @@ jobs:
       - name: Install browser test runner
         run: npm install --no-save --no-package-lock @playwright/test@1.55.0
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      # GitHub's Ubuntu mirror can stall for many minutes during `--with-deps`.
+      # The hosted ubuntu-24.04 image already carries the shared libraries needed
+      # by headless Chromium, so only fetch the pinned browser binary here.
+      - name: Install Chromium browser binary
+        run: npx playwright install chromium
 
-      - name: Run desktop and mobile browser acceptance
-        run: npx playwright test scripts/webui-browser-acceptance.spec.ts scripts/webui-visual-polish.spec.ts --reporter=line --workers=1
+      - name: Run desktop, mobile, and config-maturity browser acceptance
+        run: npx playwright test scripts/webui-browser-acceptance.spec.ts scripts/webui-visual-polish.spec.ts scripts/config-maturity-browser.spec.ts --reporter=line --workers=1
 
       - name: Upload browser evidence
         if: always()

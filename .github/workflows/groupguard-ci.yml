@@ -4,10 +4,16 @@ on:
   push:
     paths:
       - "onebot-plugin-groupguard/**"
+      - "scripts/windows/**"
+      - "GROUPGUARD-UPDATE.cmd"
+      - "ROLLBACK-GROUPGUARD.cmd"
       - ".github/workflows/groupguard-ci.yml"
   pull_request:
     paths:
       - "onebot-plugin-groupguard/**"
+      - "scripts/windows/**"
+      - "GROUPGUARD-UPDATE.cmd"
+      - "ROLLBACK-GROUPGUARD.cmd"
       - ".github/workflows/groupguard-ci.yml"
 
 jobs:
@@ -24,15 +30,21 @@ jobs:
           cache: npm
           cache-dependency-path: onebot-plugin-groupguard/package-lock.json
       - run: npm ci
+      - name: Audit production dependencies for high/critical vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
       - run: npm test
       - name: Validate deployment PowerShell syntax
         shell: pwsh
         run: |
-          Get-ChildItem scripts/ops/*.ps1 | ForEach-Object {
+          $files = @(
+            Get-ChildItem scripts/ops/*.ps1
+            Get-ChildItem ../scripts/windows/*.ps1
+          )
+          foreach ($file in $files) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
-              $_.FullName,
+              $file.FullName,
               [ref]$tokens,
               [ref]$errors
             ) | Out-Null
@@ -41,6 +53,87 @@ jobs:
               exit 1
             }
           }
+      - name: Validate remote deployment shell helpers
+        run: |
+          sh -n ../scripts/windows/groupguard-remote-deploy.sh
+          sh -n ../scripts/windows/groupguard-remote-rollback.sh
+      - name: Forbid executable deployment-state loading
+        shell: bash
+        run: |
+          set -euo pipefail
+          helpers=(
+            ../scripts/windows/groupguard-remote-deploy.sh
+            ../scripts/windows/groupguard-remote-rollback.sh
+          )
+          if grep -nE '^[[:space:]]*(\.|source)[[:space:]]+' "${helpers[@]}"; then
+            echo 'deployment helpers must parse state as data; source/dot execution is forbidden' >&2
+            exit 1
+          fi
+          if grep -nE '^[[:space:]]*eval[[:space:]]+' "${helpers[@]}"; then
+            echo 'deployment helpers must never eval persisted state' >&2
+            exit 1
+          fi
+          grep -q 'state_value()' ../scripts/windows/groupguard-remote-deploy.sh
+          grep -q 'state_value()' ../scripts/windows/groupguard-remote-rollback.sh
+      - name: Require authenticated exact-build deployment health verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          helpers=(
+            ../scripts/windows/groupguard-remote-deploy.sh
+            ../scripts/windows/groupguard-remote-rollback.sh
+          )
+          for helper in "${helpers[@]}"; do
+            grep -q "x-groupguard-token" "$helper"
+            grep -q "/api/build-info" "$helper"
+            grep -q "/api/health" "$helper"
+            grep -q "GROUPGUARD_WEBUI_TOKEN" "$helper"
+            grep -q "GROUPGUARD_DATA_DIR" "$helper"
+            if grep -q "/api/readyz" "$helper" && ! grep -q "All WebUI API routes" "$helper"; then
+              echo "unexpected legacy readiness probe in $helper" >&2
+              exit 1
+            fi
+          done
+          deploy_helper=../scripts/windows/groupguard-remote-deploy.sh
+          grep -q 'RECONCILE_ROLLBACK_STATE_MISSING' "$deploy_helper"
+          grep -q 'RECONCILE_BACKUP_COMMIT_MISMATCH' "$deploy_helper"
+      - name: Verify deployment helpers reject unsafe remote paths before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit='0123456789abcdef0123456789abcdef01234567'
+          sha='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+          if sh ../scripts/windows/groupguard-remote-deploy.sh /tmp/not-groupguard /mnt/sda1/groupguard/backups groupguard-snowluma "$commit" /tmp/candidate.tar.gz release-safe "$sha"; then
+            echo 'remote deploy helper accepted unsafe APP_DIR' >&2
+            exit 1
+          fi
+          if sh ../scripts/windows/groupguard-remote-rollback.sh /tmp/not-groupguard /mnt/sda1/groupguard/backups groupguard-snowluma; then
+            echo 'remote rollback helper accepted unsafe APP_DIR' >&2
+            exit 1
+          fi
+      - name: Verify Windows launchers reject unsafe remote paths before tooling/deploy
+        shell: pwsh
+        run: |
+          & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-update.ps1 -RemoteAppDir '/tmp/not-groupguard'
+          $updateCode = $LASTEXITCODE
+          if ($updateCode -eq 0) { throw 'groupguard-update.ps1 accepted unsafe RemoteAppDir' }
+          & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-rollback.ps1 -RemoteAppDir '/tmp/not-groupguard'
+          $rollbackCode = $LASTEXITCODE
+          if ($rollbackCode -eq 0) { throw 'groupguard-rollback.ps1 accepted unsafe RemoteAppDir' }
+          Write-Host "Unsafe-path guards rejected as expected: update=$updateCode rollback=$rollbackCode"
+          exit 0
+      - name: Verify one-click updater rejects a non-canonical Git origin
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP 'groupguard-wrong-origin'
+          New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+          & git -C $tmp init | Out-Null
+          & git -C $tmp remote add origin 'https://github.com/example/not-groupguard.git'
+          & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-update.ps1 -RepoPath $tmp
+          $code = $LASTEXITCODE
+          if ($code -eq 0) { throw 'groupguard-update.ps1 accepted a non-canonical origin' }
+          Write-Host "Wrong-origin guard rejected as expected: exit=$code"
+          exit 0
       - run: npm run build:snowluma
       - name: Verify cross-repository contracts with local mocks
         env:
