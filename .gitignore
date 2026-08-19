@@ -1,6 +1,10 @@
 node_modules/
 .plugin-zips/
 *.temp.zip
+*.log
+$null
+.gitguu
+*safe_rm_aliases.ps1*
 
 **/config/target-file-push.json
 **/config/target-file-push-api-token
