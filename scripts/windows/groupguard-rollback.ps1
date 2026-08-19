@@ -42,9 +42,27 @@ function Quote-Remote([string]$Value) {
   return "'$Value'"
 }
 
+function Assert-SafeParameters {
+  if ($RemoteHost -notmatch '^[A-Za-z0-9.-]+$') { throw 'RemoteHost 格式不安全。' }
+  if ($RemoteUser -notmatch '^[A-Za-z0-9._-]+$') { throw 'RemoteUser 格式不安全。' }
+  if ($RemotePort -lt 1 -or $RemotePort -gt 65535) { throw 'RemotePort 必须在 1-65535。' }
+  foreach ($item in @(
+    @{ Name = 'RemoteAppDir'; Value = $RemoteAppDir },
+    @{ Name = 'RemoteBackupRoot'; Value = $RemoteBackupRoot }
+  )) {
+    $value = [string]$item.Value
+    if ($value -notmatch '^/mnt/sda1/groupguard/[A-Za-z0-9._/-]+$' -or $value.Contains('..') -or $value.EndsWith('/.')) {
+      throw "$($item.Name) 必须是 /mnt/sda1/groupguard/ 下的安全绝对路径。"
+    }
+  }
+  if ($RemoteAppDir.TrimEnd('/') -eq $RemoteBackupRoot.TrimEnd('/')) { throw '应用目录和备份目录不能相同。' }
+  if ($RemoteContainer -notmatch '^[A-Za-z0-9_.-]+$') { throw 'RemoteContainer 格式不安全。' }
+}
+
 try {
   Write-Host 'GroupGuard 一键生产代码回滚' -ForegroundColor Yellow
   Write-Host '回滚只恢复最近一次部署前的 dist 代码，不覆盖 config.json、SQLite/data、日志或密钥。'
+  Assert-SafeParameters
   foreach ($cmd in @('ssh', 'scp')) { Require-Command $cmd }
 
   $helper = Join-Path $RepoPath 'scripts\windows\groupguard-remote-rollback.sh'
