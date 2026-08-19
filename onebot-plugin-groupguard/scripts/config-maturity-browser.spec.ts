@@ -59,7 +59,16 @@ test.afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 });
 
-test('global config is a distinct operator entry backed by global filter mode', async ({ page }) => {
+test('global config is a distinct operator entry and save is scoped to global fields', async ({ page }) => {
+  let captured: any = null;
+  await page.route('**/api/config/patch**', async (route) => {
+    captured = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, message: 'saved' }),
+    });
+  });
   await page.goto(`${origin}/?token=test#groups`, { waitUntil: 'domcontentloaded' });
   const globalEntry = page.locator('[data-gg-global-config="1"]');
   await expect(globalEntry).toBeVisible();
@@ -67,8 +76,26 @@ test('global config is a distinct operator entry backed by global filter mode', 
   await expect(globalEntry).toHaveClass(/active/);
   await expect(page.locator('#tab-advanced h2')).toHaveText('全局配置');
   await expect(page.locator('#advancedFilter')).toHaveValue('global.');
-  await expect(page.locator('.gg-global-mode-note')).toContainText('全局默认');
+  await expect(page.locator('.gg-global-mode-note')).toContainText('仅保存 global.*');
   await expect(page).toHaveURL(/#global-config$/);
+
+  await page.evaluate(() => {
+    const form = document.getElementById('advancedForm');
+    if (!form) throw new Error('advanced_form_missing');
+    const probe = document.createElement('input');
+    probe.dataset.configKey = 'nonGlobalProbe';
+    probe.value = 'must-not-save';
+    form.appendChild(probe);
+  });
+  const saveButton = page.locator('#tab-advanced [data-save-form="advancedForm"]');
+  await expect(saveButton).toHaveText('保存全局配置');
+  await saveButton.click();
+  await expect.poll(() => captured).not.toBeNull();
+  const patch = captured?.patch || {};
+  const keys = Object.keys(patch);
+  expect(keys.length).toBeGreaterThan(0);
+  expect(keys.every((key) => key.startsWith('global.'))).toBe(true);
+  expect(patch.nonGlobalProbe).toBeUndefined();
 });
 
 test('global config entry on a standalone page navigates to the real global editor instead of a dead button', async ({ page }) => {
