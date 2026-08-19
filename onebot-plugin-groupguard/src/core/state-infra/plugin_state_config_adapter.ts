@@ -1,4 +1,5 @@
 import type { GroupGuardSettings, PluginConfig } from '../../types';
+import { resolveEffectiveGroupSettings } from '../../config_effective';
 import { pluginState } from '../../state';
 
 export class PluginStateConfigAdapter {
@@ -35,7 +36,7 @@ export class PluginStateConfigAdapter {
   }
 
   resolveGroupSettings(groupId: string): GroupGuardSettings {
-    return pluginState.getGroupSettings(groupId);
+    return resolveEffectiveGroupSettings(pluginState.config.global, pluginState.config.groups[groupId]);
   }
 
   getLicenses(): Record<string, any> {
