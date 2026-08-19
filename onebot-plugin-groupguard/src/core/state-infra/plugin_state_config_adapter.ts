@@ -2,6 +2,28 @@ import type { GroupGuardSettings, PluginConfig } from '../../types';
 import { resolveEffectiveGroupSettings } from '../../config_effective';
 import { pluginState } from '../../state';
 
+const RESOLVER_MARK = Symbol.for('groupguard.effective-config-resolver-installed');
+
+type ResolverAwarePluginState = typeof pluginState & { [RESOLVER_MARK]?: boolean };
+
+/**
+ * PluginState owns several internal send/risk helpers that call
+ * `this.getGroupSettings()` directly. Install the same resolver used by the
+ * state-service adapter so every runtime path has identical inheritance
+ * semantics. This bridge is intentionally centralized and idempotent until
+ * PluginState itself is split into the config domain service.
+ */
+export function installPluginStateEffectiveConfigResolver(): void {
+  const state = pluginState as ResolverAwarePluginState;
+  if (state[RESOLVER_MARK]) return;
+  state.getGroupSettings = (groupId: string): GroupGuardSettings => (
+    resolveEffectiveGroupSettings(state.config.global, state.config.groups[groupId])
+  );
+  state[RESOLVER_MARK] = true;
+}
+
+installPluginStateEffectiveConfigResolver();
+
 export class PluginStateConfigAdapter {
   getConfig(): PluginConfig {
     return pluginState.config;
