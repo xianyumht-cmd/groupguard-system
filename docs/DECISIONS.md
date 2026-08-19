@@ -1,5 +1,66 @@
 # GroupGuard Decisions
 
+## 2026-08-19 — Separate global defaults, sparse group overrides, and effective runtime config
+
+### Decision
+
+GroupGuard configuration is defined as three different concepts:
+
+1. `config.global`: complete global defaults;
+2. SQLite `group_config`: sparse per-group overrides;
+3. effective group config: runtime-only deep-merged result.
+
+`useGlobal=true` means whole-group inheritance and does not delete dormant overrides. `useGlobal=false` means global defaults plus the stored group overlay. Missing fields inherit; explicit `false`, `0`, and empty string remain overrides. Nested objects deep-merge and arrays replace atomically.
+
+### Reason
+
+The old model reused `GroupGuardSettings` as global configuration, persisted group configuration, and final runtime configuration. Together with top-level shallow merge and normalization of stored group rows, this could turn omitted fields into accidental overrides and make later global changes stop propagating.
+
+### Consequences
+
+- Runtime resolution is centralized in `src/config_effective.ts` and is shared by state-service and PluginState call paths.
+- Existing historical SQLite paths are preserved as explicit values; the migration must not infer administrator intent merely from value equality.
+- New broad-form writes may compact only newly introduced values that equal the current global value.
+- Administrators can explicitly delete one group override path with “恢复继承”.
+- The WebUI exposes global, group, effective, and source information separately.
+
+## 2026-08-19 — Field-level bulk application is distinct from whole-group inheritance
+
+### Decision
+
+A global setting change does not silently overwrite every stored group override. The admin surface provides a field-level batch operation for intentional synchronization and a separate whole-group `useGlobal` operation.
+
+For example, disabling `global.qaLinkDelivery.enabled` can be applied to every known group by updating only `qaLinkDelivery.enabled`, leaving query, QA, dynamic-command, probability, cooldown, and other per-group differences untouched.
+
+### Reason
+
+Using `useGlobal=true` merely to synchronize one setting is too destructive: it changes the behavior of all fields for that group. Conversely, silently rewriting all group rows whenever global config changes would destroy the meaning of explicit group overrides.
+
+### Consequences
+
+- “应用字段到全部群/选中群” modifies only the requested dotted path.
+- “全部群继承全局” is explicitly labeled as a whole-group mode change and keeps dormant stored overrides for reversibility.
+- Dynamic dotted paths reject prototype-pollution segments.
+
+## 2026-08-19 — Production deployment is code-only, backup-first, and rollbackable
+
+### Decision
+
+The Windows deployment workflow builds and tests on the Windows development host, then deploys only the built GroupGuard `dist` to `192.168.3.89`. It must create a timestamped production backup and deployment manifest before switching code, must not overwrite runtime `config.json`, SQLite/data, logs, or secrets, and must automatically attempt restoration when post-switch health verification fails.
+
+A separate one-click rollback launcher restores the last recorded code backup.
+
+### Reason
+
+The ARM host is production state, not a build workspace. Keeping build/test local and making the remote operation code-only lowers the chance of configuration/data loss and makes a failed release recoverable without reconstructing the previous version manually.
+
+### Consequences
+
+- The deployment target is `groupguard-snowluma` under the recorded production application directory.
+- Native SSH process exit codes are authoritative; PowerShell 5.1 stderr text alone is not treated as failure.
+- Deployment helpers are designed to be resume-safe and manifest-backed.
+- Production deployment/restart still requires explicit user intent at execution time.
+
 ## 2026-08-09 — Target-file push owns the managed QQ group-file root and reconciles from the live directory
 
 ### Decision
