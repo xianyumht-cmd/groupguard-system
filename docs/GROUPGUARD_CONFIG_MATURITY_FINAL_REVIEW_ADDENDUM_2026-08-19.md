@@ -88,6 +88,30 @@
 
 状态：`fixed_in_branch`
 
+## FINAL-OPS-002 — High — 一键部署最初用未认证 `/api/readyz` 判断健康，生产会得到 401
+
+### 问题
+
+最终部署脚本最初在容器内直接请求：
+
+```text
+http://127.0.0.1:6108/api/readyz
+```
+
+但当前 Admin Server 在 `/api/readyz`、`/api/health`、`/api/build-info` 之前统一执行 `requireAuth()`。也就是说，未携带 GroupGuard WebUI token 的探针并不能证明新版本健康，在真实生产契约下会收到 401，并把一次本可成功的部署错误判定成失败/自动回滚。
+
+此外，单看 `ready=true` 仍不足以证明刚刚切换的就是目标 commit；部署门禁必须同时验证运行中的 build identity。
+
+### 整改
+
+- deploy / rollback helper 改为在容器内读取 `GROUPGUARD_WEBUI_TOKEN`；若未显式配置，则按 standalone server 同一约定读取 `GROUPGUARD_DATA_DIR/.groupguard-webui-token`；
+- 使用 `x-groupguard-token` 请求 `/api/build-info` 与 `/api/health`；
+- 健康通过必须同时满足：HTTP 200、`health.ready === true`、运行 build commit 与预期 commit 一致、build 不是 dirty；
+- 新部署、目标已存在的 reconcile、部署失败后的自动恢复、人工 rollback、rollback 失败后的 preimage 恢复，都使用同一 authenticated exact-build 检查；
+- CI 增加静态契约门禁，要求两个远端 helper 同时包含 token、build-info、health 与 data-dir fallback 逻辑。
+
+状态：`fixed_in_branch_pending_gate`
+
 ## FINAL-CI-001 — Medium — 浏览器验收门禁依赖系统 apt 安装导致环境型超时
 
 ### 问题
@@ -108,9 +132,9 @@ npx playwright install --with-deps chromium
 - 继续固定 `@playwright/test@1.55.0`；
 - 浏览器安装改为 `npx playwright install chromium`，只获取 Playwright 对应 Chromium binary，不在每次 PR 门禁重新跑 apt；
 - runner 镜像本身负责基础共享库；如果未来镜像变化导致真实缺库，验收应快速失败并给出具体 browser launch 错误，而不是长时间卡在系统源；
-- 原失败 run 保留作为环境故障证据，新 commit 触发 exact-head browser acceptance 重跑。
+- 原失败 run 保留作为环境故障证据；修复后的 Chromium 门禁已经成功执行完整 desktop/mobile/config-maturity Playwright 验收。
 
-状态：`fixed_in_branch_pending_gate`
+状态：`fixed_and_verified`
 
 ## 最终门禁补充
 
