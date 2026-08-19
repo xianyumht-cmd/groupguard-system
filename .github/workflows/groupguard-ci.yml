@@ -30,6 +30,8 @@ jobs:
           cache: npm
           cache-dependency-path: onebot-plugin-groupguard/package-lock.json
       - run: npm ci
+      - name: Audit production dependencies for high/critical vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
       - run: npm test
       - name: Validate deployment PowerShell syntax
         shell: pwsh
@@ -79,6 +81,18 @@ jobs:
           $rollbackCode = $LASTEXITCODE
           if ($rollbackCode -eq 0) { throw 'groupguard-rollback.ps1 accepted unsafe RemoteAppDir' }
           Write-Host "Unsafe-path guards rejected as expected: update=$updateCode rollback=$rollbackCode"
+          exit 0
+      - name: Verify one-click updater rejects a non-canonical Git origin
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP 'groupguard-wrong-origin'
+          New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+          & git -C $tmp init | Out-Null
+          & git -C $tmp remote add origin 'https://github.com/example/not-groupguard.git'
+          & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-update.ps1 -RepoPath $tmp
+          $code = $LASTEXITCODE
+          if ($code -eq 0) { throw 'groupguard-update.ps1 accepted a non-canonical origin' }
+          Write-Host "Wrong-origin guard rejected as expected: exit=$code"
           exit 0
       - run: npm run build:snowluma
       - name: Verify cross-repository contracts with local mocks
