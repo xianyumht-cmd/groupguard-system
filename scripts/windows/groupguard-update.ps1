@@ -74,6 +74,16 @@ function Assert-SafeParameters {
   if ($RemoteContainer -notmatch '^[A-Za-z0-9_.-]+$') { throw 'RemoteContainer 格式不安全。' }
 }
 
+function Assert-SupportedNode {
+  $version = Get-NativeOutput 'node' @('-p', 'process.versions.node')
+  if ($version -notmatch '^(\d+)\.(\d+)\.(\d+)') { throw "无法识别 Node.js 版本：$version" }
+  $major = [int]$Matches[1]
+  if ($major -lt 22) {
+    throw "Node.js 版本过低：$version。GroupGuard 当前构建/测试基线要求 Node.js 22 或更高版本。"
+  }
+  Write-Host "Node.js：$version" -ForegroundColor Green
+}
+
 function Assert-CanonicalOrigin([string]$OriginUrl) {
   $value = $OriginUrl.Trim()
   $allowed = @(
@@ -91,7 +101,8 @@ try {
   Write-Host '只发布构建后的 dist；不会覆盖 config.json、SQLite/data、日志或密钥。'
 
   Assert-SafeParameters
-  foreach ($cmd in @('git', 'npm', 'ssh', 'scp', 'tar')) { Require-Command $cmd }
+  foreach ($cmd in @('git', 'node', 'npm', 'ssh', 'scp', 'tar')) { Require-Command $cmd }
+  Assert-SupportedNode
   if (-not (Test-Path -LiteralPath $RepoPath -PathType Container)) { throw "本地仓库不存在：$RepoPath" }
   if (-not (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))) { throw "不是 Git 仓库：$RepoPath" }
 
