@@ -47,7 +47,8 @@ for (const raw of pages) {
   assert.ok(designed.includes("api('/api/build-info')"));
   assert.ok(designed.includes("['群管配置'"));
   assert.ok(designed.includes("['服务与风控'"));
-  assert.ok(designed.includes("button.textContent='全局配置'"));
+  assert.ok(designed.includes("dataset.ggGlobalConfig='1'"));
+  assert.ok(designed.includes("textContent='全局配置'"));
   assert.ok(designed.includes("api('/api/groups/batch','POST'"));
   assert.ok(designed.includes('__restorePath'));
   assert.ok(designed.includes("__operation:'restore-path'"));
