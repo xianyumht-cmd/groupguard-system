@@ -50,9 +50,13 @@ for (const raw of pages) {
   assert.ok(designed.includes("button.textContent='全局配置'"));
   assert.ok(designed.includes("api('/api/groups/batch','POST'"));
   assert.ok(designed.includes('__restorePath'));
-  assert.ok(designed.includes('同步全局链接提示开关到全部群'));
+  assert.ok(designed.includes("__operation:'restore-path'"));
+  assert.ok(designed.includes('让所有群的链接提示继承全局'));
+  assert.ok(designed.includes('恢复该字段为全局继承'));
+  assert.ok(designed.includes('将目标值写成分群覆盖'));
   assert.ok(designed.includes('来源：本群'));
   assert.ok(designed.includes('继承全局配置'));
+  assert.ok(designed.includes('休眠历史覆盖'));
   assert.equal(applyWebUiTheme(designed), designed, 'control panel injection must be idempotent');
 }
 
@@ -107,8 +111,11 @@ assert.ok(compatibilitySource.includes('applyConfigMaturityWebUiPatch(withTarget
 
 const groupApiSource = await readFile(new URL('../src/standalone/admin/group_api.ts', import.meta.url), 'utf8');
 assert.ok(groupApiSource.includes("operation === 'set-path'"));
+assert.ok(groupApiSource.includes("operation === 'restore-path'"));
 assert.ok(groupApiSource.includes("operation === 'set-inheritance'"));
 assert.ok(groupApiSource.includes('__restorePath'));
 assert.ok(groupApiSource.includes('compactNewInheritedValues'));
+assert.ok(groupApiSource.includes('skippedDormantGroupIds'));
+assert.ok(groupApiSource.includes('isGroupFullyInherited'));
 
 console.log('webui unified control panel verification passed');
