@@ -70,6 +70,40 @@ json_commit() {
   sed -n 's/.*"commit_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1
 }
 
+# Deployment state is untrusted data. Never source/eval it: doing so could both
+# execute shell and overwrite the CLI-validated APP_DIR/CONTAINER/TARGET_COMMIT.
+state_value() {
+  file=$1
+  key=$2
+  [ -f "$file" ] || return 0
+  case "$key" in
+    ''|*[!A-Z0-9_]*) return 1 ;;
+  esac
+  sed -n "s/^${key}='\([^']*\)'$/\1/p" "$file" | head -n 1
+}
+
+valid_commit_or_unknown() {
+  value=$1
+  [ "$value" = "unknown" ] && return 0
+  case "$value" in
+    ''|*[!0-9a-fA-F]*) return 1 ;;
+  esac
+  [ "${#value}" -eq 40 ]
+}
+
+validate_backup_state_path() {
+  value=$1
+  [ -z "$value" ] && return 0
+  case "$value" in
+    "$BACKUP_ROOT"/*) ;;
+    *) return 1 ;;
+  esac
+  case "$value" in
+    *..*) return 1 ;;
+  esac
+  return 0
+}
+
 sha256_file() {
   file=$1
   if command -v sha256sum >/dev/null 2>&1; then
@@ -132,6 +166,7 @@ ARCHIVE_SHA256='$EXPECTED_SHA256'
 DEPLOYED_AT_UTC='$deployed_at'
 EOF
   mv "$LATEST_ENV.tmp" "$LATEST_ENV"
+  chmod 600 "$LATEST_ENV" "$LATEST_JSON" "$MANIFEST_JSON" 2>/dev/null || true
   rm -f "$PENDING_FILE"
 }
 
@@ -169,21 +204,28 @@ if [ "$current_commit" = "$TARGET_COMMIT" ]; then
   backup_path=""
   previous_commit="unknown"
   if [ -f "$PENDING_FILE" ]; then
-    # shellcheck disable=SC1090
-    . "$PENDING_FILE"
-    if [ "${PENDING_TARGET_COMMIT:-}" = "$TARGET_COMMIT" ]; then
-      backup_path=${PENDING_BACKUP_PATH:-}
-      previous_commit=${PENDING_PREVIOUS_COMMIT:-unknown}
+    pending_target=$(state_value "$PENDING_FILE" PENDING_TARGET_COMMIT)
+    if [ "$pending_target" = "$TARGET_COMMIT" ]; then
+      backup_path=$(state_value "$PENDING_FILE" PENDING_BACKUP_PATH)
+      previous_commit=$(state_value "$PENDING_FILE" PENDING_PREVIOUS_COMMIT)
+      previous_commit=${previous_commit:-unknown}
     fi
   fi
   if [ -z "$backup_path" ] && [ -f "$LATEST_ENV" ]; then
-    # shellcheck disable=SC1090
-    . "$LATEST_ENV"
-    if [ "${TARGET_COMMIT:-}" = "$current_commit" ]; then
-      backup_path=${BACKUP_PATH:-}
-      previous_commit=${PREVIOUS_COMMIT:-unknown}
+    latest_target=$(state_value "$LATEST_ENV" TARGET_COMMIT)
+    latest_app=$(state_value "$LATEST_ENV" APP_DIR)
+    latest_container=$(state_value "$LATEST_ENV" CONTAINER)
+    if [ "$latest_target" = "$current_commit" ] && \
+       { [ -z "$latest_app" ] || [ "$latest_app" = "$APP_DIR" ]; } && \
+       { [ -z "$latest_container" ] || [ "$latest_container" = "$CONTAINER" ]; }; then
+      backup_path=$(state_value "$LATEST_ENV" BACKUP_PATH)
+      previous_commit=$(state_value "$LATEST_ENV" PREVIOUS_COMMIT)
+      previous_commit=${previous_commit:-unknown}
     fi
-    TARGET_COMMIT=$candidate_commit
+  fi
+  if ! validate_backup_state_path "$backup_path" || ! valid_commit_or_unknown "$previous_commit"; then
+    echo "RECONCILE_STATE_INVALID=true" >&2
+    exit 15
   fi
   if ! health_check 45; then
     echo "RECONCILED_TARGET_HEALTH_FAILED=true" >&2
@@ -229,6 +271,7 @@ PENDING_BACKUP_PATH='$backup_path'
 PENDING_ARCHIVE_SHA256='$EXPECTED_SHA256'
 EOF
 mv "$PENDING_FILE.tmp" "$PENDING_FILE"
+chmod 600 "$PENDING_FILE" 2>/dev/null || true
 
 old_dist="$APP_DIR/.dist-pre-$RELEASE_ID"
 rm -rf "$old_dist"
