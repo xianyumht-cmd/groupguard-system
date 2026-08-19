@@ -62,7 +62,13 @@ function persistGroupMutation<T>(options: SnowLumaAdminServerOptions, mutate: ()
   const previous = cloneGroups();
   try {
     const result = mutate();
-    saveConfigStrict(options.ctx);
+    const current = configStateService.getGroups() || {};
+    // Normal config saves intentionally treat an empty runtime group map as
+    // ambiguous. Here the map is the direct result of an explicit group
+    // mutation, so if a previously non-empty snapshot became empty we must
+    // persist that intentional delete-all-of-overrides result to SQLite.
+    const explicitlyBecameEmpty = Object.keys(previous).length > 0 && Object.keys(current).length === 0;
+    saveConfigStrict(options.ctx, { allowEmptyGroupPersistence: explicitlyBecameEmpty });
     return result;
   } catch (error) {
     configStateService.getConfig().groups = previous;
