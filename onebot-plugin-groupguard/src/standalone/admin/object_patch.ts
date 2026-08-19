@@ -1,20 +1,26 @@
 import type { JsonRecord } from './types';
 
+const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function isSafePath(parts: string[]): boolean {
+  return parts.length > 0 && parts.every(part => part && !FORBIDDEN_PATH_SEGMENTS.has(part));
+}
+
 export function splitPath(key: string): string[] {
   const text = String(key || '').trim();
+  let parts: string[];
   if (text.startsWith('global.featureSwitches.query.')) {
-    return ['global', 'featureSwitches', `query.${text.slice('global.featureSwitches.query.'.length)}`];
+    parts = ['global', 'featureSwitches', `query.${text.slice('global.featureSwitches.query.'.length)}`];
+  } else if (text.startsWith('global.featureSwitches.builtin.')) {
+    parts = ['global', 'featureSwitches', `builtin.${text.slice('global.featureSwitches.builtin.'.length)}`];
+  } else if (text.startsWith('featureSwitches.query.')) {
+    parts = ['featureSwitches', `query.${text.slice('featureSwitches.query.'.length)}`];
+  } else if (text.startsWith('featureSwitches.builtin.')) {
+    parts = ['featureSwitches', `builtin.${text.slice('featureSwitches.builtin.'.length)}`];
+  } else {
+    parts = text.split('.').map(item => item.trim()).filter(Boolean);
   }
-  if (text.startsWith('global.featureSwitches.builtin.')) {
-    return ['global', 'featureSwitches', `builtin.${text.slice('global.featureSwitches.builtin.'.length)}`];
-  }
-  if (text.startsWith('featureSwitches.query.')) {
-    return ['featureSwitches', `query.${text.slice('featureSwitches.query.'.length)}`];
-  }
-  if (text.startsWith('featureSwitches.builtin.')) {
-    return ['featureSwitches', `builtin.${text.slice('featureSwitches.builtin.'.length)}`];
-  }
-  return text.split('.').map(item => item.trim()).filter(Boolean);
+  return isSafePath(parts) ? parts : [];
 }
 
 export function setByPath(target: JsonRecord, key: string, value: any): void {
@@ -49,7 +55,7 @@ export function parsePatchValue(value: any): any {
 export function applyPatch<T extends JsonRecord>(config: T, patch: JsonRecord): T {
   const next = JSON.parse(JSON.stringify(config || {}));
   for (const [key, value] of Object.entries(patch || {})) {
-    if (!key || key === '__proto__' || key.includes('__proto__')) continue;
+    if (!splitPath(key).length) continue;
     setByPath(next, key, parsePatchValue(value));
   }
   return next;
