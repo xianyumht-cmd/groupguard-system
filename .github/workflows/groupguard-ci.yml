@@ -75,6 +75,25 @@ jobs:
           fi
           grep -q 'state_value()' ../scripts/windows/groupguard-remote-deploy.sh
           grep -q 'state_value()' ../scripts/windows/groupguard-remote-rollback.sh
+      - name: Require authenticated exact-build deployment health verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          helpers=(
+            ../scripts/windows/groupguard-remote-deploy.sh
+            ../scripts/windows/groupguard-remote-rollback.sh
+          )
+          for helper in "${helpers[@]}"; do
+            grep -q "x-groupguard-token" "$helper"
+            grep -q "/api/build-info" "$helper"
+            grep -q "/api/health" "$helper"
+            grep -q "GROUPGUARD_WEBUI_TOKEN" "$helper"
+            grep -q "GROUPGUARD_DATA_DIR" "$helper"
+            if grep -q "/api/readyz" "$helper" && ! grep -q "All WebUI API routes" "$helper"; then
+              echo "unexpected legacy readiness probe in $helper" >&2
+              exit 1
+            fi
+          done
       - name: Verify deployment helpers reject unsafe remote paths before mutation
         shell: bash
         run: |
