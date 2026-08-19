@@ -2,9 +2,9 @@ import type { GroupGuardSettings, PluginConfig } from '../../types';
 import { resolveEffectiveGroupSettings } from '../../config_effective';
 import { pluginState } from '../../state';
 
-const RESOLVER_MARK = Symbol.for('groupguard.effective-config-resolver-installed');
-
-type ResolverAwarePluginState = typeof pluginState & { [RESOLVER_MARK]?: boolean };
+type ResolverAwarePluginState = typeof pluginState & {
+  __groupguardEffectiveConfigResolverInstalled?: boolean;
+};
 
 /**
  * PluginState owns several internal send/risk helpers that call
@@ -15,11 +15,11 @@ type ResolverAwarePluginState = typeof pluginState & { [RESOLVER_MARK]?: boolean
  */
 export function installPluginStateEffectiveConfigResolver(): void {
   const state = pluginState as ResolverAwarePluginState;
-  if (state[RESOLVER_MARK]) return;
+  if (state.__groupguardEffectiveConfigResolverInstalled) return;
   state.getGroupSettings = (groupId: string): GroupGuardSettings => (
     resolveEffectiveGroupSettings(state.config.global, state.config.groups[groupId])
   );
-  state[RESOLVER_MARK] = true;
+  state.__groupguardEffectiveConfigResolverInstalled = true;
 }
 
 installPluginStateEffectiveConfigResolver();
