@@ -4,7 +4,8 @@ import path from 'path';
 import type { PluginConfig, GroupGuardSettings } from './types';
 import type { OneBotMessageEvent, OneBotEvent } from './protocol/onebot11/types';
 import type { GroupGuardRuntimeContext } from './runtime/runtime_context';
-import { normalizeGroupSettings, normalizePluginConfig } from './config';
+import { normalizePluginConfig } from './config';
+import { normalizeGroupOverride } from './config_effective';
 import { authManager } from './auth';
 import { configStateService } from './core/state-services/config_state_service';
 import { contextStateService } from './core/state-services/context_state_service';
@@ -30,6 +31,14 @@ let configFlushTimer: NodeJS.Timeout | null = null;
 let activeContext: GroupGuardRuntimeContext | null = null;
 let initialization: Promise<void> | null = null;
 let initialized = false;
+
+function normalizeStoredGroups(groups: unknown): Record<string, GroupGuardSettings> {
+  if (!groups || typeof groups !== 'object' || Array.isArray(groups)) return {};
+  return Object.entries(groups as Record<string, unknown>).reduce((acc, [gid, groupSettings]) => {
+    acc[gid] = normalizeGroupOverride(groupSettings) as GroupGuardSettings;
+    return acc;
+  }, {} as Record<string, GroupGuardSettings>);
+}
 
 function syncAuditRetentionPolicy(config: PluginConfig): void {
   const global = config.global || {};
@@ -125,17 +134,19 @@ async function initializeOnce(ctx: GroupGuardRuntimeContext): Promise<void> {
       throw new Error('invalid_groupguard_config_json', { cause: error });
     }
 
-    configStateService.setConfig(normalizePluginConfig(raw));
+    const normalizedConfig = normalizePluginConfig(raw);
+    // Main config is normalized as a complete object, but group rows are sparse
+    // overlays. Re-project raw group rows before migration so omitted fields do
+    // not become accidental permanent overrides.
+    normalizedConfig.groups = normalizeStoredGroups(raw.groups || {});
+    configStateService.setConfig(normalizedConfig);
     syncAuditRetentionPolicy(configStateService.getConfig());
     storageAdapter.init(ctx.configDir);
     bindAuditRetentionLogger();
     syncAuditRetentionPolicy(configStateService.getConfig());
     storageAdapter.migrateFromJson(ctx.configDir, configStateService.getConfig().groups || {});
     const loadedGroups = storageAdapter.loadAllGroupConfigs();
-    configStateService.getConfig().groups = Object.entries(loadedGroups).reduce((acc, [gid, groupSettings]) => {
-      acc[gid] = normalizeGroupSettings(groupSettings);
-      return acc;
-    }, {} as Record<string, GroupGuardSettings>);
+    configStateService.getConfig().groups = normalizeStoredGroups(loadedGroups);
     saveConfig(ctx);
   }
 
@@ -186,6 +197,7 @@ export async function getGroupGuardConfig(): Promise<PluginConfig> {
 
 export async function setGroupGuardConfig(ctx: GroupGuardRuntimeContext, config: PluginConfig): Promise<void> {
   const normalizedConfig = normalizePluginConfig(config);
+  normalizedConfig.groups = normalizeStoredGroups(config.groups || {});
   const audit = collectPersonaAuditForConfig(normalizedConfig);
   const strictMode = normalizedConfig?.global?.personaAuditStrictMode === true;
   if (strictMode && audit.summary.high > 0) {
