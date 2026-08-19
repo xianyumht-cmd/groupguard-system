@@ -74,17 +74,18 @@ export function listGroups() {
   const groups = configStateService.getGroups() || {};
   const licenses = configStateService.getLicenses() || {};
   const groupIds = Array.from(new Set([...Object.keys(licenses), ...Object.keys(groups)])).sort((a, b) => Number(a) - Number(b));
-  return groupIds.map(groupId => ({
-    groupId,
-    configured: Boolean(groups[groupId]),
-    licensed: Boolean(licenses[groupId]),
-    license: licenses[groupId] || null,
-    useGlobal: groups[groupId]?.useGlobal ?? true,
-    overrideFieldCount: Object.keys(getGroupConfigSourceMap(config.global, groups[groupId])).filter(
-      key => getGroupConfigSourceMap(config.global, groups[groupId])[key] === 'group'
-    ).length,
-    name: (config as any).groupNames?.[groupId] || ''
-  }));
+  return groupIds.map(groupId => {
+    const sources = getGroupConfigSourceMap(config.global, groups[groupId]);
+    return {
+      groupId,
+      configured: Boolean(groups[groupId]),
+      licensed: Boolean(licenses[groupId]),
+      license: licenses[groupId] || null,
+      useGlobal: groups[groupId]?.useGlobal ?? true,
+      overrideFieldCount: Object.values(sources).filter(source => source === 'group').length,
+      name: (config as any).groupNames?.[groupId] || ''
+    };
+  });
 }
 
 export function getGroupConfig(groupId: string) {
@@ -115,10 +116,36 @@ export function saveGroupConfig(options: SnowLumaAdminServerOptions, groupId: st
   });
 }
 
-export function patchGroupConfig(options: SnowLumaAdminServerOptions, groupId: string, patch: JsonRecord): ReturnType<typeof getGroupConfig> {
+export function patchGroupConfig(options: SnowLumaAdminServerOptions, groupId: string, patch: JsonRecord): any {
+  // The existing HTTP router treats every /api/groups/:id POST uniformly.
+  // Reserve the non-numeric "batch" pseudo-id so bulk operations remain
+  // backward-compatible without adding a second routing surface.
+  if (String(groupId) === 'batch') {
+    const operation = String(patch?.__operation || '').trim();
+    if (operation === 'set-path') {
+      return batchPatchGroupConfigPath(options, {
+        path: String(patch?.path || ''),
+        value: patch?.value,
+        groupIds: patch?.groupIds,
+      });
+    }
+    if (operation === 'set-inheritance') {
+      return batchSetGroupInheritance(options, {
+        useGlobal: patch?.useGlobal === true,
+        groupIds: patch?.groupIds,
+      });
+    }
+    throw new Error('不支持的批量配置操作');
+  }
+
   const id = cleanGroupId(groupId);
+  if (typeof patch?.__restorePath === 'string' && patch.__restorePath.trim()) {
+    return restoreGroupConfigPath(options, id, patch.__restorePath);
+  }
+
   const current = normalizeGroupOverride(configStateService.getGroupSettings(id));
   const normalizedPatch: JsonRecord = { ...(patch || {}) };
+  delete normalizedPatch.__restorePath;
   if (hasQueryGroupPatch(normalizedPatch)) normalizedPatch.useGlobal = false;
   const candidate = applyPatch(current as JsonRecord, normalizedPatch);
   const next = compactNewInheritedValues(configStateService.getGlobalSettings(), current, candidate);
@@ -165,6 +192,7 @@ export function batchPatchGroupConfigPath(
 
   return {
     ok: true,
+    operation: 'set-path',
     path,
     value: input.value,
     updated: result.length,
@@ -190,7 +218,7 @@ export function batchSetGroupInheritance(
     return ids;
   });
 
-  return { ok: true, useGlobal, updated: result.length, groupIds: result };
+  return { ok: true, operation: 'set-inheritance', useGlobal, updated: result.length, groupIds: result };
 }
 
 export function deleteGroupConfig(options: SnowLumaAdminServerOptions, groupId: string): ReturnType<typeof getGroupConfig> {
