@@ -55,6 +55,27 @@ jobs:
         run: |
           sh -n ../scripts/windows/groupguard-remote-deploy.sh
           sh -n ../scripts/windows/groupguard-remote-rollback.sh
+      - name: Verify deployment helpers reject unsafe remote paths before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit='0123456789abcdef0123456789abcdef01234567'
+          sha='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+          if sh ../scripts/windows/groupguard-remote-deploy.sh /tmp/not-groupguard /mnt/sda1/groupguard/backups groupguard-snowluma "$commit" /tmp/candidate.tar.gz release-safe "$sha"; then
+            echo 'remote deploy helper accepted unsafe APP_DIR' >&2
+            exit 1
+          fi
+          if sh ../scripts/windows/groupguard-remote-rollback.sh /tmp/not-groupguard /mnt/sda1/groupguard/backups groupguard-snowluma; then
+            echo 'remote rollback helper accepted unsafe APP_DIR' >&2
+            exit 1
+          fi
+      - name: Verify Windows launchers reject unsafe remote paths before tooling/deploy
+        shell: pwsh
+        run: |
+          & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-update.ps1 -RemoteAppDir '/tmp/not-groupguard'
+          if ($LASTEXITCODE -eq 0) { throw 'groupguard-update.ps1 accepted unsafe RemoteAppDir' }
+          & pwsh -NoLogo -NoProfile -File ../scripts/windows/groupguard-rollback.ps1 -RemoteAppDir '/tmp/not-groupguard'
+          if ($LASTEXITCODE -eq 0) { throw 'groupguard-rollback.ps1 accepted unsafe RemoteAppDir' }
       - run: npm run build:snowluma
       - name: Verify cross-repository contracts with local mocks
         env:
