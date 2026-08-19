@@ -6,7 +6,7 @@ const CONFIG_MATURITY_STYLE = String.raw`<style id="groupguard-config-maturity-s
 const CONFIG_MATURITY_SCRIPT = String.raw`<script id="groupguard-config-maturity-controller">(function(){
 var TOKEN_KEY='GROUPGUARD_WEBUI_TOKEN',openingGlobal=false,globalMode=false,refreshingSources=false,sourceTimer=0;
 function token(){try{return new URL(location.href).searchParams.get('token')||localStorage.getItem(TOKEN_KEY)||''}catch(error){return''}}
-function withToken(path){var url=new URL(path,location.origin),value=token();if(value)url.searchParams.set('token',value);return url.pathname+url.search}
+function withToken(path){var url=new URL(path,location.origin),value=token();if(value)url.searchParams.set('token',value);return url.pathname+url.search+url.hash}
 async function api(path,method,body){var res=await fetch(withToken(path),{method:method||'GET',headers:body?{'content-type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});var text=await res.text(),data={};try{data=text?JSON.parse(text):{}}catch(error){throw new Error(text||('HTTP '+res.status))}if(!res.ok||data.ok===false)throw new Error(data.error||data.message||('HTTP '+res.status));return data}
 function text(node,value){if(node)node.textContent=value}
 function dispatchInput(node){if(!node)return;node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}))}
@@ -23,16 +23,19 @@ function setGlobalMode(enabled){
     if(globalMode){var note=document.createElement('div');note.className='gg-global-mode-note';note.textContent='这里仅显示 global.* 全局默认值。保存只修改全局默认；已有分群覆盖不会被偷偷改写。要让某字段以后持续跟随全局，请到“分群配置”使用“恢复字段继承”。';var anchor=section.querySelector('#advancedFilter')?.closest('label')||section.firstElementChild;if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(note,anchor.nextSibling);else section.prepend(note)}
   }
   var own=document.querySelector('[data-gg-global-config="1"]');
-  if(globalMode){document.querySelectorAll('.gg-nav .tab').forEach(function(item){item.classList.remove('active')});if(own)own.classList.add('active');var crumb=document.querySelector('.gg-breadcrumb strong');text(crumb,'全局配置')}
+  if(globalMode){document.querySelectorAll('.gg-nav .tab,.gg-nav-link').forEach(function(item){item.classList.remove('active')});if(own)own.classList.add('active');var crumb=document.querySelector('.gg-breadcrumb strong');text(crumb,'全局配置')}
   else if(own)own.classList.remove('active');
 }
-function openGlobalConfig(){var original=advancedTab();if(!original)return;openingGlobal=true;original.click();openingGlobal=false;setGlobalMode(true)}
+function openGlobalConfig(){var original=advancedTab();if(!original)return;openingGlobal=true;original.click();openingGlobal=false;setGlobalMode(true);setTimeout(function(){history.replaceState(null,'',location.pathname+location.search+'#global-config')},0)}
 function mountGlobalNavigation(){
   var nav=document.querySelector('.gg-nav');if(!nav||nav.querySelector('[data-gg-global-config="1"]'))return !!nav;
-  var groups=[].slice.call(nav.querySelectorAll('.gg-menu-group'));var block=groups.find(function(item){var title=item.querySelector('.gg-menu-group-title');return title&&title.textContent.trim()==='群首配置'});if(!block)return false;
-  var button=document.createElement('button');button.type='button';button.className='tab';button.dataset.ggGlobalConfig='1';button.dataset.ggIcon='全';button.dataset.search='群首配置 全局配置 global 默认值';button.textContent='全局配置';button.addEventListener('click',openGlobalConfig);
-  var groupTab=block.querySelector('[data-tab="groups"]');if(groupTab)block.insertBefore(button,groupTab);else block.appendChild(button);
-  var original=advancedTab();if(original)original.addEventListener('click',function(){if(!openingGlobal)setGlobalMode(false)},true);
+  var groups=[].slice.call(nav.querySelectorAll('.gg-menu-group'));var block=groups.find(function(item){var title=item.querySelector('.gg-menu-group-title');return title&&title.textContent.trim()==='群管配置'});if(!block)return false;
+  var original=advancedTab(),item;
+  if(original){item=document.createElement('button');item.type='button';item.className='tab';item.addEventListener('click',openGlobalConfig)}
+  else{item=document.createElement('a');item.className='gg-nav-link';item.href=withToken('/#global-config')}
+  item.dataset.ggGlobalConfig='1';item.dataset.ggIcon='全';item.dataset.search='群管配置 全局配置 global 默认值';item.textContent='全局配置';
+  var groupTab=block.querySelector('[data-tab="groups"],a[href*="#groups"]');if(groupTab)block.insertBefore(item,groupTab);else block.appendChild(item);
+  if(original)original.addEventListener('click',function(){if(!openingGlobal)setGlobalMode(false)},true);
   return true;
 }
 function groupId(){var input=document.getElementById('groupIdInput');return input?String(input.value||'').trim():''}
@@ -79,7 +82,7 @@ async function refreshSources(){
 }
 function scheduleSources(delay){clearTimeout(sourceTimer);sourceTimer=setTimeout(function(){refreshSources()},delay||180)}
 function bindSourceRefresh(){['loadGroupBtn','saveGroupBtn'].forEach(function(id){var node=document.getElementById(id);if(node)node.addEventListener('click',function(){scheduleSources(id==='saveGroupBtn'?650:250)})});var select=document.getElementById('groupSelect');if(select)select.addEventListener('change',function(){scheduleSources(250)});var form=document.getElementById('groupForm');if(form){var observer=new MutationObserver(function(list){if(refreshingSources)return;var relevant=list.some(function(item){return [].slice.call(item.addedNodes||[]).some(function(node){return !(node.nodeType===1&&node.classList&&node.classList.contains('gg-config-source'))})});if(relevant)scheduleSources(120)});observer.observe(form,{childList:true,subtree:true})}}
-function start(){mountGlobalNavigation();mountBatchPanel();bindSourceRefresh();renameInheritanceSwitch();scheduleSources(350);var observer=new MutationObserver(function(){mountGlobalNavigation();mountBatchPanel();renameInheritanceSwitch()});observer.observe(document.documentElement,{childList:true,subtree:true});setTimeout(function(){observer.disconnect();mountGlobalNavigation();mountBatchPanel()},3500)}
+function start(){mountGlobalNavigation();mountBatchPanel();bindSourceRefresh();renameInheritanceSwitch();scheduleSources(350);if(location.hash==='#global-config'&&advancedTab())setTimeout(openGlobalConfig,0);var observer=new MutationObserver(function(){mountGlobalNavigation();mountBatchPanel();renameInheritanceSwitch()});observer.observe(document.documentElement,{childList:true,subtree:true});setTimeout(function(){observer.disconnect();mountGlobalNavigation();mountBatchPanel()},3500)}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',start):start();
 })();</script>`;
 
