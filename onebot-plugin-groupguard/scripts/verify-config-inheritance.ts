@@ -4,6 +4,7 @@ import {
   compactNewInheritedValues,
   deleteGroupOverridePath,
   getGroupConfigSourceMap,
+  isGroupFullyInherited,
   normalizeGroupOverride,
   resolveEffectiveGroupSettings,
   setGroupOverridePath,
@@ -60,13 +61,26 @@ const afterGlobalChange = resolveEffectiveGroupSettings(changedGlobal, sparse);
 assert.equal(afterGlobalChange.qaLinkDelivery?.noticeText, 'changed globally');
 assert.equal(afterGlobalChange.qaLinkDelivery?.enabled, true);
 
-const dormant = resolveEffectiveGroupSettings(changedGlobal, {
+const dormantRow = {
   useGlobal: true,
   qaLinkDelivery: { enabled: true, noticeText: 'dormant local value' },
-});
+};
+const dormant = resolveEffectiveGroupSettings(changedGlobal, dormantRow);
 assert.equal(dormant.qaLinkDelivery?.enabled, false);
 assert.equal(dormant.qaLinkDelivery?.noticeText, 'changed globally');
 assert.equal(dormant.useGlobal, true);
+
+// Compatibility invariant: no row means global inheritance, while a historical
+// row that predates useGlobal remains an active overlay. Only explicit true is
+// whole-group inheritance.
+assert.equal(isGroupFullyInherited(undefined), true);
+assert.equal(isGroupFullyInherited(dormantRow), true);
+const legacyWithoutUseGlobal = { qaLinkDelivery: { enabled: true } };
+assert.equal(isGroupFullyInherited(legacyWithoutUseGlobal), false);
+const legacyEffective = resolveEffectiveGroupSettings(changedGlobal, legacyWithoutUseGlobal);
+assert.equal(legacyEffective.qaLinkDelivery?.enabled, true);
+assert.equal(legacyEffective.qaLinkDelivery?.noticeText, 'changed globally');
+assert.equal(legacyEffective.useGlobal, false);
 
 const sourceMap = getGroupConfigSourceMap(changedGlobal, sparse);
 assert.equal(sourceMap['qaLinkDelivery.enabled'], 'group');
@@ -74,6 +88,9 @@ assert.equal(sourceMap['qaLinkDelivery.noticeText'], 'global');
 assert.equal(sourceMap['contentRisk.rules.url.action'], 'group');
 assert.equal(sourceMap['contentRisk.rules.url.enabled'], 'global');
 assert.equal(sourceMap['contentRisk.rules.qr.action'], 'global');
+const legacySourceMap = getGroupConfigSourceMap(changedGlobal, legacyWithoutUseGlobal);
+assert.equal(legacySourceMap['qaLinkDelivery.enabled'], 'group');
+assert.equal(legacySourceMap['qaLinkDelivery.noticeText'], 'global');
 
 const broadFormCandidate = {
   useGlobal: false,
@@ -104,6 +121,12 @@ const withPath = setGroupOverridePath({ useGlobal: false }, 'qaLinkDelivery.enab
 assert.equal(withPath.qaLinkDelivery?.enabled, true);
 const withoutPath = deleteGroupOverridePath(withPath, 'qaLinkDelivery.enabled');
 assert.equal(withoutPath.qaLinkDelivery, undefined);
+
+// Restoring one field must not erase unrelated or dormant historical values.
+const dormantAfterRestore = deleteGroupOverridePath(dormantRow, 'qaLinkDelivery.enabled');
+assert.equal(dormantAfterRestore.useGlobal, true);
+assert.equal(dormantAfterRestore.qaLinkDelivery?.noticeText, 'dormant local value');
+assert.equal(dormantAfterRestore.qaLinkDelivery?.enabled, undefined);
 assert.throws(() => setGroupOverridePath({}, 'constructor.prototype.polluted', true), /invalid_group_config_path/);
 
 // The adapter installs the resolver onto PluginState so internal send/risk paths
@@ -114,6 +137,7 @@ try {
   runtimeConfig.global = changedGlobal;
   runtimeConfig.groups = {
     '123456': { useGlobal: false, qaLinkDelivery: { enabled: true } } as GroupGuardSettings,
+    '654321': legacyWithoutUseGlobal as GroupGuardSettings,
   };
   configStateService.setConfig(runtimeConfig);
   const fromService = configStateService.resolveGroupSettings('123456');
@@ -121,6 +145,11 @@ try {
   assert.equal(fromService.qaLinkDelivery?.noticeText, 'changed globally');
   assert.equal(fromState.qaLinkDelivery?.noticeText, 'changed globally');
   assert.equal(fromState.qaLinkDelivery?.enabled, true);
+  const legacyFromService = configStateService.resolveGroupSettings('654321');
+  const legacyFromState = pluginState.getGroupSettings('654321');
+  assert.equal(legacyFromService.qaLinkDelivery?.enabled, true);
+  assert.equal(legacyFromState.qaLinkDelivery?.enabled, true);
+  assert.equal(legacyFromState.qaLinkDelivery?.noticeText, 'changed globally');
 } finally {
   configStateService.setConfig(originalConfig);
 }
