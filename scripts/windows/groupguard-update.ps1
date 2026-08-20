@@ -1,3 +1,4 @@
+# ASCII-only on purpose: Windows PowerShell 5.1 does not reliably parse UTF-8 without BOM.
 [CmdletBinding()]
 param(
   [string]$RepoPath = 'D:\project2\groupguard-system',
@@ -18,7 +19,7 @@ function Write-Step([string]$Message) {
 
 function Require-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-    throw "缺少命令：$Name。请先安装或加入 PATH。"
+    throw "Required command not found: $Name. Install it or add it to PATH."
   }
 }
 
@@ -32,7 +33,7 @@ function Invoke-Native([string]$File, [string[]]$Arguments, [switch]$AllowFailur
     $ErrorActionPreference = $old
   }
   if ($code -ne 0 -and -not $AllowFailure) {
-    throw "命令失败（exit=$code）：$File $($Arguments -join ' ')"
+    throw "Command failed (exit=$code): $File $($Arguments -join ' ')"
   }
   return $code
 }
@@ -47,41 +48,41 @@ function Get-NativeOutput([string]$File, [string[]]$Arguments) {
     $ErrorActionPreference = $old
   }
   if ($code -ne 0) {
-    throw "命令失败（exit=$code）：$File $($Arguments -join ' ')`n$($out -join "`n")"
+    throw "Command failed (exit=$code): $File $($Arguments -join ' ')`n$($out -join "`n")"
   }
   return (($out | ForEach-Object { "$_" }) -join "`n").Trim()
 }
 
 function Quote-Remote([string]$Value) {
-  if ($Value -match "'") { throw "远端参数不能包含单引号：$Value" }
+  if ($Value -match "'") { throw "Remote argument must not contain a single quote: $Value" }
   return "'$Value'"
 }
 
 function Assert-SafeParameters {
-  if ($RemoteHost -notmatch '^[A-Za-z0-9.-]+$') { throw 'RemoteHost 格式不安全。' }
-  if ($RemoteUser -notmatch '^[A-Za-z0-9._-]+$') { throw 'RemoteUser 格式不安全。' }
-  if ($RemotePort -lt 1 -or $RemotePort -gt 65535) { throw 'RemotePort 必须在 1-65535。' }
+  if ($RemoteHost -notmatch '^[A-Za-z0-9.-]+$') { throw 'Unsafe RemoteHost value.' }
+  if ($RemoteUser -notmatch '^[A-Za-z0-9._-]+$') { throw 'Unsafe RemoteUser value.' }
+  if ($RemotePort -lt 1 -or $RemotePort -gt 65535) { throw 'RemotePort must be between 1 and 65535.' }
   foreach ($item in @(
     @{ Name = 'RemoteAppDir'; Value = $RemoteAppDir },
     @{ Name = 'RemoteBackupRoot'; Value = $RemoteBackupRoot }
   )) {
     $value = [string]$item.Value
     if ($value -notmatch '^/mnt/sda1/groupguard/[A-Za-z0-9._/-]+$' -or $value.Contains('..') -or $value.EndsWith('/.')) {
-      throw "$($item.Name) 必须是 /mnt/sda1/groupguard/ 下的安全绝对路径。"
+      throw "$($item.Name) must be a safe absolute path below /mnt/sda1/groupguard/."
     }
   }
-  if ($RemoteAppDir.TrimEnd('/') -eq $RemoteBackupRoot.TrimEnd('/')) { throw '应用目录和备份目录不能相同。' }
-  if ($RemoteContainer -notmatch '^[A-Za-z0-9_.-]+$') { throw 'RemoteContainer 格式不安全。' }
+  if ($RemoteAppDir.TrimEnd('/') -eq $RemoteBackupRoot.TrimEnd('/')) { throw 'Application and backup directories must be different.' }
+  if ($RemoteContainer -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Unsafe RemoteContainer value.' }
 }
 
 function Assert-SupportedNode {
   $version = Get-NativeOutput 'node' @('-p', 'process.versions.node')
-  if ($version -notmatch '^(\d+)\.(\d+)\.(\d+)') { throw "无法识别 Node.js 版本：$version" }
+  if ($version -notmatch '^(\d+)\.(\d+)\.(\d+)') { throw "Unable to parse Node.js version: $version" }
   $major = [int]$Matches[1]
   if ($major -lt 22) {
-    throw "Node.js 版本过低：$version。GroupGuard 当前构建/测试基线要求 Node.js 22 或更高版本。"
+    throw "Node.js is too old: $version. GroupGuard requires Node.js 22 or newer for this release workflow."
   }
-  Write-Host "Node.js：$version" -ForegroundColor Green
+  Write-Host "Node.js: $version" -ForegroundColor Green
 }
 
 function Assert-CanonicalOrigin([string]$OriginUrl) {
@@ -92,52 +93,52 @@ function Assert-CanonicalOrigin([string]$OriginUrl) {
     '^ssh://git@github\.com/xianyumht-cmd/groupguard-system(?:\.git)?/?$'
   )
   if (-not ($allowed | Where-Object { $value -match $_ })) {
-    throw "origin 不是预期仓库 xianyumht-cmd/groupguard-system：$value"
+    throw "Unexpected origin for xianyumht-cmd/groupguard-system: $value"
   }
 }
 
 try {
-  Write-Host 'GroupGuard 一键更新 / 生产代码部署' -ForegroundColor Green
-  Write-Host '只发布构建后的 dist；不会覆盖 config.json、SQLite/data、日志或密钥。'
+  Write-Host 'GroupGuard one-click update / production code deploy' -ForegroundColor Green
+  Write-Host 'Only the built dist is deployed. config.json, SQLite/data, logs, credentials and secrets are preserved.'
 
   Assert-SafeParameters
   foreach ($cmd in @('git', 'node', 'npm', 'ssh', 'scp', 'tar')) { Require-Command $cmd }
   Assert-SupportedNode
-  if (-not (Test-Path -LiteralPath $RepoPath -PathType Container)) { throw "本地仓库不存在：$RepoPath" }
-  if (-not (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))) { throw "不是 Git 仓库：$RepoPath" }
+  if (-not (Test-Path -LiteralPath $RepoPath -PathType Container)) { throw "Local repository does not exist: $RepoPath" }
+  if (-not (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))) { throw "Not a Git repository: $RepoPath" }
 
-  Write-Step '确认本地仓库来源'
+  Write-Step 'Verify local repository origin'
   $originUrl = Get-NativeOutput 'git' @('-C', $RepoPath, 'remote', 'get-url', 'origin')
   Assert-CanonicalOrigin $originUrl
-  Write-Host "origin：$originUrl" -ForegroundColor Green
+  Write-Host "origin: $originUrl" -ForegroundColor Green
 
-  Write-Step '检查本地仓库是否干净'
+  Write-Step 'Verify local worktree is clean'
   $dirty = Get-NativeOutput 'git' @('-C', $RepoPath, 'status', '--porcelain')
   if ($dirty) {
     Write-Host $dirty -ForegroundColor Yellow
-    throw '本地仓库存在未提交修改。为避免覆盖你的文件，脚本已停止；请先提交、备份或手工处理这些修改。'
+    throw 'Local repository has uncommitted changes. Nothing was overwritten. Commit, back up, or handle them manually first.'
   }
 
-  Write-Step '更新本地 main（仅允许 fast-forward）'
+  Write-Step 'Update local main using fast-forward only'
   Invoke-Native 'git' @('-C', $RepoPath, 'fetch', '--prune', 'origin') | Out-Null
   Invoke-Native 'git' @('-C', $RepoPath, 'switch', 'main') | Out-Null
   Invoke-Native 'git' @('-C', $RepoPath, 'pull', '--ff-only', 'origin', 'main') | Out-Null
   $commit = Get-NativeOutput 'git' @('-C', $RepoPath, 'rev-parse', 'HEAD')
   $originMain = Get-NativeOutput 'git' @('-C', $RepoPath, 'rev-parse', 'origin/main')
-  if ($commit -ne $originMain) { throw "本地 main 与 origin/main 不一致：local=$commit origin=$originMain" }
-  if ($commit -notmatch '^[0-9a-fA-F]{40}$') { throw "Git commit 格式异常：$commit" }
-  Write-Host "准备发布 commit：$commit" -ForegroundColor Green
+  if ($commit -ne $originMain) { throw "Local main does not match origin/main: local=$commit origin=$originMain" }
+  if ($commit -notmatch '^[0-9a-fA-F]{40}$') { throw "Unexpected Git commit format: $commit" }
+  Write-Host "Release commit: $commit" -ForegroundColor Green
 
   $core = Join-Path $RepoPath 'onebot-plugin-groupguard'
-  if (-not (Test-Path -LiteralPath (Join-Path $core 'package-lock.json'))) { throw '核心目录缺少 package-lock.json，无法 npm ci。' }
+  if (-not (Test-Path -LiteralPath (Join-Path $core 'package-lock.json'))) { throw 'package-lock.json is missing; npm ci cannot run safely.' }
 
-  Write-Step '安装锁定依赖'
+  Write-Step 'Install locked dependencies'
   Invoke-Native 'npm' @('--prefix', $core, 'ci') | Out-Null
 
-  Write-Step '运行完整自动化测试（本轮不拆阶段让你手工测试）'
+  Write-Step 'Run full automated test suite'
   Invoke-Native 'npm' @('--prefix', $core, 'test') | Out-Null
 
-  Write-Step '构建 SnowLuma 生产候选'
+  Write-Step 'Build SnowLuma production candidate'
   $oldCommitEnv = $env:GROUPGUARD_COMMIT_SHA
   $oldBuildTimeEnv = $env:GROUPGUARD_BUILD_TIME_UTC
   try {
@@ -152,38 +153,38 @@ try {
   $dist = Join-Path $core 'dist'
   $buildInfoPath = Join-Path $dist 'build-info.json'
   $entryPath = Join-Path $dist 'snowluma-service.mjs'
-  if (-not (Test-Path -LiteralPath $buildInfoPath)) { throw '构建结果缺少 dist/build-info.json。' }
-  if (-not (Test-Path -LiteralPath $entryPath)) { throw '构建结果缺少 dist/snowluma-service.mjs。' }
+  if (-not (Test-Path -LiteralPath $buildInfoPath)) { throw 'Build output is missing dist/build-info.json.' }
+  if (-not (Test-Path -LiteralPath $entryPath)) { throw 'Build output is missing dist/snowluma-service.mjs.' }
   $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json
-  if ([string]$buildInfo.commit_sha -ne $commit) { throw "构建 commit 不匹配：$($buildInfo.commit_sha) != $commit" }
-  if ($buildInfo.dirty -eq $true) { throw '生产候选被标记为 dirty，拒绝发布。' }
+  if ([string]$buildInfo.commit_sha -ne $commit) { throw "Build commit mismatch: $($buildInfo.commit_sha) != $commit" }
+  if ($buildInfo.dirty -eq $true) { throw 'Production candidate is marked dirty; refusing to deploy.' }
 
-  Write-Step '生成不可变 dist 候选包'
+  Write-Step 'Create immutable dist candidate package'
   $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
   $shortCommit = $commit.Substring(0, 12)
   $releaseId = "config-maturity-$stamp-$shortCommit"
-  if ($releaseId -notmatch '^[A-Za-z0-9._-]+$') { throw 'releaseId 格式异常。' }
+  if ($releaseId -notmatch '^[A-Za-z0-9._-]+$') { throw 'Unexpected releaseId format.' }
   $tempRoot = Join-Path ([IO.Path]::GetTempPath()) "groupguard-$releaseId"
   New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
   $archive = Join-Path $tempRoot "$releaseId.tar.gz"
   Invoke-Native 'tar' @('-C', $core, '-czf', $archive, 'dist') | Out-Null
   $archiveSha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-  Write-Host "candidate sha256：$archiveSha"
+  Write-Host "candidate sha256: $archiveSha"
 
   $remoteDeployLocal = Join-Path $RepoPath 'scripts\windows\groupguard-remote-deploy.sh'
-  if (-not (Test-Path -LiteralPath $remoteDeployLocal)) { throw "缺少远端部署 helper：$remoteDeployLocal" }
+  if (-not (Test-Path -LiteralPath $remoteDeployLocal)) { throw "Remote deploy helper is missing: $remoteDeployLocal" }
   $sshTarget = "$RemoteUser@$RemoteHost"
   $remoteArchive = "/tmp/$releaseId.tar.gz"
   $remoteHelper = "/tmp/$releaseId-deploy.sh"
 
-  Write-Step 'SSH 生产预连接（不会修改生产）'
+  Write-Step 'SSH production preflight (read-only)'
   Invoke-Native 'ssh' @('-p', "$RemotePort", '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', $sshTarget, 'true') | Out-Null
 
-  Write-Step '上传候选包和受审部署 helper'
+  Write-Step 'Upload candidate package and audited remote helper'
   Invoke-Native 'scp' @('-P', "$RemotePort", $archive, "${sshTarget}:$remoteArchive") | Out-Null
   Invoke-Native 'scp' @('-P', "$RemotePort", $remoteDeployLocal, "${sshTarget}:$remoteHelper") | Out-Null
 
-  Write-Step '生产备份 → 原子切换 dist → 重启 → readiness；失败自动恢复'
+  Write-Step 'Backup production, atomically switch dist, restart, and verify health'
   $remoteCommand = @(
     'sh', (Quote-Remote $remoteHelper),
     (Quote-Remote $RemoteAppDir),
@@ -200,7 +201,7 @@ try {
     Invoke-Native 'ssh' @('-p', "$RemotePort", $sshTarget, "rm -f '$remoteArchive' '$remoteHelper'") -AllowFailure | Out-Null
   }
 
-  Write-Step '拉回远端部署 manifest 到 Windows'
+  Write-Step 'Copy deployment manifest back to Windows'
   $localStateDir = Join-Path $env:LOCALAPPDATA 'GroupGuard\deployment-state'
   New-Item -ItemType Directory -Path $localStateDir -Force | Out-Null
   $localManifest = Join-Path $localStateDir "$releaseId.json"
@@ -208,13 +209,13 @@ try {
   Invoke-Native 'scp' @('-P', "$RemotePort", "${sshTarget}:$remoteManifest", $localManifest) | Out-Null
   Copy-Item -LiteralPath $localManifest -Destination (Join-Path $localStateDir 'latest-code-deploy.json') -Force
 
-  Write-Host "`n部署完成。" -ForegroundColor Green
-  Write-Host "commit：$commit"
-  Write-Host "本地 manifest：$localManifest"
-  Write-Host '如实际业务测试发现问题，双击 ROLLBACK-GROUPGUARD.cmd。' -ForegroundColor Yellow
+  Write-Host "`nDeployment completed." -ForegroundColor Green
+  Write-Host "commit: $commit"
+  Write-Host "local manifest: $localManifest"
+  Write-Host 'If business-level testing finds a problem, run ROLLBACK-GROUPGUARD.cmd.' -ForegroundColor Yellow
   exit 0
 } catch {
-  Write-Host "`n更新/部署失败：$($_.Exception.Message)" -ForegroundColor Red
-  Write-Host '如果失败发生在生产切换后的健康检查，远端 helper 已按设计尝试自动恢复。可再运行 ROLLBACK-GROUPGUARD.cmd 查看/执行最近一次已记录回滚。' -ForegroundColor Yellow
+  Write-Host "`nUpdate/deploy failed: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host 'If failure occurred after the production switch, the remote helper attempted automatic restoration. ROLLBACK-GROUPGUARD.cmd remains available for the latest recorded rollback point.' -ForegroundColor Yellow
   exit 1
 }
