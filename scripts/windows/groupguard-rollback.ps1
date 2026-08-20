@@ -43,6 +43,17 @@ function Quote-Remote([string]$Value) {
   return "'$Value'"
 }
 
+function New-LfHelperCopy([string]$Source, [string]$Destination) {
+  $text = [IO.File]::ReadAllText($Source)
+  $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [IO.File]::WriteAllText($Destination, $text, $utf8NoBom)
+  $bytes = [IO.File]::ReadAllBytes($Destination)
+  if ($bytes -contains 13) {
+    throw "LF normalization failed for remote helper: $Source"
+  }
+}
+
 function Assert-SafeParameters {
   if ($RemoteHost -notmatch '^[A-Za-z0-9.-]+$') { throw 'Unsafe RemoteHost value.' }
   if ($RemoteUser -notmatch '^[A-Za-z0-9._-]+$') { throw 'Unsafe RemoteUser value.' }
@@ -74,12 +85,14 @@ try {
   $sshTarget = "$RemoteUser@$RemoteHost"
   $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
   $remoteHelper = "/tmp/groupguard-rollback-$stamp.sh"
+  $helperUpload = Join-Path ([IO.Path]::GetTempPath()) "groupguard-rollback-$stamp-lf.sh"
+  New-LfHelperCopy $helper $helperUpload
 
   Write-Step 'Connect to production host'
   Invoke-Native 'ssh' @('-p', "$RemotePort", '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', $sshTarget, 'true') | Out-Null
 
-  Write-Step 'Upload audited rollback helper'
-  Invoke-Native 'scp' @('-P', "$RemotePort", $helper, "${sshTarget}:$remoteHelper") | Out-Null
+  Write-Step 'Upload audited LF-only rollback helper'
+  Invoke-Native 'scp' @('-P', "$RemotePort", $helperUpload, "${sshTarget}:$remoteHelper") | Out-Null
 
   Write-Step 'Restore recorded pre-deployment code and verify health'
   $remoteCommand = @(
@@ -92,6 +105,7 @@ try {
     Invoke-Native 'ssh' @('-p', "$RemotePort", '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', $sshTarget, $remoteCommand) | Out-Null
   } finally {
     Invoke-Native 'ssh' @('-p', "$RemotePort", $sshTarget, "rm -f '$remoteHelper'") -AllowFailure | Out-Null
+    Remove-Item -LiteralPath $helperUpload -Force -ErrorAction SilentlyContinue
   }
 
   Write-Step 'Copy rollback record back to Windows'

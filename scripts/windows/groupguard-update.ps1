@@ -58,6 +58,17 @@ function Quote-Remote([string]$Value) {
   return "'$Value'"
 }
 
+function New-LfHelperCopy([string]$Source, [string]$Destination) {
+  $text = [IO.File]::ReadAllText($Source)
+  $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [IO.File]::WriteAllText($Destination, $text, $utf8NoBom)
+  $bytes = [IO.File]::ReadAllBytes($Destination)
+  if ($bytes -contains 13) {
+    throw "LF normalization failed for remote helper: $Source"
+  }
+}
+
 function Assert-SafeParameters {
   if ($RemoteHost -notmatch '^[A-Za-z0-9.-]+$') { throw 'Unsafe RemoteHost value.' }
   if ($RemoteUser -notmatch '^[A-Za-z0-9._-]+$') { throw 'Unsafe RemoteUser value.' }
@@ -173,6 +184,9 @@ try {
 
   $remoteDeployLocal = Join-Path $RepoPath 'scripts\windows\groupguard-remote-deploy.sh'
   if (-not (Test-Path -LiteralPath $remoteDeployLocal)) { throw "Remote deploy helper is missing: $remoteDeployLocal" }
+  $remoteDeployUpload = Join-Path $tempRoot 'groupguard-remote-deploy.sh'
+  New-LfHelperCopy $remoteDeployLocal $remoteDeployUpload
+
   $sshTarget = "$RemoteUser@$RemoteHost"
   $remoteArchive = "/tmp/$releaseId.tar.gz"
   $remoteHelper = "/tmp/$releaseId-deploy.sh"
@@ -180,9 +194,9 @@ try {
   Write-Step 'SSH production preflight (read-only)'
   Invoke-Native 'ssh' @('-p', "$RemotePort", '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', $sshTarget, 'true') | Out-Null
 
-  Write-Step 'Upload candidate package and audited remote helper'
+  Write-Step 'Upload candidate package and audited LF-only remote helper'
   Invoke-Native 'scp' @('-P', "$RemotePort", $archive, "${sshTarget}:$remoteArchive") | Out-Null
-  Invoke-Native 'scp' @('-P', "$RemotePort", $remoteDeployLocal, "${sshTarget}:$remoteHelper") | Out-Null
+  Invoke-Native 'scp' @('-P', "$RemotePort", $remoteDeployUpload, "${sshTarget}:$remoteHelper") | Out-Null
 
   Write-Step 'Backup production, atomically switch dist, restart, and verify health'
   $remoteCommand = @(
