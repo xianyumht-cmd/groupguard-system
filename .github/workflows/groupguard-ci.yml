@@ -7,6 +7,7 @@ on:
       - "scripts/windows/**"
       - "GROUPGUARD-UPDATE.cmd"
       - "ROLLBACK-GROUPGUARD.cmd"
+      - ".gitattributes"
       - ".github/workflows/groupguard-ci.yml"
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - "scripts/windows/**"
       - "GROUPGUARD-UPDATE.cmd"
       - "ROLLBACK-GROUPGUARD.cmd"
+      - ".gitattributes"
       - ".github/workflows/groupguard-ci.yml"
 
 jobs:
@@ -56,6 +58,31 @@ jobs:
               )
           print('Windows PowerShell 5.1 launcher encoding guard passed')
           PY
+      - name: Enforce LF-only remote shell transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qxF '*.sh text eol=lf' ../.gitattributes
+          helpers=(
+            ../scripts/windows/groupguard-remote-deploy.sh
+            ../scripts/windows/groupguard-remote-rollback.sh
+          )
+          for helper in "${helpers[@]}"; do
+            if LC_ALL=C grep -n $'\r' "$helper"; then
+              echo "remote shell helper contains CR bytes: $helper" >&2
+              exit 1
+            fi
+          done
+          launchers=(
+            ../scripts/windows/groupguard-update.ps1
+            ../scripts/windows/groupguard-rollback.ps1
+          )
+          for launcher in "${launchers[@]}"; do
+            grep -Fq 'function New-LfHelperCopy' "$launcher"
+            grep -Fq '.Replace("`r`n", "`n").Replace("`r", "`n")' "$launcher"
+            grep -Fq 'UTF8Encoding($false)' "$launcher"
+            grep -Fq 'LF normalization failed for remote helper' "$launcher"
+          done
       - name: Validate deployment PowerShell syntax
         shell: pwsh
         run: |
