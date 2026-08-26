@@ -92,19 +92,20 @@ Operational invariants for this host:
 - SnowLuma requires `CAP_SYS_PTRACE` and `seccomp=unconfined`, matching the verified `192.168.3.89` container runtime parameters.
 - SnowLuma and GroupGuard run in separate container network namespaces. The active per-account SnowLuma OneBot `wsServers` entry must bind `0.0.0.0` (or the GroupGuard container must share SnowLuma's network namespace); `127.0.0.1` inside SnowLuma is not reachable through the published Docker port from GroupGuard's host network.
 - After a SnowLuma image recreation, inspect the active per-account files under `/app/data/config/onebot_<uin>.json`. Do not assume `/app/snowluma-data/config` is the file currently loaded by the running process; synchronize the GroupGuard token from the active file without printing it.
+- GroupGuard reads the OneBot token at startup. If the synchronized token differs from the running value, an explicitly authorized GroupGuard container restart/recreation is required before acceptance; changing `groupguard.env` alone does not refresh the existing client. If restart is not authorized, report the token refresh as pending rather than claiming the consumer has been updated.
 - OneBot disconnection before the fresh account login is expected. After login, require connected OneBot status and healthy GroupGuard readiness before business acceptance.
 
 ## Selective GroupGuard configuration migration
 
 When 121 needs the same GroupGuard behavior as 89, migrate configuration by category rather than replacing the runtime directory:
 
-1. Back up `/mnt/groupguard-data/groupguard/app/config/config.json`, `group-file-mirror.json`, any dynamic-command file, and the SQLite database plus its `-wal`/`-shm` files.
+1. Back up `/mnt/groupguard-data/groupguard/app/config/config.json`, `group-file-mirror.json`, and any dynamic-command file. For SQLite, create a transactionally consistent snapshot with SQLite's online backup mechanism or `VACUUM INTO`; if neither is available, stop the GroupGuard writer before copying the database. Do not copy `groupguard.db`, `groupguard.db-wal`, and `groupguard.db-shm` separately while the container is running or treat that file set as a portable backup.
 2. Merge shared `config.json` settings, retaining 121's `licenseKey`, `ownerQQs`, and external service tokens. Migrate the group `licenses` object only when the user explicitly requests it.
-3. Upsert only the intended `group_config` and optional `group_qa` rows into 121's database. Do not copy audit, action-queue, message, login, or other runtime-history tables.
-4. Copy optional dynamic commands and group-file-mirror configuration, then refresh the running configuration through the authenticated admin API when a restart is not authorized.
+3. Prefer authenticated per-group APIs to create or update the intended `group_config`, `group_qa`, and license rows so the running state and SQLite remain aligned. If raw SQLite import is unavoidable, reload and verify the imported group rows in runtime before any config save/refresh; a stale nonempty in-memory group map can replace newly imported IDs. Do not copy audit, action-queue, message, login, or other runtime-history tables.
+4. Copy optional dynamic commands and group-file-mirror configuration, then refresh the running configuration through the authenticated admin API when a restart is not authorized. This refresh is not a substitute for the authorized GroupGuard restart required after changing the OneBot token.
 5. Verify the target container remains running, OneBot still listens on port 3001, and the migrated row counts match the source.
 
-The 2026-08-27 migration to 121 followed this procedure. The target backup is retained at `/mnt/groupguard-data/groupguard/migration-backup-20260827-063327`.
+The 2026-08-27 migration to 121 used the selective data scope above. Its pre-change file copies are retained at `/mnt/groupguard-data/groupguard/migration-backup-20260827-063327`; they are a migration recovery copy, not a general live-WAL backup. Future live SQLite backups must follow step 1.
 
 ## Config-maturity acceptance sequence
 

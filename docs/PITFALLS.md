@@ -90,3 +90,45 @@ SnowLuma and GroupGuard were both healthy as processes, but SnowLuma's active pe
 - Treat container network namespaces as part of the OneBot deployment contract. Use `0.0.0.0` for a server reached through published Docker ports, or explicitly place both services in the same network namespace/network.
 - After every SnowLuma image recreation, inspect the active config loaded by the running process, then synchronize the GroupGuard token from that exact file without printing credentials.
 - Verify both container-internal and consumer-side WebSocket connectivity before diagnosing application handlers or adding reconnect logic.
+
+## A live SQLite file trio is not a consistent backup
+
+Observed: 2026-08-27
+
+### Failure pattern
+
+Copying `groupguard.db`, `groupguard.db-wal`, and `groupguard.db-shm` as separate files while GroupGuard can write produces no transactional snapshot guarantee. The three files may describe different points in time and should not be presented as a portable backup.
+
+### Prevention
+
+- Use SQLite's online backup mechanism or `VACUUM INTO` for a consistent snapshot.
+- If those mechanisms are unavailable, stop the GroupGuard writer before copying the database.
+- Label any ad-hoc file copy as a migration recovery copy, not as a general live-WAL backup.
+
+## Persisted group rows must be reconciled with runtime state
+
+Observed: 2026-08-27
+
+### Failure pattern
+
+After a raw `group_config`/`group_qa` import, a nonempty in-memory group map can remain stale. A later config save may treat that map as authoritative and write back old or incomplete group IDs, undoing the import.
+
+### Prevention
+
+- Prefer authenticated per-group APIs for migrations so SQLite and the running state are updated together.
+- If raw SQLite import is unavoidable, reload and verify the imported rows in runtime before any config save or refresh.
+- Do not use a generic config refresh as a substitute for loading and checking group rows.
+
+## OneBot token changes are startup state
+
+Observed: 2026-08-27
+
+### Failure pattern
+
+Changing `groupguard.env` changes the persisted token but does not update the already-created OneBot client. Reconnect operations can continue using the old token until GroupGuard is restarted or recreated.
+
+### Prevention
+
+- Treat a token change as requiring an explicitly authorized GroupGuard restart/recreation.
+- If restart is not authorized, leave the running service unchanged and report the refresh as pending.
+- Verify authenticated `connected=true` and `ready=true` after the restart and after the QQ account login.

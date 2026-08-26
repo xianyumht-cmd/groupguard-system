@@ -8,7 +8,7 @@ When SnowLuma and GroupGuard run as separate containers and GroupGuard uses host
 
 ### Evidence
 
-On both ARM hosts, `127.0.0.1:3001` was reachable from inside SnowLuma but not from GroupGuard through the host's published port. Changing the active WS host to `0.0.0.0` and restarting SnowLuma removed the namespace mismatch; the remaining acceptance condition is the QQ account session bringing the adapter online.
+On both ARM hosts, `127.0.0.1:3001` was reachable from inside SnowLuma but not from GroupGuard through the host's published port. Changing the active WS host to `0.0.0.0` and restarting SnowLuma removed the namespace mismatch. The subsequent manual QQ logins completed adapter acceptance on 2026-08-27; future image/container recreation must recheck the listener, token, and logged-in session contract.
 
 ### Reason
 
@@ -17,7 +17,7 @@ On both ARM hosts, `127.0.0.1:3001` was reachable from inside SnowLuma but not f
 ### Consequences
 
 - The active config under `/app/data/config` must be inspected after image recreation; a second config under `/app/snowluma-data/config` may not be the loaded copy.
-- Runtime repair may require a SnowLuma restart and manual QQ login, but must not copy account or SQLite data between independent hosts.
+- Runtime repair may require a SnowLuma restart and manual QQ login, but must not copy account or SQLite data between independent hosts. Those acceptance steps are complete for the 2026-08-27 deployment and must be repeated only when that runtime is recreated or its account session is lost.
 - Health acceptance must include both a SnowLuma-side listener and a GroupGuard-side authenticated `connected=true`/`ready=true` check.
 
 ## 2026-08-19 — Separate global defaults, sparse group overrides, and effective runtime config

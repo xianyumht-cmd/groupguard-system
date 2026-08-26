@@ -114,12 +114,12 @@ After the 2026-08-27 manual login, both hosts have an active `0.0.0.0:3001` OneB
 
 At the user's explicit request, 89's reusable GroupGuard configuration was selectively migrated to 121:
 
-- 121's current `config.json`, SQLite database, and SQLite `-wal`/`-shm` files were backed up at `/mnt/groupguard-data/groupguard/migration-backup-20260827-063327` before changes;
+- 121's current `config.json` and a pre-change SQLite file set were retained at `/mnt/groupguard-data/groupguard/migration-backup-20260827-063327` before changes; this migration recovery copy is not a general transactionally consistent live-WAL backup, so future backups must use SQLite backup/`VACUUM INTO` or stop the writer first;
 - shared GroupGuard settings were merged into 121 while preserving 121's `licenseKey`, `ownerQQs`, `licenses`, and external service tokens; group licenses were intentionally excluded at that stage;
 - 16 `group_config` rows and 23 `group_qa` rows were upserted into 121;
 - `group-file-mirror.json` and one dynamic command were copied;
 - the whole 89 database, SnowLuma account data, login state, and credentials were not copied;
-- the authenticated GroupGuard config API refreshed the running in-memory configuration without a container restart. The target remained running with zero restarts.
+- the authenticated GroupGuard config API refreshed the running in-memory configuration without a container restart. The target remained running with zero restarts; future raw database imports must reload and verify runtime group rows before any config save.
 
 ## 2026-08-27 group authorization migration
 
