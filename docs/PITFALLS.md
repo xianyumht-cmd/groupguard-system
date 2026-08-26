@@ -70,3 +70,23 @@ The target-file WebUI described the last step only as deleting the local tempora
 - If a feature owns an external resource destructively, state that ownership explicitly in the UI.
 - Show the ordering invariant in the visible workflow: upload replacement first, then clean old group files, then verify, then delete local temp.
 - Expose reconciliation status, current kept file, observed managed-file count, and remaining cleanup count so production behavior can be verified without inspecting JSON state files.
+
+## `127.0.0.1` is not a cross-container service address
+
+Observed: 2026-08-27
+
+### Failure pattern
+
+SnowLuma and GroupGuard were both healthy as processes, but SnowLuma's active per-account OneBot server listened on `127.0.0.1` inside its own bridge-network container. GroupGuard used host networking and connected to the host's published port, so Docker forwarded the connection to the SnowLuma container interface where no listener existed. The client reported non-101/reset failures and accumulated reconnect attempts, which looked like a GroupGuard reconnect bug.
+
+### Detection signals
+
+- `docker ps` shows published OneBot ports, but `ss -ltnp` inside SnowLuma reports `127.0.0.1:3000/3001` rather than `0.0.0.0`;
+- a WebSocket probe from inside SnowLuma succeeds while the same probe from GroupGuard fails;
+- the active `/app/data/config/onebot_<uin>.json` differs from the persistent-looking `/app/snowluma-data/config/onebot_<uin>.json`.
+
+### Prevention
+
+- Treat container network namespaces as part of the OneBot deployment contract. Use `0.0.0.0` for a server reached through published Docker ports, or explicitly place both services in the same network namespace/network.
+- After every SnowLuma image recreation, inspect the active config loaded by the running process, then synchronize the GroupGuard token from that exact file without printing credentials.
+- Verify both container-internal and consumer-side WebSocket connectivity before diagnosing application handlers or adding reconnect logic.

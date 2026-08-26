@@ -1,5 +1,25 @@
 # GroupGuard Decisions
 
+## 2026-08-27 — Keep OneBot listeners reachable across the SnowLuma/GroupGuard container boundary
+
+### Decision
+
+When SnowLuma and GroupGuard run as separate containers and GroupGuard uses host networking with Docker-published SnowLuma ports, the active SnowLuma per-account OneBot HTTP/WS listeners bind `0.0.0.0`. The GroupGuard token is sourced from the exact active `onebot_<uin>.json` file after a SnowLuma image recreation; credentials remain runtime-only.
+
+### Evidence
+
+On both ARM hosts, `127.0.0.1:3001` was reachable from inside SnowLuma but not from GroupGuard through the host's published port. Changing the active WS host to `0.0.0.0` and restarting SnowLuma removed the namespace mismatch; the remaining acceptance condition is the QQ account session bringing the adapter online.
+
+### Reason
+
+`127.0.0.1` is scoped to the SnowLuma container's network namespace. A published Docker port forwards to the container interface, not to the container loopback. Treating a published port as proof of consumer reachability creates false confidence and an unbounded reconnect counter.
+
+### Consequences
+
+- The active config under `/app/data/config` must be inspected after image recreation; a second config under `/app/snowluma-data/config` may not be the loaded copy.
+- Runtime repair may require a SnowLuma restart and manual QQ login, but must not copy account or SQLite data between independent hosts.
+- Health acceptance must include both a SnowLuma-side listener and a GroupGuard-side authenticated `connected=true`/`ready=true` check.
+
 ## 2026-08-19 — Separate global defaults, sparse group overrides, and effective runtime config
 
 ### Decision

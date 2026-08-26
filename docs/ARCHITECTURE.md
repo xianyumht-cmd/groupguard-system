@@ -112,3 +112,19 @@ SnowLuma's `GroupFileApi.list()` performs the underlying paginated `ListGroupFil
 - last reconciliation error.
 
 The QQ directory itself remains authoritative for actual file existence.
+
+## Runtime container boundary
+
+The production topology separates the protocol provider and consumer:
+
+```text
+SnowLuma container (bridge network)
+  QQ session -> active /app/data/config/onebot_<uin>.json
+             -> OneBot HTTP/WS listeners on the container interface
+             -> Docker-published host ports
+                                      |
+                                      v
+GroupGuard container (host network) -> ws://127.0.0.1:3001 on the host
+```
+
+The SnowLuma listener must bind `0.0.0.0` for this path. A listener on SnowLuma-container `127.0.0.1` is not the same socket as host-network `127.0.0.1`; Docker's published port does not bridge the two loopback scopes. The active per-account config under `/app/data/config` is the runtime source to inspect after image recreation, while `/app/snowluma-data/config` is persistent storage that may contain a different copy.
