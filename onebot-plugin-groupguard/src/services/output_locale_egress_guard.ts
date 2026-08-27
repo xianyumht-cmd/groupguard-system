@@ -15,6 +15,15 @@ const PROTECTED_TEXT_PATTERNS = [
   /(?:^|\s)\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+/g,
 ];
 
+const TRADITIONAL_EGRESS_FIXUPS: Array<[string, string]> = [
+  ['然后', '然後'],
+  ['之后', '之後'],
+  ['以后', '以後'],
+  ['后来', '後來'],
+  ['后续', '後續'],
+  ['随后', '隨後'],
+];
+
 interface ProtectedEnvelope {
   params: unknown;
   restore: (params: unknown) => unknown;
@@ -33,6 +42,12 @@ function protectString(value: string, bucket: string[]): string {
 
 function restoreString(value: string, bucket: string[]): string {
   return bucket.reduce((result, original, index) => result.split(`__GGSAFE${index}__`).join(original), value);
+}
+
+function applyTraditionalEgressFixups(value: string): string {
+  let result = value;
+  for (const [from, to] of TRADITIONAL_EGRESS_FIXUPS) result = result.split(from).join(to);
+  return result;
 }
 
 function cloneAndTransformText(value: unknown, transform: (text: string) => string): unknown {
@@ -111,5 +126,6 @@ export async function localizeOneBotSendParamsSafe(
   const localized = translator
     ? await localizeOneBotSendParams(action, envelope.params, locale, translator)
     : await localizeOneBotSendParams(action, envelope.params, locale);
-  return envelope.restore(localized);
+  const fixed = transformOneBotTextParams(action, localized, applyTraditionalEgressFixups);
+  return envelope.restore(fixed);
 }
