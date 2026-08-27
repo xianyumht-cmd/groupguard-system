@@ -11,11 +11,6 @@ export interface OutputTranslationPolicy {
   allowPublicFallback: boolean;
 }
 
-function envFlag(name: string): boolean {
-  const value = String(process.env[name] || '').trim().toLowerCase();
-  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
-}
-
 export function resolveOutputTranslationPolicy(env: NodeJS.ProcessEnv = process.env): OutputTranslationPolicy {
   const hasExplicitEndpoint = Object.prototype.hasOwnProperty.call(env, 'GROUPGUARD_TRANSLATE_ENDPOINT');
   const configured = String(env.GROUPGUARD_TRANSLATE_ENDPOINT ?? '').trim();
@@ -87,7 +82,7 @@ export const secureOutputTranslator: OutputTranslationFn = async (text, locale) 
     firstError = error;
   }
 
-  if (!policy.allowPublicFallback || policy.mode === 'custom') {
+  if (!policy.allowPublicFallback) {
     throw firstError instanceof Error ? firstError : new Error('translation_unavailable');
   }
 
