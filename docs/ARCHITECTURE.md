@@ -1,5 +1,40 @@
 # GroupGuard Architecture
 
+## Global output localization
+
+GroupGuard treats multilingual output as a final transport concern. The persisted source text remains authoritative; localization is applied immediately before a OneBot send action reaches the WebSocket client.
+
+```text
+business service / custom Q&A / query notice
+        -> reply templates + outgoing-risk packaging
+        -> OneBot action normalization
+        -> output-locale egress transform
+             |- zh-CN: pass through unchanged
+             |- zh-TW: local fast conversion, remote translation when needed, cache
+             `- en: local system-message fast path, remote translation when needed, cache
+        -> OneBot WebSocket client
+```
+
+### Ownership and boundaries
+
+- `config.global.outputLocale` owns the global mode; supported values are `zh-CN`, `zh-TW`, and `en`.
+- Missing or invalid values resolve to `zh-CN`, preserving historical behavior.
+- `src/services/output_locale_service.ts` owns locale normalization, protected-token handling, translation/cache behavior, text-segment/forward-node traversal, and provider fallback.
+- `src/standalone/onebot_action_caller.ts` is the final SnowLuma/generic-OneBot egress hook. Only send-message actions are transformed; unrelated OneBot actions pass through.
+- `src/reply_generator.ts` does not add Simplified-Chinese persona wrappers in non-`zh-CN` modes; final egress still remains the authoritative coverage layer.
+- `src/standalone/admin/output_locale_webui_patch.ts` exposes the global selector without changing the existing group-override model.
+
+### Localization invariants
+
+- Only natural-language text is localized.
+- Image/file/audio/video segments and their payloads remain untouched.
+- URLs, CQ codes, template placeholders, code spans/blocks, and file paths are protected from translation.
+- Custom Q&A and other administrator-authored source strings are never rewritten in config/SQLite; changing locale is reversible because conversion happens at send time.
+- Forward nodes localize only their text content; node identity fields are preserved.
+- Repeated arbitrary translations use a bounded in-memory cache and in-flight deduplication.
+- Built-in high-frequency notices use local fast paths so common rate-limit, permission, and Q&A-link messages do not depend on a network translator.
+- If arbitrary English translation providers are unavailable, the egress layer emits an English availability message rather than leaking Chinese into an explicitly English bot. Traditional mode has a local Simplified-to-Traditional fallback.
+
 ## Configuration ownership and effective resolution
 
 GroupGuard configuration has three explicit layers instead of treating one settings object as all three at once:
