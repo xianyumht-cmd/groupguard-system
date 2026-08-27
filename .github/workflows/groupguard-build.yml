@@ -7,6 +7,7 @@ on:
       - 'scripts/windows/groupguard-deploy-bundle.ps1'
       - 'scripts/windows/groupguard-remote-deploy.sh'
       - 'scripts/windows/groupguard-remote-rollback.sh'
+      - 'scripts/windows/groupguard-remote-topology.sh'
       - 'DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd'
       - '.github/workflows/groupguard-build.yml'
   pull_request:
@@ -15,6 +16,7 @@ on:
       - 'scripts/windows/groupguard-deploy-bundle.ps1'
       - 'scripts/windows/groupguard-remote-deploy.sh'
       - 'scripts/windows/groupguard-remote-rollback.sh'
+      - 'scripts/windows/groupguard-remote-topology.sh'
       - 'DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd'
       - '.github/workflows/groupguard-build.yml'
 
@@ -56,6 +58,50 @@ jobs:
             echo 'bundle launcher must not pass %~dp0 as a quoted trailing-backslash PackageDir argument' >&2
             exit 1
           fi
+      - name: Verify remote topology discovery fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n ../scripts/windows/groupguard-remote-topology.sh
+          mock_bin="$(mktemp -d)"
+          cleanup() {
+            rm -rf "$mock_bin"
+            sudo rm -rf /mnt/sda1/groupguard/ci-topology
+          }
+          trap cleanup EXIT
+          sudo mkdir -p /mnt/sda1/groupguard/ci-topology/config
+          sudo mkdir -p /mnt/sda1/groupguard/ci-topology/data
+          sudo mkdir -p /mnt/sda1/groupguard/ci-topology/dist
+          sudo touch /mnt/sda1/groupguard/ci-topology/dist/snowluma-service.mjs
+          cat > "$mock_bin/docker" <<'EOF'
+          #!/bin/sh
+          if [ "$1" = 'inspect' ] && [ "$2" = '--type' ] && [ "$3" = 'container' ]; then
+            [ "$4" = 'groupguard-snowluma' ] && exit 0
+            exit 1
+          fi
+          if [ "$1" = 'inspect' ] && [ "$2" = '-f' ]; then
+            case "$3" in
+              *'.Mounts'*) printf '%s\n' '/mnt/sda1/groupguard/ci-topology/dist'; exit 0 ;;
+              *'.Config.Env'*) printf '%s\n' 'GROUPGUARD_WEBUI_PORT=6108'; exit 0 ;;
+            esac
+          fi
+          if [ "$1" = 'ps' ]; then
+            printf '%s\n' 'groupguard-snowluma'
+            exit 0
+          fi
+          exit 1
+          EOF
+          chmod +x "$mock_bin/docker"
+          output="$(PATH="$mock_bin:$PATH" sh ../scripts/windows/groupguard-remote-topology.sh \
+            /mnt/sda1/groupguard/app \
+            /mnt/sda1/groupguard/backups \
+            groupguard-snowluma)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -qxF 'TOPOLOGY_OK=true'
+          printf '%s\n' "$output" | grep -qxF 'TOPOLOGY_APP_DIR=/mnt/sda1/groupguard/ci-topology'
+          printf '%s\n' "$output" | grep -qxF 'TOPOLOGY_BACKUP_ROOT=/mnt/sda1/groupguard/backups'
+          printf '%s\n' "$output" | grep -qxF 'TOPOLOGY_CONTAINER=groupguard-snowluma'
+          printf '%s\n' "$output" | grep -qxF 'TOPOLOGY_APP_SOURCE=container-mount'
       - name: Build immutable SnowLuma deployment candidate
         shell: bash
         env:
@@ -90,15 +136,17 @@ jobs:
           cp ../scripts/windows/groupguard-deploy-bundle.ps1 "$bundle/groupguard-deploy-bundle.ps1"
           cp ../scripts/windows/groupguard-remote-deploy.sh "$bundle/groupguard-remote-deploy.sh"
           cp ../scripts/windows/groupguard-remote-rollback.sh "$bundle/groupguard-remote-rollback.sh"
+          cp ../scripts/windows/groupguard-remote-topology.sh "$bundle/groupguard-remote-topology.sh"
           cat > "$bundle/README.txt" <<'EOF'
           GroupGuard immutable deployment bundle
 
           1. Extract this ZIP to a normal local folder.
           2. Double-click DEPLOY-GROUPGUARD-89-121.cmd.
-          3. The bundle deploys the exact prebuilt dist to 192.168.3.89 first, then 192.168.3.121.
-          4. Runtime config.json, SQLite/data, logs, credentials and secrets are preserved.
-          5. Each host creates a code backup before switching and verifies the exact running commit.
-          6. If a later host fails, previously completed hosts are rolled back in reverse order so the fleet is not intentionally left split across releases.
+          3. Before any code switch, the bundle verifies both hosts and resolves each host's existing GroupGuard app root from the live container topology.
+          4. Only after both host topologies are verified does the bundle deploy the exact prebuilt dist to 192.168.3.89 first, then 192.168.3.121.
+          5. Runtime config.json, SQLite/data, logs, credentials and secrets are preserved.
+          6. Each host creates a code backup before switching and verifies the exact running commit.
+          7. If a later host fails, previously completed hosts are rolled back in reverse order so the fleet is not intentionally left split across releases.
           EOF
 
           pwsh -NoLogo -NoProfile -File "$bundle/groupguard-deploy-bundle.ps1" -PreflightOnly
@@ -130,6 +178,7 @@ jobs:
           Copy-Item 'scripts/windows/groupguard-deploy-bundle.ps1' (Join-Path $bundle 'groupguard-deploy-bundle.ps1')
           Copy-Item 'scripts/windows/groupguard-remote-deploy.sh' (Join-Path $bundle 'groupguard-remote-deploy.sh')
           Copy-Item 'scripts/windows/groupguard-remote-rollback.sh' (Join-Path $bundle 'groupguard-remote-rollback.sh')
+          Copy-Item 'scripts/windows/groupguard-remote-topology.sh' (Join-Path $bundle 'groupguard-remote-topology.sh')
           $archive = Join-Path $bundle 'groupguard-dist.tar.gz'
           [IO.File]::WriteAllText($archive, 'winps51-preflight', (New-Object System.Text.UTF8Encoding($false)))
           $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -138,7 +187,7 @@ jobs:
             commit_sha = '0123456789abcdef0123456789abcdef01234567'
             release_id = 'winps51-preflight'
             archive_sha256 = $sha
-            build_time_utc = '2026-08-27T00:00:00Z'
+            build_time_utc = '2026-08-28T00:00:00Z'
             source_workflow_run = 'ci'
           } | ConvertTo-Json
           [IO.File]::WriteAllText((Join-Path $bundle 'manifest.json'), $manifest, (New-Object System.Text.UTF8Encoding($false)))
