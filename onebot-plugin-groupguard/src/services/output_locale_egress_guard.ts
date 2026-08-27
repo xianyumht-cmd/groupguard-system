@@ -3,6 +3,7 @@ import {
   normalizeOutputLocale,
   type OutputTranslationFn,
 } from './output_locale_service';
+import { secureOutputTranslator } from './output_translation_policy';
 
 const PROTECTED_TEXT_PATTERNS = [
   /```[\s\S]*?```/g,
@@ -15,13 +16,25 @@ const PROTECTED_TEXT_PATTERNS = [
   /(?:^|\s)\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+/g,
 ];
 
+// Context-sensitive Simplified -> Traditional phrases that must not be handled
+// with a blind character replacement (for example 皇后 must remain 皇后).
 const TRADITIONAL_EGRESS_FIXUPS: Array<[string, string]> = [
   ['然后', '然後'],
+  ['完成后', '完成後'],
   ['之后', '之後'],
   ['以后', '以後'],
   ['后来', '後來'],
   ['后续', '後續'],
   ['随后', '隨後'],
+  ['稍后', '稍後'],
+  ['今后', '今後'],
+  ['日后', '日後'],
+  ['事后', '事後'],
+  ['后面', '後面'],
+  ['后再', '後再'],
+  ['后会', '後會'],
+  ['后我', '後我'],
+  ['后將', '後將'],
   ['后開啟', '後開啟'],
 ];
 
@@ -114,19 +127,30 @@ export async function localizeOneBotSendParamsSafe(
   translator?: OutputTranslationFn,
 ): Promise<unknown> {
   const locale = normalizeOutputLocale(localeInput);
+  const effectiveTranslator = translator || secureOutputTranslator;
   if (locale !== 'zh-TW') {
-    return translator
-      ? localizeOneBotSendParams(action, params, locale, translator)
-      : localizeOneBotSendParams(action, params, locale);
+    return localizeOneBotSendParams(action, params, locale, effectiveTranslator);
   }
 
-  // Traditional Chinese uses a local fast conversion path in output_locale_service.
-  // Protect machine-sensitive spans before that fast path so URLs, CQ codes, paths,
-  // placeholders and code stay byte-for-byte identical to their source values.
+  // Traditional Chinese has a fast local conversion path. Protect machine-sensitive
+  // spans before that path so URLs, CQ codes, paths, placeholders and code stay
+  // byte-for-byte identical to their source values.
   const envelope = protectTraditionalParams(action, params);
-  const localized = translator
-    ? await localizeOneBotSendParams(action, envelope.params, locale, translator)
-    : await localizeOneBotSendParams(action, envelope.params, locale);
+  const localized = await localizeOneBotSendParams(action, envelope.params, locale, effectiveTranslator);
   const fixed = transformOneBotTextParams(action, localized, applyTraditionalEgressFixups);
   return envelope.restore(fixed);
+}
+
+export async function localizeOutputTextSafe(
+  text: unknown,
+  localeInput: unknown,
+  translator?: OutputTranslationFn,
+): Promise<string> {
+  const localized = await localizeOneBotSendParamsSafe(
+    'send_group_msg',
+    { message: [{ type: 'text', data: { text: String(text ?? '') } }] },
+    localeInput,
+    translator,
+  ) as any;
+  return String(localized?.message?.[0]?.data?.text ?? text ?? '');
 }
