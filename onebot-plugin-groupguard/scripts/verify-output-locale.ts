@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_PLUGIN_CONFIG, normalizePluginConfig } from '../src/config';
 import { configStateService } from '../src/core/state-services/config_state_service';
 import { generateReply } from '../src/reply_generator';
+import { localizeOneBotSendParamsSafe } from '../src/services/output_locale_egress_guard';
 import {
   clearOutputLocaleCacheForTest,
   localizeOneBotSendParams,
@@ -67,6 +68,37 @@ async function main(): Promise<void> {
   assert.equal(localizedForward.messages[0].data.nickname, 'GroupGuard');
   assert.equal(localizedForward.messages[0].data.content[0].data.text, 'Administrator permission is required.');
 
+  const protectedTraditional = await localizeOneBotSendParamsSafe('send_group_msg', {
+    group_id: 123456,
+    message: [{
+      type: 'text',
+      data: {
+        text: '复制这个地址：https://example.com/路径/文件\n```ts\nconst 查询 = "简体";\n```\n然后打开浏览器。'
+      }
+    }]
+  }, 'zh-TW') as any;
+  const protectedTraditionalText = String(protectedTraditional.message[0].data.text || '');
+  assert.match(protectedTraditionalText, /^複製這個地址：/);
+  assert.match(protectedTraditionalText, /然後開啟瀏覽器。$/);
+  assert.ok(protectedTraditionalText.includes('https://example.com/路径/文件'), 'URL must remain byte-for-byte unchanged');
+  assert.ok(protectedTraditionalText.includes('```ts\nconst 查询 = "简体";\n```'), 'fenced code must remain byte-for-byte unchanged');
+
+  const protectedForwardTraditional = await localizeOneBotSendParamsSafe('send_group_forward_msg', {
+    group_id: 123456,
+    messages: [{
+      type: 'node',
+      data: {
+        nickname: 'GroupGuard',
+        user_id: '10000',
+        content: [{ type: 'text', data: { text: '复制 `{查询}` 后打开浏览器' } }]
+      }
+    }]
+  }, 'zh-TW') as any;
+  assert.equal(
+    protectedForwardTraditional.messages[0].data.content[0].data.text,
+    '複製 `{查询}` 後開啟瀏覽器'
+  );
+
   const normalized = normalizePluginConfig({
     ...DEFAULT_PLUGIN_CONFIG,
     global: { ...DEFAULT_PLUGIN_CONFIG.global, outputLocale: 'en' }
@@ -112,6 +144,33 @@ async function main(): Promise<void> {
     assert.equal(downstreamCalls.length, 1);
     assert.equal(downstreamCalls[0].params.message[0].data.text, 'Administrator permission is required.');
     assert.equal(downstreamCalls[0].params.message[1].data.file, 'https://example.com/query.png');
+  } finally {
+    configStateService.setConfig(previousConfig);
+  }
+
+  const downstreamTraditional: Array<{ action: string; params: any }> = [];
+  try {
+    configStateService.setConfig({
+      ...previousConfig,
+      global: { ...previousConfig.global, outputLocale: 'zh-TW' } as any,
+      groups: {}
+    });
+    const fakeWsClient = {
+      call: async (action: string, params: unknown) => {
+        downstreamTraditional.push({ action, params });
+        return { status: 'ok' };
+      }
+    } as any;
+    const caller = new OneBotActionCaller(fakeWsClient);
+    await caller.call('send_group_msg', {
+      group_id: 123456,
+      message: [{ type: 'text', data: { text: '复制 `查询简体` 后打开浏览器：https://example.com/简体' } }]
+    });
+    const sent = String(downstreamTraditional[0].params.message[0].data.text || '');
+    assert.ok(sent.includes('`查询简体`'), 'OneBot final egress must preserve inline code');
+    assert.ok(sent.includes('https://example.com/简体'), 'OneBot final egress must preserve URL');
+    assert.match(sent, /^複製 /);
+    assert.match(sent, / 後開啟瀏覽器：/);
   } finally {
     configStateService.setConfig(previousConfig);
   }
