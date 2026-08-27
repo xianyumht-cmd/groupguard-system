@@ -14,18 +14,25 @@ The WebUI advanced/global configuration includes `机器人全局输出语言`:
 - `zh-TW` — 繁體中文;
 - `en` — English.
 
-Saving the selector patches `global.outputLocale` and refreshes runtime configuration immediately. It does not rewrite stored Q&A or other administrator-authored source text.
+Saving the selector patches `global.outputLocale`, synchronizes the generic advanced-form field, and refreshes runtime configuration immediately. It does not rewrite stored Q&A or other administrator-authored source text.
 
-Only outgoing OneBot text is localized. Images/files, command recognition, URLs, CQ codes, placeholders, paths, and code blocks are outside the translation set.
+Only outgoing natural-language text is localized. Images/files, command recognition, URLs, CQ codes, placeholders, Windows/POSIX paths, inline code, and fenced code are outside the translation set. The Q群管家 routing path uses the same locale boundary before successful delegated delivery; a fallback to the normal bot preserves the original message and lets final OneBot egress localize it once.
 
-High-frequency built-in system notices use local translations. Arbitrary custom content uses the in-memory translation cache after its first translation. Optional translation-provider overrides are available through:
+High-frequency built-in system notices use local translations. Arbitrary custom content uses an in-memory translation cache after its first translation. Translation-provider controls are:
 
 ```text
 GROUPGUARD_TRANSLATE_ENDPOINT
 GROUPGUARD_TRANSLATE_API_KEY
+GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK
 ```
 
-If `GROUPGUARD_TRANSLATE_ENDPOINT` is unset, the runtime uses the built-in public provider chain. If it is set to `off`, arbitrary remote translation is disabled; `zh-TW` still has local fallback conversion, while unseen arbitrary English content fails closed with an English temporary-unavailable notice instead of emitting Chinese.
+Provider/data-boundary rules:
+
+- if `GROUPGUARD_TRANSLATE_ENDPOINT` is unset, the built-in public provider chain is allowed;
+- if it is explicitly empty or `off`, arbitrary remote translation is disabled;
+- if it points to a custom/private endpoint, that endpoint is the only destination by default;
+- a failed custom/private endpoint may fall back to the public provider only when `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK` is explicitly set to `1`, `true`, `yes`, or `on`;
+- `zh-TW` still has deterministic local fallback conversion; unseen arbitrary English content fails closed with an English temporary-unavailable notice rather than leaking Chinese when translation cannot be performed.
 
 ## Standard Windows single-host update workflow
 
@@ -69,7 +76,11 @@ The launcher calls `scripts/windows/groupguard-update-89-121.ps1`, which invokes
 1. `192.168.3.89`;
 2. `192.168.3.121`.
 
-The wrapper intentionally does not duplicate SSH, backup, switching, rollback, or health-verification logic. Host 121 starts only after host 89 has completed its exact-build health check successfully. If 121 fails after 89 succeeded, the wrapper reports that partial state explicitly; the failing host still receives the single-host helper's automatic restoration attempt when applicable.
+Fleet invariant:
+
+> Either both hosts finish on the accepted new commit, or any host that already completed the release is rolled back to its recorded pre-deployment code before the wrapper returns failure.
+
+Host 121 starts only after host 89 has completed its exact-build health check successfully. If 121 fails, its own single-host helper first uses its automatic restoration path when applicable, then the dual-host wrapper invokes the normal audited rollback workflow on 89. Completed hosts are rolled back in reverse order. If any reconciliation rollback fails, the launcher exits with a dedicated fleet-reconciliation failure and names the host requiring manual attention; it never reports the release as successful with an intentionally split fleet.
 
 The dual-host wrapper uses these defaults for both hosts unless its PowerShell parameters are intentionally overridden after verifying the live topology:
 
@@ -87,11 +98,14 @@ The artifact contains:
 - `DEPLOY-GROUPGUARD-89-121.cmd`;
 - `groupguard-deploy-bundle.ps1`;
 - `groupguard-remote-deploy.sh`;
+- `groupguard-remote-rollback.sh`;
 - `groupguard-dist.tar.gz` with the prebuilt SnowLuma `dist`;
 - `manifest.json` with exact commit, release id, SHA-256, build time, and workflow-run id;
 - `README.txt`.
 
-The CI packaging step rebuilds SnowLuma with `GROUPGUARD_COMMIT_SHA` set to the exact source commit, verifies `dist/build-info.json`, calculates the archive SHA-256, and uploads the immutable artifact. The Windows bundle runner verifies the manifest and archive hash before any SSH mutation, normalizes the remote helper to LF, deploys 89 first and 121 second, and reuses the same backup-first remote helper and authenticated exact-build health contract as the repository update workflow.
+The CI packaging step rebuilds SnowLuma with `GROUPGUARD_COMMIT_SHA` set to the exact source commit, verifies `dist/build-info.json`, calculates the archive SHA-256, and uploads the immutable artifact. The Windows bundle runner verifies the manifest and archive hash before any SSH mutation, normalizes both remote helpers to LF, deploys 89 first and 121 second, and uses the same backup-first remote helper plus authenticated exact-build health contract as the repository update workflow.
+
+The bundle enforces the same fleet invariant as the repository wrapper. If a later host fails, earlier completed hosts are rolled back with the packaged audited rollback helper. A rollback failure is surfaced as an incomplete fleet reconciliation requiring manual attention.
 
 The bundle requires only Windows `ssh` and `scp`; it does not require local Node.js/npm compilation or a Git worktree. It is still code-only: runtime `config.json`, SQLite/data, logs, credentials, and secrets remain outside the replacement set.
 
@@ -108,6 +122,7 @@ Use a bundle produced from the accepted `main` commit rather than a PR-head arti
 - Persisted deployment state is untrusted data: remote helpers parse it as data and never `source`, dot-load, or `eval` it.
 - A successful deployment/reconcile must retain a real validated rollback point.
 - A failed post-switch health/build-identity check must trigger the remote helper's automatic restoration attempt before the Windows launcher returns failure.
+- A multi-host release must not deliberately leave an earlier completed host on the new release after a later host fails; reverse-order fleet rollback is mandatory.
 
 ## Manual rollback
 
@@ -121,7 +136,7 @@ The launcher calls `scripts/windows/groupguard-rollback.ps1`, reads the most rec
 
 Rollback is for plugin code. It must not roll back or replace runtime SQLite/data, `config.json`, logs, or secrets.
 
-For a dual-host release, treat rollback as host-specific: identify which host has the business problem and run the rollback workflow against that host rather than assuming both runtimes must be moved together.
+For a business-level problem discovered after both hosts deployed successfully, diagnose which host is affected before choosing rollback scope. The automatic rollback-on-deployment-failure behavior is different: during a failed multi-host release, the launchers reconcile every host already completed by that same release attempt so the fleet does not intentionally remain split.
 
 ## Production paths recorded for the current deployment model
 
