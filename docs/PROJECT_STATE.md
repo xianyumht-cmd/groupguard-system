@@ -1,16 +1,17 @@
 # GroupGuard Project State
 
-Updated: 2026-08-27
+Updated: 2026-08-28
 
 ## Canonical repository
 
 - Canonical development branch: `main`.
 - Repository workflow rules are defined by `AGENTS.md` and require task branches, CI, PR merge, main verification, and cleanup before a development task is considered complete.
-- PR `#46 feat: add global bot output language and dual-host deploy` is the implementation record for the 2026-08-27 multilingual-output and 89/121 deployment-package task. Check the PR/main history before treating the feature as merged or production-deployed.
+- PR `#46 feat: add global bot output language and dual-host deploy` is the implementation record for the multilingual-output and immutable 89/121 deployment package.
+- PRs `#47` and `#48` hardened the Windows immutable-bundle launcher after real Windows PowerShell 5.1 startup failures.
 
 ## Global output-language implementation
 
-The 2026-08-27 implementation adds a global output locale with three supported values:
+The global output locale supports:
 
 - `zh-CN` — Simplified Chinese, default and backward-compatible mode;
 - `zh-TW` — Traditional Chinese;
@@ -18,82 +19,86 @@ The 2026-08-27 implementation adds a global output locale with three supported v
 
 Important boundaries:
 
-- command/input language is unchanged; existing Chinese commands continue to work;
-- localization happens at the final OneBot text egress path so Q&A, query/system notices, reply templates, link-risk notices, ordinary group/private messages, and forward-node text share one output-language boundary;
-- Q群管家 delegated text is localized before successful delegated delivery; if routing falls back to the normal bot, the original message is preserved so OneBot egress localizes it exactly once;
+- command/input language is unchanged;
+- localization happens at final OneBot text egress and on successful Q群管家 delegated text;
 - images/files are not rewritten;
-- URLs, CQ codes, placeholders, Windows/POSIX paths, inline code, and fenced code are protected from Traditional-Chinese conversion and remote translation;
+- URLs, CQ codes, placeholders, Windows/POSIX paths, inline code, and fenced code are protected;
 - administrator-authored Q&A source data is not rewritten in storage;
-- common built-in notices have local fast translations;
+- common built-in notices use local translations;
 - arbitrary custom content uses translation providers with in-memory caching;
-- Traditional Chinese has deterministic local conversion/fixups for common GroupGuard text and preserves protected machine-sensitive spans byte-for-byte;
-- English fails closed with an English temporary-unavailable notice if unseen arbitrary content cannot be translated, so selecting English does not intentionally leak Simplified Chinese.
+- English fails closed with an English temporary-unavailable notice when unseen arbitrary content cannot be translated.
 
-The SnowLuma WebUI exposes the selector under global/advanced configuration, saves `global.outputLocale`, and synchronizes the generic advanced-form field so a later unrelated global save cannot silently revert the language selector.
+The SnowLuma WebUI exposes `global.outputLocale` under global/advanced configuration and synchronizes the generic advanced-form field after save.
 
 ## Translation provider/privacy policy
 
 Translation networking is explicit:
 
-- with no `GROUPGUARD_TRANSLATE_ENDPOINT` environment variable, the built-in public provider chain is allowed;
-- an explicitly empty endpoint or `GROUPGUARD_TRANSLATE_ENDPOINT=off` disables arbitrary remote translation;
-- a configured custom/private endpoint is exclusive by default;
-- only `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK=1|true|yes|on` permits fallback from a failed custom endpoint to the public provider;
+- no `GROUPGUARD_TRANSLATE_ENDPOINT`: built-in public provider chain is allowed;
+- explicit empty endpoint or `GROUPGUARD_TRANSLATE_ENDPOINT=off`: arbitrary remote translation disabled;
+- custom/private endpoint: exclusive by default;
+- only `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK=1|true|yes|on` permits fallback to a public provider;
 - `GROUPGUARD_TRANSLATE_API_KEY` is sent only to the configured POST translation endpoint.
 
-This prevents a private-endpoint failure from silently forwarding administrator-authored Q&A or other output text to a different public translation service.
+## Dual-host deployment model
 
-## Deployment tooling for 192.168.3.89 and 192.168.3.121
-
-Two dual-host paths are represented in the task:
+Two dual-host entry points exist:
 
 1. repository-based local build/update: `DEPLOY-GROUPGUARD-89-121.cmd` -> `scripts/windows/groupguard-update-89-121.ps1`;
 2. immutable prebuilt bundle: GitHub Actions `GroupGuard Build` -> `groupguard-deployment-bundle-<commit>`.
 
-The immutable bundle contains a prebuilt SnowLuma `dist`, exact commit/build manifest, SHA-256, Windows one-click runner, audited remote deploy helper, and audited remote rollback helper. It deploys sequentially to 89 and then 121.
+The immutable bundle contains prebuilt SnowLuma `dist`, exact commit/build manifest, SHA-256, Windows one-click runner, remote topology helper, audited deploy helper, and audited rollback helper.
 
-Both deployment paths are code-only and preserve runtime `config.json`, SQLite/data, logs, credentials, and secrets. The remote deploy helper creates a code backup before switching, restarts `groupguard-snowluma`, and requires authenticated `/api/build-info` plus `/api/health` verification of the exact target commit. A failed post-switch health/build-identity check triggers an automatic code-restoration attempt on the failing host.
+Deployment remains code-only and preserves runtime `config.json`, SQLite/data, logs, credentials, and secrets. The deploy helper creates a code backup before switching, restarts the verified container, and requires authenticated `/api/build-info` plus `/api/health` verification of the exact target commit. Failed post-switch verification triggers automatic restoration.
 
-The dual-host fleet invariant is now transactional at the release level:
+Fleet invariant:
 
-> both hosts finish on the accepted new commit, or every host already completed by that release attempt is rolled back to its recorded pre-deployment code before the launcher returns ordinary failure.
+> both hosts finish on the accepted new commit, or every host already completed by that release attempt is rolled back to its recorded pre-deployment code.
 
-If 89 succeeds and 121 later fails, 121 first uses its own automatic restoration path when applicable, then 89 is rolled back using the normal audited rollback helper. Completed hosts are reconciled in reverse order. If any reconciliation rollback fails, the launcher returns a dedicated fleet-reconciliation failure and names the host requiring manual attention instead of reporting success with an intentionally split fleet.
+## Per-host topology preflight
 
-Production should use a deployment bundle produced from the accepted `main` commit, not a PR-head artifact.
+The 2026-08-28 production attempt proved that treating the 89 and 121 host layouts as identical is unsafe. Dual-host launchers are being hardened so **both host topologies must be verified before either host changes code**.
 
-## Engineering verification for PR #46
+`scripts/windows/groupguard-remote-topology.sh` is read-only apart from its temporary transport file. It verifies the existing container and resolves an app root only when all of these are true:
 
-During development, CI caught and prevented a real Traditional-Chinese edge case where `然后` remained partially simplified. The egress guard was corrected and regression coverage checks that ordinary Chinese is converted while URLs, inline code, fenced code, image segments, and forward-node protected text remain unchanged.
+- the path is safely below `/mnt/sda1/groupguard/`;
+- existing `config/`, `data/`, and `dist/` directories are present;
+- `dist/snowluma-service.mjs` exists;
+- the candidate is associated with the live container mounts;
+- exactly one safe candidate can be identified.
 
-PR review also caught four material integration/safety issues before merge, all addressed on the task branch:
+If the requested default path is missing, the helper may select a unique verified candidate from the live mount topology. If no unique candidate or container can be proved, the release fails closed before any host code switch and prints topology candidates for diagnosis. The launcher retains a separate app/backup/container profile for every host and uses the same profile for rollback.
 
-- Q群管家 could bypass the final locale transform;
-- a private translation endpoint failure could fall through to a public translator without an explicit privacy opt-in;
-- the output-language selector could be reverted by a stale generic advanced-form value;
-- a later-host deployment failure could leave an earlier host intentionally on the new release.
+Never create a guessed app directory merely to make deployment proceed.
 
-Required final verification includes:
+## Windows immutable-bundle hardening
 
-- TypeScript typecheck;
-- output-locale and translation-policy regression suite;
-- full `npm test` suite;
-- architecture/risk/query/runtime regression gates;
-- PowerShell syntax and Windows launcher safety checks;
-- LF-only remote shell transport checks;
-- unsafe remote-path rejection;
-- authenticated exact-build deployment health checks;
-- reverse-order fleet rollback/reconciliation behavior;
-- SnowLuma production build;
-- cross-repository mock contracts;
-- Chromium desktop/mobile WebUI acceptance;
-- immutable deployment-bundle build and artifact upload.
+Real local runs exposed and fixed two Windows PowerShell 5.1 startup issues:
 
-Use the final PR head/main workflow results as the source of truth; do not rely on an earlier successful run after later commits were added.
+1. quoted `%~dp0` with a trailing backslash could pass an illegal quote into `-PackageDir`;
+2. `[string]$PackageDir = $PSScriptRoot` could evaluate before `$PSScriptRoot` was populated, producing an empty `Join-Path` input.
 
-## Verified production evidence
+The current launcher no longer passes the dangerous `%~dp0` directory argument, resolves `$PSScriptRoot` inside the script body, validates/normalizes the package root, and supports `-PreflightOnly`.
 
-The latest production state that is explicitly recorded and verified in repository documentation remains the historical 2026-08-09 deployment on `192.168.3.89`:
+`GroupGuard Build` includes a dedicated Windows PowerShell 5.1 startup-preflight job and executes the generated bundle's local preflight before artifact upload.
+
+## 2026-08-28 production attempt evidence
+
+A real run of immutable bundle commit `719451423ce576e527513780b7df7fb8199c67f7` established:
+
+- local package root, manifest, and archive SHA validation succeeded;
+- `192.168.3.89` accepted `/mnt/sda1/groupguard/app`, deployed the target build, and passed deployment verification;
+- `192.168.3.121` returned `APP_DIR_MISSING=/mnt/sda1/groupguard/app` before its code switch;
+- fleet reconciliation then rolled 89 back to its recorded pre-deployment code and verified that rollback;
+- 121 was not switched to the candidate;
+- therefore the release did **not** complete on either host as a dual-host production release;
+- `/mnt/sda1/groupguard/app` is now explicitly disproved as a verified 121 app root.
+
+The final production topology on 121 remains unknown. The next attempt must run all-host topology preflight before deploying 89. If 121 has no initialized GroupGuard runtime that can be uniquely identified, initialization/bootstrap of 121 is a separate task and must not be guessed by the updater.
+
+## Historical production evidence
+
+Historical repository evidence for `192.168.3.89` records:
 
 - release commit: `b5d09d2287a937046c918353fbbcd3785650294a`;
 - previous release: `f1bbc194e3bced122b43f3811432eb6b224b4068`;
@@ -101,19 +106,21 @@ The latest production state that is explicitly recorded and verified in reposito
 - authenticated HTTP verification: `200`;
 - backup: `/mnt/sda1/groupguard/backups/20260809-050151-target-root-reconcile-b5d09d2287a9`.
 
-No repository evidence currently proves that the 2026-08-27 multilingual build has been deployed successfully to either host, and no historical verified production manifest for `192.168.3.121` is recorded here. The first successful dual-host deployment must verify both hosts independently and preserve the resulting manifests.
+No historical verified production manifest for `192.168.3.121` has been recorded.
 
 ## Retained production invariant: target-file push
 
-The target-file push root `/` remains an exclusive managed QQ group-file directory for its configured target group. The accepted invariant is that successful reconciliation converges the managed root to exactly one authoritative latest file.
+The target-file push root `/` remains an exclusive managed QQ group-file directory for its configured target group. Successful reconciliation converges the managed root to exactly one authoritative latest file.
 
 ## Operational handoff
 
-For a production deployment of the multilingual change:
+For the next multilingual production deployment:
 
-- require the accepted change to be present on `main`;
-- prefer the immutable `groupguard-deployment-bundle-<main-commit>` artifact when a downloadable one-click package is desired;
-- deploy 89 first and require exact-build health before starting 121;
-- if a later host fails, require reverse-order rollback of hosts already completed by that release attempt;
+- require the accepted change on `main`;
+- prefer the immutable `groupguard-deployment-bundle-<main-commit>` artifact;
+- require successful topology preflight on **both** 89 and 121 before any code switch;
+- deploy 89 first only after both profiles have been resolved;
+- require exact-build health on 89 before 121 deploy begins;
+- if a later host fails after deployment starts, use reverse-order fleet rollback with each host's verified topology profile;
 - preserve per-host deployment manifests under `%LOCALAPPDATA%\GroupGuard\deployment-state`;
-- if business behavior is wrong despite a fully successful technical deployment, use the audited rollback workflow with scope chosen from the observed problem rather than replacing runtime configuration or data.
+- if topology cannot be proved, stop instead of creating or overwriting a guessed runtime location.
