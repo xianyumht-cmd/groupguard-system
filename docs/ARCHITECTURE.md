@@ -2,38 +2,54 @@
 
 ## Global output localization
 
-GroupGuard treats multilingual output as a final transport concern. The persisted source text remains authoritative; localization is applied immediately before a OneBot send action reaches the WebSocket client.
+GroupGuard treats multilingual output as a final transport concern. The persisted source text remains authoritative; localization is applied immediately before the selected outbound transport sends text.
 
 ```text
 business service / custom Q&A / query notice
         -> reply templates + outgoing-risk packaging
-        -> OneBot action normalization
-        -> output-locale egress transform
-             |- zh-CN: pass through unchanged
-             |- zh-TW: local fast conversion, remote translation when needed, cache
-             `- en: local system-message fast path, remote translation when needed, cache
-        -> OneBot WebSocket client
+        -> transport routing
+             |- OneBot -> output-locale egress transform -> WebSocket client
+             `- Q群管家 -> output-locale egress transform -> Q群管家 text route
 ```
 
 ### Ownership and boundaries
 
 - `config.global.outputLocale` owns the global mode; supported values are `zh-CN`, `zh-TW`, and `en`.
 - Missing or invalid values resolve to `zh-CN`, preserving historical behavior.
-- `src/services/output_locale_service.ts` owns locale normalization, protected-token handling, translation/cache behavior, text-segment/forward-node traversal, and provider fallback.
-- `src/standalone/onebot_action_caller.ts` is the final SnowLuma/generic-OneBot egress hook. Only send-message actions are transformed; unrelated OneBot actions pass through.
+- `src/services/output_locale_service.ts` owns locale normalization, common local translations, bounded translation cache/in-flight deduplication, and traversal of OneBot text/forward-node payloads.
+- `src/services/output_locale_egress_guard.ts` is the runtime safety boundary. It protects URLs, CQ codes, placeholders, code blocks/spans, and Windows/POSIX paths before Traditional conversion and applies context-sensitive Traditional fixups without blindly changing ambiguous characters such as `后` in `皇后`.
+- `src/services/output_translation_policy.ts` owns the external-translation privacy/fallback policy used by runtime egress.
+- `src/standalone/onebot_action_caller.ts` is the final SnowLuma/generic-OneBot hook. Only send-message actions are transformed; unrelated OneBot actions pass through.
+- `src/core/state-infra/plugin_state_context_adapter.ts` localizes the copy offered to Q群管家 before its alternate transport can bypass the OneBot caller. If Q群管家 falls back, the untouched original message continues to OneBot and is localized there exactly once.
 - `src/reply_generator.ts` does not add Simplified-Chinese persona wrappers in non-`zh-CN` modes; final egress still remains the authoritative coverage layer.
-- `src/standalone/admin/output_locale_webui_patch.ts` exposes the global selector without changing the existing group-override model.
+- `src/standalone/admin/output_locale_webui_patch.ts` exposes the global selector without changing command recognition or rewriting stored Q&A.
 
 ### Localization invariants
 
 - Only natural-language text is localized.
 - Image/file/audio/video segments and their payloads remain untouched.
-- URLs, CQ codes, template placeholders, code spans/blocks, and file paths are protected from translation.
+- URLs, CQ codes, template placeholders, code spans/blocks, and file paths are protected from translation/conversion and restored byte-for-byte.
 - Custom Q&A and other administrator-authored source strings are never rewritten in config/SQLite; changing locale is reversible because conversion happens at send time.
 - Forward nodes localize only their text content; node identity fields are preserved.
 - Repeated arbitrary translations use a bounded in-memory cache and in-flight deduplication.
 - Built-in high-frequency notices use local fast paths so common rate-limit, permission, and Q&A-link messages do not depend on a network translator.
-- If arbitrary English translation providers are unavailable, the egress layer emits an English availability message rather than leaking Chinese into an explicitly English bot. Traditional mode has a local Simplified-to-Traditional fallback.
+- If arbitrary English translation is unavailable, runtime egress emits an English availability message rather than leaking Chinese into an explicitly English bot. Traditional mode retains deterministic local conversion/fixups as its offline fallback.
+
+### External translation data boundary
+
+Arbitrary natural-language text that cannot be satisfied by local fast paths may leave GroupGuard for machine translation. Protected spans are replaced with opaque `__GG...__` tokens before external translation, so raw URLs, CQ payloads, code, placeholders, and protected paths are not intentionally transmitted as their original values. The surrounding natural-language message still leaves the runtime and must be treated as externally processed data.
+
+Runtime provider policy is deliberately explicit:
+
+1. If `GROUPGUARD_TRANSLATE_ENDPOINT` is **unset**, the built-in public chain is enabled: the default LibreTranslate endpoint is tried first, then MyMemory as public fallback.
+2. If `GROUPGUARD_TRANSLATE_ENDPOINT=off` (or is explicitly set empty), network translation is disabled. No public fallback is attempted.
+3. If `GROUPGUARD_TRANSLATE_ENDPOINT` is an explicit custom/private URL, only that endpoint is used by default. Failure does **not** silently send the same text to a public service.
+4. Public fallback from a custom/private endpoint is allowed only when `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK=1|true|yes|on` is explicitly configured.
+5. `GROUPGUARD_TRANSLATE_API_KEY` is sent only to the configured/default Libre-style POST endpoint; it is not sent to MyMemory.
+
+The Libre/custom POST request has an approximately 3.5-second timeout. MyMemory public fallback has an approximately 2.5-second timeout and rejects oversized payloads above its local limit before sending. Provider failures are not persisted as message data. Successful arbitrary translations are cached in memory only and the cache is bounded.
+
+This external dependency is intentionally isolated behind `output_translation_policy.ts` so security/operations work can audit whether a deployment permits public egress without searching business command implementations.
 
 ## Configuration ownership and effective resolution
 
