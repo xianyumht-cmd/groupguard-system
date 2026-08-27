@@ -2,6 +2,7 @@ import { GROUPGUARD_SEND_SCENE_KEY } from '../send_wrapper_constants';
 import { loggingStateService } from '../state-services/logging_state_service';
 import { pluginState } from '../../state';
 import { packageForwardMessages, packageOutgoingSegments } from '../../services/outgoing_risk_packager';
+import { localizeOneBotSendParamsSafe } from '../../services/output_locale_egress_guard';
 import { qunGuanjiaService } from '../../services/qun_guanjia_service';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -160,9 +161,14 @@ export class PluginStateContextAdapter {
       call: async (actionName: string, params: unknown = {}): Promise<any> => {
         const sanitizedParams = this.sanitizeSendParams(actionName, params);
         if (actionName === 'send_group_msg') {
-          const route = await qunGuanjiaService.routeGroupMessage(sanitizedParams as any, this.getSendScene(params));
+          const groupId = String((sanitizedParams as any)?.group_id ?? (sanitizedParams as any)?.groupId ?? '');
+          const locale = (pluginState.getGroupSettings(groupId) as any)?.outputLocale;
+          // QunGuanjia bypasses the final OneBot caller on success, so localize only
+          // the copy offered to that route. Keep sanitizedParams untouched for fallback;
+          // fallback then reaches the normal OneBot egress and is localized exactly once.
+          const guanjiaParams = await localizeOneBotSendParamsSafe('send_group_msg', sanitizedParams, locale);
+          const route = await qunGuanjiaService.routeGroupMessage(guanjiaParams as any, this.getSendScene(params));
           if (route.ok) {
-            const groupId = String((sanitizedParams as any)?.group_id ?? (sanitizedParams as any)?.groupId ?? '');
             return {
               status: 'ok',
               retcode: 0,

@@ -90,22 +90,28 @@ function pickPersona(input: ReplyGenerateInput): ReplyPersona {
 
 export function generateReply(input: ReplyGenerateInput): ReplyGenerateOutput {
   const { scene, raw = '', settings } = input;
-  if (!isReplyTemplateSceneAllowed(scene)) {
-    return { text: raw, scene, persona: normalizePersona(input.persona || settings.replyPersonaDefault || 'formal') };
-  }
-  const merged = mergeTemplates(settings);
-  const persona = pickPersona(input);
-  const vars = { raw, ...(input.vars || {}) };
-  const sceneEntry = merged[scene] || merged.raw_text;
-  const list = sceneEntry?.personaTemplates?.[persona]
-    || sceneEntry?.personaTemplates?.formal
-    || ['{raw}'];
-  const selected = pickRandom(list, `${scene}:${persona}`) || '{raw}';
-  if (!selected.includes('{raw}')) {
+  const persona = normalizePersona(input.persona || settings.replyPersonaDefault || 'formal');
+  // The final OneBot egress layer owns non-zh-CN localization. Do not inject
+  // Simplified-Chinese persona/template prefixes before that translation step.
+  if (String((settings as any).outputLocale || 'zh-CN') !== 'zh-CN') {
     return { text: raw, scene, persona };
   }
+  if (!isReplyTemplateSceneAllowed(scene)) {
+    return { text: raw, scene, persona };
+  }
+  const merged = mergeTemplates(settings);
+  const pickedPersona = pickPersona(input);
+  const vars = { raw, ...(input.vars || {}) };
+  const sceneEntry = merged[scene] || merged.raw_text;
+  const list = sceneEntry?.personaTemplates?.[pickedPersona]
+    || sceneEntry?.personaTemplates?.formal
+    || ['{raw}'];
+  const selected = pickRandom(list, `${scene}:${pickedPersona}`) || '{raw}';
+  if (!selected.includes('{raw}')) {
+    return { text: raw, scene, persona: pickedPersona };
+  }
   const text = renderVars(selected, vars);
-  return { text, scene, persona };
+  return { text, scene, persona: pickedPersona };
 }
 
 export function getReplyTemplateCatalog(): { personas: Record<string, string>; templates: ReplySceneTemplateMap; } {

@@ -4,10 +4,18 @@ on:
   push:
     paths:
       - 'onebot-plugin-groupguard/**'
+      - 'scripts/windows/groupguard-deploy-bundle.ps1'
+      - 'scripts/windows/groupguard-remote-deploy.sh'
+      - 'scripts/windows/groupguard-remote-rollback.sh'
+      - 'DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd'
       - '.github/workflows/groupguard-build.yml'
   pull_request:
     paths:
       - 'onebot-plugin-groupguard/**'
+      - 'scripts/windows/groupguard-deploy-bundle.ps1'
+      - 'scripts/windows/groupguard-remote-deploy.sh'
+      - 'scripts/windows/groupguard-remote-rollback.sh'
+      - 'DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd'
       - '.github/workflows/groupguard-build.yml'
 
 permissions:
@@ -38,6 +46,56 @@ jobs:
           code=$?
           cat build.log
           exit $code
+      - name: Build immutable SnowLuma deployment candidate
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export GROUPGUARD_COMMIT_SHA="$RELEASE_COMMIT"
+          export GROUPGUARD_BUILD_TIME_UTC="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          npm run build:snowluma
+          test -f dist/snowluma-service.mjs
+          test -f dist/build-info.json
+          actual_commit="$(node -e "const x=require('./dist/build-info.json'); process.stdout.write(String(x.commit_sha||''))")"
+          test "$actual_commit" = "$RELEASE_COMMIT"
+
+          bundle="../deployment-bundle"
+          rm -rf "$bundle"
+          mkdir -p "$bundle"
+          tar -czf "$bundle/groupguard-dist.tar.gz" dist
+          archive_sha="$(sha256sum "$bundle/groupguard-dist.tar.gz" | awk '{print $1}')"
+          release_id="output-locale-$(date -u +'%Y%m%d-%H%M%S')-${RELEASE_COMMIT:0:12}"
+          cat > "$bundle/manifest.json" <<EOF
+          {
+            "schema_version": 1,
+            "commit_sha": "$RELEASE_COMMIT",
+            "release_id": "$release_id",
+            "archive_sha256": "$archive_sha",
+            "build_time_utc": "$GROUPGUARD_BUILD_TIME_UTC",
+            "source_workflow_run": "${GITHUB_RUN_ID}"
+          }
+          EOF
+          cp ../DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd "$bundle/DEPLOY-GROUPGUARD-89-121.cmd"
+          cp ../scripts/windows/groupguard-deploy-bundle.ps1 "$bundle/groupguard-deploy-bundle.ps1"
+          cp ../scripts/windows/groupguard-remote-deploy.sh "$bundle/groupguard-remote-deploy.sh"
+          cp ../scripts/windows/groupguard-remote-rollback.sh "$bundle/groupguard-remote-rollback.sh"
+          cat > "$bundle/README.txt" <<'EOF'
+          GroupGuard immutable deployment bundle
+
+          1. Extract this ZIP to a normal local folder.
+          2. Double-click DEPLOY-GROUPGUARD-89-121.cmd.
+          3. The bundle deploys the exact prebuilt dist to 192.168.3.89 first, then 192.168.3.121.
+          4. Runtime config.json, SQLite/data, logs, credentials and secrets are preserved.
+          5. Each host creates a code backup before switching and verifies the exact running commit.
+          6. If a later host fails, previously completed hosts are rolled back in reverse order so the fleet is not intentionally left split across releases.
+          EOF
+      - name: Upload immutable deployment bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-deployment-bundle-${{ github.event.pull_request.head.sha || github.sha }}
+          path: deployment-bundle
+          if-no-files-found: error
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
