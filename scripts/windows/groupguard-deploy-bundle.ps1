@@ -1,13 +1,14 @@
 # ASCII-only on purpose: Windows PowerShell 5.1 does not reliably parse UTF-8 without BOM.
 [CmdletBinding()]
 param(
-  [string]$PackageDir = $PSScriptRoot,
+  [string]$PackageDir = '',
   [string[]]$RemoteHosts = @('192.168.3.89', '192.168.3.121'),
   [string]$RemoteUser = 'root',
   [int]$RemotePort = 22,
   [string]$RemoteAppDir = '/mnt/sda1/groupguard/app',
   [string]$RemoteBackupRoot = '/mnt/sda1/groupguard/backups',
-  [string]$RemoteContainer = 'groupguard-snowluma'
+  [string]$RemoteContainer = 'groupguard-snowluma',
+  [switch]$PreflightOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,8 +100,15 @@ try {
   Write-Host 'Deploys only the prebuilt dist. Runtime config, SQLite/data, logs, credentials and secrets are preserved.'
   Write-Host 'Fleet rule: both hosts finish on the new commit, or already-completed hosts are rolled back.'
 
-  Assert-SafeParameters
-  foreach ($cmd in @('ssh', 'scp')) { Require-Command $cmd }
+  $resolvedPackageDir = ([string]$PackageDir).Trim().Trim('"')
+  if ([string]::IsNullOrWhiteSpace($resolvedPackageDir)) {
+    $resolvedPackageDir = ([string]$PSScriptRoot).Trim().Trim('"')
+  }
+  if ([string]::IsNullOrWhiteSpace($resolvedPackageDir)) {
+    throw 'Package directory could not be resolved from PackageDir or PSScriptRoot.'
+  }
+  $PackageDir = [IO.Path]::GetFullPath($resolvedPackageDir)
+  Write-Host "Package root: $PackageDir"
 
   $manifestPath = Join-Path $PackageDir 'manifest.json'
   $archivePath = Join-Path $PackageDir 'groupguard-dist.tar.gz'
@@ -122,6 +130,14 @@ try {
   if ($actualSha -ne $expectedSha) { throw "Deployment bundle hash mismatch: expected=$expectedSha actual=$actualSha" }
   Write-Host "Bundle commit: $commit" -ForegroundColor Green
   Write-Host "Bundle sha256: $actualSha" -ForegroundColor Green
+
+  if ($PreflightOnly) {
+    Write-Host 'Bundle preflight completed successfully.' -ForegroundColor Green
+    exit 0
+  }
+
+  Assert-SafeParameters
+  foreach ($cmd in @('ssh', 'scp')) { Require-Command $cmd }
 
   $tempRoot = Join-Path ([IO.Path]::GetTempPath()) "groupguard-bundle-$releaseId"
   New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
@@ -160,7 +176,11 @@ try {
       Invoke-Native 'ssh' @('-p', "$RemotePort", $sshTarget, "rm -f '$remoteArchive' '$remoteHelper'") -AllowFailure | Out-Null
     }
 
-    $stateRoot = Join-Path $env:LOCALAPPDATA 'GroupGuard\deployment-state'
+    $stateBase = [string]$env:LOCALAPPDATA
+    if ([string]::IsNullOrWhiteSpace($stateBase)) {
+      $stateBase = [IO.Path]::GetTempPath()
+    }
+    $stateRoot = Join-Path $stateBase 'GroupGuard\deployment-state'
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
     $safeHost = $hostName.Replace('.', '-')
     $localManifest = Join-Path $stateRoot "$safeHost-$releaseId.json"
