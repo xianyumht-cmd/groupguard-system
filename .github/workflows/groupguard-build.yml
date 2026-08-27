@@ -100,6 +100,8 @@ jobs:
           5. Each host creates a code backup before switching and verifies the exact running commit.
           6. If a later host fails, previously completed hosts are rolled back in reverse order so the fleet is not intentionally left split across releases.
           EOF
+
+          pwsh -NoLogo -NoProfile -File "$bundle/groupguard-deploy-bundle.ps1" -PreflightOnly
       - name: Upload immutable deployment bundle
         uses: actions/upload-artifact@v4
         with:
@@ -113,3 +115,32 @@ jobs:
           name: groupguard-build-log
           path: onebot-plugin-groupguard/build.log
           if-no-files-found: error
+
+  windows-powershell51-preflight:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Execute bundle startup preflight with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Join-Path $env:RUNNER_TEMP 'groupguard-bundle-winps51'
+          New-Item -ItemType Directory -Path $bundle -Force | Out-Null
+          Copy-Item 'scripts/windows/groupguard-deploy-bundle.ps1' (Join-Path $bundle 'groupguard-deploy-bundle.ps1')
+          Copy-Item 'scripts/windows/groupguard-remote-deploy.sh' (Join-Path $bundle 'groupguard-remote-deploy.sh')
+          Copy-Item 'scripts/windows/groupguard-remote-rollback.sh' (Join-Path $bundle 'groupguard-remote-rollback.sh')
+          $archive = Join-Path $bundle 'groupguard-dist.tar.gz'
+          [IO.File]::WriteAllText($archive, 'winps51-preflight', (New-Object System.Text.UTF8Encoding($false)))
+          $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = @{
+            schema_version = 1
+            commit_sha = '0123456789abcdef0123456789abcdef01234567'
+            release_id = 'winps51-preflight'
+            archive_sha256 = $sha
+            build_time_utc = '2026-08-27T00:00:00Z'
+            source_workflow_run = 'ci'
+          } | ConvertTo-Json
+          [IO.File]::WriteAllText((Join-Path $bundle 'manifest.json'), $manifest, (New-Object System.Text.UTF8Encoding($false)))
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $bundle 'groupguard-deploy-bundle.ps1') -PreflightOnly
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 bundle preflight failed: exit=$LASTEXITCODE" }
