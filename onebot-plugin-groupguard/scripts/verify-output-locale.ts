@@ -11,9 +11,118 @@ import {
   normalizeOutputLocale,
   type OutputTranslationFn,
 } from '../src/services/output_locale_service';
-import { resolveOutputTranslationPolicy } from '../src/services/output_translation_policy';
+import {
+  resolveOutputTranslationPolicy,
+  secureOutputTranslator,
+} from '../src/services/output_translation_policy';
 import { OneBotActionCaller } from '../src/standalone/onebot_action_caller';
 import { applyOutputLocaleWebUiPatch } from '../src/standalone/admin/output_locale_webui_patch';
+
+async function verifyTranslationPrivacyPolicy(): Promise<void> {
+  assert.deepEqual(
+    resolveOutputTranslationPolicy({ GROUPGUARD_TRANSLATE_ENDPOINT: 'off' } as NodeJS.ProcessEnv),
+    { mode: 'disabled', endpoint: '', allowPublicFallback: false },
+    'explicit off must disable every network translation provider'
+  );
+  assert.deepEqual(
+    resolveOutputTranslationPolicy({ GROUPGUARD_TRANSLATE_ENDPOINT: 'https://translate.internal/v1' } as NodeJS.ProcessEnv),
+    { mode: 'custom', endpoint: 'https://translate.internal/v1', allowPublicFallback: false },
+    'custom endpoint must be a privacy boundary by default'
+  );
+  assert.deepEqual(
+    resolveOutputTranslationPolicy({
+      GROUPGUARD_TRANSLATE_ENDPOINT: 'https://translate.internal/v1',
+      GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK: 'true'
+    } as NodeJS.ProcessEnv),
+    { mode: 'custom', endpoint: 'https://translate.internal/v1', allowPublicFallback: true },
+    'public fallback must require an explicit opt-in for custom endpoints'
+  );
+  assert.equal(
+    resolveOutputTranslationPolicy({} as NodeJS.ProcessEnv).mode,
+    'public-default',
+    'unset endpoint keeps the documented built-in public provider chain'
+  );
+
+  const originalFetch = globalThis.fetch;
+  const previousEndpoint = process.env.GROUPGUARD_TRANSLATE_ENDPOINT;
+  const previousFallback = process.env.GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK;
+  const previousApiKey = process.env.GROUPGUARD_TRANSLATE_API_KEY;
+  const restoreEnv = (name: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
+
+  try {
+    const calls: string[] = [];
+    (globalThis as any).fetch = async (input: unknown) => {
+      calls.push(String(input));
+      throw new Error('unexpected_network_call');
+    };
+    process.env.GROUPGUARD_TRANSLATE_ENDPOINT = 'off';
+    delete process.env.GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK;
+    delete process.env.GROUPGUARD_TRANSLATE_API_KEY;
+    await assert.rejects(() => secureOutputTranslator('测试隐私边界', 'en'), /translation_endpoint_disabled/);
+    assert.equal(calls.length, 0, 'disabled translation must not perform any fetch');
+
+    calls.length = 0;
+    process.env.GROUPGUARD_TRANSLATE_ENDPOINT = 'https://translate.internal/v1';
+    delete process.env.GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK;
+    await assert.rejects(() => secureOutputTranslator('测试私有端点', 'en'), /unexpected_network_call/);
+    assert.deepEqual(calls, ['https://translate.internal/v1'], 'private endpoint failure must not silently call a public provider');
+
+    calls.length = 0;
+    process.env.GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK = 'true';
+    (globalThis as any).fetch = async (input: unknown) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === 'https://translate.internal/v1') {
+        return { ok: false, status: 503, json: async () => ({}) } as any;
+      }
+      if (url.startsWith('https://api.mymemory.translated.net/get?')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ responseData: { translatedText: 'privacy fallback translated' } })
+        } as any;
+      }
+      throw new Error(`unexpected_url:${url}`);
+    };
+    assert.equal(
+      await secureOutputTranslator('测试显式公共兜底', 'en'),
+      'privacy fallback translated',
+      'explicit public fallback must work after a failed custom endpoint'
+    );
+    assert.equal(calls.length, 2, 'explicit custom fallback should call custom endpoint once then one public provider');
+    assert.equal(calls[0], 'https://translate.internal/v1');
+    assert.match(calls[1], /^https:\/\/api\.mymemory\.translated\.net\/get\?/);
+  } finally {
+    (globalThis as any).fetch = originalFetch;
+    restoreEnv('GROUPGUARD_TRANSLATE_ENDPOINT', previousEndpoint);
+    restoreEnv('GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK', previousFallback);
+    restoreEnv('GROUPGUARD_TRANSLATE_API_KEY', previousApiKey);
+  }
+}
+
+function verifyFleetRollbackContracts(): void {
+  const repoDual = fs.readFileSync(new URL('../../scripts/windows/groupguard-update-89-121.ps1', import.meta.url), 'utf8');
+  assert.match(repoDual, /\$rollbackScript\s*=/, 'repository dual-host launcher must bind the audited rollback workflow');
+  assert.match(repoDual, /Invoke-CompletedHostRollback/, 'repository dual-host launcher must roll back already-completed hosts');
+  assert.match(repoDual, /for \(\$index = \$Hosts\.Count - 1; \$index -ge 0; \$index--\)/, 'repository fleet rollback must run in reverse order');
+  assert.match(repoDual, /exit 90/, 'repository launcher must expose incomplete fleet reconciliation as a dedicated failure');
+
+  const bundleRunner = fs.readFileSync(new URL('../../scripts/windows/groupguard-deploy-bundle.ps1', import.meta.url), 'utf8');
+  assert.match(bundleRunner, /groupguard-remote-rollback\.sh/, 'immutable bundle runner must require the remote rollback helper');
+  assert.match(bundleRunner, /Invoke-HostRollback/, 'immutable bundle runner must reconcile previously completed hosts');
+  assert.match(bundleRunner, /for \(\$index = \$completedHosts\.Count - 1; \$index -ge 0; \$index--\)/, 'bundle fleet rollback must run in reverse order');
+  assert.match(bundleRunner, /exit 90/, 'bundle runner must expose incomplete fleet reconciliation as a dedicated failure');
+
+  const buildWorkflow = fs.readFileSync(new URL('../../.github/workflows/groupguard-build.yml', import.meta.url), 'utf8');
+  assert.match(
+    buildWorkflow,
+    /cp \.\.\/scripts\/windows\/groupguard-remote-rollback\.sh "\$bundle\/groupguard-remote-rollback\.sh"/,
+    'immutable artifact must package the audited rollback helper'
+  );
+}
 
 async function main(): Promise<void> {
   clearOutputLocaleCacheForTest();
@@ -45,29 +154,8 @@ async function main(): Promise<void> {
     'Click this link to purchase: https://example.com/order?a=1'
   );
 
-  assert.deepEqual(
-    resolveOutputTranslationPolicy({ GROUPGUARD_TRANSLATE_ENDPOINT: 'off' } as NodeJS.ProcessEnv),
-    { mode: 'disabled', endpoint: '', allowPublicFallback: false },
-    'explicit off must disable every network translation provider'
-  );
-  assert.deepEqual(
-    resolveOutputTranslationPolicy({ GROUPGUARD_TRANSLATE_ENDPOINT: 'https://translate.internal/v1' } as NodeJS.ProcessEnv),
-    { mode: 'custom', endpoint: 'https://translate.internal/v1', allowPublicFallback: false },
-    'custom endpoint must be a privacy boundary by default'
-  );
-  assert.deepEqual(
-    resolveOutputTranslationPolicy({
-      GROUPGUARD_TRANSLATE_ENDPOINT: 'https://translate.internal/v1',
-      GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK: 'true'
-    } as NodeJS.ProcessEnv),
-    { mode: 'custom', endpoint: 'https://translate.internal/v1', allowPublicFallback: true },
-    'public fallback must require an explicit opt-in for custom endpoints'
-  );
-  assert.equal(
-    resolveOutputTranslationPolicy({} as NodeJS.ProcessEnv).mode,
-    'public-default',
-    'unset endpoint keeps the documented built-in public provider chain'
-  );
+  await verifyTranslationPrivacyPolicy();
+  verifyFleetRollbackContracts();
 
   const localizedParams = await localizeOneBotSendParams('send_group_msg', {
     group_id: 123456,
