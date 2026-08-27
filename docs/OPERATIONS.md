@@ -71,23 +71,25 @@ When the current task explicitly authorizes deployment to both ARM hosts, run:
 DEPLOY-GROUPGUARD-89-121.cmd
 ```
 
-The launcher calls `scripts/windows/groupguard-update-89-121.ps1`, which invokes the standard single-host workflow sequentially for:
+Before either host is allowed to switch code, the dual-host launcher now performs a read-only topology preflight on **both** hosts. `scripts/windows/groupguard-remote-topology.sh` verifies the existing container and resolves the app root from the live container mounts plus the required existing `config/`, `data/`, and `dist/snowluma-service.mjs` layout. A configured path is accepted only when it is associated with the live container. If the configured path is missing, a unique safe candidate below `/mnt/sda1/groupguard/` may be selected from the live mount topology. If the container or app root cannot be identified uniquely, deployment stops before either host changes code and prints the available container/mount candidates for diagnosis.
 
-1. `192.168.3.89`;
-2. `192.168.3.121`.
+After both host profiles are verified, `scripts/windows/groupguard-update-89-121.ps1` invokes the standard single-host workflow sequentially for:
+
+1. `192.168.3.89` using 89's verified app/backup/container profile;
+2. `192.168.3.121` using 121's independently verified profile.
 
 Fleet invariant:
 
 > Either both hosts finish on the accepted new commit, or any host that already completed the release is rolled back to its recorded pre-deployment code before the wrapper returns failure.
 
-Host 121 starts only after host 89 has completed its exact-build health check successfully. If 121 fails, its own single-host helper first uses its automatic restoration path when applicable, then the dual-host wrapper invokes the normal audited rollback workflow on 89. Completed hosts are rolled back in reverse order. If any reconciliation rollback fails, the launcher exits with a dedicated fleet-reconciliation failure and names the host requiring manual attention; it never reports the release as successful with an intentionally split fleet.
+Host 121 starts only after host 89 has completed its exact-build health check successfully. If 121 fails after deployment has started, its own single-host helper first uses its automatic restoration path when applicable, then the dual-host wrapper invokes the normal audited rollback workflow on 89 using 89's verified topology profile. Completed hosts are rolled back in reverse order. If any reconciliation rollback fails, the launcher exits with a dedicated fleet-reconciliation failure and names the host requiring manual attention; it never reports the release as successful with an intentionally split fleet.
 
-The dual-host wrapper uses these defaults for both hosts unless its PowerShell parameters are intentionally overridden after verifying the live topology:
+The launcher uses these values only as topology hints, not as proof that both hosts are identical:
 
 - user: `root`;
-- application root: `/mnt/sda1/groupguard/app`;
-- backup root: `/mnt/sda1/groupguard/backups`;
-- container: `groupguard-snowluma`.
+- requested application root: `/mnt/sda1/groupguard/app`;
+- requested backup root: `/mnt/sda1/groupguard/backups`;
+- requested container: `groupguard-snowluma`.
 
 ## Immutable dual-host deployment bundle
 
@@ -97,13 +99,16 @@ The artifact contains:
 
 - `DEPLOY-GROUPGUARD-89-121.cmd`;
 - `groupguard-deploy-bundle.ps1`;
+- `groupguard-remote-topology.sh`;
 - `groupguard-remote-deploy.sh`;
 - `groupguard-remote-rollback.sh`;
 - `groupguard-dist.tar.gz` with the prebuilt SnowLuma `dist`;
 - `manifest.json` with exact commit, release id, SHA-256, build time, and workflow-run id;
 - `README.txt`.
 
-The CI packaging step rebuilds SnowLuma with `GROUPGUARD_COMMIT_SHA` set to the exact source commit, verifies `dist/build-info.json`, calculates the archive SHA-256, and uploads the immutable artifact. The Windows bundle runner verifies the manifest and archive hash before any SSH mutation, normalizes both remote helpers to LF, deploys 89 first and 121 second, and uses the same backup-first remote helper plus authenticated exact-build health contract as the repository update workflow.
+The CI packaging step rebuilds SnowLuma with `GROUPGUARD_COMMIT_SHA` set to the exact source commit, verifies `dist/build-info.json`, calculates the archive SHA-256, and uploads the immutable artifact. It also runs the generated bundle's local preflight and a Linux mock that proves a missing requested `/app` path can be replaced by a unique live-container-mounted GroupGuard app candidate.
+
+The Windows bundle runner verifies the manifest and archive hash before SSH, normalizes all remote helpers to LF, then performs the same **all-host topology preflight before mutation**. Only after both topology profiles are verified does it deploy 89 first and 121 second. Each host's resolved app root, backup root, and container are retained for deployment-state retrieval and any fleet reconciliation rollback.
 
 The bundle enforces the same fleet invariant as the repository wrapper. If a later host fails, earlier completed hosts are rolled back with the packaged audited rollback helper. A rollback failure is surfaced as an incomplete fleet reconciliation requiring manual attention.
 
@@ -122,7 +127,9 @@ Use a bundle produced from the accepted `main` commit rather than a PR-head arti
 - Persisted deployment state is untrusted data: remote helpers parse it as data and never `source`, dot-load, or `eval` it.
 - A successful deployment/reconcile must retain a real validated rollback point.
 - A failed post-switch health/build-identity check must trigger the remote helper's automatic restoration attempt before the Windows launcher returns failure.
+- A multi-host release must verify every host's existing topology before changing any host.
 - A multi-host release must not deliberately leave an earlier completed host on the new release after a later host fails; reverse-order fleet rollback is mandatory.
+- Never create a guessed application directory merely because a requested default is missing. The topology preflight must prove an existing live app root or fail closed.
 
 ## Manual rollback
 
@@ -138,7 +145,7 @@ Rollback is for plugin code. It must not roll back or replace runtime SQLite/dat
 
 For a business-level problem discovered after both hosts deployed successfully, diagnose which host is affected before choosing rollback scope. The automatic rollback-on-deployment-failure behavior is different: during a failed multi-host release, the launchers reconcile every host already completed by that same release attempt so the fleet does not intentionally remain split.
 
-## Production paths recorded for the current deployment model
+## Production paths and topology evidence
 
 Verified historical repository evidence records `192.168.3.89` with:
 
@@ -147,9 +154,15 @@ Verified historical repository evidence records `192.168.3.89` with:
 - backup root: `/mnt/sda1/groupguard/backups`
 - container: `groupguard-snowluma`
 
-The 2026-08-27 dual-host launcher uses the same topology defaults for `192.168.3.121` because that is the requested deployment target. This is a deployment default, not proof that 121 has already been production-verified by repository evidence. Verify its live manifest/health during the first deployment.
+The first 2026-08-28 immutable dual-host attempt using commit `719451423ce576e527513780b7df7fb8199c67f7` established additional production evidence:
 
-These defaults are encoded as overridable PowerShell parameters. If production topology changes, verify the live environment before updating the defaults.
+- 89 accepted the requested topology, deployed the target build, and passed exact-build health verification;
+- 121 rejected `/mnt/sda1/groupguard/app` with `APP_DIR_MISSING` before a code switch;
+- because the release could not complete on 121, the fleet reconciliation path rolled 89 back and verified the rollback;
+- therefore `/mnt/sda1/groupguard/app` must **not** be treated as a verified 121 application root;
+- the current 121 app/container topology remains unknown until the read-only topology preflight resolves it from the live host.
+
+Do not create `/mnt/sda1/groupguard/app` on 121 merely to satisfy the updater. If 121 has an existing GroupGuard runtime under another safe path, use the verified live-container-mounted path. If no existing initialized GroupGuard runtime can be identified, stop and treat 121 initialization as a separate deployment task rather than overwriting an assumed location.
 
 ## Config-maturity acceptance sequence
 
