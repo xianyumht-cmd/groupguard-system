@@ -12,6 +12,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+$completedHosts = New-Object System.Collections.Generic.List[string]
 
 function Write-Step([string]$Message) {
   Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -103,7 +104,6 @@ try {
   $helperUpload = Join-Path $tempRoot 'groupguard-remote-deploy.sh'
   New-LfHelperCopy $helperPath $helperUpload
 
-  $completedHosts = New-Object System.Collections.Generic.List[string]
   foreach ($hostName in $RemoteHosts) {
     Write-Step "Deploy $hostName"
     $sshTarget = "$RemoteUser@$hostName"
@@ -148,7 +148,7 @@ try {
   exit 0
 } catch {
   Write-Host "`nDeployment bundle failed: $($_.Exception.Message)" -ForegroundColor Red
-  if ($completedHosts -and $completedHosts.Count -gt 0) {
+  if ($completedHosts.Count -gt 0) {
     Write-Host "Already completed hosts: $($completedHosts -join ', ')" -ForegroundColor Yellow
   }
   Write-Host 'The remote helper automatically attempts code restoration after a failed post-switch health check.' -ForegroundColor Yellow
