@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { DEFAULT_PLUGIN_CONFIG, normalizePluginConfig } from '../src/config';
 import { configStateService } from '../src/core/state-services/config_state_service';
 import { generateReply } from '../src/reply_generator';
-import { localizeOneBotSendParamsSafe } from '../src/services/output_locale_egress_guard';
+import { localizeOneBotSendParamsSafe, localizeOutputTextSafe } from '../src/services/output_locale_egress_guard';
 import {
   clearOutputLocaleCacheForTest,
   localizeOneBotSendParams,
@@ -10,6 +11,7 @@ import {
   normalizeOutputLocale,
   type OutputTranslationFn,
 } from '../src/services/output_locale_service';
+import { resolveOutputTranslationPolicy } from '../src/services/output_translation_policy';
 import { OneBotActionCaller } from '../src/standalone/onebot_action_caller';
 import { applyOutputLocaleWebUiPatch } from '../src/standalone/admin/output_locale_webui_patch';
 
@@ -41,6 +43,30 @@ async function main(): Promise<void> {
   assert.equal(
     await localizeOutputText(customQa, 'en', fakeTranslator),
     'Click this link to purchase: https://example.com/order?a=1'
+  );
+
+  assert.deepEqual(
+    resolveOutputTranslationPolicy({ GROUPGUARD_TRANSLATE_ENDPOINT: 'off' } as NodeJS.ProcessEnv),
+    { mode: 'disabled', endpoint: '', allowPublicFallback: false },
+    'explicit off must disable every network translation provider'
+  );
+  assert.deepEqual(
+    resolveOutputTranslationPolicy({ GROUPGUARD_TRANSLATE_ENDPOINT: 'https://translate.internal/v1' } as NodeJS.ProcessEnv),
+    { mode: 'custom', endpoint: 'https://translate.internal/v1', allowPublicFallback: false },
+    'custom endpoint must be a privacy boundary by default'
+  );
+  assert.deepEqual(
+    resolveOutputTranslationPolicy({
+      GROUPGUARD_TRANSLATE_ENDPOINT: 'https://translate.internal/v1',
+      GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK: 'true'
+    } as NodeJS.ProcessEnv),
+    { mode: 'custom', endpoint: 'https://translate.internal/v1', allowPublicFallback: true },
+    'public fallback must require an explicit opt-in for custom endpoints'
+  );
+  assert.equal(
+    resolveOutputTranslationPolicy({} as NodeJS.ProcessEnv).mode,
+    'public-default',
+    'unset endpoint keeps the documented built-in public provider chain'
   );
 
   const localizedParams = await localizeOneBotSendParams('send_group_msg', {
@@ -83,6 +109,12 @@ async function main(): Promise<void> {
   assert.ok(protectedTraditionalText.includes('https://example.com/路径/文件'), 'URL must remain byte-for-byte unchanged');
   assert.ok(protectedTraditionalText.includes('```ts\nconst 查询 = "简体";\n```'), 'fenced code must remain byte-for-byte unchanged');
 
+  assert.equal(
+    await localizeOutputTextSafe('完成后我会把链接发到这里', 'zh-TW'),
+    '完成後我會把連結發到這裡',
+    'common context-sensitive Traditional output must not remain partially Simplified'
+  );
+
   const protectedForwardTraditional = await localizeOneBotSendParamsSafe('send_group_forward_msg', {
     group_id: 123456,
     messages: [{
@@ -99,6 +131,14 @@ async function main(): Promise<void> {
     '複製 `{查询}` 後開啟瀏覽器'
   );
 
+  const cqTraditional = await localizeOutputTextSafe(
+    '发送 [CQ:image,file=C:\\图片\\简体.png] 后继续',
+    'zh-TW'
+  );
+  assert.ok(cqTraditional.includes('[CQ:image,file=C:\\图片\\简体.png]'), 'CQ payload must remain byte-for-byte unchanged');
+  assert.match(cqTraditional, /^傳送 /);
+  assert.match(cqTraditional, / 後繼續$/);
+
   const normalized = normalizePluginConfig({
     ...DEFAULT_PLUGIN_CONFIG,
     global: { ...DEFAULT_PLUGIN_CONFIG.global, outputLocale: 'en' }
@@ -113,11 +153,18 @@ async function main(): Promise<void> {
   });
   assert.equal(generated.text, '需要管理员权限', 'non-zh-CN mode must not add Simplified-Chinese persona wrappers');
 
-  const patchedPage = applyOutputLocaleWebUiPatch('<html><head></head><body><section id="tab-advanced"><form id="advancedForm"></form></section></body></html>');
+  const patchedPage = applyOutputLocaleWebUiPatch('<html><head></head><body><button id="refreshBtn"></button><section id="tab-advanced"><form id="advancedForm"></form></section></body></html>');
   assert.match(patchedPage, /global\.outputLocale/);
   assert.match(patchedPage, /简体中文（默认）/);
   assert.match(patchedPage, /繁體中文/);
   assert.match(patchedPage, />English</);
+  assert.match(patchedPage, /syncGenericField/);
+  assert.match(patchedPage, /refreshBtn/);
+
+  const adapterSource = fs.readFileSync(new URL('../src/core/state-infra/plugin_state_context_adapter.ts', import.meta.url), 'utf8');
+  assert.match(adapterSource, /localizeOneBotSendParamsSafe/);
+  assert.match(adapterSource, /guanjiaParams/);
+  assert.match(adapterSource, /routeGroupMessage\(guanjiaParams/);
 
   const previousConfig = configStateService.getConfig();
   const downstreamCalls: Array<{ action: string; params: any }> = [];
