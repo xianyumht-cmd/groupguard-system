@@ -44,6 +44,8 @@ jobs:
           files = [
               Path('../scripts/windows/groupguard-update.ps1'),
               Path('../scripts/windows/groupguard-rollback.ps1'),
+              Path('../scripts/windows/groupguard-update-89-121.ps1'),
+              Path('../scripts/windows/groupguard-deploy-bundle.ps1'),
           ]
           bad = []
           for path in files:
@@ -66,6 +68,7 @@ jobs:
           helpers=(
             ../scripts/windows/groupguard-remote-deploy.sh
             ../scripts/windows/groupguard-remote-rollback.sh
+            ../scripts/windows/groupguard-remote-topology.sh
           )
           for helper in "${helpers[@]}"; do
             if LC_ALL=C grep -n $'\r' "$helper"; then
@@ -76,6 +79,7 @@ jobs:
           launchers=(
             ../scripts/windows/groupguard-update.ps1
             ../scripts/windows/groupguard-rollback.ps1
+            ../scripts/windows/groupguard-deploy-bundle.ps1
           )
           for launcher in "${launchers[@]}"; do
             grep -Fq 'function New-LfHelperCopy' "$launcher"
@@ -107,6 +111,7 @@ jobs:
         run: |
           sh -n ../scripts/windows/groupguard-remote-deploy.sh
           sh -n ../scripts/windows/groupguard-remote-rollback.sh
+          sh -n ../scripts/windows/groupguard-remote-topology.sh
       - name: Forbid executable deployment-state loading
         shell: bash
         run: |
@@ -114,13 +119,14 @@ jobs:
           helpers=(
             ../scripts/windows/groupguard-remote-deploy.sh
             ../scripts/windows/groupguard-remote-rollback.sh
+            ../scripts/windows/groupguard-remote-topology.sh
           )
           if grep -nE '^[[:space:]]*(\.|source)[[:space:]]+' "${helpers[@]}"; then
-            echo 'deployment helpers must parse state as data; source/dot execution is forbidden' >&2
+            echo 'deployment helpers must not source/dot execute remote data' >&2
             exit 1
           fi
           if grep -nE '^[[:space:]]*eval[[:space:]]+' "${helpers[@]}"; then
-            echo 'deployment helpers must never eval persisted state' >&2
+            echo 'deployment helpers must never eval persisted or discovered data' >&2
             exit 1
           fi
           grep -q 'state_value()' ../scripts/windows/groupguard-remote-deploy.sh
