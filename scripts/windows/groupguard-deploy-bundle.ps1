@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 $completedHosts = New-Object System.Collections.Generic.List[string]
+$rollbackHelperUpload = ''
 
 function Write-Step([string]$Message) {
   Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -72,9 +73,31 @@ function Assert-SafeParameters {
   }
 }
 
+function Invoke-HostRollback([string]$HostName) {
+  if (-not $rollbackHelperUpload -or -not (Test-Path -LiteralPath $rollbackHelperUpload -PathType Leaf)) {
+    throw 'Bundle rollback helper transport copy is unavailable.'
+  }
+  $sshTarget = "$RemoteUser@$HostName"
+  $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
+  $remoteRollbackHelper = "/tmp/groupguard-bundle-rollback-$stamp.sh"
+  Invoke-Native 'scp' @('-P', "$RemotePort", $rollbackHelperUpload, "${sshTarget}:$remoteRollbackHelper") | Out-Null
+  $rollbackCommand = @(
+    'sh', (Quote-Remote $remoteRollbackHelper),
+    (Quote-Remote $RemoteAppDir),
+    (Quote-Remote $RemoteBackupRoot),
+    (Quote-Remote $RemoteContainer)
+  ) -join ' '
+  try {
+    Invoke-Native 'ssh' @('-p', "$RemotePort", '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', $sshTarget, $rollbackCommand) | Out-Null
+  } finally {
+    Invoke-Native 'ssh' @('-p', "$RemotePort", $sshTarget, "rm -f '$remoteRollbackHelper'") -AllowFailure | Out-Null
+  }
+}
+
 try {
   Write-Host 'GroupGuard immutable deployment bundle' -ForegroundColor Green
   Write-Host 'Deploys only the prebuilt dist. Runtime config, SQLite/data, logs, credentials and secrets are preserved.'
+  Write-Host 'Fleet rule: both hosts finish on the new commit, or already-completed hosts are rolled back.'
 
   Assert-SafeParameters
   foreach ($cmd in @('ssh', 'scp')) { Require-Command $cmd }
@@ -82,7 +105,8 @@ try {
   $manifestPath = Join-Path $PackageDir 'manifest.json'
   $archivePath = Join-Path $PackageDir 'groupguard-dist.tar.gz'
   $helperPath = Join-Path $PackageDir 'groupguard-remote-deploy.sh'
-  foreach ($required in @($manifestPath, $archivePath, $helperPath)) {
+  $rollbackHelperPath = Join-Path $PackageDir 'groupguard-remote-rollback.sh'
+  foreach ($required in @($manifestPath, $archivePath, $helperPath, $rollbackHelperPath)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Deployment bundle file is missing: $required" }
   }
 
@@ -102,7 +126,9 @@ try {
   $tempRoot = Join-Path ([IO.Path]::GetTempPath()) "groupguard-bundle-$releaseId"
   New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
   $helperUpload = Join-Path $tempRoot 'groupguard-remote-deploy.sh'
+  $rollbackHelperUpload = Join-Path $tempRoot 'groupguard-remote-rollback.sh'
   New-LfHelperCopy $helperPath $helperUpload
+  New-LfHelperCopy $rollbackHelperPath $rollbackHelperUpload
 
   foreach ($hostName in $RemoteHosts) {
     Write-Step "Deploy $hostName"
@@ -147,10 +173,29 @@ try {
   Write-Host "`nDeployment completed on all hosts: $($completedHosts -join ', ')" -ForegroundColor Green
   exit 0
 } catch {
-  Write-Host "`nDeployment bundle failed: $($_.Exception.Message)" -ForegroundColor Red
+  $failureMessage = $_.Exception.Message
+  Write-Host "`nDeployment bundle failed: $failureMessage" -ForegroundColor Red
+  Write-Host 'The currently failing host uses the deploy helper automatic restoration path after a failed post-switch health check.' -ForegroundColor Yellow
+  $rollbackFailures = New-Object System.Collections.Generic.List[string]
   if ($completedHosts.Count -gt 0) {
-    Write-Host "Already completed hosts: $($completedHosts -join ', ')" -ForegroundColor Yellow
+    Write-Host "Reconciling previously completed hosts: $($completedHosts -join ', ')" -ForegroundColor Yellow
+    for ($index = $completedHosts.Count - 1; $index -ge 0; $index--) {
+      $completedHost = [string]$completedHosts[$index]
+      try {
+        Invoke-HostRollback $completedHost
+        Write-Host "Fleet reconciliation rollback verified on $completedHost" -ForegroundColor Green
+      } catch {
+        Write-Host "Fleet reconciliation rollback FAILED on $completedHost: $($_.Exception.Message)" -ForegroundColor Red
+        $rollbackFailures.Add($completedHost) | Out-Null
+      }
+    }
   }
-  Write-Host 'The remote helper automatically attempts code restoration after a failed post-switch health check.' -ForegroundColor Yellow
+  if ($rollbackFailures.Count -gt 0) {
+    Write-Host "Fleet reconciliation is incomplete. Manual attention required on: $($rollbackFailures -join ', ')" -ForegroundColor Red
+    exit 90
+  }
+  if ($completedHosts.Count -gt 0) {
+    Write-Host 'Fleet reconciliation completed: earlier hosts were returned to their recorded pre-deployment code.' -ForegroundColor Green
+  }
   exit 1
 }
