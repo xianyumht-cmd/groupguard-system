@@ -6,6 +6,7 @@ on:
       - 'onebot-plugin-groupguard/**'
       - 'scripts/windows/groupguard-deploy-bundle.ps1'
       - 'scripts/windows/groupguard-remote-deploy.sh'
+      - 'scripts/windows/groupguard-remote-rollback.sh'
       - 'DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd'
       - '.github/workflows/groupguard-build.yml'
   pull_request:
@@ -13,6 +14,7 @@ on:
       - 'onebot-plugin-groupguard/**'
       - 'scripts/windows/groupguard-deploy-bundle.ps1'
       - 'scripts/windows/groupguard-remote-deploy.sh'
+      - 'scripts/windows/groupguard-remote-rollback.sh'
       - 'DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd'
       - '.github/workflows/groupguard-build.yml'
 
@@ -77,6 +79,7 @@ jobs:
           cp ../DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd "$bundle/DEPLOY-GROUPGUARD-89-121.cmd"
           cp ../scripts/windows/groupguard-deploy-bundle.ps1 "$bundle/groupguard-deploy-bundle.ps1"
           cp ../scripts/windows/groupguard-remote-deploy.sh "$bundle/groupguard-remote-deploy.sh"
+          cp ../scripts/windows/groupguard-remote-rollback.sh "$bundle/groupguard-remote-rollback.sh"
           cat > "$bundle/README.txt" <<'EOF'
           GroupGuard immutable deployment bundle
 
@@ -84,7 +87,8 @@ jobs:
           2. Double-click DEPLOY-GROUPGUARD-89-121.cmd.
           3. The bundle deploys the exact prebuilt dist to 192.168.3.89 first, then 192.168.3.121.
           4. Runtime config.json, SQLite/data, logs, credentials and secrets are preserved.
-          5. Each host creates a code backup before switching. Failed post-switch health verification triggers automatic code restoration.
+          5. Each host creates a code backup before switching and verifies the exact running commit.
+          6. If a later host fails, previously completed hosts are rolled back in reverse order so the fleet is not intentionally left split across releases.
           EOF
       - name: Upload immutable deployment bundle
         uses: actions/upload-artifact@v4
