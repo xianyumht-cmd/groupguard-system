@@ -78,11 +78,30 @@ The dual-host wrapper uses these defaults for both hosts unless its PowerShell p
 - backup root: `/mnt/sda1/groupguard/backups`;
 - container: `groupguard-snowluma`.
 
+## Immutable dual-host deployment bundle
+
+`GroupGuard Build` also produces an Actions artifact named `groupguard-deployment-bundle-<commit>`. This is the preferred handoff when the operator wants a download-and-run package instead of rebuilding on the Windows machine.
+
+The artifact contains:
+
+- `DEPLOY-GROUPGUARD-89-121.cmd`;
+- `groupguard-deploy-bundle.ps1`;
+- `groupguard-remote-deploy.sh`;
+- `groupguard-dist.tar.gz` with the prebuilt SnowLuma `dist`;
+- `manifest.json` with exact commit, release id, SHA-256, build time, and workflow-run id;
+- `README.txt`.
+
+The CI packaging step rebuilds SnowLuma with `GROUPGUARD_COMMIT_SHA` set to the exact source commit, verifies `dist/build-info.json`, calculates the archive SHA-256, and uploads the immutable artifact. The Windows bundle runner verifies the manifest and archive hash before any SSH mutation, normalizes the remote helper to LF, deploys 89 first and 121 second, and reuses the same backup-first remote helper and authenticated exact-build health contract as the repository update workflow.
+
+The bundle requires only Windows `ssh` and `scp`; it does not require local Node.js/npm compilation or a Git worktree. It is still code-only: runtime `config.json`, SQLite/data, logs, credentials, and secrets remain outside the replacement set.
+
+Use a bundle produced from the accepted `main` commit rather than a PR-head artifact for production. The running commit reported by `/api/build-info` and `/api/health` must equal the bundle manifest commit on each host.
+
 ### Safety rules
 
 - Never use force push, hard reset, rebase, clean, or stash as an automatic deployment recovery mechanism.
 - If the local worktree is dirty or `main` cannot fast-forward to `origin/main`, stop and report the state.
-- The ARM hosts are not assumed to have a usable Node build toolchain; build and TypeScript verification run on Windows.
+- The ARM hosts are not assumed to have a usable Node build toolchain; build and TypeScript verification run on Windows or GitHub Actions.
 - PowerShell 5.1 may expose normal SSH stderr as error records; deployment decisions use the native process exit code, not stderr text by itself.
 - The deployment package is code-only. Runtime `config.json`, SQLite/data, logs, credentials, and secrets are outside the replacement set.
 - Backup and manifest creation must happen before the production code switch.
@@ -126,5 +145,5 @@ For the 2026-08-19 configuration-maturity task, manual product testing is intent
 3. final diff review has no unresolved High/Critical finding;
 4. the PR is merged to `main`;
 5. `main` is verified to contain the accepted merge and required push-side CI passes;
-6. only then use the Windows update launcher to synchronize the local checkout and production plugin code;
+6. only then use the Windows update launcher or accepted immutable deployment bundle to synchronize production plugin code;
 7. keep the rollback launcher available during the single manual product test.
