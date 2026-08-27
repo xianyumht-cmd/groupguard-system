@@ -1,5 +1,45 @@
 # GroupGuard Decisions
 
+## 2026-08-27 — Global output locale is an egress concern, not an input-command or image concern
+
+### Decision
+
+GroupGuard has one global output-locale setting at `config.global.outputLocale` with three supported values: `zh-CN` (default), `zh-TW`, and `en`.
+
+The setting changes only user-visible bot text. Input command recognition remains unchanged, and image/file payloads are never translated. User-defined Q&A, welcome text, link notices, query/rate-limit messages, template output, and forward-node text are localized only when they leave the bot; their persisted source values remain unchanged.
+
+Localization is enforced at the final OneBot action egress (`OneBotActionCaller`) so text added late by reply templates or outgoing-risk packaging cannot bypass the selected output locale. URLs, CQ codes, placeholders, paths, and code spans/blocks are protected. Repeated translations are cached. Built-in high-frequency messages have local fast paths; arbitrary custom Simplified-Chinese text can use the configured translation endpoint, with a second public provider fallback. English mode fails closed with an English availability notice rather than leaking Chinese if all translation providers fail. Traditional mode has a local Simplified-to-Traditional fallback.
+
+### Reason
+
+The dominant multilingual use cases are Q&A and textual query/system notices, while most query results are images and do not need localization. Localizing individual business functions would leave hidden prompts such as Q&A link notices, template prefixes, outgoing-risk notices, and future direct sends uncovered. Rewriting stored Q&A would also make later language switching lossy.
+
+### Consequences
+
+- Existing installations remain behavior-compatible because missing/invalid `outputLocale` resolves to `zh-CN`.
+- The WebUI exposes one global selector for Simplified Chinese, Traditional Chinese, and English.
+- Custom Q&A remains authored/stored once and is converted only at send time.
+- First-time arbitrary English/Traditional custom content may incur translation latency; cache hits and built-in system messages avoid that network path.
+- Translation-provider availability affects unseen arbitrary custom English content, but does not change stored data or image/query payloads.
+- Per-group output-language overrides are intentionally not part of this first version.
+
+## 2026-08-27 — Dual-host deployment reuses the existing single-host safety workflow
+
+### Decision
+
+The one-click `DEPLOY-GROUPGUARD-89-121.cmd` launcher deploys sequentially to `192.168.3.89` and `192.168.3.121` by invoking the existing audited `scripts/windows/groupguard-update.ps1` once per host. The application directory, backup root, container name, code-only switch, exact-build health verification, and automatic restoration semantics remain owned by the single-host workflow rather than being duplicated.
+
+### Reason
+
+The user needs one local action to update both ARM runtimes. Reusing the existing release path keeps backup, rollback, path-validation, and health-check behavior identical on both hosts and avoids a second independent deployment implementation.
+
+### Consequences
+
+- 89 must complete successfully before the wrapper starts 121.
+- If 121 fails after 89 succeeds, the wrapper reports the partial state explicitly; the failed host still uses the single-host automatic restoration path.
+- Runtime config, SQLite/data, logs, credentials, and secrets remain untouched on both hosts.
+- Production deployment still requires current-task user authorization; this decision only defines the mechanism.
+
 ## 2026-08-19 — Separate global defaults, sparse group overrides, and effective runtime config
 
 ### Decision
