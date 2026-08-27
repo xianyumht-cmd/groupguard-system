@@ -14,15 +14,47 @@ Set-StrictMode -Version 2.0
 
 $targets = @('192.168.3.89', '192.168.3.121')
 $singleHostScript = Join-Path $RepoPath 'scripts\windows\groupguard-update.ps1'
+$rollbackScript = Join-Path $RepoPath 'scripts\windows\groupguard-rollback.ps1'
 
-if (-not (Test-Path -LiteralPath $singleHostScript -PathType Leaf)) {
-  Write-Host "Single-host deploy script not found: $singleHostScript" -ForegroundColor Red
-  exit 1
+foreach ($required in @($singleHostScript, $rollbackScript)) {
+  if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+    Write-Host "Required deployment script not found: $required" -ForegroundColor Red
+    exit 1
+  }
+}
+
+function Invoke-CompletedHostRollback([string[]]$Hosts) {
+  $failed = @()
+  for ($index = $Hosts.Count - 1; $index -ge 0; $index--) {
+    $hostName = [string]$Hosts[$index]
+    Write-Host "`nRolling back previously completed host $hostName to its recorded pre-deployment code..." -ForegroundColor Yellow
+    $rollbackArguments = @(
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', $rollbackScript,
+      '-RepoPath', $RepoPath,
+      '-RemoteHost', $hostName,
+      '-RemoteUser', $RemoteUser,
+      '-RemotePort', [string]$RemotePort,
+      '-RemoteAppDir', $RemoteAppDir,
+      '-RemoteBackupRoot', $RemoteBackupRoot,
+      '-RemoteContainer', $RemoteContainer
+    )
+    & powershell.exe @rollbackArguments
+    $rollbackCode = $LASTEXITCODE
+    if ($rollbackCode -ne 0) {
+      Write-Host "Fleet reconciliation rollback FAILED on $hostName (exit=$rollbackCode)." -ForegroundColor Red
+      $failed += $hostName
+    } else {
+      Write-Host "Fleet reconciliation rollback verified on $hostName." -ForegroundColor Green
+    }
+  }
+  return ,$failed
 }
 
 Write-Host 'GroupGuard one-click dual-host production deployment' -ForegroundColor Green
 Write-Host 'Targets: 192.168.3.89, 192.168.3.121'
-Write-Host 'Each host uses the existing backup-first, code-only deploy and automatic rollback checks.'
+Write-Host 'Fleet rule: both hosts finish on the new commit, or already-completed hosts are rolled back.'
 
 $completed = @()
 foreach ($target in $targets) {
@@ -47,9 +79,15 @@ foreach ($target in $targets) {
   $code = $LASTEXITCODE
   if ($code -ne 0) {
     Write-Host "`nDeployment failed on $target (exit=$code)." -ForegroundColor Red
+    Write-Host 'The failing host uses the single-host automatic restoration path if its code switch had already happened.' -ForegroundColor Yellow
     if ($completed.Count -gt 0) {
-      Write-Host "Already completed successfully: $($completed -join ', ')" -ForegroundColor Yellow
-      Write-Host 'The failed host uses the single-host deploy script automatic restoration path if the switch had already happened.' -ForegroundColor Yellow
+      Write-Host "Reconciling already-completed hosts back to their recorded pre-deployment code: $($completed -join ', ')" -ForegroundColor Yellow
+      $rollbackFailures = @(Invoke-CompletedHostRollback $completed)
+      if ($rollbackFailures.Count -gt 0) {
+        Write-Host "Fleet reconciliation is incomplete. Manual attention required on: $($rollbackFailures -join ', ')" -ForegroundColor Red
+        exit 90
+      }
+      Write-Host 'Fleet reconciliation completed: no earlier host is intentionally left on the failed release.' -ForegroundColor Green
     }
     exit $code
   }
