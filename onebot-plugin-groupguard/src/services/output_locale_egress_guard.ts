@@ -36,6 +36,7 @@ const TRADITIONAL_EGRESS_FIXUPS: Array<[string, string]> = [
   ['后我', '後我'],
   ['后將', '後將'],
   ['后開啟', '後開啟'],
+  ['后繼續', '後繼續'],
 ];
 
 interface ProtectedEnvelope {
