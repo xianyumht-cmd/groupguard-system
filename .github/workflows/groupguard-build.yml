@@ -46,6 +46,16 @@ jobs:
           code=$?
           cat build.log
           exit $code
+      - name: Guard Windows bundle launcher quoting
+        shell: bash
+        run: |
+          set -euo pipefail
+          launcher='../DEPLOY-GROUPGUARD-89-121-BUNDLE.cmd'
+          grep -Fq 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0groupguard-deploy-bundle.ps1"' "$launcher"
+          if grep -Fq -- '-PackageDir "%~dp0"' "$launcher"; then
+            echo 'bundle launcher must not pass %~dp0 as a quoted trailing-backslash PackageDir argument' >&2
+            exit 1
+          fi
       - name: Build immutable SnowLuma deployment candidate
         shell: bash
         env:

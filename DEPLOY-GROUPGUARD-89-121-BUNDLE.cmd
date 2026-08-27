@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0groupguard-deploy-bundle.ps1" -PackageDir "%~dp0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0groupguard-deploy-bundle.ps1"
 set "CODE=%ERRORLEVEL%"
 echo.
 if "%CODE%"=="0" (
