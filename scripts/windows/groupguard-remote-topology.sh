@@ -35,19 +35,17 @@ mounts_for_container() {
 path_related_to_mounts() {
   candidate=$1
   mounts=$2
-  old_ifs=$IFS
-  IFS='
-'
-  for source in $mounts; do
+  while IFS= read -r source; do
     [ -n "$source" ] || continue
     case "$source" in
-      "$candidate"|"$candidate"/*) IFS=$old_ifs; return 0 ;;
+      "$candidate"|"$candidate"/*) return 0 ;;
     esac
     case "$candidate" in
-      "$source"/*) IFS=$old_ifs; return 0 ;;
+      "$source"/*) return 0 ;;
     esac
-  done
-  IFS=$old_ifs
+  done <<EOF
+$mounts
+EOF
   return 1
 }
 
@@ -104,16 +102,14 @@ add_candidate() {
 
 add_candidate "$REQUESTED_APP_DIR"
 
-old_ifs=$IFS
-IFS='
-'
-for source in $mounts; do
+while IFS= read -r source; do
   [ -n "$source" ] || continue
   add_candidate "$source"
   add_candidate "$(dirname "$source")"
   add_candidate "$(dirname "$(dirname "$source")")"
-done
-IFS=$old_ifs
+done <<EOF
+$mounts
+EOF
 
 if [ -d "$SEARCH_ROOT" ]; then
   find "$SEARCH_ROOT" -maxdepth 6 -type f -path '*/dist/snowluma-service.mjs' 2>/dev/null | while IFS= read -r entry; do
