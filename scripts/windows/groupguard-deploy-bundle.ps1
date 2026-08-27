@@ -185,7 +185,7 @@ try {
         Invoke-HostRollback $completedHost
         Write-Host "Fleet reconciliation rollback verified on $completedHost" -ForegroundColor Green
       } catch {
-        Write-Host "Fleet reconciliation rollback FAILED on $completedHost: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Fleet reconciliation rollback FAILED on ${completedHost}: $($_.Exception.Message)" -ForegroundColor Red
         $rollbackFailures.Add($completedHost) | Out-Null
       }
     }
