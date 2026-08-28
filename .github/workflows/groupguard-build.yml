@@ -1,6 +1,7 @@
 name: GroupGuard Build
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'onebot-plugin-groupguard/**'
