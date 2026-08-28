@@ -19,6 +19,16 @@ export function normalizeQueryOverviewForWebUi(input: QueryOverview): QueryOverv
 
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
+    if (String(row.type || '') === 'lol_battle') {
+      const profile = profiles.lol_battle || {};
+      row.dataSource = 'local-api';
+      row.url = localApiUrl;
+      row.defaultOutputFormat = 'image';
+      row.outputFormat = profile.outputFormat || 'image';
+      row.wrapperMode = profile.wrapperMode || 'global';
+      row.profile = profile;
+      continue;
+    }
     if (['lol_ban', 'scammer', 'peer'].includes(String(row.type || ''))) {
       const profile = profiles[row.type] || {};
       row.dataSource = 'local-api';
@@ -60,7 +70,7 @@ export function patchQueryPageHtml(source: string): string {
   );
   page = page.replace(
     '优先级：单命令配置 > 分群配置 > 全局配置。当前先保存 WebUI 配置，下一步再接入真实查询发送链路。',
-    '优先级：单命令配置 > 分群配置 > 全局配置。插件只提交输出偏好，接口端生成最终文字、合并转发或图片。'
+    '查战绩优先级：分群配置 > 单命令配置 > 图片默认。插件只提交输出偏好，接口端生成最终文字、合并转发或图片。'
   );
   page = page.replace('<option value="lol_hidden">查隐藏</option>', '');
   page = replaceOnce(
@@ -89,7 +99,7 @@ export function patchQueryPageHtml(source: string): string {
   );
 
   const oldCommandOut = "function commandOut(type,s){var g=currentGroupData&&currentGroupData.group||{};var profiles=currentOverview&&currentOverview.profiles||{};var p=profiles[type]||{};if(type==='lol_shard'){if(g.shardQueryOutputFormat!==undefined)return g.shardQueryOutputFormat;if(p.outputFormat)return p.outputFormat;return s.shardQueryOutputFormat||get(currentOverview,'config.shardQueryOutputFormat','image')}if(type==='lol_aram_augments')return 'image';if(type==='lol_ban'||type==='scammer'||type==='peer'||type==='ele_build')return 'text';if(g.lolQueryOutputFormat!==undefined)return g.lolQueryOutputFormat;if(p.outputFormat)return p.outputFormat;return s.lolQueryOutputFormat||get(currentOverview,'base.defaultOutputFormat','forward')}";
-  const nextCommandOut = "function commandOut(type,s){var g=currentGroupData&&currentGroupData.group||{};var profiles=currentOverview&&currentOverview.profiles||{};var p=profiles[type]||{};if(p.outputFormat)return p.outputFormat;if(type==='lol_shard'){if(g.shardQueryOutputFormat!==undefined)return g.shardQueryOutputFormat;return s.shardQueryOutputFormat||get(currentOverview,'config.shardQueryOutputFormat','image')}if(type==='lol_aram_augments')return 'image';if(g.lolQueryOutputFormat!==undefined)return g.lolQueryOutputFormat;return s.lolQueryOutputFormat||get(currentOverview,'base.defaultOutputFormat','forward')}";
+  const nextCommandOut = "function commandOut(type,s){var g=currentGroupData&&currentGroupData.group||{};var profiles=currentOverview&&currentOverview.profiles||{};var p=profiles[type]||{};if(type==='lol_battle'){if(g.useGlobal!==true&&g.lolQueryOutputFormat!==undefined)return g.lolQueryOutputFormat;if(p.outputFormat)return p.outputFormat;return 'image'}if(p.outputFormat)return p.outputFormat;if(type==='lol_shard'){if(g.shardQueryOutputFormat!==undefined)return g.shardQueryOutputFormat;return s.shardQueryOutputFormat||get(currentOverview,'config.shardQueryOutputFormat','image')}if(type==='lol_aram_augments')return 'image';if(g.lolQueryOutputFormat!==undefined)return g.lolQueryOutputFormat;return s.lolQueryOutputFormat||get(currentOverview,'base.defaultOutputFormat','forward')}";
   page = replaceOnce(page, oldCommandOut, nextCommandOut, 'commandOut');
 
   const oldCommandEnabled = "function commandEnabled(type,s){var fs=s.featureSwitches||{};var cs=s.lolQueryCommandSwitch||{};var profiles=currentOverview&&currentOverview.profiles||{};if((profiles[type]||{}).enabled===false)return false;var base=s.masterEnabled!==false&&s.queryEnabled!==false&&s.disableLolQuery!==true;if(type==='lol_ban')return base&&enabledSwitch(fs,'query.lol_ban')&&cs.banQuery!==false;if(type==='lol_battle')return base&&enabledSwitch(fs,'query.lol_battle')&&cs.battleQuery!==false;if(type==='lol_hidden')return base&&enabledSwitch(fs,'query.lol_hidden')&&cs.hiddenQuery!==false;if(type==='lol_shard')return base&&enabledSwitch(fs,'query.lol_shard');if(type==='lol_aram_augments')return base&&enabledSwitch(fs,'query.lol_aram_augments');if(type==='scammer')return s.masterEnabled!==false&&s.queryEnabled!==false&&enabledSwitch(fs,'query.scammer');if(type==='peer')return s.masterEnabled!==false&&s.queryEnabled!==false&&enabledSwitch(fs,'query.peer');if(type==='ele_build')return s.masterEnabled!==false&&s.queryEnabled!==false&&s.dynamicCommandEnabled!==false;return false}";
