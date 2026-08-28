@@ -8,6 +8,20 @@ Updated: 2026-08-28
 - Repository workflow rules are defined by `AGENTS.md` and require task branches, CI, PR merge, main verification, and cleanup before a development task is considered complete.
 - PR `#46 feat: add global bot output language and dual-host deploy` is the implementation record for the multilingual-output and immutable 89/121 deployment package.
 - PRs `#47` and `#48` hardened the Windows immutable-bundle launcher after real Windows PowerShell 5.1 startup failures.
+- PR `#50 fix: make battle image delivery the feature default` is the implementation record for the battle-query output-preference repair.
+
+## Battle query delivery default
+
+The `查战绩` intranet command now treats output preference as an explicit battle-delivery concern instead of inferring group intent from already-merged effective settings:
+
+- a stored active group `lolQueryOutputFormat` override wins first;
+- a stored `useGlobal=true` row does not reactivate dormant output-format values;
+- an explicit `queryCommandProfiles.lol_battle.outputFormat` wins next;
+- when neither group nor battle profile specifies a format, battle uses the feature default `image`;
+- the intranet request continues to advertise `capabilities.image=true`;
+- the SnowLuma query WebUI presents the same battle default and precedence.
+
+This repository change does not by itself deploy or restart an ARM production runtime. Runtime state must be verified separately before any later production rollout.
 
 ## Global output-language implementation
 
