@@ -2,9 +2,175 @@
 
 ## Production boundary
 
-Canonical development happens in `D:\project2\groupguard-system` on Windows. ARM runtimes such as `192.168.3.89` and `192.168.3.121` are separate production hosts. Repository changes do not imply a production deployment.
+Canonical development happens in `D:\project2\groupguard-system` on Windows. ARM runtimes such as `192.168.3.89` and `192.168.3.121` are separate production hosts.
 
-Do not deploy or restart production merely because a branch, PR, build, or CI run succeeded. Production deployment/restart requires explicit user intent in the current task.
+Repository changes, successful CI, or a downloadable artifact do not by themselves authorize a production change. Production deployment/restart requires explicit user intent in the current task.
+
+Production code deployment is code-only. Do not overwrite runtime `config.json`, SQLite/data, logs, credentials, or secrets.
+
+## Current host topology
+
+The two production hosts are not layout-identical.
+
+### 192.168.3.89
+
+Historical verified topology:
+
+- SSH user: `root`;
+- container: `groupguard-snowluma`;
+- application root: `/mnt/sda1/groupguard/app`;
+- backup root: `/mnt/sda1/groupguard/backups`.
+
+### 192.168.3.121
+
+Read-only runtime diagnostics on 2026-08-28 observed:
+
+- SSH user: `root`;
+- container: `groupguard-snowluma`;
+- container workdir: `/app`;
+- host bind mount: `/mnt/groupguard-data/groupguard/app -> /app`;
+- WebUI/query listener: `6108`.
+
+Do not use `/mnt/sda1/groupguard/app` as a hard-coded 121 path. The deploy flow must resolve each host independently from live container mounts and verify existing `config/`, `data/`, and `dist/snowluma-service.mjs` before mutation.
+
+## Accepted battle-query production baseline
+
+PR `#50` fixed battle output-preference ownership. The accepted implementation commit is:
+
+```text
+23ed0084eb2214e591a0108b5b82d33fb10b00ba
+```
+
+The operator reported replacing the same accepted SnowLuma `dist` on both 89 and 121. 121 was then tested with `查战绩` and returned the expected image result.
+
+Battle output precedence is:
+
+```text
+active explicit group lolQueryOutputFormat
+    > queryCommandProfiles.lol_battle.outputFormat
+    > built-in image default
+```
+
+A `useGlobal=true` row does not reactivate dormant historical group values.
+
+## Standard Windows single-host update workflow
+
+After an accepted change has been merged to `main`, the repository-based single-host launcher is:
+
+```text
+GROUPGUARD-UPDATE.cmd
+```
+
+The workflow must:
+
+1. require the canonical repository and a clean worktree;
+2. update local `main` using strict fast-forward only;
+3. require local `HEAD == origin/main`;
+4. install dependencies from the lockfile;
+5. run the automated test suite;
+6. build SnowLuma `dist` with exact commit metadata;
+7. package the candidate and calculate SHA-256;
+8. verify SSH connectivity;
+9. resolve/verify the target app topology;
+10. create a timestamped code backup and pending deployment state;
+11. switch only plugin code;
+12. restart `groupguard-snowluma`;
+13. make authenticated `/api/build-info` and `/api/health` checks;
+14. require exact running commit identity, non-dirty build metadata, and ready health;
+15. automatically restore the previous code when post-switch verification fails;
+16. persist deployment state under `%LOCALAPPDATA%\GroupGuard\deployment-state`.
+
+Native process exit codes are authoritative. Windows PowerShell 5.1 SSH stderr text alone is not treated as failure.
+
+## One-click dual-host deployment
+
+For an explicitly authorized 89 + 121 deployment, use the audited dual-host bundle or repository launcher.
+
+Before either host changes code, the launcher must perform a read-only topology preflight on both hosts. The resolver may accept a configured path only when it is associated with the live container and contains the required existing runtime layout. If the configured path is wrong, it may select one unique safe candidate from the live container mounts. If topology cannot be proved uniquely, deployment stops before mutation.
+
+The deployment order is:
+
+1. verify both host topology profiles;
+2. deploy 89;
+3. require exact-build health on 89;
+4. deploy 121;
+5. require exact-build health on 121.
+
+Fleet invariant:
+
+> Either both hosts finish on the accepted new commit, or hosts already completed by that release attempt are rolled back in reverse order to their recorded pre-deployment code.
+
+Never deliberately leave a release split across 89 and 121 after a later-host failure.
+
+## Immutable GitHub Actions deployment bundle
+
+`GroupGuard Build` produces an artifact named:
+
+```text
+groupguard-deployment-bundle-<commit>
+```
+
+This is the preferred download-and-run handoff when the operator does not want to compile locally.
+
+The bundle contains:
+
+- `DEPLOY-GROUPGUARD-89-121.cmd`;
+- `groupguard-deploy-bundle.ps1`;
+- `groupguard-remote-topology.sh`;
+- `groupguard-remote-deploy.sh`;
+- `groupguard-remote-rollback.sh`;
+- `groupguard-dist.tar.gz` with prebuilt SnowLuma `dist`;
+- `manifest.json` with exact commit, release id, SHA-256, build time, and workflow-run id;
+- `README.txt`.
+
+The build validates `dist/build-info.json`, hashes the archive, runs the bundle preflight, tests topology fallback behavior, and runs a Windows PowerShell 5.1 startup preflight.
+
+Use a bundle produced from an accepted `main` commit, not a PR-head artifact, for production.
+
+### Rebuild the latest downloadable bundle
+
+Actions artifacts have finite retention. `GroupGuard Build` therefore supports manual `workflow_dispatch`.
+
+If the previously accepted artifact has expired or a fresh package is needed without changing source code:
+
+1. open the repository's **Actions** page;
+2. select **GroupGuard Build**;
+3. choose **Run workflow** on `main`;
+4. wait for both the Linux build and Windows PowerShell 5.1 preflight to succeed;
+5. download `groupguard-deployment-bundle-<current-main-commit>`.
+
+A manually dispatched run builds the exact current `main` commit and embeds that SHA in `dist/build-info.json` and the bundle manifest. This makes the current repository state reproducibly downloadable even after older artifacts expire.
+
+For the accepted PR #50 merge, the successful main build run `33133786572` produced:
+
+```text
+groupguard-deployment-bundle-23ed0084eb2214e591a0108b5b82d33fb10b00ba
+```
+
+Artifact id: `9671262220`  
+Digest: `sha256:9583d103d6783a0bc321d8bf83768380006f34b1c0fb3f31cc042650d5870e6e`
+
+## Manual `dist` replacement
+
+Manual `dist` replacement is acceptable only when the operator explicitly chooses it and understands that it bypasses the bundle's automatic backup/topology/rollback orchestration.
+
+When doing it manually:
+
+- replace only the built `dist` directory;
+- preserve `config`, `data`, SQLite, logs, credentials, and secrets;
+- restart only the intended `groupguard-snowluma` container;
+- verify `/api/build-info` and `/api/health` afterward when possible;
+- run a business-level query test for the behavior being changed.
+
+For the 2026-08-28 battle fix, the operator replaced `dist` on both 89 and 121 and confirmed the 121 battle image path works.
+
+## Manual rollback
+
+For a business-level problem discovered after a technically healthy deployment, use the recorded rollback workflow rather than replacing arbitrary historical files.
+
+The rollback path restores the recorded code backup, restarts the intended `groupguard-snowluma` container, and verifies the restored build using authenticated `/api/build-info` and `/api/health` checks. Runtime config/data/logs/secrets remain untouched.
+
+For a failed multi-host deployment, automatic fleet reconciliation is separate from a later business rollback: hosts completed by the failed release attempt are rolled back in reverse order so the fleet does not remain intentionally split.
 
 ## Global output-language operations
 
@@ -14,11 +180,9 @@ The WebUI advanced/global configuration includes `机器人全局输出语言`:
 - `zh-TW` — 繁體中文;
 - `en` — English.
 
-Saving the selector patches `global.outputLocale`, synchronizes the generic advanced-form field, and refreshes runtime configuration immediately. It does not rewrite stored Q&A or other administrator-authored source text.
+Saving the selector patches `global.outputLocale`. Input command recognition is unchanged. Images/files are not translated. Stored administrator-authored Q&A/source text is not rewritten.
 
-Only outgoing natural-language text is localized. Images/files, command recognition, URLs, CQ codes, placeholders, Windows/POSIX paths, inline code, and fenced code are outside the translation set. The Q群管家 routing path uses the same locale boundary before successful delegated delivery; a fallback to the normal bot preserves the original message and lets final OneBot egress localize it once.
-
-High-frequency built-in system notices use local translations. Arbitrary custom content uses an in-memory translation cache after its first translation. Translation-provider controls are:
+Translation-provider controls are:
 
 ```text
 GROUPGUARD_TRANSLATE_ENDPOINT
@@ -26,152 +190,16 @@ GROUPGUARD_TRANSLATE_API_KEY
 GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK
 ```
 
-Provider/data-boundary rules:
+Never commit translation API keys or other runtime secrets.
 
-- if `GROUPGUARD_TRANSLATE_ENDPOINT` is unset, the built-in public provider chain is allowed;
-- if it is explicitly empty or `off`, arbitrary remote translation is disabled;
-- if it points to a custom/private endpoint, that endpoint is the only destination by default;
-- a failed custom/private endpoint may fall back to the public provider only when `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK` is explicitly set to `1`, `true`, `yes`, or `on`;
-- `zh-TW` still has deterministic local fallback conversion; unseen arbitrary English content fails closed with an English temporary-unavailable notice rather than leaking Chinese when translation cannot be performed.
+## Safety rules
 
-## Standard Windows single-host update workflow
-
-After the accepted change has been merged to `main`, run:
-
-```text
-GROUPGUARD-UPDATE.cmd
-```
-
-The launcher calls `scripts/windows/groupguard-update.ps1` and performs:
-
-1. verify required native tools (`git`, `node`, `npm`, `ssh`, `scp`, `tar`) and require Node.js >= 22;
-2. require a clean local worktree and the canonical `xianyumht-cmd/groupguard-system` origin;
-3. update local `main` using fetch + strict fast-forward only, then require local `HEAD == origin/main`;
-4. `npm ci` from the lockfile;
-5. run the full automated test suite;
-6. build the SnowLuma production `dist` with exact commit metadata and reject dirty build metadata;
-7. package the immutable candidate and calculate SHA-256;
-8. verify SSH connectivity to the selected remote host (default `root@192.168.3.89`);
-9. upload only the candidate package and audited remote helper;
-10. create a timestamped code backup and pending deployment state before switching code;
-11. atomically switch the built plugin `dist` without overwriting runtime config/data/logs/secrets;
-12. restart `groupguard-snowluma`;
-13. resolve the WebUI token inside the container and make authenticated `/api/build-info` + `/api/health` requests;
-14. require `health.ready === true`, exact running commit identity, and a non-dirty build before declaring deployment success;
-15. automatically attempt restoration of the pre-switch code if post-switch verification fails, then verify the restored commit with the same authenticated check;
-16. save the deployment manifest and copy it back to `%LOCALAPPDATA%\GroupGuard\deployment-state`.
-
-If an interrupted deployment is rerun after the target commit is already live, reconciliation succeeds only when the helper can also recover a valid matching rollback backup. It fails closed rather than replacing the latest rollback pointer with an empty or unverified backup path.
-
-## One-click dual-host deployment: 89 + 121
-
-When the current task explicitly authorizes deployment to both ARM hosts, run:
-
-```text
-DEPLOY-GROUPGUARD-89-121.cmd
-```
-
-Before either host is allowed to switch code, the dual-host launcher now performs a read-only topology preflight on **both** hosts. `scripts/windows/groupguard-remote-topology.sh` verifies the existing container and resolves the app root from the live container mounts plus the required existing `config/`, `data/`, and `dist/snowluma-service.mjs` layout. A configured path is accepted only when it is associated with the live container. If the configured path is missing, a unique safe candidate below `/mnt/sda1/groupguard/` may be selected from the live mount topology. If the container or app root cannot be identified uniquely, deployment stops before either host changes code and prints the available container/mount candidates for diagnosis.
-
-After both host profiles are verified, `scripts/windows/groupguard-update-89-121.ps1` invokes the standard single-host workflow sequentially for:
-
-1. `192.168.3.89` using 89's verified app/backup/container profile;
-2. `192.168.3.121` using 121's independently verified profile.
-
-Fleet invariant:
-
-> Either both hosts finish on the accepted new commit, or any host that already completed the release is rolled back to its recorded pre-deployment code before the wrapper returns failure.
-
-Host 121 starts only after host 89 has completed its exact-build health check successfully. If 121 fails after deployment has started, its own single-host helper first uses its automatic restoration path when applicable, then the dual-host wrapper invokes the normal audited rollback workflow on 89 using 89's verified topology profile. Completed hosts are rolled back in reverse order. If any reconciliation rollback fails, the launcher exits with a dedicated fleet-reconciliation failure and names the host requiring manual attention; it never reports the release as successful with an intentionally split fleet.
-
-The launcher uses these values only as topology hints, not as proof that both hosts are identical:
-
-- user: `root`;
-- requested application root: `/mnt/sda1/groupguard/app`;
-- requested backup root: `/mnt/sda1/groupguard/backups`;
-- requested container: `groupguard-snowluma`.
-
-## Immutable dual-host deployment bundle
-
-`GroupGuard Build` also produces an Actions artifact named `groupguard-deployment-bundle-<commit>`. This is the preferred handoff when the operator wants a download-and-run package instead of rebuilding on the Windows machine.
-
-The artifact contains:
-
-- `DEPLOY-GROUPGUARD-89-121.cmd`;
-- `groupguard-deploy-bundle.ps1`;
-- `groupguard-remote-topology.sh`;
-- `groupguard-remote-deploy.sh`;
-- `groupguard-remote-rollback.sh`;
-- `groupguard-dist.tar.gz` with the prebuilt SnowLuma `dist`;
-- `manifest.json` with exact commit, release id, SHA-256, build time, and workflow-run id;
-- `README.txt`.
-
-The CI packaging step rebuilds SnowLuma with `GROUPGUARD_COMMIT_SHA` set to the exact source commit, verifies `dist/build-info.json`, calculates the archive SHA-256, and uploads the immutable artifact. It also runs the generated bundle's local preflight and a Linux mock that proves a missing requested `/app` path can be replaced by a unique live-container-mounted GroupGuard app candidate.
-
-The Windows bundle runner verifies the manifest and archive hash before SSH, normalizes all remote helpers to LF, then performs the same **all-host topology preflight before mutation**. Only after both topology profiles are verified does it deploy 89 first and 121 second. Each host's resolved app root, backup root, and container are retained for deployment-state retrieval and any fleet reconciliation rollback.
-
-The bundle enforces the same fleet invariant as the repository wrapper. If a later host fails, earlier completed hosts are rolled back with the packaged audited rollback helper. A rollback failure is surfaced as an incomplete fleet reconciliation requiring manual attention.
-
-The bundle requires only Windows `ssh` and `scp`; it does not require local Node.js/npm compilation or a Git worktree. It is still code-only: runtime `config.json`, SQLite/data, logs, credentials, and secrets remain outside the replacement set.
-
-Use a bundle produced from the accepted `main` commit rather than a PR-head artifact for production. The running commit reported by `/api/build-info` and `/api/health` must equal the bundle manifest commit on each host.
-
-### Safety rules
-
-- Never use force push, hard reset, rebase, clean, or stash as an automatic deployment recovery mechanism.
-- If the local worktree is dirty or `main` cannot fast-forward to `origin/main`, stop and report the state.
-- The ARM hosts are not assumed to have a usable Node build toolchain; build and TypeScript verification run on Windows or GitHub Actions.
-- PowerShell 5.1 may expose normal SSH stderr as error records; deployment decisions use the native process exit code, not stderr text by itself.
-- The deployment package is code-only. Runtime `config.json`, SQLite/data, logs, credentials, and secrets are outside the replacement set.
-- Backup and manifest creation must happen before the production code switch.
-- Persisted deployment state is untrusted data: remote helpers parse it as data and never `source`, dot-load, or `eval` it.
-- A successful deployment/reconcile must retain a real validated rollback point.
-- A failed post-switch health/build-identity check must trigger the remote helper's automatic restoration attempt before the Windows launcher returns failure.
-- A multi-host release must verify every host's existing topology before changing any host.
-- A multi-host release must not deliberately leave an earlier completed host on the new release after a later host fails; reverse-order fleet rollback is mandatory.
-- Never create a guessed application directory merely because a requested default is missing. The topology preflight must prove an existing live app root or fail closed.
-
-## Manual rollback
-
-For a business-level problem discovered after a technically healthy deployment, run:
-
-```text
-ROLLBACK-GROUPGUARD.cmd
-```
-
-The launcher calls `scripts/windows/groupguard-rollback.ps1`, reads the most recent recorded deployment state, asks the remote rollback helper to restore the corresponding backup, restarts the selected production container, and verifies the restored commit using the same authenticated `/api/build-info` + `/api/health` contract. Before changing code, the rollback helper also creates a preimage of the currently running `dist`; if the rollback target is unhealthy, it attempts to restore that preimage.
-
-Rollback is for plugin code. It must not roll back or replace runtime SQLite/data, `config.json`, logs, or secrets.
-
-For a business-level problem discovered after both hosts deployed successfully, diagnose which host is affected before choosing rollback scope. The automatic rollback-on-deployment-failure behavior is different: during a failed multi-host release, the launchers reconcile every host already completed by that same release attempt so the fleet does not intentionally remain split.
-
-## Production paths and topology evidence
-
-Verified historical repository evidence records `192.168.3.89` with:
-
-- user: `root`
-- application root: `/mnt/sda1/groupguard/app`
-- backup root: `/mnt/sda1/groupguard/backups`
-- container: `groupguard-snowluma`
-
-The first 2026-08-28 immutable dual-host attempt using commit `719451423ce576e527513780b7df7fb8199c67f7` established additional production evidence:
-
-- 89 accepted the requested topology, deployed the target build, and passed exact-build health verification;
-- 121 rejected `/mnt/sda1/groupguard/app` with `APP_DIR_MISSING` before a code switch;
-- because the release could not complete on 121, the fleet reconciliation path rolled 89 back and verified the rollback;
-- therefore `/mnt/sda1/groupguard/app` must **not** be treated as a verified 121 application root;
-- the current 121 app/container topology remains unknown until the read-only topology preflight resolves it from the live host.
-
-Do not create `/mnt/sda1/groupguard/app` on 121 merely to satisfy the updater. If 121 has an existing GroupGuard runtime under another safe path, use the verified live-container-mounted path. If no existing initialized GroupGuard runtime can be identified, stop and treat 121 initialization as a separate deployment task rather than overwriting an assumed location.
-
-## Config-maturity acceptance sequence
-
-For the 2026-08-19 configuration-maturity task, manual product testing is intentionally deferred until the 1–6 engineering stages are complete. Before asking for that single final manual acceptance round:
-
-1. implementation and documentation are complete on the task branch;
-2. PR CI passes the repository's TypeScript, architecture, OneBot/SnowLuma, configuration-inheritance, deployment-safety, and real Chromium WebUI acceptance gates;
-3. final diff review has no unresolved High/Critical finding;
-4. the PR is merged to `main`;
-5. `main` is verified to contain the accepted merge and required push-side CI passes;
-6. only then use the Windows update launcher or accepted immutable deployment bundle to synchronize production plugin code;
-7. keep the rollback launcher available during the single manual product test.
+- No force push, hard reset, history-rewriting rebase, clean, or stash as automatic deployment recovery.
+- Stop if local history cannot strict-fast-forward to canonical `origin/main`.
+- Do not build on ARM production hosts when a Windows/GitHub Actions build is available.
+- Verify both host topologies before a multi-host code switch.
+- Never create a guessed application directory to make deployment proceed.
+- Keep runtime configuration/data/logs/secrets outside the replacement set.
+- Create and validate a rollback point before code switch when using the audited deploy workflow.
+- Persisted deployment state is untrusted data; remote helpers parse it as data and never `source`, dot-load, or `eval` it.
+- A failed post-switch exact-build/health check must restore the previous code or clearly surface incomplete recovery.
