@@ -6,14 +6,17 @@ import { configStateService } from '../src/core/state-services/config_state_serv
 import {
   createBattleIntranetCommandPlugin,
   executeBattleIntranetQuery,
-  parseBattleQueryInput
+  parseBattleQueryInput,
+  resolveBattlePreferredOutput
 } from '../src/dynamic-commands/intranet_battle_runtime_plugin.ts';
 import { parseGroupGuardQueryDelivery } from '../src/services/groupguard_query_delivery_client.ts';
+import { normalizeQueryOverviewForWebUi } from '../src/standalone/admin/query_webui_facade.ts';
 
 const fixtureRoot = fileURLToPath(new URL('../contracts/fixtures/groupguard-query-contracts/', import.meta.url));
 const runtimeSourcePath = fileURLToPath(new URL('../src/dynamic-commands/intranet_battle_runtime_plugin.ts', import.meta.url));
 const commandsSourcePath = fileURLToPath(new URL('../src/commands.ts', import.meta.url));
 const legacySourcePath = fileURLToPath(new URL('../src/services/interaction_service.ts', import.meta.url));
+const queryWebUiFacadePath = fileURLToPath(new URL('../src/standalone/admin/query_webui_facade.ts', import.meta.url));
 
 async function loadTextEnvelope() {
   const text = await readFile(`${fixtureRoot}/delivery-success-text.json`, 'utf8');
@@ -56,14 +59,89 @@ assert.equal(parseBattleQueryInput('张三#1').ok, false);
 const envelope = await loadTextEnvelope();
 const originalConfig = structuredClone(configStateService.getConfig() as any);
 try {
+  const preferenceConfig = structuredClone(originalConfig) as any;
+  preferenceConfig.global = {
+    ...(preferenceConfig.global || {}),
+    lolQueryOutputFormat: 'forward'
+  };
+  preferenceConfig.queryCommandProfiles = {
+    ...(preferenceConfig.queryCommandProfiles || {}),
+    lol_battle: { outputFormat: 'image' }
+  };
+  preferenceConfig.groups = {
+    '10001': {
+      useGlobal: false,
+      lolQueryOutputFormat: 'text'
+    }
+  };
+  configStateService.setConfig(preferenceConfig);
+  assert.equal(
+    resolveBattlePreferredOutput('10001'),
+    'text',
+    'explicit group override must win over the battle profile'
+  );
+
+  preferenceConfig.groups = {
+    '10001': {
+      useGlobal: true,
+      lolQueryOutputFormat: 'forward'
+    }
+  };
+  configStateService.setConfig(preferenceConfig);
+  assert.equal(
+    resolveBattlePreferredOutput('10001'),
+    'image',
+    'useGlobal=true must not revive a stale group-level output override'
+  );
+
+  preferenceConfig.groups = {};
+  preferenceConfig.queryCommandProfiles = {
+    lol_battle: { outputFormat: 'forward' }
+  };
+  configStateService.setConfig(preferenceConfig);
+  assert.equal(
+    resolveBattlePreferredOutput('10001'),
+    'forward',
+    'explicit battle profile must override the built-in image default'
+  );
+
+  preferenceConfig.queryCommandProfiles = {};
+  configStateService.setConfig(preferenceConfig);
+  assert.equal(
+    resolveBattlePreferredOutput('10001'),
+    'image',
+    'battle must default to image when neither group nor profile overrides output format'
+  );
+
+  const webUiDefault = normalizeQueryOverviewForWebUi({
+    base: { defaultOutputFormat: 'forward' },
+    config: { lolApiBaseUrl: 'http://127.0.0.1:5001' },
+    profiles: {},
+    rows: [{ type: 'lol_battle', outputFormat: 'forward', defaultOutputFormat: 'forward' }]
+  });
+  assert.equal(webUiDefault.rows[0].outputFormat, 'image');
+  assert.equal(webUiDefault.rows[0].defaultOutputFormat, 'image');
+
+  const webUiProfile = normalizeQueryOverviewForWebUi({
+    base: { defaultOutputFormat: 'forward' },
+    config: { lolApiBaseUrl: 'http://127.0.0.1:5001' },
+    profiles: { lol_battle: { outputFormat: 'forward' } },
+    rows: [{ type: 'lol_battle', outputFormat: 'image', defaultOutputFormat: 'image' }]
+  });
+  assert.equal(webUiProfile.rows[0].outputFormat, 'forward');
+
   const config = structuredClone(originalConfig) as any;
   config.lolApiBaseUrl = 'http://192.168.3.100:5001';
-  config.lolQueryOutputFormat = 'text';
   config.global = {
     ...(config.global || {}),
+    lolQueryOutputFormat: 'forward',
     lolQueryRequestTimeoutSeconds: 20,
     lolQueryGlobalMinIntervalSeconds: 0,
     lolQueryGroupMinIntervalSeconds: 0
+  };
+  config.queryCommandProfiles = {
+    ...(config.queryCommandProfiles || {}),
+    lol_battle: { outputFormat: 'image' }
   };
   config.groups = {
     ...(config.groups || {}),
@@ -171,5 +249,8 @@ const commandsSource = await readFile(commandsSourcePath, 'utf8');
 assert.match(commandsSource, /registerIntranetBattleCommandPlugins\(\)/);
 const legacySource = await readFile(legacySourcePath, 'utf8');
 assert.match(legacySource, /if \(text\.startsWith\('查战绩'\)\)/, 'legacy battle code should remain reviewable during migration');
+const queryWebUiFacadeSource = await readFile(queryWebUiFacadePath, 'utf8');
+assert.match(queryWebUiFacadeSource, /查战绩优先级：分群配置 > 单命令配置 > 图片默认/);
+assert.match(queryWebUiFacadeSource, /g\.useGlobal!==true&&g\.lolQueryOutputFormat!==undefined/);
 
 console.log('intranet battle command verification passed');

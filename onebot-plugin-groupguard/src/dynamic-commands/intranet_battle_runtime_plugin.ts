@@ -22,6 +22,7 @@ const COMMAND_ID = 'builtin.query.battle.intranet';
 const TRIGGER = '查战绩';
 const PRIORITY = 90;
 const FALLBACK_TEXT = '内网查询服务暂时不可用，请稍后再试。';
+const DEFAULT_BATTLE_PREFERRED_OUTPUT: IntranetPreferredOutput = 'image';
 
 export interface BattleQueryInput {
   playerId: string;
@@ -67,12 +68,14 @@ export function parseBattleQueryInput(value: unknown):
 
 export function resolveBattlePreferredOutput(groupId: string): IntranetPreferredOutput {
   const config = configStateService.getConfig() as any;
-  const group = configStateService.resolveGroupSettings(groupId) as any;
-  const groupValue = group?.lolQueryOutputFormat;
-  if (groupValue !== undefined && groupValue !== '') return normalizeIntranetPreferredOutput(groupValue);
+  const group = configStateService.getGroupSettings(groupId) as any;
+  if (group?.useGlobal !== true && Object.prototype.hasOwnProperty.call(group || {}, 'lolQueryOutputFormat')) {
+    const groupValue = group.lolQueryOutputFormat;
+    if (groupValue !== undefined && groupValue !== '') return normalizeIntranetPreferredOutput(groupValue);
+  }
   const profileValue = config?.queryCommandProfiles?.lol_battle?.outputFormat;
   if (profileValue !== undefined && profileValue !== '') return normalizeIntranetPreferredOutput(profileValue);
-  return normalizeIntranetPreferredOutput(config?.lolQueryOutputFormat || 'forward');
+  return DEFAULT_BATTLE_PREFERRED_OUTPUT;
 }
 
 function requestIdFromContext(

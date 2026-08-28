@@ -1,10 +1,35 @@
 # GroupGuard Decisions
 
+## 2026-08-28 — Battle query uses an image feature default without inventing group overrides
+
+### Decision
+
+`查战绩` resolves its preferred delivery from explicit configuration ownership rather than from the already-merged effective group object:
+
+1. an active raw group `lolQueryOutputFormat` override wins;
+2. `queryCommandProfiles.lol_battle.outputFormat` wins next;
+3. if neither is present, the battle feature default is `image`.
+
+A group row with `useGlobal=true` does not participate as a group override even if dormant historical values remain stored in that row. Other query families keep their existing output defaults; this decision does not globally change `global.lolQueryOutputFormat`.
+
+### Reason
+
+The effective group resolver fills inherited fields from global defaults. Using that merged object to detect an explicit group preference made an inherited `forward` look like group intent and prevented the battle profile/default from being reached. The API already supports image delivery and the battle request advertises `capabilities.image=true`, so the correct fix is preference ownership and feature defaulting, not an API rendering workaround.
+
+### Consequences
+
+- Battle queries default to image without changing unrelated query output defaults.
+- An explicit per-group text/forward/image value still overrides the battle feature.
+- An explicit battle command profile still overrides the feature default.
+- `useGlobal=true` cannot accidentally revive stale group output values.
+- SnowLuma query WebUI must show the same battle precedence/default as runtime.
+- Production deployment/restart remains a separate explicitly authorized operation.
+
 ## 2026-08-27 — Global output locale is an egress concern, not an input-command or image concern
 
 ### Decision
 
-GroupGuard has one global output-locale setting at `config.global.outputLocale` with three supported values: `zh-CN` (default), `zh-TW`, and `en`.
+GroupGuard has one global output-locale setting at `config.global.outputLocale` with three supported values: `zh-CN` (default), `zh-TW` (Traditional Chinese), and `en` (English).
 
 The setting changes only user-visible bot text. Input command recognition remains unchanged, and image/file payloads are never translated. User-defined Q&A, welcome text, link notices, query/rate-limit messages, template output, and forward-node text are localized only when they leave the bot; their persisted source values remain unchanged.
 

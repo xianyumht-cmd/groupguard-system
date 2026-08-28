@@ -1,5 +1,23 @@
 # GroupGuard Pitfalls
 
+## Effective config cannot prove that a group field was explicitly overridden
+
+Observed: 2026-08-28
+
+### Failure pattern
+
+A preference resolver used `resolveGroupSettings(groupId)` to decide whether a group had set `lolQueryOutputFormat`. That API returns the fully merged effective settings, so an inherited global value looked exactly like an explicit group override. The resolver therefore returned the inherited `forward` value before it ever evaluated the battle command profile, masking the intended feature preference.
+
+A `useGlobal=true` row can also retain dormant historical values. Reading the merged/effective object when deciding precedence can accidentally treat those dormant values as active intent.
+
+### Prevention
+
+- Use raw `getGroupSettings(groupId)` data when the question is whether a group explicitly owns an override path.
+- Treat `useGlobal=true` as whole-group inheritance; stored values in that row are dormant until the mode changes.
+- Use effective settings only after override ownership/precedence has already been resolved.
+- Add regression cases for explicit group override, `useGlobal=true` with a stale stored value, command-profile override, and no-override defaults.
+- Keep WebUI effective-value previews aligned with the runtime resolver instead of deriving precedence independently from merged settings.
+
 ## Host-profile unit tests can hide a disabled production capability
 
 Observed: 2026-08-09
