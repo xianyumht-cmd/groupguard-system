@@ -27,6 +27,16 @@ Updated: 2026-08-31
   layers are already present in the existing TTL cache. It does not change
   output, freshness, fallback, image transport, queue behavior, or production.
 
+## Post-push verification — 2026-08-31
+
+- Follow-up commit `d23a24abea84a15a62da47e4107951fac9ece611` is pushed to
+  `codex/query-delivery-observability-20260831`; PR #56 remains open and
+  unmerged. Typecheck, full npm regression, `build:all`, and the OneBot/SnowLuma
+  production builds passed locally.
+- A paired PR watcher attempt could not refresh the GitHub GraphQL state because
+  the API returned `EOF`; this is an external observation failure, not a source
+  test failure. No merge or production action was taken.
+
 ## Canonical repository
 
 - Canonical development branch: `main`.
