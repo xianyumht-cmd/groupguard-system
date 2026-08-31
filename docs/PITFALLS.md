@@ -1,5 +1,23 @@
 # GroupGuard Pitfalls
 
+## 2026-08-31 — Queue timing must be marked at submission and action boundaries
+
+### Failure pattern
+
+Recording a query trace only before calling the send wrapper makes the wrapper
+look like the transport boundary. It hides time spent waiting for a worker and
+cannot distinguish configured risk delay from OneBot processing.
+
+### Prevention
+
+- Record T5 immediately after the task is inserted into the actual send queue.
+- Record T6 immediately after worker acquisition and before any delay.
+- Record T7 immediately after the configured delay and before OneBot preparation.
+- Record T8/T9 immediately around the actual OneBot action, including the
+  failure path.
+- Treat direct forward delivery as a separate transport path instead of
+  fabricating queue timestamps.
+
 ## Effective config cannot prove that a group field was explicitly overridden
 
 Observed: 2026-08-28

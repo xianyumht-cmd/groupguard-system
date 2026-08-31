@@ -7,6 +7,11 @@ import {
   assertPluginRuntimeCaptureAllowed,
   assertResponseCaptureAllowed
 } from './execution_guard';
+import {
+  markSendFinished,
+  markSendStarted,
+  type QueryDeliveryTrace
+} from '../services/query_delivery_observability';
 
 export interface CapturedCommandDelivery {
   channel: 'group' | 'private';
@@ -20,6 +25,7 @@ export interface CapturedCommandDelivery {
   force?: boolean;
   skipProbability?: boolean;
   requireDelivery?: boolean;
+  queryDeliveryTrace?: QueryDeliveryTrace;
 }
 
 const responseCaptureStorage = new AsyncLocalStorage<CapturedCommandDelivery[]>();
@@ -130,10 +136,18 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
   }
   if (resolvedDelivery.forwardNodes?.length) {
     loggingStateService.warn(`forward_send_direct source=response_capture_runtime group=${resolvedDelivery.targetId} scene=${resolvedDelivery.scene}`);
-    await communicationStateService.callApi('send_group_forward_msg', {
-      group_id: resolvedDelivery.targetId,
-      messages: resolvedDelivery.forwardNodes
-    });
+    const trace = resolvedDelivery.queryDeliveryTrace;
+    if (trace) markSendStarted(trace);
+    try {
+      const result = await communicationStateService.callApi('send_group_forward_msg', {
+        group_id: resolvedDelivery.targetId,
+        messages: resolvedDelivery.forwardNodes
+      });
+      if (trace) markSendFinished(trace, result === null || result === undefined ? 'failed' : 'success');
+    } catch (error) {
+      if (trace) markSendFinished(trace, 'failed');
+      throw error;
+    }
     return;
   }
   if (resolvedDelivery.segments?.length) {
@@ -145,7 +159,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
         force: resolvedDelivery.force ?? true,
         applyTemplate: resolvedDelivery.applyTemplate ?? true,
         skipProbability: resolvedDelivery.skipProbability === true,
-        requireDelivery: resolvedDelivery.requireDelivery === true
+        requireDelivery: resolvedDelivery.requireDelivery === true,
+        queryDeliveryTrace: resolvedDelivery.queryDeliveryTrace
       } as any
     );
     return;
@@ -159,7 +174,8 @@ export async function send(delivery: CapturedCommandDelivery): Promise<void> {
       force: resolvedDelivery.force ?? true,
       applyTemplate: resolvedDelivery.applyTemplate ?? true,
       skipProbability: resolvedDelivery.skipProbability === true,
-      requireDelivery: resolvedDelivery.requireDelivery === true
+      requireDelivery: resolvedDelivery.requireDelivery === true,
+      queryDeliveryTrace: resolvedDelivery.queryDeliveryTrace
     } as any
   );
 }

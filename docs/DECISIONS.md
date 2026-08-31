@@ -1,5 +1,29 @@
 # GroupGuard Decisions
 
+## 2026-08-31 — Query latency tracing observes queue boundaries without changing policy
+
+### Decision
+
+Carry the existing query trace through the GroupGuard send queue: T5 at queue
+submission, T6 at worker acquisition, T7 after the configured risk delay, and
+T8/T9 around the actual OneBot action. Keep direct forward-node delivery on its
+existing direct path and record it as `direct_onebot`.
+
+### Reason
+
+The previous trace stopped before queue acquisition and recorded T8/T9 around
+the wrapper call rather than the actual queued OneBot action. That could not
+separate queue wait, intentional risk delay, and OneBot processing. Moving the
+trace markers does not change queue order, delay values, rate limits, fallback,
+or transport format.
+
+### Consequences
+
+`queue_wait_ms`, `risk_delay_ms`, and `onebot_processing_ms` can be compared
+independently after an approved deployment. Missing API timing metadata remains
+backward compatible, and failed OneBot actions still produce a trace with a
+failed status.
+
 ## 2026-08-28 — Battle query uses an image feature default without inventing group overrides
 
 ### Decision

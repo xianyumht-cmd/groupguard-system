@@ -2,8 +2,6 @@ import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import { send } from './response_capture_runtime';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import {
-  markSendFinished,
-  markSendStarted,
   serializeQueryDeliveryTrace,
   type QueryDeliveryTrace
 } from '../services/query_delivery_observability';
@@ -32,10 +30,11 @@ function normalizeDeliveryScene(delivery: {
   segments?: Array<Record<string, unknown>>;
   forwardNodes?: Array<Record<string, unknown>>;
   skipProbability?: boolean;
-}, fallbackScene: string) {
+}, fallbackScene: string, queryDeliveryTrace?: QueryDeliveryTrace) {
   return {
     ...delivery,
-    scene: delivery.scene && delivery.scene !== 'raw_text' ? delivery.scene : fallbackScene
+    scene: delivery.scene && delivery.scene !== 'raw_text' ? delivery.scene : fallbackScene,
+    ...(queryDeliveryTrace ? { queryDeliveryTrace } : {})
   };
 }
 
@@ -118,10 +117,8 @@ export async function sendUnifiedCommandResponse(event: OneBotMessageEvent, resp
     if (deliveries.length) {
       const trace = getQueryDeliveryTrace(response.payload);
       for (const delivery of deliveries) {
-        if (trace) markSendStarted(trace);
         try {
-          await send(normalizeDeliveryScene(delivery, inferredScene));
-          if (trace) markSendFinished(trace);
+          await send(normalizeDeliveryScene(delivery, inferredScene, trace || undefined));
         } finally {
           if (trace) logQueryDeliveryTrace(trace);
         }

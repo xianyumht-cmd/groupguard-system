@@ -1,6 +1,14 @@
 # GroupGuard Project State
 
-Updated: 2026-08-28
+Updated: 2026-08-31
+
+## Image latency Phase 2 observability
+
+- The existing task branch `codex/query-delivery-observability-20260831` now carries the cross-process query trace through T0-T9 without changing send behavior.
+- T5 is recorded at send-queue insertion, T6 at worker acquisition, T7 after the configured risk delay, and T8/T9 around the actual OneBot action.
+- Direct forward delivery remains on its existing direct OneBot path; it records T8/T9 and is marked `direct_onebot` rather than being silently moved into the message queue.
+- API timing metadata remains optional and is ignored when absent. It is sanitized before being retained in GroupGuard trace logs.
+- Production was not modified, restarted, or deployed. Bundle verification and the full CI/PR cycle remain required before this phase is accepted.
 
 ## Canonical repository
 

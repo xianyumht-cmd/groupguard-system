@@ -15,8 +15,13 @@ export interface QueryDeliveryTrace {
   t2ApiResponseAt?: number;
   t3DeliveryPlanAt?: number;
   t4PayloadReadyAt?: number;
+  t5QueueSubmittedAt?: number;
+  t6QueueWorkerStartedAt?: number;
+  t7RiskDelayFinishedAt?: number;
   t8SendStartedAt?: number;
   t9SendFinishedAt?: number;
+  sendStatus?: 'pending' | 'success' | 'failed';
+  transport?: 'send_queue' | 'direct_onebot';
   requestId?: string;
   deliveryKind?: string;
   imageBytes?: number;
@@ -130,12 +135,28 @@ export function markPayloadReady(trace: QueryDeliveryTrace): void {
   trace.t4PayloadReadyAt = Date.now();
 }
 
-export function markSendStarted(trace: QueryDeliveryTrace): void {
-  trace.t8SendStartedAt = Date.now();
+export function markQueueSubmitted(trace: QueryDeliveryTrace): void {
+  trace.t5QueueSubmittedAt = Date.now();
+  trace.transport = 'send_queue';
 }
 
-export function markSendFinished(trace: QueryDeliveryTrace): void {
+export function markQueueWorkerStarted(trace: QueryDeliveryTrace): void {
+  trace.t6QueueWorkerStartedAt = Date.now();
+}
+
+export function markRiskDelayFinished(trace: QueryDeliveryTrace): void {
+  trace.t7RiskDelayFinishedAt = Date.now();
+}
+
+export function markSendStarted(trace: QueryDeliveryTrace): void {
+  trace.t8SendStartedAt = Date.now();
+  if (!trace.transport) trace.transport = 'direct_onebot';
+  trace.sendStatus = 'pending';
+}
+
+export function markSendFinished(trace: QueryDeliveryTrace, status: 'success' | 'failed' = 'success'): void {
   trace.t9SendFinishedAt = Date.now();
+  trace.sendStatus = status;
 }
 
 function elapsed(from: number | undefined, to: number | undefined): number | undefined {
@@ -157,15 +178,24 @@ export function serializeQueryDeliveryTrace(trace: QueryDeliveryTrace): Record<s
     t2_api_response_at: trace.t2ApiResponseAt || 0,
     t3_delivery_plan_at: trace.t3DeliveryPlanAt || 0,
     t4_payload_ready_at: trace.t4PayloadReadyAt || 0,
+    t5_queue_submitted_at: trace.t5QueueSubmittedAt || 0,
+    t6_queue_worker_started_at: trace.t6QueueWorkerStartedAt || 0,
+    t7_risk_delay_finished_at: trace.t7RiskDelayFinishedAt || 0,
     t8_send_started_at: trace.t8SendStartedAt || 0,
     t9_send_finished_at: trace.t9SendFinishedAt || 0,
     plugin_to_api_ms: elapsed(trace.t0PluginReceivedAt, trace.t1ApiRequestAt) || 0,
     api_round_trip_ms: elapsed(trace.t1ApiRequestAt, trace.t2ApiResponseAt) || 0,
     plan_decode_ms: elapsed(trace.t2ApiResponseAt, trace.t3DeliveryPlanAt) || 0,
     payload_prepare_ms: elapsed(trace.t3DeliveryPlanAt, trace.t4PayloadReadyAt) || 0,
+    queue_wait_ms: elapsed(trace.t5QueueSubmittedAt, trace.t6QueueWorkerStartedAt) || 0,
+    risk_delay_ms: elapsed(trace.t6QueueWorkerStartedAt, trace.t7RiskDelayFinishedAt) || 0,
+    response_to_queue_ms: elapsed(trace.t4PayloadReadyAt, trace.t5QueueSubmittedAt) || 0,
     response_to_send_ms: elapsed(trace.t4PayloadReadyAt, trace.t8SendStartedAt) || 0,
+    onebot_processing_ms: elapsed(trace.t8SendStartedAt, trace.t9SendFinishedAt) || 0,
     send_total_ms: elapsed(trace.t8SendStartedAt, trace.t9SendFinishedAt) || 0,
-    end_to_end_ms: elapsed(trace.t0PluginReceivedAt, trace.t9SendFinishedAt) || 0
+    end_to_end_ms: elapsed(trace.t0PluginReceivedAt, trace.t9SendFinishedAt) || 0,
+    send_status: trace.sendStatus || 'pending',
+    transport: trace.transport || 'unknown'
   };
   if (trace.apiTiming) result.api = trace.apiTiming;
   return result;

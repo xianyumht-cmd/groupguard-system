@@ -1,4 +1,5 @@
 import type { ReplyPersona } from '../../types';
+import type { QueryDeliveryTrace } from '../../services/query_delivery_observability';
 import { pluginStateCommunicationAdapter } from '../state-infra/plugin_state_communication_adapter';
 
 export class CommunicationStateService {
@@ -6,7 +7,7 @@ export class CommunicationStateService {
     await pluginStateCommunicationAdapter.sendGroupText(groupId, content, options);
   }
 
-  async sendGroupMsg(groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
+  async sendGroupMsg(groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; queryDeliveryTrace?: QueryDeliveryTrace; }): Promise<void> {
     await pluginStateCommunicationAdapter.sendGroupMsg(groupId, message, options);
   }
 
