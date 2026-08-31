@@ -8,7 +8,9 @@ Updated: 2026-08-31
 - T5 is recorded at send-queue insertion, T6 at worker acquisition, T7 after the configured risk delay, and T8/T9 around the actual OneBot action.
 - Direct forward delivery remains on its existing direct OneBot path; it records T8/T9 and is marked `direct_onebot` rather than being silently moved into the message queue.
 - API timing metadata remains optional and is ignored when absent. It is sanitized before being retained in GroupGuard trace logs.
-- Production was not modified, restarted, or deployed. Bundle verification and the full CI/PR cycle remain required before this phase is accepted.
+- Local validation is complete: typecheck, full `npm test`, `build:all`, independent `build:snowluma`, and immutable deployment-bundle preflight all passed. The final trace-bearing commit is `a61f2bf87a22276e664a2ab83d65c7061454bfd8`.
+- PR #56 is open and unmerged. Its GitHub Actions run reached `startup_failure` before any job started; GitHub reported a likely workflow-file issue, no failed-job log was available, and the run could not be retried. This is recorded as CI blocked, not as a source-test failure.
+- Production was not modified, restarted, or deployed. The next action is to restore/confirm CI startup and obtain PR checks; no production deployment follows without separate explicit authorization.
 
 ## Canonical repository
 
