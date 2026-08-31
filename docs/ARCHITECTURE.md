@@ -1,5 +1,35 @@
 # GroupGuard Architecture
 
+## Query delivery timing observability
+
+The channel-neutral query path carries an internal `query-delivery-timing.v1`
+trace without changing the delivery contract or send policy. For queued text
+and image deliveries, the boundaries are:
+
+```text
+T0 plugin receives command
+T1 API request starts -> T2 API response received
+T3 delivery plan decoded -> T4 payload ready
+T5 task submitted to send queue -> T6 queue worker acquires task
+T7 configured risk delay completes -> T8 OneBot action starts
+T9 OneBot action returns or throws
+```
+
+This makes `T6-T5`, `T7-T6`, and `T9-T8` independently measurable. Existing
+forward-node delivery stays on its direct OneBot path and therefore records
+T8/T9 without inventing queue timestamps. The trace contains sanitized stage
+timestamps and delivery sizes only; it does not carry group identifiers,
+message content, credentials, or authentication material.
+
+For image responses, the API additionally returns monotonic relative offsets
+for T3 render start, T4 render finish, T5 asset lookup start, T6 asset
+availability and T7 API payload preparation/availability. These offsets are
+local to the API request because the API and plugin clocks are not treated as
+synchronized. GroupGuard records its own T7 payload-preparation start
+immediately before converting the validated image envelope into OneBot
+segments, while retaining the queue T5/T6/T7 meanings above as separate named
+fields.
+
 ## Global output localization
 
 GroupGuard treats multilingual output as a final transport concern. The persisted source text remains authoritative; localization is applied immediately before the selected outbound transport sends text.

@@ -8,6 +8,14 @@ import type { ReplyPersona } from './types';
 import { generateReply, isReplyTemplateSceneAllowed } from './reply_generator';
 import { shouldBlockByBotRole } from './core/bot_role';
 import { packageForwardMessages, packageOutgoingSegments } from './services/outgoing_risk_packager';
+import {
+  markQueueSubmitted,
+  markQueueWorkerStarted,
+  markRiskDelayFinished,
+  markSendFinished,
+  markSendStarted,
+  type QueryDeliveryTrace
+} from './services/query_delivery_observability';
 
 // Build metadata is embedded by Vite and is the single runtime version source.
 function getPluginVersion(): string {
@@ -34,6 +42,7 @@ interface GroupSendTask {
   contentLength: number;
   hasMedia: boolean;
   messageType: string;
+  queryDeliveryTrace?: QueryDeliveryTrace;
   resolve: () => void;
   reject: (err?: any) => void;
 }
@@ -535,7 +544,7 @@ class PluginState {
     }
   }
 
-  private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; requireDelivery?: boolean; applyTemplate?: boolean; scene?: string; templateApplied?: boolean; suffixApplied?: boolean; suffixMode?: string; }): Promise<void> {
+  private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; requireDelivery?: boolean; applyTemplate?: boolean; scene?: string; templateApplied?: boolean; suffixApplied?: boolean; suffixMode?: string; queryDeliveryTrace?: QueryDeliveryTrace; }): Promise<void> {
     if (!this.actions) {
       return options?.requireDelivery
         ? Promise.reject(new Error('group_send_transport_unavailable'))
@@ -557,6 +566,7 @@ class PluginState {
         contentLength: desc.contentLength,
         hasMedia: desc.hasMedia,
         messageType: desc.messageType,
+        queryDeliveryTrace: options?.queryDeliveryTrace,
         resolve,
         reject
       };
@@ -566,6 +576,7 @@ class PluginState {
           return;
         }
         this.globalSendQueue.push(task);
+        if (task.queryDeliveryTrace) markQueueSubmitted(task.queryDeliveryTrace);
       } else {
         const q = this.groupSendQueues.get(groupId) || [];
         if (q.length >= this.getMaxQueueSizePerGroup()) {
@@ -574,6 +585,7 @@ class PluginState {
         }
         q.push(task);
         this.groupSendQueues.set(groupId, q);
+        if (task.queryDeliveryTrace) markQueueSubmitted(task.queryDeliveryTrace);
       }
       this.kickQueueWorkers();
     });
@@ -611,6 +623,7 @@ class PluginState {
       const task = this.pickNextTask();
       if (!task) return;
       this.activeWorkers += 1;
+      if (task.queryDeliveryTrace) markQueueWorkerStarted(task.queryDeliveryTrace);
       this.processTask(task)
         .catch(err => this.log('error', `队列发送异常: ${err}`))
         .finally(() => {
@@ -649,6 +662,7 @@ class PluginState {
         return;
       }
       const randomDelayMs = await this.randomSleep(task.groupId, task.scene);
+      if (task.queryDeliveryTrace) markRiskDelayFinished(task.queryDeliveryTrace);
       const canSend = await this.acquireToken();
       if (!canSend) {
         if (await this.sendGroupForwardFallback(task, 'send_rate_limited', randomDelayMs)) {
@@ -676,7 +690,7 @@ class PluginState {
         else task.resolve();
         return;
       }
-      const sent = await this.sendGroupMessageRaw(task.groupId, task.message);
+      const sent = await this.sendGroupMessageRaw(task.groupId, task.message, task.queryDeliveryTrace);
       this.recordBotSendEvent({
         groupId: task.groupId,
         scene: task.scene,
@@ -721,12 +735,20 @@ class PluginState {
     }
   }
 
-  private async sendGroupMessageRaw(groupId: string, message: any[]): Promise<{ messageId: string; sentAt: number; selfRecallDueAt: number; }> {
+  private async sendGroupMessageRaw(groupId: string, message: any[], queryDeliveryTrace?: QueryDeliveryTrace): Promise<{ messageId: string; sentAt: number; selfRecallDueAt: number; }> {
     if (!this.actions) throw new Error('group_send_transport_unavailable');
-    const res = await this.actions.call('send_group_msg', {
-      group_id: groupId,
-      message
-    } as never) as { message_id?: number | string };
+    if (queryDeliveryTrace) markSendStarted(queryDeliveryTrace);
+    let res: { message_id?: number | string };
+    try {
+      res = await this.actions.call('send_group_msg', {
+        group_id: groupId,
+        message
+      } as never) as { message_id?: number | string };
+    } catch (error) {
+      if (queryDeliveryTrace) markSendFinished(queryDeliveryTrace, 'failed');
+      throw error;
+    }
+    if (queryDeliveryTrace) markSendFinished(queryDeliveryTrace, 'success');
     const messageId = this.extractSendMessageId(res);
     this.debug(`[SelfRecall] message_sent groupId=${groupId} msgId=${messageId || 'missing'}`);
     const selfRecallDueAt = this.scheduleSelfRecall(groupId, messageId, 'send_group_msg');
@@ -738,7 +760,9 @@ class PluginState {
     if (!this.actions) return false;
     const settings = this.getGlobalSettings();
     if (settings.botAntiRiskLimitFallbackMode !== 'forward') return false;
+    let onebotCompleted = false;
     try {
+      if (task.queryDeliveryTrace) markSendStarted(task.queryDeliveryTrace);
       const res = await this.actions.call('send_group_forward_msg', {
         group_id: task.groupId,
         messages: [{
@@ -750,6 +774,8 @@ class PluginState {
           }
         }]
       } as never) as { message_id?: number | string };
+      if (task.queryDeliveryTrace) markSendFinished(task.queryDeliveryTrace, 'success');
+      onebotCompleted = true;
       this.log('warn', `forward_send_direct source=send_queue_fallback group=${task.groupId} reason=${reason}`);
       const messageId = this.extractSendMessageId(res);
       const sentAt = Date.now();
@@ -777,6 +803,9 @@ class PluginState {
       });
       return true;
     } catch (e) {
+      if (task.queryDeliveryTrace && !onebotCompleted) {
+        markSendFinished(task.queryDeliveryTrace, 'failed');
+      }
       this.log('warn', `合并转发兜底发送失败: ${String(e)}`);
       return false;
     }
@@ -820,7 +849,7 @@ class PluginState {
   }
 
   /** 发送群消息 (Array) */
-  async sendGroupMsg (groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
+  async sendGroupMsg (groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; queryDeliveryTrace?: QueryDeliveryTrace; }): Promise<void> {
     if (!this.actions) {
       if (options?.requireDelivery) throw new Error('group_send_transport_unavailable');
       return;
@@ -864,7 +893,8 @@ class PluginState {
       scene,
       templateApplied: !templateDisabled && applyTemplate && !!firstText,
       suffixApplied: !!suffix,
-      suffixMode: suffix ? suffixInfo.mode : ''
+      suffixMode: suffix ? suffixInfo.mode : '',
+      queryDeliveryTrace: options?.queryDeliveryTrace
     });
   }
 

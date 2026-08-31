@@ -1,12 +1,13 @@
 import { pluginState } from '../../state';
 import type { ReplyPersona } from '../../types';
+import type { QueryDeliveryTrace } from '../../services/query_delivery_observability';
 
 export class PluginStateCommunicationAdapter {
   async sendGroupText(groupId: string, content: string, options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
     await pluginState.sendGroupText(groupId, content, options);
   }
 
-  async sendGroupMsg(groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; }): Promise<void> {
+  async sendGroupMsg(groupId: string, message: any[], options?: { force?: boolean; applyTemplate?: boolean; scene?: string; vars?: Record<string, string | number | boolean>; persona?: ReplyPersona; skipProbability?: boolean; requireDelivery?: boolean; queryDeliveryTrace?: QueryDeliveryTrace; }): Promise<void> {
     await pluginState.sendGroupMsg(groupId, message, options);
   }
 

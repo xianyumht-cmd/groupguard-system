@@ -1,5 +1,23 @@
 # GroupGuard Pitfalls
 
+## 2026-08-31 — Queue timing must be marked at submission and action boundaries
+
+### Failure pattern
+
+Recording a query trace only before calling the send wrapper makes the wrapper
+look like the transport boundary. It hides time spent waiting for a worker and
+cannot distinguish configured risk delay from OneBot processing.
+
+### Prevention
+
+- Record T5 immediately after the task is inserted into the actual send queue.
+- Record T6 immediately after worker acquisition and before any delay.
+- Record T7 immediately after the configured delay and before OneBot preparation.
+- Record T8/T9 immediately around the actual OneBot action, including the
+  failure path.
+- Treat direct forward delivery as a separate transport path instead of
+  fabricating queue timestamps.
+
 ## Effective config cannot prove that a group field was explicitly overridden
 
 Observed: 2026-08-28
@@ -41,6 +59,22 @@ The target-file retention test supplied a fake `deleteGroupFile()` that returned
 - Lock the expected action name and exact parameters in the integration test.
 - Verify the contract against the exact production host version when possible; do not infer SnowLuma semantics from NapCat.
 - Keep unknown/unverified host behavior fail-closed, but do not let a feature claim support for an operation whose production profile still fails closed.
+
+## API image timestamps are not GroupGuard queue timestamps
+
+### Failure pattern
+
+The API renders the image before the GroupGuard plugin receives its response.
+Reusing GroupGuard's numeric T3/T4/T7 fields for API render/asset stages would
+therefore mix plan/queue semantics and can create an impossible cross-host
+timeline.
+
+### Prevention
+
+Keep API image stages as monotonic offsets local to the API request. Keep
+GroupGuard elapsed stages on `performance.now()`, use explicit field names for
+payload preparation and queue risk delay, and do not infer a latency-policy
+change from a trace that lacks fresh production samples.
 
 ## Unreferenced failed temp files are not retry state
 

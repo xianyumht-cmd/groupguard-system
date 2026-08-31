@@ -1,6 +1,41 @@
 # GroupGuard Project State
 
-Updated: 2026-08-28
+Updated: 2026-08-31
+
+## Image latency Phase 2 observability
+
+- The existing task branch `codex/query-delivery-observability-20260831` now carries the cross-process query trace through T0-T9 without changing send behavior.
+- T5 is recorded at send-queue insertion, T6 at worker acquisition, T7 after the configured risk delay, and T8/T9 around the actual OneBot action.
+- Direct forward delivery remains on its existing direct OneBot path; it records T8/T9 and is marked `direct_onebot` rather than being silently moved into the message queue.
+- API timing metadata remains optional and is ignored when absent. It is sanitized before being retained in GroupGuard trace logs.
+- Local validation is complete: typecheck, full `npm test`, `build:all`, independent `build:snowluma`, and immutable deployment-bundle preflight all passed. The final trace-bearing commit is `a61f2bf87a22276e664a2ab83d65c7061454bfd8`.
+- PR #56 is open and unmerged. Its GitHub Actions run reached `startup_failure` before any job started; GitHub reported a likely workflow-file issue, no failed-job log was available, and the run could not be retried. This is recorded as CI blocked, not as a source-test failure.
+- Production was not modified, restarted, or deployed. The next action is to restore/confirm CI startup and obtain PR checks; no production deployment follows without separate explicit authorization.
+
+## Image latency follow-up: exact stage boundaries
+
+- The existing task branch now adds API-local monotonic image offsets for
+  render start/finish, asset lookup start/availability, and API payload
+  preparation/availability. GroupGuard sanitizes and retains only these
+  allowlisted fields.
+- GroupGuard now uses `performance.now()` for elapsed trace calculations and
+  records `t7_payload_prepare_started_at` immediately before converting the
+  validated API delivery envelope into OneBot segments. Existing queue T5/T6/T7
+  fields remain queue submission, worker acquisition and configured risk-delay
+  completion; no risk policy was changed.
+- The paired lolapisevers change adds an ARAM fast path only when both balance
+  layers are already present in the existing TTL cache. It does not change
+  output, freshness, fallback, image transport, queue behavior, or production.
+
+## Post-push verification — 2026-08-31
+
+- Follow-up commit `d23a24abea84a15a62da47e4107951fac9ece611` is pushed to
+  `codex/query-delivery-observability-20260831`; PR #56 remains open and
+  unmerged. Typecheck, full npm regression, `build:all`, and the OneBot/SnowLuma
+  production builds passed locally.
+- A paired PR watcher attempt could not refresh the GitHub GraphQL state because
+  the API returned `EOF`; this is an external observation failure, not a source
+  test failure. No merge or production action was taken.
 
 ## Canonical repository
 

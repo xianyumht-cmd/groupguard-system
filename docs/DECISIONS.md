@@ -1,5 +1,29 @@
 # GroupGuard Decisions
 
+## 2026-08-31 — Query latency tracing observes queue boundaries without changing policy
+
+### Decision
+
+Carry the existing query trace through the GroupGuard send queue: T5 at queue
+submission, T6 at worker acquisition, T7 after the configured risk delay, and
+T8/T9 around the actual OneBot action. Keep direct forward-node delivery on its
+existing direct path and record it as `direct_onebot`.
+
+### Reason
+
+The previous trace stopped before queue acquisition and recorded T8/T9 around
+the wrapper call rather than the actual queued OneBot action. That could not
+separate queue wait, intentional risk delay, and OneBot processing. Moving the
+trace markers does not change queue order, delay values, rate limits, fallback,
+or transport format.
+
+### Consequences
+
+`queue_wait_ms`, `risk_delay_ms`, and `onebot_processing_ms` can be compared
+independently after an approved deployment. Missing API timing metadata remains
+backward compatible, and failed OneBot actions still produce a trace with a
+failed status.
+
 ## 2026-08-28 — Battle query uses an image feature default without inventing group overrides
 
 ### Decision
@@ -24,6 +48,29 @@ The effective group resolver fills inherited fields from global defaults. Using 
 - `useGlobal=true` cannot accidentally revive stale group output values.
 - SnowLuma query WebUI must show the same battle precedence/default as runtime.
 - Production deployment/restart remains a separate explicitly authorized operation.
+
+## 2026-08-31 — Separate API image stages from GroupGuard queue stages
+
+### Decision
+
+Keep API render/asset offsets relative to the API request and keep GroupGuard
+queue/OneBot elapsed timings based on `performance.now()`. Record plugin payload
+preparation explicitly without renaming the existing queue risk-delay fields.
+
+### Reason
+
+The two runtimes are on separate hosts and their wall clocks cannot provide a
+safe absolute cross-process timeline. The existing random delay and send queue
+are intentional anti-risk behavior; timing work must not remove them by
+accident.
+
+### Consequences
+
+- Reports can distinguish API image preparation from plugin payload parsing,
+  queue wait, configured risk delay and OneBot processing.
+- Old API responses without timing metadata remain valid.
+- A future change to query risk/queue policy requires a separate explicit
+  decision and fresh production evidence.
 
 ## 2026-08-27 — Global output locale is an egress concern, not an input-command or image concern
 

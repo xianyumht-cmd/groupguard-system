@@ -1,5 +1,24 @@
 # GroupGuard Operations
 
+## Query delivery trace verification
+
+The observability-only query change must be verified in the same distributable
+path used for SnowLuma deployment:
+
+1. Run `npm run typecheck` and the full `npm test` suite in
+   `onebot-plugin-groupguard`.
+2. Run `npm run build:onebot` and inspect the produced `dist` for stable trace
+   identifiers including `query_delivery_observability`, T5, T6, T7,
+   `t7_payload_prepare_started_at`, `onebot_processing_ms`, and
+   `queue_wait_ms`.
+3. Run the contract and query verification scripts against both a response
+   with `meta.timing` and an older response whose `meta` has no timing object.
+4. Confirm that API `api_stage_offsets_ms` and image asset offsets are retained
+   while unknown timing keys and credentials are discarded. Do not deploy or
+   restart production as part of this verification. A later approved
+   deployment must collect fresh T0-T9 samples before any latency policy
+   decision.
+
 ## Production boundary
 
 Canonical development happens in `D:\project2\groupguard-system` on Windows. ARM runtimes such as `192.168.3.89` and `192.168.3.121` are separate production hosts.

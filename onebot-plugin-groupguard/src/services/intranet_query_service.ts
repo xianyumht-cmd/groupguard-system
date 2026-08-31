@@ -9,6 +9,14 @@ import {
   requestGroupGuardReportDelivery,
   type GroupGuardReportRequest
 } from './groupguard_report_delivery_client';
+import {
+  createQueryDeliveryTrace,
+  markApiRequestStarted,
+  markApiResponseReceived,
+  markDeliveryPlanReady,
+  markPayloadPrepareStarted,
+  type QueryDeliveryTrace
+} from './query_delivery_observability';
 
 export type IntranetQueryFeature =
   | GroupGuardQueryRequest['feature']
@@ -30,6 +38,7 @@ export interface IntranetDeliveryRequestOptions {
   timeoutMs?: number;
   requestId?: string;
   requestFn?: IntranetDeliveryRequestFn;
+  trace?: QueryDeliveryTrace;
 }
 
 export interface IntranetReportRequestOptions {
@@ -47,6 +56,7 @@ export interface IntranetReportRequestOptions {
 export interface IntranetDeliveryRequestResult {
   envelope: GroupGuardQueryDeliveryEnvelope;
   plan: OneBotDeliveryPlan;
+  trace?: QueryDeliveryTrace;
 }
 
 export function normalizeIntranetPreferredOutput(value: unknown): IntranetPreferredOutput {
@@ -71,6 +81,8 @@ export async function requestIntranetDelivery(
   const parameters = normalizeParameters(options.parameters);
   if (!Object.keys(parameters).length) throw new Error('delivery_parameters_required');
   const requestFn = options.requestFn || requestGroupGuardQueryDelivery;
+  const trace = options.trace || createQueryDeliveryTrace(feature);
+  markApiRequestStarted(trace);
   const envelope = await requestFn(
     options.baseUrl,
     {
@@ -86,10 +98,15 @@ export async function requestIntranetDelivery(
     } as GroupGuardQueryRequest,
     { timeoutMs: options.timeoutMs }
   );
+  markApiResponseReceived(trace, envelope);
   if (envelope.feature !== feature) throw new Error('delivery_feature_mismatch');
+  markPayloadPrepareStarted(trace);
+  const plan = toOneBotDeliveryPlan(envelope);
+  markDeliveryPlanReady(trace, plan);
   return {
     envelope,
-    plan: toOneBotDeliveryPlan(envelope)
+    plan,
+    trace
   };
 }
 
