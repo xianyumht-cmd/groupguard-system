@@ -1,5 +1,12 @@
 import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import { send } from './response_capture_runtime';
+import { loggingStateService } from '../core/state-services/logging_state_service';
+import {
+  markSendFinished,
+  markSendStarted,
+  serializeQueryDeliveryTrace,
+  type QueryDeliveryTrace
+} from '../services/query_delivery_observability';
 import type { UnifiedCommandResponse } from './types';
 
 function inferResponseScene(event: OneBotMessageEvent): string {
@@ -68,6 +75,23 @@ function getStructuredDeliveries(payload: unknown): Array<{
   ));
 }
 
+function getQueryDeliveryTrace(payload: unknown): QueryDeliveryTrace | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const trace = (payload as { observability?: unknown }).observability;
+  if (!trace || typeof trace !== 'object') return null;
+  const value = trace as Partial<QueryDeliveryTrace>;
+  if (value.schemaVersion !== 'query-delivery-timing.v1' || typeof value.feature !== 'string') return null;
+  return trace as QueryDeliveryTrace;
+}
+
+function logQueryDeliveryTrace(trace: QueryDeliveryTrace): void {
+  loggingStateService.info(JSON.stringify({
+    scope: 'query_delivery_observability',
+    event: 'query_delivery_timing',
+    ...serializeQueryDeliveryTrace(trace)
+  }));
+}
+
 export function formatUnifiedCommandResponse(response: UnifiedCommandResponse): string {
   if (response.type === 'text') return response.text.trim();
   if (response.type === 'link') {
@@ -92,8 +116,15 @@ export async function sendUnifiedCommandResponse(event: OneBotMessageEvent, resp
   if (response.type === 'structured') {
     const deliveries = getStructuredDeliveries(response.payload);
     if (deliveries.length) {
+      const trace = getQueryDeliveryTrace(response.payload);
       for (const delivery of deliveries) {
-        await send(normalizeDeliveryScene(delivery, inferredScene));
+        if (trace) markSendStarted(trace);
+        try {
+          await send(normalizeDeliveryScene(delivery, inferredScene));
+          if (trace) markSendFinished(trace);
+        } finally {
+          if (trace) logQueryDeliveryTrace(trace);
+        }
       }
       return;
     }

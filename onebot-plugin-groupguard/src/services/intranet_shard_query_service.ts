@@ -5,6 +5,7 @@ import {
   type IntranetDeliveryRequestResult,
   type IntranetPreferredOutput
 } from './intranet_query_service';
+import type { QueryDeliveryTrace } from './query_delivery_observability';
 
 export type ShardPreferredOutput = IntranetPreferredOutput;
 export type ShardDeliveryRequestFn = IntranetDeliveryRequestFn;
@@ -16,6 +17,7 @@ export interface ShardDeliveryRequestOptions {
   timeoutMs?: number;
   requestId?: string;
   requestFn?: ShardDeliveryRequestFn;
+  trace?: QueryDeliveryTrace;
 }
 
 export type ShardDeliveryRequestResult = IntranetDeliveryRequestResult;
@@ -34,6 +36,7 @@ export async function requestShardDelivery(options: ShardDeliveryRequestOptions)
     preferred: options.preferred || 'auto',
     timeoutMs: options.timeoutMs,
     requestId: options.requestId,
-    requestFn: options.requestFn
+    requestFn: options.requestFn,
+    trace: options.trace
   });
 }

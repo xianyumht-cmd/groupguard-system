@@ -17,6 +17,7 @@ import type {
   UnifiedCommandExecutionResult,
   UnifiedCommandNormalizedInput
 } from './types';
+import { createQueryDeliveryTrace } from '../services/query_delivery_observability';
 
 const COMMAND_ID = 'builtin.query.battle.intranet';
 const TRIGGER = '查战绩';
@@ -123,13 +124,15 @@ export async function executeBattleIntranetQuery(
   try {
     const parameters: Record<string, string> = { name: parsed.value.playerId };
     if (parsed.value.region) parameters.region = parsed.value.region;
-    const { plan } = await requestIntranetDelivery({
+    const trace = createQueryDeliveryTrace('battle');
+    const { plan, trace: deliveryTrace } = await requestIntranetDelivery({
       baseUrl,
       feature: 'battle',
       parameters,
       preferred: resolveBattlePreferredOutput(groupId),
       timeoutMs: resolveIntranetQueryTimeoutMs(),
       requestId: requestIdFromContext(input, context),
+      trace,
       ...(requestFn ? { requestFn } : {})
     });
     return buildIntranetStructuredResult(
@@ -137,7 +140,8 @@ export async function executeBattleIntranetQuery(
       groupId,
       String((context.event as any).self_id || '0'),
       '🎮 战绩查询',
-      '查战绩结果已生成。'
+      '查战绩结果已生成。',
+      deliveryTrace
     );
   } catch (error) {
     loggingStateService.warn(`[IntranetQuery] battle request failed: ${safeErrorTag(error)}`);

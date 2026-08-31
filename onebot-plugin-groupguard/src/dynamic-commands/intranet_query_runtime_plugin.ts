@@ -13,6 +13,11 @@ import {
   type IntranetPreferredOutput
 } from '../services/intranet_query_service';
 import type { OneBotDeliveryPlan } from '../services/groupguard_query_delivery_client';
+import {
+  createQueryDeliveryTrace,
+  markPayloadReady,
+  type QueryDeliveryTrace
+} from '../services/query_delivery_observability';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
 import type {
@@ -132,8 +137,11 @@ export function buildIntranetStructuredResult(
   groupId: string,
   selfId: string,
   title: string,
-  completionText: string
+  completionText: string,
+  trace?: QueryDeliveryTrace
 ): UnifiedCommandExecutionResult {
+  if (trace) markPayloadReady(trace);
+  const observability = trace ? { observability: trace } : {};
   if (plan.kind === 'segments') {
     return {
       ok: true,
@@ -141,6 +149,7 @@ export function buildIntranetStructuredResult(
         type: 'structured',
         text: planText(plan, completionText),
         payload: {
+          ...observability,
           deliveries: [
             {
               channel: 'group',
@@ -171,6 +180,7 @@ export function buildIntranetStructuredResult(
       type: 'structured',
       text: completionText,
       payload: {
+        ...observability,
         deliveries: [
           {
             channel: 'group',
@@ -229,16 +239,18 @@ export async function executeShardIntranetQuery(
   if (!baseUrl) return textResult('未配置 LOL API Base，请联系机器人主人完成内网服务地址配置。');
 
   try {
-    const { plan } = await requestShardDelivery({
+    const trace = createQueryDeliveryTrace('shard');
+    const { plan, trace: deliveryTrace } = await requestShardDelivery({
       baseUrl,
       hero,
       preferred: resolveShardPreferredOutput(group.groupId),
       timeoutMs: resolveIntranetQueryTimeoutMs(),
       requestId: requestIdFromContext('shard', input, context),
+      trace,
       ...(requestFn ? { requestFn } : {})
     });
     const selfId = String((context.event as any).self_id || '0');
-    return buildShardStructuredResult(plan, group.groupId, selfId);
+    return buildIntranetStructuredResult(plan, group.groupId, selfId, '📦 合集查询', '查合集结果已生成。', deliveryTrace);
   } catch (error) {
     loggingStateService.warn(`[IntranetQuery] shard request failed: ${safeErrorTag(error)}`);
     return textResult(QUERY_FALLBACK_TEXT);
@@ -258,17 +270,19 @@ export async function executeAramIntranetQuery(
   if (!baseUrl) return textResult('未配置 LOL API Base，请联系机器人主人完成内网服务地址配置。');
 
   try {
-    const { plan } = await requestIntranetDelivery({
+    const trace = createQueryDeliveryTrace('aram');
+    const { plan, trace: deliveryTrace } = await requestIntranetDelivery({
       baseUrl,
       feature: 'aram',
       parameters: { hero },
       preferred: resolveAramPreferredOutput(group.groupId),
       timeoutMs: resolveIntranetQueryTimeoutMs(),
       requestId: requestIdFromContext('aram', input, context),
+      trace,
       ...(requestFn ? { requestFn } : {})
     });
     const selfId = String((context.event as any).self_id || '0');
-    return buildIntranetStructuredResult(plan, group.groupId, selfId, '🧬 海符榜', '海符榜结果已生成。');
+    return buildIntranetStructuredResult(plan, group.groupId, selfId, '🧬 海符榜', '海符榜结果已生成。', deliveryTrace);
   } catch (error) {
     loggingStateService.warn(`[IntranetQuery] aram request failed: ${safeErrorTag(error)}`);
     return textResult(QUERY_FALLBACK_TEXT);
@@ -301,17 +315,19 @@ export async function executeLolbanIntranetQuery(
   if (!baseUrl) return textResult('未配置 LOL API Base，请联系机器人主人完成内网服务地址配置。');
 
   try {
-    const { plan } = await requestIntranetDelivery({
+    const trace = createQueryDeliveryTrace('lolban');
+    const { plan, trace: deliveryTrace } = await requestIntranetDelivery({
       baseUrl,
       feature: 'lolban',
       parameters: { qq },
       preferred: resolveUnifiedQueryPreferredOutput(group.groupId, ['lol_ban', 'lolban']),
       timeoutMs: resolveIntranetQueryTimeoutMs(),
       requestId: requestIdFromContext('lolban', input, context),
+      trace,
       ...(requestFn ? { requestFn } : {})
     });
     const selfId = String((context.event as any).self_id || '0');
-    return buildIntranetStructuredResult(plan, group.groupId, selfId, '🔒 封号查询', '查封号结果已生成。');
+    return buildIntranetStructuredResult(plan, group.groupId, selfId, '🔒 封号查询', '查封号结果已生成。', deliveryTrace);
   } catch (error) {
     loggingStateService.warn(`[IntranetQuery] lolban request failed: ${safeErrorTag(error)}`);
     return textResult(QUERY_FALLBACK_TEXT);

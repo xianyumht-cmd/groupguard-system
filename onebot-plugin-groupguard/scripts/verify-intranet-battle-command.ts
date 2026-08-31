@@ -218,6 +218,14 @@ try {
     assert.equal(deliveries[0].channel, 'group');
     assert.equal(deliveries[0].targetId, '960957757');
     assert.equal(deliveries[0].applyTemplate, false);
+    const timing = (result.response as any).payload.observability;
+    assert.equal(timing.schemaVersion, 'query-delivery-timing.v1');
+    assert.ok(timing.t0PluginReceivedAt > 0);
+    assert.ok(timing.t1ApiRequestAt >= timing.t0PluginReceivedAt);
+    assert.ok(timing.t2ApiResponseAt >= timing.t1ApiRequestAt);
+    assert.ok(timing.t3DeliveryPlanAt >= timing.t2ApiResponseAt);
+    assert.ok(timing.t4PayloadReadyAt >= timing.t3DeliveryPlanAt);
+    assert.equal(timing.imageCount, 0);
   }
 
   let failedRequestCount = 0;
