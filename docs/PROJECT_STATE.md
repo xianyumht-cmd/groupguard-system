@@ -12,6 +12,21 @@ Updated: 2026-08-31
 - PR #56 is open and unmerged. Its GitHub Actions run reached `startup_failure` before any job started; GitHub reported a likely workflow-file issue, no failed-job log was available, and the run could not be retried. This is recorded as CI blocked, not as a source-test failure.
 - Production was not modified, restarted, or deployed. The next action is to restore/confirm CI startup and obtain PR checks; no production deployment follows without separate explicit authorization.
 
+## Image latency follow-up: exact stage boundaries
+
+- The existing task branch now adds API-local monotonic image offsets for
+  render start/finish, asset lookup start/availability, and API payload
+  preparation/availability. GroupGuard sanitizes and retains only these
+  allowlisted fields.
+- GroupGuard now uses `performance.now()` for elapsed trace calculations and
+  records `t7_payload_prepare_started_at` immediately before converting the
+  validated API delivery envelope into OneBot segments. Existing queue T5/T6/T7
+  fields remain queue submission, worker acquisition and configured risk-delay
+  completion; no risk policy was changed.
+- The paired lolapisevers change adds an ARAM fast path only when both balance
+  layers are already present in the existing TTL cache. It does not change
+  output, freshness, fallback, image transport, queue behavior, or production.
+
 ## Canonical repository
 
 - Canonical development branch: `main`.

@@ -231,6 +231,7 @@ export async function executeShardIntranetQuery(
   context: UnifiedCommandExecutionContext,
   requestFn?: ShardDeliveryRequestFn
 ): Promise<UnifiedCommandExecutionResult> {
+  const trace = createQueryDeliveryTrace('shard');
   const hero = String(input.rawArgument || input.cleanedText.slice(SHARD_TRIGGER.length)).trim();
   if (!hero) return textResult('请输入：查合集 亚索');
   const group = validateGroupInput(input, SHARD_TRIGGER);
@@ -239,7 +240,6 @@ export async function executeShardIntranetQuery(
   if (!baseUrl) return textResult('未配置 LOL API Base，请联系机器人主人完成内网服务地址配置。');
 
   try {
-    const trace = createQueryDeliveryTrace('shard');
     const { plan, trace: deliveryTrace } = await requestShardDelivery({
       baseUrl,
       hero,
@@ -262,6 +262,7 @@ export async function executeAramIntranetQuery(
   context: UnifiedCommandExecutionContext,
   requestFn?: IntranetDeliveryRequestFn
 ): Promise<UnifiedCommandExecutionResult> {
+  const trace = createQueryDeliveryTrace('aram');
   const hero = String(input.rawArgument || input.cleanedText.slice(ARAM_TRIGGER.length)).trim();
   if (!hero) return textResult('请输入：海符榜 亚索');
   const group = validateGroupInput(input, ARAM_TRIGGER);
@@ -270,7 +271,6 @@ export async function executeAramIntranetQuery(
   if (!baseUrl) return textResult('未配置 LOL API Base，请联系机器人主人完成内网服务地址配置。');
 
   try {
-    const trace = createQueryDeliveryTrace('aram');
     const { plan, trace: deliveryTrace } = await requestIntranetDelivery({
       baseUrl,
       feature: 'aram',

@@ -107,6 +107,7 @@ export async function executeBattleIntranetQuery(
   context: UnifiedCommandExecutionContext,
   requestFn?: IntranetDeliveryRequestFn
 ): Promise<UnifiedCommandExecutionResult> {
+  const trace = createQueryDeliveryTrace('battle');
   const parsed = parseBattleQueryInput(
     input.rawArgument || input.cleanedText.slice(TRIGGER.length)
   );
@@ -124,7 +125,6 @@ export async function executeBattleIntranetQuery(
   try {
     const parameters: Record<string, string> = { name: parsed.value.playerId };
     if (parsed.value.region) parameters.region = parsed.value.region;
-    const trace = createQueryDeliveryTrace('battle');
     const { plan, trace: deliveryTrace } = await requestIntranetDelivery({
       baseUrl,
       feature: 'battle',

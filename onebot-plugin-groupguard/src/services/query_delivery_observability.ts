@@ -4,6 +4,7 @@ import type {
   GroupGuardQueryDeliveryEnvelope,
   OneBotDeliveryPlan
 } from './groupguard_query_delivery_client';
+import { performance } from 'node:perf_hooks';
 
 export const QUERY_DELIVERY_TIMING_SCHEMA = 'query-delivery-timing.v1' as const;
 
@@ -15,6 +16,7 @@ export interface QueryDeliveryTrace {
   t2ApiResponseAt?: number;
   t3DeliveryPlanAt?: number;
   t4PayloadReadyAt?: number;
+  t7PayloadPrepareStartedAt?: number;
   t5QueueSubmittedAt?: number;
   t6QueueWorkerStartedAt?: number;
   t7RiskDelayFinishedAt?: number;
@@ -28,6 +30,17 @@ export interface QueryDeliveryTrace {
   imageBase64Chars?: number;
   imageCount?: number;
   apiTiming?: Record<string, unknown>;
+  monotonicT0At: number;
+  monotonicT1At?: number;
+  monotonicT2At?: number;
+  monotonicT3At?: number;
+  monotonicT4At?: number;
+  monotonicT5At?: number;
+  monotonicT6At?: number;
+  monotonicPayloadPrepareAt?: number;
+  monotonicRiskDelayAt?: number;
+  monotonicT8At?: number;
+  monotonicT9At?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -53,6 +66,8 @@ function safeImageTiming(value: unknown): Record<string, unknown> | undefined {
     'expected_asset_count',
     'bytes',
     'base64_chars',
+    'asset_lookup_started_offset_ms',
+    'asset_available_offset_ms',
     'width',
     'height'
   ]) {
@@ -74,6 +89,19 @@ export function safeApiTiming(meta: unknown): Record<string, unknown> | undefine
     const number = safeNumber(raw[key]);
     if (number !== undefined) result[key] = number;
   }
+  if (isRecord(raw.api_stage_offsets_ms)) {
+    const stages: Record<string, unknown> = {};
+    for (const key of [
+      't3_render_started',
+      't4_render_finished',
+      't7_payload_prepare_started',
+      't7_payload_ready'
+    ]) {
+      const number = safeNumber(raw.api_stage_offsets_ms[key]);
+      if (number !== undefined) stages[key] = number;
+    }
+    if (Object.keys(stages).length) result.api_stage_offsets_ms = stages;
+  }
   const image = safeImageTiming(raw.image);
   if (image) result.image = image;
   return Object.keys(result).length > 1 ? result : undefined;
@@ -83,7 +111,8 @@ export function createQueryDeliveryTrace(feature: string): QueryDeliveryTrace {
   return {
     schemaVersion: QUERY_DELIVERY_TIMING_SCHEMA,
     feature: String(feature || '').slice(0, 96),
-    t0PluginReceivedAt: Date.now()
+    t0PluginReceivedAt: Date.now(),
+    monotonicT0At: performance.now()
   };
 }
 
@@ -111,6 +140,7 @@ function imageStats(segments: DeliverySegment[]): { bytes: number; base64Chars: 
 
 export function markApiRequestStarted(trace: QueryDeliveryTrace): void {
   trace.t1ApiRequestAt = Date.now();
+  trace.monotonicT1At = performance.now();
 }
 
 export function markApiResponseReceived(
@@ -118,6 +148,7 @@ export function markApiResponseReceived(
   envelope: GroupGuardQueryDeliveryEnvelope
 ): void {
   trace.t2ApiResponseAt = Date.now();
+  trace.monotonicT2At = performance.now();
   trace.requestId = String(envelope.request_id || '').slice(0, 128);
   trace.deliveryKind = envelope.delivery.kind;
   const stats = imageStats(envelope.delivery.segments);
@@ -129,33 +160,45 @@ export function markApiResponseReceived(
 
 export function markDeliveryPlanReady(trace: QueryDeliveryTrace, _plan: OneBotDeliveryPlan): void {
   trace.t3DeliveryPlanAt = Date.now();
+  trace.monotonicT3At = performance.now();
+}
+
+export function markPayloadPrepareStarted(trace: QueryDeliveryTrace): void {
+  trace.t7PayloadPrepareStartedAt = Date.now();
+  trace.monotonicPayloadPrepareAt = performance.now();
 }
 
 export function markPayloadReady(trace: QueryDeliveryTrace): void {
   trace.t4PayloadReadyAt = Date.now();
+  trace.monotonicT4At = performance.now();
 }
 
 export function markQueueSubmitted(trace: QueryDeliveryTrace): void {
   trace.t5QueueSubmittedAt = Date.now();
+  trace.monotonicT5At = performance.now();
   trace.transport = 'send_queue';
 }
 
 export function markQueueWorkerStarted(trace: QueryDeliveryTrace): void {
   trace.t6QueueWorkerStartedAt = Date.now();
+  trace.monotonicT6At = performance.now();
 }
 
 export function markRiskDelayFinished(trace: QueryDeliveryTrace): void {
   trace.t7RiskDelayFinishedAt = Date.now();
+  trace.monotonicRiskDelayAt = performance.now();
 }
 
 export function markSendStarted(trace: QueryDeliveryTrace): void {
   trace.t8SendStartedAt = Date.now();
+  trace.monotonicT8At = performance.now();
   if (!trace.transport) trace.transport = 'direct_onebot';
   trace.sendStatus = 'pending';
 }
 
 export function markSendFinished(trace: QueryDeliveryTrace, status: 'success' | 'failed' = 'success'): void {
   trace.t9SendFinishedAt = Date.now();
+  trace.monotonicT9At = performance.now();
   trace.sendStatus = status;
 }
 
@@ -165,6 +208,16 @@ function elapsed(from: number | undefined, to: number | undefined): number | und
 }
 
 export function serializeQueryDeliveryTrace(trace: QueryDeliveryTrace): Record<string, unknown> {
+  const t0 = trace.monotonicT0At;
+  const t1 = trace.monotonicT1At;
+  const t2 = trace.monotonicT2At;
+  const t3 = trace.monotonicT3At;
+  const t4 = trace.monotonicT4At;
+  const t5 = trace.monotonicT5At;
+  const t6 = trace.monotonicT6At;
+  const payloadPrepare = trace.monotonicPayloadPrepareAt;
+  const t8 = trace.monotonicT8At;
+  const t9 = trace.monotonicT9At;
   const result: Record<string, unknown> = {
     schema_version: QUERY_DELIVERY_TIMING_SCHEMA,
     feature: trace.feature,
@@ -178,22 +231,24 @@ export function serializeQueryDeliveryTrace(trace: QueryDeliveryTrace): Record<s
     t2_api_response_at: trace.t2ApiResponseAt || 0,
     t3_delivery_plan_at: trace.t3DeliveryPlanAt || 0,
     t4_payload_ready_at: trace.t4PayloadReadyAt || 0,
+    t7_payload_prepare_started_at: trace.t7PayloadPrepareStartedAt || 0,
     t5_queue_submitted_at: trace.t5QueueSubmittedAt || 0,
     t6_queue_worker_started_at: trace.t6QueueWorkerStartedAt || 0,
     t7_risk_delay_finished_at: trace.t7RiskDelayFinishedAt || 0,
     t8_send_started_at: trace.t8SendStartedAt || 0,
     t9_send_finished_at: trace.t9SendFinishedAt || 0,
-    plugin_to_api_ms: elapsed(trace.t0PluginReceivedAt, trace.t1ApiRequestAt) || 0,
-    api_round_trip_ms: elapsed(trace.t1ApiRequestAt, trace.t2ApiResponseAt) || 0,
-    plan_decode_ms: elapsed(trace.t2ApiResponseAt, trace.t3DeliveryPlanAt) || 0,
-    payload_prepare_ms: elapsed(trace.t3DeliveryPlanAt, trace.t4PayloadReadyAt) || 0,
-    queue_wait_ms: elapsed(trace.t5QueueSubmittedAt, trace.t6QueueWorkerStartedAt) || 0,
-    risk_delay_ms: elapsed(trace.t6QueueWorkerStartedAt, trace.t7RiskDelayFinishedAt) || 0,
-    response_to_queue_ms: elapsed(trace.t4PayloadReadyAt, trace.t5QueueSubmittedAt) || 0,
-    response_to_send_ms: elapsed(trace.t4PayloadReadyAt, trace.t8SendStartedAt) || 0,
-    onebot_processing_ms: elapsed(trace.t8SendStartedAt, trace.t9SendFinishedAt) || 0,
-    send_total_ms: elapsed(trace.t8SendStartedAt, trace.t9SendFinishedAt) || 0,
-    end_to_end_ms: elapsed(trace.t0PluginReceivedAt, trace.t9SendFinishedAt) || 0,
+    plugin_to_api_ms: elapsed(t0, t1) || 0,
+    api_round_trip_ms: elapsed(t1, t2) || 0,
+    plan_decode_ms: elapsed(t2, t3) || 0,
+    payload_prepare_ms: elapsed(t3, t4) || 0,
+    payload_prepare_decode_ms: elapsed(payloadPrepare, t3) || 0,
+    queue_wait_ms: elapsed(t5, t6) || 0,
+    risk_delay_ms: elapsed(t6, trace.monotonicRiskDelayAt) || 0,
+    response_to_queue_ms: elapsed(t4, t5) || 0,
+    response_to_send_ms: elapsed(t4, t8) || 0,
+    onebot_processing_ms: elapsed(t8, t9) || 0,
+    send_total_ms: elapsed(t8, t9) || 0,
+    end_to_end_ms: elapsed(t0, t9) || 0,
     send_status: trace.sendStatus || 'pending',
     transport: trace.transport || 'unknown'
   };

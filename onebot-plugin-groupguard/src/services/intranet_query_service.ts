@@ -14,6 +14,7 @@ import {
   markApiRequestStarted,
   markApiResponseReceived,
   markDeliveryPlanReady,
+  markPayloadPrepareStarted,
   type QueryDeliveryTrace
 } from './query_delivery_observability';
 
@@ -99,6 +100,7 @@ export async function requestIntranetDelivery(
   );
   markApiResponseReceived(trace, envelope);
   if (envelope.feature !== feature) throw new Error('delivery_feature_mismatch');
+  markPayloadPrepareStarted(trace);
   const plan = toOneBotDeliveryPlan(envelope);
   markDeliveryPlanReady(trace, plan);
   return {

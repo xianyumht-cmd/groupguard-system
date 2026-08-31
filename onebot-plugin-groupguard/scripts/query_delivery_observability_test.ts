@@ -6,6 +6,7 @@ import { send } from '../src/dynamic-commands/response_capture_runtime.ts';
 import { pluginState } from '../src/state.ts';
 import {
   createQueryDeliveryTrace,
+  markPayloadPrepareStarted,
   markPayloadReady,
   safeApiTiming,
   serializeQueryDeliveryTrace
@@ -148,6 +149,13 @@ try {
       render_ms: 3.2,
       delivery_prepare_ms: 1.1,
       api_total_ms: 16.8,
+      api_stage_offsets_ms: {
+        t3_render_started: 12.1,
+        t4_render_finished: 15.3,
+        t7_payload_prepare_started: 15.4,
+        t7_payload_ready: 16.8,
+        request_id: 'must-not-pass-through'
+      },
       request_id: 'must-not-pass-through',
       image: { cache: 'hit', bytes: 123, base64_chars: 164, width: 100, height: 50 }
     }
@@ -155,6 +163,15 @@ try {
   assert.equal(sanitized?.schema_version, 'query-delivery-timing.v1');
   assert.equal((sanitized as any)?.request_id, undefined);
   assert.equal((sanitized as any)?.image?.bytes, 123);
+  assert.equal((sanitized as any)?.api_stage_offsets_ms?.t3_render_started, 12.1);
+  assert.equal((sanitized as any)?.api_stage_offsets_ms?.request_id, undefined);
+
+  const payloadTrace = createQueryDeliveryTrace('battle');
+  markPayloadPrepareStarted(payloadTrace);
+  markPayloadReady(payloadTrace);
+  const serializedPayloadTrace = serializeQueryDeliveryTrace(payloadTrace);
+  assert.ok('t7_payload_prepare_started_at' in serializedPayloadTrace);
+  assert.equal(serializedPayloadTrace.payload_prepare_decode_ms, 0);
 
   const imageFixture = JSON.parse(await readFile(new URL('../contracts/fixtures/groupguard-query-contracts/delivery-success-image.json', import.meta.url), 'utf8'));
   const oldApiEnvelope = { ...imageFixture, meta: {} };
@@ -167,6 +184,12 @@ try {
         render_ms: 3.2,
         delivery_prepare_ms: 1.1,
         api_total_ms: 16.8,
+        api_stage_offsets_ms: {
+          t3_render_started: 0,
+          t4_render_finished: 3.2,
+          t7_payload_prepare_started: 3.2,
+          t7_payload_ready: 16.8
+        },
         image: { cache: 'hit', assets: 'complete', bytes: 3, base64_chars: 4, width: 1, height: 1 }
       }
     }

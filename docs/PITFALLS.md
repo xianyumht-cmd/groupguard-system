@@ -60,6 +60,22 @@ The target-file retention test supplied a fake `deleteGroupFile()` that returned
 - Verify the contract against the exact production host version when possible; do not infer SnowLuma semantics from NapCat.
 - Keep unknown/unverified host behavior fail-closed, but do not let a feature claim support for an operation whose production profile still fails closed.
 
+## API image timestamps are not GroupGuard queue timestamps
+
+### Failure pattern
+
+The API renders the image before the GroupGuard plugin receives its response.
+Reusing GroupGuard's numeric T3/T4/T7 fields for API render/asset stages would
+therefore mix plan/queue semantics and can create an impossible cross-host
+timeline.
+
+### Prevention
+
+Keep API image stages as monotonic offsets local to the API request. Keep
+GroupGuard elapsed stages on `performance.now()`, use explicit field names for
+payload preparation and queue risk delay, and do not infer a latency-policy
+change from a trace that lacks fresh production samples.
+
 ## Unreferenced failed temp files are not retry state
 
 Observed: 2026-08-09
