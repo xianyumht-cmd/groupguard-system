@@ -104,7 +104,7 @@ test('global config entry on a standalone page navigates to the real global edit
   await expect(globalEntry).toBeVisible();
   await expect(globalEntry).toHaveAttribute('href', /#global-config$/);
   await globalEntry.click();
-  await expect(page).toHaveURL(/\?token=test#global-config$/);
+  await expect(page).toHaveURL(/\/#global-config$/);
   await expect(page.locator('#tab-advanced h2')).toHaveText('全局配置');
   await expect(page.locator('#advancedFilter')).toHaveValue('global.');
 });

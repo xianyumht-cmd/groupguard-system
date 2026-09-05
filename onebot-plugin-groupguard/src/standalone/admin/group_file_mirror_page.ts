@@ -51,7 +51,6 @@ export function renderGroupFileMirrorPage(): string {
 <script>
 (function(){
 var token='';
-if(!token)token=prompt('请输入控制台访问令牌')||'';
 localStorage.removeItem('GROUPGUARD_WEBUI_TOKEN');
 document.getElementById('homeLink').href='/';
 var editor={enabled:false,rules:[]};
