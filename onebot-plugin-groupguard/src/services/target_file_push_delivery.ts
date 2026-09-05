@@ -93,10 +93,19 @@ function isPrivateAddress(address: string): boolean {
   }
   if (net.isIPv6(address)) {
     const value = address.toLowerCase().split('%')[0];
+    if (value.startsWith('::ffff:')) {
+      const mapped = value.slice('::ffff:'.length);
+      if (net.isIPv4(mapped)) return isPrivateAddress(mapped);
+      const parts = mapped.split(':');
+      if (parts.length === 2 && parts.every(part => /^[0-9a-f]{1,4}$/.test(part))) {
+        const high = Number.parseInt(parts[0], 16);
+        const low = Number.parseInt(parts[1], 16);
+        return isPrivateAddress(`${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`);
+      }
+    }
     return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd')
       || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb')
-      || value.startsWith('ff') || value.startsWith('::ffff:127.') || value.startsWith('::ffff:10.')
-      || value.startsWith('::ffff:192.168.');
+      || value.startsWith('ff');
   }
   return true;
 }

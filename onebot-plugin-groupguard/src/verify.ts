@@ -39,10 +39,24 @@ export async function createVerifySession (groupId: string, userId: string, comm
   const cleanComment = comment ? comment.replace(/^问题：/, '').replace(/\s*答案：/, ' 答案:') : '';
   const commentLine = cleanComment ? ` 入群信息:${cleanComment}` : '';
   const welcomeLine = welcomeText ? `${welcomeText}` : '';
-  await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
-    { type: 'at', data: { qq: userId } },
-    { type: 'text', data: { text: ` ${welcomeLine}请在「${timeout}」秒内发送「${expression}」答案,否则移出群聊。${commentLine}` } }
-  ], force: true, applyTemplate: true });
+  const pendingTimer = setTimeout(() => undefined, Math.max(60, timeout) * 1000);
+  const pendingSession = { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer: pendingTimer, startTime: Date.now() };
+  sessionStateService.setSession(key, pendingSession);
+  try {
+    await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
+      { type: 'at', data: { qq: userId } },
+      { type: 'text', data: { text: ` ${welcomeLine}请在「${timeout}」秒内发送「${expression}」答案,否则移出群聊。${commentLine}` } }
+    ], force: true, applyTemplate: true });
+  } catch (error) {
+    clearTimeout(pendingTimer);
+    if (sessionStateService.getSession(key) === pendingSession) sessionStateService.deleteSession(key);
+    throw error;
+  }
+  if (sessionStateService.getSession(key) !== pendingSession) {
+    clearTimeout(pendingTimer);
+    return;
+  }
+  clearTimeout(pendingTimer);
 
   const timer = setTimeout(async () => {
     const session = sessionStateService.getSession(key);
@@ -63,7 +77,7 @@ export async function createVerifySession (groupId: string, userId: string, comm
     }));
   }, timeout * 1000);
 
-  sessionStateService.setSession(key, { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer, startTime: Date.now() });
+  pendingSession.timer = timer;
   loggingStateService.debug(`创建验证会话: ${key}, 题目: ${expression} = ${answer}`);
 }
 

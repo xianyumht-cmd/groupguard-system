@@ -173,12 +173,18 @@ async function detectQr(segments: any[], settings: ContentRiskSettings): Promise
       loggingStateService.info(`[ContentRisk] qr_skip reason=no_supported_url value=${url.slice(0, 80)}`);
       continue;
     }
-    const hasQr = await detectQrCode(url, {
-      timeoutMs: settings.qrDetectTimeoutMs,
-      maxBytes: settings.qrDetectMaxBytes,
-      concurrency: settings.qrDetectConcurrency,
-      cacheSeconds: settings.qrCacheSeconds
-    });
+    let hasQr = false;
+    try {
+      hasQr = await detectQrCode(url, {
+        timeoutMs: settings.qrDetectTimeoutMs,
+        maxBytes: settings.qrDetectMaxBytes,
+        concurrency: settings.qrDetectConcurrency,
+        cacheSeconds: settings.qrCacheSeconds
+      });
+    } catch (error) {
+      loggingStateService.warn(`[ContentRisk] qr_scan_unavailable error=${String((error as Error)?.message || error).slice(0, 160)}`);
+      continue;
+    }
     if (hasQr) return { type: 'qr', matchedRule: 'qr_image_scan', detail: url };
   }
   return null;

@@ -9,7 +9,7 @@ import {
   resolveTargetFilePushConfigDir,
 } from '../src/services/target_file_push_config.ts';
 import { targetFilePushCallbackToken } from '../src/services/target_file_push_credentials.ts';
-import { readTargetFileRetentionState } from '../src/services/target_file_push_delivery.ts';
+import { downloadTargetFile, readTargetFileRetentionState } from '../src/services/target_file_push_delivery.ts';
 import { TargetFilePushService } from '../src/services/target_file_push_service.ts';
 import { renderTargetFilePushPage } from '../src/standalone/admin/target_file_push_page.ts';
 import { applyWebUiTheme } from '../src/standalone/admin/webui_theme.ts';
@@ -90,6 +90,12 @@ async function main(): Promise<void> {
   const configPath = path.join(workDir, 'config.json');
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(configPath, '{}\n', 'utf-8');
+  delete process.env.TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS;
+  await assert.rejects(() => downloadTargetFile({
+    eventId: 'mapped-metadata', fileName: 'blocked.bin', directUrl: 'http://[::ffff:a9fe:a9fe]/',
+    tempDir: dataDir, maxFileSizeMb: 1,
+  }), /target_file_push_private_download_forbidden/);
+  process.env.TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS = '1';
 
   const payload = Buffer.from('target-file-push-regression-payload');
   const fileServer = await listen(payload);

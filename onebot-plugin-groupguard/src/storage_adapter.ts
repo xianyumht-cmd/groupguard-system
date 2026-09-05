@@ -1746,10 +1746,11 @@ export class StorageAdapter {
         ? db.prepare('SELECT id FROM audit_events WHERE created_at >= ? ORDER BY created_at ASC, id ASC LIMIT ?').all(cutoff, overflow) as Array<{ id: number }>
         : [];
       const ids = [...oldIds, ...overflowIds].map(row => Number(row.id)).filter(Number.isSafeInteger);
-      if (ids.length) {
-        const placeholders = ids.map(() => '?').join(',');
-        deleted += toNumber(db.prepare(`DELETE FROM audit_event_links WHERE audit_event_id IN (${placeholders})`).run(...ids)?.changes, 0);
-        deleted += toNumber(db.prepare(`DELETE FROM audit_events WHERE id IN (${placeholders})`).run(...ids)?.changes, 0);
+      for (let offset = 0; offset < ids.length; offset += 500) {
+        const batch = ids.slice(offset, offset + 500);
+        const placeholders = batch.map(() => '?').join(',');
+        deleted += toNumber(db.prepare(`DELETE FROM audit_event_links WHERE audit_event_id IN (${placeholders})`).run(...batch)?.changes, 0);
+        deleted += toNumber(db.prepare(`DELETE FROM audit_events WHERE id IN (${placeholders})`).run(...batch)?.changes, 0);
       }
       deleted += toNumber(db.prepare('DELETE FROM audit_event_links WHERE audit_event_id NOT IN (SELECT id FROM audit_events)').run()?.changes, 0);
       deleted += toNumber(db.prepare('DELETE FROM bot_send_events WHERE created_at < ?').run(cutoff)?.changes, 0);

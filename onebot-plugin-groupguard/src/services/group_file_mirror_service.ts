@@ -320,9 +320,11 @@ export class GroupFileMirrorService {
   private readonly ruleTails = new Map<string, Promise<void>>();
   private readonly queuedTasksByRule = new Map<string, number>();
   private readonly queuedBytesByRule = new Map<string, number>();
+  private acceptingEvents = true;
 
   bindRuntime(runtime: RuntimeBinding): void {
     this.runtime = runtime;
+    this.acceptingEvents = true;
     this.ensureConfigLoaded();
     this.ensureStateLoaded();
   }
@@ -541,6 +543,10 @@ export class GroupFileMirrorService {
   }
 
   private enqueue(ruleId: string, task: () => Promise<void>, bytes = 0): void {
+    if (!this.acceptingEvents) {
+      this.log('warn', `规则 ${ruleId} 在关闭排空期间拒绝新事件`);
+      return;
+    }
     const queuedTasks = this.queuedTasksByRule.get(ruleId) || 0;
     const queuedBytes = this.queuedBytesByRule.get(ruleId) || 0;
     const normalizedBytes = Math.max(0, Number(bytes) || 0);
@@ -578,6 +584,7 @@ export class GroupFileMirrorService {
   }
 
   async drain(timeoutMs = 15_000): Promise<void> {
+    this.acceptingEvents = false;
     const tails = Array.from(this.ruleTails.values());
     if (!tails.length) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
