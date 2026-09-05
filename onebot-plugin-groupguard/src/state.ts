@@ -82,6 +82,7 @@ class PluginState {
   private queueRoundRobinIndex = 0;
   /** 当前发送中的 worker 数 */
   private activeWorkers = 0;
+  private acceptingSends = true;
   /** TokenBucket 当前令牌 */
   private tokenBucketTokens = 0;
   /** TokenBucket 上次补充时间 */
@@ -536,6 +537,7 @@ class PluginState {
   }
 
   private enqueueGroupTask(groupId: string, message: any[], options?: { force?: boolean; requireDelivery?: boolean; applyTemplate?: boolean; scene?: string; templateApplied?: boolean; suffixApplied?: boolean; suffixMode?: string; }): Promise<void> {
+    if (!this.acceptingSends) return Promise.reject(new Error('group_send_shutting_down'));
     if (!this.actions) {
       return options?.requireDelivery
         ? Promise.reject(new Error('group_send_transport_unavailable'))
@@ -731,6 +733,28 @@ class PluginState {
     this.debug(`[SelfRecall] message_sent groupId=${groupId} msgId=${messageId || 'missing'}`);
     const selfRecallDueAt = this.scheduleSelfRecall(groupId, messageId, 'send_group_msg');
     return { messageId, sentAt: Date.now(), selfRecallDueAt };
+  }
+
+  resumeSendQueue(): void {
+    this.acceptingSends = true;
+  }
+
+  async drainSendQueue(timeoutMs = 30_000): Promise<void> {
+    this.acceptingSends = false;
+    const deadline = Date.now() + Math.max(1, timeoutMs);
+    while (this.activeWorkers > 0 || this.globalSendQueue.length > 0 || this.groupSendQueues.size > 0) {
+      if (Date.now() >= deadline) {
+        const error = new Error('group_send_drain_timeout');
+        const queued = [
+          ...this.globalSendQueue.splice(0),
+          ...Array.from(this.groupSendQueues.values()).flatMap(queue => queue.splice(0)),
+        ];
+        this.groupSendQueues.clear();
+        for (const task of queued) task.reject(error);
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
   }
 
   /** 发送群消息 (Text) */

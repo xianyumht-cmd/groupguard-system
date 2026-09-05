@@ -26,7 +26,7 @@ function generateMathQuestion (min: number, max: number): { expression: string; 
 
 function sessionKey (groupId: string, userId: string): string { return `${groupId}:${userId}`; }
 
-export function createVerifySession (groupId: string, userId: string, comment?: string, welcomeText?: string): void {
+export async function createVerifySession (groupId: string, userId: string, comment?: string, welcomeText?: string): Promise<void> {
   const key = sessionKey(groupId, userId);
   const existing = sessionStateService.getSession(key);
   if (existing) clearTimeout(existing.timer);
@@ -35,6 +35,14 @@ export function createVerifySession (groupId: string, userId: string, comment?: 
   const { expression, answer } = generateMathQuestion(settings.mathMin, settings.mathMax);
   const timeout = settings.verifyTimeout;
   const maxAttempts = settings.maxAttempts;
+
+  const cleanComment = comment ? comment.replace(/^问题：/, '').replace(/\s*答案：/, ' 答案:') : '';
+  const commentLine = cleanComment ? ` 入群信息:${cleanComment}` : '';
+  const welcomeLine = welcomeText ? `${welcomeText}` : '';
+  await send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
+    { type: 'at', data: { qq: userId } },
+    { type: 'text', data: { text: ` ${welcomeLine}请在「${timeout}」秒内发送「${expression}」答案,否则移出群聊。${commentLine}` } }
+  ], force: true, applyTemplate: true });
 
   const timer = setTimeout(async () => {
     const session = sessionStateService.getSession(key);
@@ -57,14 +65,6 @@ export function createVerifySession (groupId: string, userId: string, comment?: 
 
   sessionStateService.setSession(key, { userId, groupId, answer, expression, attempts: 0, maxAttempts, timer, startTime: Date.now() });
   loggingStateService.debug(`创建验证会话: ${key}, 题目: ${expression} = ${answer}`);
-
-  const cleanComment = comment ? comment.replace(/^问题：/, '').replace(/\s*答案：/, ' 答案:') : '';
-  const commentLine = cleanComment ? ` 入群信息:${cleanComment}` : '';
-  const welcomeLine = welcomeText ? `${welcomeText}` : '';
-  void send({ channel: 'group', targetId: groupId, scene: 'raw_text', segments: [
-    { type: 'at', data: { qq: userId } },
-    { type: 'text', data: { text: ` ${welcomeLine}请在「${timeout}」秒内发送「${expression}」答案,否则移出群聊。${commentLine}` } }
-  ], force: true, applyTemplate: true });
 }
 
 export async function handleVerifyAnswer (groupId: string, userId: string, rawMessage: string, messageId: string): Promise<boolean> {

@@ -1,6 +1,13 @@
 # GroupGuard Project State
 
-Updated: 2026-08-28
+Updated: 2026-09-05
+
+## Reliability hardening candidate — 2026-09-05
+
+- Development candidate: `codex/reliability-hardening`, based on freshly fetched `origin/main@ec633573c0dc1056e8d861429312983ed9f107e7`.
+- Scope: repair the verified P1 reliability findings and related P2 safety issues from the 2026-09-05 audit: ordered/bounded OneBot intake, verification prompt ordering, bounded caches/queues/media work, durable target-file ordering, action-result correctness, graceful shutdown, storage retention/integrity, dynamic-command validation, WebUI authentication hardening, SSRF protection, explicit translation consent, and Windows EOL normalization.
+- Local validation: full `npm test`, `npm run build:all`, and production dependency audit pass. This is development evidence only; CI/PR review and production runtime validation remain separate.
+- Production remains unchanged. No ARM deployment or restart is authorized by this development task.
 
 ## Canonical repository
 

@@ -10,6 +10,8 @@ import { targetFilePushCallbackToken } from '../src/services/target_file_push_cr
 import { readTargetFileRetentionState } from '../src/services/target_file_push_delivery.ts';
 import { TargetFilePushService } from '../src/services/target_file_push_service.ts';
 
+process.env.TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS = '1';
+
 type FakeGroupFile = {
   file_id: string;
   file_name: string;
@@ -122,12 +124,13 @@ function configureService(service: TargetFilePushService, configPath: string): s
   return targetFilePushCallbackToken(resolveTargetFilePushConfigDir(configPath));
 }
 
-function event(url: string, id: string, name: string) {
+function event(url: string, id: string, name: string, sourceRevision: number) {
   return {
     schema: 'target-file-push.v1',
     source_url: 'https://abc.lanzou.com/iRETENTION',
     direct_url: url,
     event_id: `sha256:${id}`,
+    source_revision: sourceRevision,
     fingerprint: `sha256:${id}-fingerprint`,
     file: { name, stable_id: id },
   };
@@ -164,7 +167,7 @@ async function main(): Promise<void> {
 
     const token = configureService(service, configPath);
 
-    const first = await service.handleEvent(event(fileServer.url, 'retention-a', 'a.7z'), token);
+    const first = await service.handleEvent(event(fileServer.url, 'retention-a', 'a.7z', 1), token);
     assert.equal(first.fileId, 'qq-file-1');
     assert.deepEqual(actions.files.map(file => file.file_id), ['qq-file-1'], 'first successful upload must reconcile pre-existing root files');
 
@@ -174,7 +177,7 @@ async function main(): Promise<void> {
     const firstDeletes = actions.calls.filter(call => call.action === 'delete_group_file');
     assert.deepEqual(firstDeletes.map(call => call.params.file_id).sort(), ['manual-old-1', 'manual-old-2']);
 
-    const second = await service.handleEvent(event(fileServer.url, 'retention-b', 'b.7z'), token);
+    const second = await service.handleEvent(event(fileServer.url, 'retention-b', 'b.7z', 2), token);
     assert.equal(second.fileId, 'qq-file-2');
     assert.deepEqual(actions.files.map(file => file.file_id), ['qq-file-2'], 'second upload must leave exactly the new file in root');
 
@@ -250,7 +253,7 @@ async function main(): Promise<void> {
       const failedToken = configureService(failedService, failedConfigPath);
 
       await assert.rejects(
-        () => failedService.handleEvent(event(fileServer.url, 'failed-a', 'failed-a.7z'), failedToken),
+        () => failedService.handleEvent(event(fileServer.url, 'failed-a', 'failed-a.7z', 1), failedToken),
         /snowluma_upload_group_file_failed/,
       );
 
@@ -262,7 +265,7 @@ async function main(): Promise<void> {
       assert.equal(failedStatus.current?.state, 'failed');
       assert.ok(failedLocalPath && fs.existsSync(failedLocalPath), 'current failed event keeps its local file for retry');
 
-      const recovered = await failedService.handleEvent(event(fileServer.url, 'failed-b', 'failed-b.7z'), failedToken);
+      const recovered = await failedService.handleEvent(event(fileServer.url, 'failed-b', 'failed-b.7z', 2), failedToken);
       assert.equal(recovered.fileId, 'qq-recovery-1');
       assert.deepEqual(flakyActions.files.map(file => file.file_id), ['qq-recovery-1'], 'recovery upload must reconcile the old safe file only after success');
       assert.equal(fs.existsSync(failedLocalPath), false, 'a different event must remove the superseded failed temp file');

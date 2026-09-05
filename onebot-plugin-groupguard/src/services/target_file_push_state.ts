@@ -7,6 +7,7 @@ export type TargetFilePushCompletedEvent = {
   fileName: string;
   fileId: string;
   uploadedAt: number;
+  sourceRevision: number;
 };
 
 export type TargetFilePushCurrentEvent = {
@@ -18,27 +19,30 @@ export type TargetFilePushCurrentEvent = {
   startedAt: number;
   updatedAt: number;
   lastError: string;
+  sourceRevision: number;
 };
 
 export type TargetFilePushState = {
-  version: 1;
+  version: 2;
   current: TargetFilePushCurrentEvent | null;
   completed: Record<string, TargetFilePushCompletedEvent>;
   lastSuccessAt: number;
   lastErrorAt: number;
   lastError: string;
+  lastAcceptedRevision: number;
 };
 
 const MAX_COMPLETED_EVENTS = 200;
 
 export function emptyTargetFilePushState(): TargetFilePushState {
   return {
-    version: 1,
+    version: 2,
     current: null,
     completed: {},
     lastSuccessAt: 0,
     lastErrorAt: 0,
     lastError: '',
+    lastAcceptedRevision: 0,
   };
 }
 
@@ -49,12 +53,17 @@ function isRecord(value: unknown): value is Record<string, any> {
 export function loadTargetFilePushState(filePath: string): TargetFilePushState {
   if (!fs.existsSync(filePath)) return emptyTargetFilePushState();
   const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  if (!isRecord(raw) || raw.version !== 1 || !isRecord(raw.completed)) throw new Error('target_file_push_state_invalid');
+  if (!isRecord(raw) || ![1, 2].includes(Number(raw.version)) || !isRecord(raw.completed)) throw new Error('target_file_push_state_invalid');
   return {
     ...emptyTargetFilePushState(),
     ...raw,
-    current: isRecord(raw.current) ? raw.current as TargetFilePushCurrentEvent : null,
-    completed: raw.completed as Record<string, TargetFilePushCompletedEvent>,
+    version: 2,
+    current: isRecord(raw.current) ? { ...raw.current, sourceRevision: Number(raw.current.sourceRevision || 0) } as TargetFilePushCurrentEvent : null,
+    completed: Object.fromEntries(Object.entries(raw.completed).map(([key, value]) => [
+      key,
+      { ...(value as Record<string, unknown>), sourceRevision: Number((value as any)?.sourceRevision || 0) } as TargetFilePushCompletedEvent,
+    ])),
+    lastAcceptedRevision: Number(raw.lastAcceptedRevision || 0),
   };
 }
 

@@ -37,6 +37,22 @@ const recallDedup = new Map<string, number>();
 const actionHistory = new Map<string, number[]>();
 const riskStates = new Map<string, RiskState>();
 const guardStats = new Map<string, GroupGuardStats>();
+let lastRuntimeSweepAt = 0;
+
+function sweepExpiredRuntimeState(ts: number): void {
+  if (ts - lastRuntimeSweepAt < 5 * 60 * 1000) return;
+  lastRuntimeSweepAt = ts;
+  const historyCutoff = ts - 60 * 60 * 1000;
+  for (const [key, values] of actionHistory) {
+    const active = values.filter(value => value >= historyCutoff);
+    if (active.length) actionHistory.set(key, active);
+    else actionHistory.delete(key);
+  }
+  const riskCutoff = ts - 24 * 60 * 60 * 1000;
+  for (const [key, value] of riskStates) if (value.updatedAt < riskCutoff && value.score <= 0.01) riskStates.delete(key);
+  const statsCutoff = ts - 24 * 60 * 60 * 1000;
+  for (const [key, value] of guardStats) if (value.updatedAt < statsCutoff) guardStats.delete(key);
+}
 
 function getSettings(groupId: string): GroupGuardSettings {
   return configStateService.resolveGroupSettings(groupId);
@@ -102,6 +118,7 @@ function hitRateLimit(groupId: string, action: GuardAction): boolean {
   const limit = Math.max(5, Number(s.actionRateLimit ?? 30));
   const key = historyKey(groupId, action);
   const ts = now();
+  sweepExpiredRuntimeState(ts);
   const list = (actionHistory.get(key) || []).filter(t => ts - t < windowSec * 1000);
   const hit = list.length >= limit;
   if (!hit) {
@@ -125,6 +142,7 @@ function decayRisk(groupId: string, s: GroupGuardSettings): RiskState {
   const decaySec = Math.max(30, Number(s.riskDecaySeconds ?? 300));
   const current = riskStates.get(groupId) || { score: 0, updatedAt: now() };
   const ts = now();
+  sweepExpiredRuntimeState(ts);
   const elapsed = Math.max(0, ts - current.updatedAt);
   if (elapsed > 0) {
     const decay = elapsed / (decaySec * 1000);

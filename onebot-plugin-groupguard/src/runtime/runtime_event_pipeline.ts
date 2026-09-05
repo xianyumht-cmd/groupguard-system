@@ -131,7 +131,7 @@ export async function handlePluginEvent(ctx: GroupGuardRuntimeContext, event: un
       : (!settings.disableWelcome ? (configStateService.getConfig().welcomeMessage || '') : '');
     const welcomeText = tpl ? tpl.replace(/\{user\}/g, userId).replace(/\{group\}/g, groupId) : '';
     loggingStateService.info(`新成员进群: 用户 ${userId} 加入群 ${groupId}，发起验证`);
-    createVerifySession(groupId, userId, comment, welcomeText);
+    await createVerifySession(groupId, userId, comment, welcomeText);
     return;
   }
 

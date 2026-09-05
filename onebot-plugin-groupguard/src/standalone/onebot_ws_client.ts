@@ -27,6 +27,8 @@ export interface OneBotConnectionStatus {
   reconnectScheduled: boolean;
   reconnectAttempts: number;
   pendingCalls: number;
+  queuedEvents: number;
+  droppedEvents: number;
   connectedAt: number;
   disconnectedAt: number;
   lastActionAt: number;
@@ -38,6 +40,8 @@ export interface OneBotWsClientOptions {
   accessToken?: string;
   timeoutMs?: number;
   reconnectDelayMs?: number;
+  maxReconnectDelayMs?: number;
+  maxQueuedEvents?: number;
   webSocketFactory?: (url: string) => OneBotWebSocketLike;
   logger?: {
     info?: (message: string) => void;
@@ -58,6 +62,11 @@ export class OneBotWsClient {
   private readonly connectedHandlers = new Set<OneBotConnectedHandler>();
   private readonly timeoutMs: number;
   private readonly reconnectDelayMs: number;
+  private readonly maxReconnectDelayMs: number;
+  private readonly maxQueuedEvents: number;
+  private readonly eventQueue: any[] = [];
+  private drainingEvents = false;
+  private droppedEvents = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private connectPromise: Promise<void> | null = null;
   private reconnectAttempts = 0;
@@ -70,6 +79,8 @@ export class OneBotWsClient {
     this.options = options;
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || 10000));
     this.reconnectDelayMs = Math.max(1000, Number(options.reconnectDelayMs || 3000));
+    this.maxReconnectDelayMs = Math.max(this.reconnectDelayMs, Number(options.maxReconnectDelayMs || 60000));
+    this.maxQueuedEvents = Math.max(1, Number(options.maxQueuedEvents || 1000));
   }
 
   onEvent(handler: OneBotEventHandler): void {
@@ -107,6 +118,8 @@ export class OneBotWsClient {
       reconnectScheduled: Boolean(this.reconnectTimer),
       reconnectAttempts: this.reconnectAttempts,
       pendingCalls: this.pending.size,
+      queuedEvents: this.eventQueue.length,
+      droppedEvents: this.droppedEvents,
       connectedAt: this.connectedAt,
       disconnectedAt: this.disconnectedAt,
       lastActionAt: this.lastActionAt,
@@ -155,6 +168,10 @@ export class OneBotWsClient {
       clearTimeout(call.timer);
       call.reject(new Error(`onebot_client_closed:${call.action}`));
       this.pending.delete(echo);
+    }
+    if (this.eventQueue.length) {
+      this.options.logger?.warn?.(`OneBot WS discarded ${this.eventQueue.length} queued events during close`);
+      this.eventQueue.length = 0;
     }
     try { this.ws?.close(); } catch { /* noop */ }
     this.ws = null;
@@ -307,11 +324,14 @@ export class OneBotWsClient {
 
   private scheduleReconnect(): void {
     if (!this.started || this.manuallyClosed || this.reconnectTimer) return;
+    const exponent = Math.max(0, this.reconnectAttempts - 1);
+    const cappedDelay = Math.min(this.maxReconnectDelayMs, this.reconnectDelayMs * (2 ** Math.min(exponent, 10)));
+    const jitteredDelay = Math.max(1000, Math.round(cappedDelay * (0.8 + Math.random() * 0.4)));
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.started || this.manuallyClosed) return;
       void this.connect().catch(() => undefined);
-    }, this.reconnectDelayMs);
+    }, jitteredDelay);
   }
 
   private rejectPending(error: Error): void {
@@ -357,12 +377,35 @@ export class OneBotWsClient {
       return;
     }
 
-    for (const handler of this.handlers) {
-      try {
-        await handler(payload);
-      } catch (error) {
-        this.options.logger?.error?.(`OneBot event handler failed: ${String(error)}`);
+    this.enqueueEvent(payload);
+  }
+
+  private enqueueEvent(payload: any): void {
+    if (this.eventQueue.length >= this.maxQueuedEvents) {
+      this.droppedEvents += 1;
+      this.options.logger?.error?.(`OneBot inbound event queue full; event rejected queued=${this.eventQueue.length} dropped=${this.droppedEvents}`);
+      return;
+    }
+    this.eventQueue.push(payload);
+    void this.drainEventQueue();
+  }
+
+  private async drainEventQueue(): Promise<void> {
+    if (this.drainingEvents) return;
+    this.drainingEvents = true;
+    try {
+      while (this.started && !this.manuallyClosed && this.eventQueue.length) {
+        const payload = this.eventQueue.shift();
+        for (const handler of this.handlers) {
+          try {
+            await handler(payload);
+          } catch (error) {
+            this.options.logger?.error?.(`OneBot event handler failed: ${String(error)}`);
+          }
+        }
       }
+    } finally {
+      this.drainingEvents = false;
     }
   }
 

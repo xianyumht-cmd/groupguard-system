@@ -50,10 +50,10 @@ export function renderGroupFileMirrorPage(): string {
 </div>
 <script>
 (function(){
-var token=new URL(location.href).searchParams.get('token')||localStorage.getItem('GROUPGUARD_WEBUI_TOKEN')||'';
+var token='';
 if(!token)token=prompt('请输入控制台访问令牌')||'';
-localStorage.setItem('GROUPGUARD_WEBUI_TOKEN',token);
-document.getElementById('homeLink').href='/?token='+encodeURIComponent(token);
+localStorage.removeItem('GROUPGUARD_WEBUI_TOKEN');
+document.getElementById('homeLink').href='/';
 var editor={enabled:false,rules:[]};
 var statuses={};
 var busy=false;

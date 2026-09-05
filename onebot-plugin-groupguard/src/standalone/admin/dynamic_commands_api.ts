@@ -1,4 +1,4 @@
-import { forceReloadDynamicCommands } from '../../dynamic-commands/command_loader';
+import { forceReloadDynamicCommands, validateDynamicCommandsConfigForPersistence } from '../../dynamic-commands/command_loader';
 import { backupFile } from './backup';
 import { readJsonFile, writeJsonFile } from './json_file';
 import type { SnowLumaAdminServerOptions } from './types';
@@ -18,9 +18,16 @@ export function getDynamicCommandsConfig(options: SnowLumaAdminServerOptions): R
 }
 
 export async function saveDynamicCommandsConfig(options: SnowLumaAdminServerOptions, nextConfig: any): Promise<number> {
-  const next = ensureDynamicCommandsConfig(nextConfig);
+  const validation = validateDynamicCommandsConfigForPersistence(ensureDynamicCommandsConfig(nextConfig));
+  if (validation.errors.length) {
+    throw new Error(`dynamic_commands_validation_failed:${validation.errors.join(',')}`);
+  }
+  const next = validation.config;
   backupFile(options.dynamicCommandsConfigPath, options.backupDir, 'commands.json');
   writeJsonFile(options.dynamicCommandsConfigPath, next);
   const commands = await forceReloadDynamicCommands();
+  const loadedIds = new Set(commands.map(command => command.id));
+  const missing = next.commands.filter(command => command.enabled && !loadedIds.has(command.id)).map(command => command.id);
+  if (missing.length) throw new Error(`dynamic_commands_reload_mismatch:${missing.join(',')}`);
   return commands.length;
 }

@@ -9,13 +9,16 @@ export interface QrDetectOptions {
   maxBytes?: number;
   concurrency?: number;
   cacheSeconds?: number;
+  maxPixels?: number;
+  maxWaiters?: number;
+  maxCacheEntries?: number;
 }
 
 type QrCacheEntry = { value: boolean; expiresAt: number };
 
 const qrCache = new Map<string, QrCacheEntry>();
 let activeScans = 0;
-const waiters: Array<() => void> = [];
+const waiters: Array<{ resolve: () => void; reject: (error: Error) => void; timer: NodeJS.Timeout }> = [];
 
 function scanImage(image: any): boolean {
   try {
@@ -33,23 +36,38 @@ function normalizeOptions(options: QrDetectOptions = {}): Required<QrDetectOptio
     timeoutMs: Math.max(300, Math.min(30000, Number(options.timeoutMs ?? 3000))),
     maxBytes: Math.max(102400, Math.min(52428800, Number(options.maxBytes ?? 5242880))),
     concurrency: Math.max(1, Math.min(10, Number(options.concurrency ?? 2))),
-    cacheSeconds: Math.max(0, Math.min(86400, Number(options.cacheSeconds ?? 300)))
+    cacheSeconds: Math.max(0, Math.min(86400, Number(options.cacheSeconds ?? 300))),
+    maxPixels: Math.max(40_000, Math.min(16_000_000, Number(options.maxPixels ?? 4_000_000))),
+    maxWaiters: Math.max(1, Math.min(1000, Number(options.maxWaiters ?? 100))),
+    maxCacheEntries: Math.max(1, Math.min(10000, Number(options.maxCacheEntries ?? 1000))),
   };
 }
 
-async function acquire(limit: number): Promise<void> {
+async function acquire(limit: number, maxWaiters: number, timeoutMs: number): Promise<void> {
   if (activeScans < limit) {
     activeScans += 1;
     return;
   }
-  await new Promise<void>((resolve) => waiters.push(resolve));
+  if (waiters.length >= maxWaiters) throw new Error('qr_waiter_queue_full');
+  await new Promise<void>((resolve, reject) => {
+    const waiter = {
+      resolve: () => { clearTimeout(waiter.timer); resolve(); },
+      reject,
+      timer: setTimeout(() => {
+        const index = waiters.indexOf(waiter);
+        if (index >= 0) waiters.splice(index, 1);
+        reject(new Error('qr_waiter_timeout'));
+      }, timeoutMs),
+    };
+    waiters.push(waiter);
+  });
   activeScans += 1;
 }
 
 function release(): void {
   activeScans = Math.max(0, activeScans - 1);
   const next = waiters.shift();
-  if (next) next();
+  if (next) next.resolve();
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -92,26 +110,40 @@ async function readImageBuffer(url: string, options: Required<QrDetectOptions>):
       loggingStateService.info(`[QR] skipped content_length=${length} max=${options.maxBytes}`);
       return null;
     }
-    const arrayBuffer = await resp.arrayBuffer();
-    if (arrayBuffer.byteLength > options.maxBytes) {
-      loggingStateService.info(`[QR] skipped downloaded_bytes=${arrayBuffer.byteLength} max=${options.maxBytes}`);
-      return null;
+    if (!resp.body) return null;
+    const reader = resp.body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      const data = Buffer.from(chunk.value);
+      total += data.length;
+      if (total > options.maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        loggingStateService.info(`[QR] skipped downloaded_bytes=${total} max=${options.maxBytes}`);
+        return null;
+      }
+      chunks.push(data);
     }
-    return Buffer.from(arrayBuffer);
+    return Buffer.concat(chunks, total);
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function scanBuffer(buffer: Buffer): Promise<boolean> {
+async function scanBuffer(buffer: Buffer, maxPixels: number): Promise<boolean> {
   const image = await Jimp.read(buffer);
+  const { width, height } = image.bitmap;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 || width * height > maxPixels) {
+    throw new Error('qr_decoded_pixel_limit');
+  }
   if (scanImage(image)) return true;
 
   const processed = image.clone();
   processed.greyscale().contrast(0.5).normalize();
   if (scanImage(processed)) return true;
 
-  const { width, height } = image.bitmap;
   let scaled: any = null;
   if (width > 1200 || height > 1200) scaled = image.clone().resize({ w: Math.max(1, Math.floor(width / 2)) });
   else if (width < 200 || height < 200) scaled = image.clone().scale(2);
@@ -134,12 +166,20 @@ export async function detectQrCode(url: string, rawOptions: QrDetectOptions = {}
     return cached.value;
   }
 
-  await acquire(options.concurrency);
+  const now = Date.now();
+  for (const [key, entry] of qrCache.entries()) if (entry.expiresAt <= now) qrCache.delete(key);
+  while (qrCache.size >= options.maxCacheEntries) {
+    const oldest = qrCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    qrCache.delete(oldest);
+  }
+
+  await acquire(options.concurrency, options.maxWaiters, options.timeoutMs);
   try {
     const result = await withTimeout((async () => {
       const buffer = await readImageBuffer(url, options);
       if (!buffer) return false;
-      return scanBuffer(buffer);
+      return scanBuffer(buffer, options.maxPixels);
     })(), options.timeoutMs);
     if (options.cacheSeconds > 0) qrCache.set(cacheKey, { value: result, expiresAt: Date.now() + options.cacheSeconds * 1000 });
     loggingStateService.info(`[QR] detected=${result} url=${url.slice(0, 120)}`);

@@ -419,18 +419,25 @@ class QunGuanjiaService {
   private async postJson(session: GuanjiaSession, endpoint: string, body: Record<string, unknown>, extra: Record<string, string> = {}): Promise<any> {
     const url = new URL(endpoint);
     url.searchParams.set('bkn', session.bkn);
-    const response = await fetch(url.toString(), {
-      method: 'POST',
-      headers: this.headers(session, extra),
-      body: JSON.stringify(body),
-      redirect: 'follow'
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(`Q群管家接口 HTTP ${response.status}: ${text.slice(0, 160)}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
     try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error(`Q群管家接口返回非 JSON: ${text.slice(0, 160)}`);
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: this.headers(session, extra),
+        body: JSON.stringify(body),
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`Q群管家接口 HTTP ${response.status}: ${text.slice(0, 160)}`);
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(`Q群管家接口返回非 JSON: ${text.slice(0, 160)}`);
+      }
+    } finally {
+      clearTimeout(timer);
     }
   }
 

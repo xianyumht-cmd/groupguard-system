@@ -6,9 +6,8 @@ const OUTPUT_LOCALE_STYLE = String.raw`<style id="groupguard-output-locale-style
 </style>`;
 
 const OUTPUT_LOCALE_SCRIPT = String.raw`<script id="groupguard-output-locale-controller">(function(){
-var TOKEN_KEY='GROUPGUARD_WEBUI_TOKEN',loading=false;
-function token(){try{return new URL(location.href).searchParams.get('token')||localStorage.getItem(TOKEN_KEY)||''}catch(error){return''}}
-function withToken(path){var url=new URL(path,location.origin),value=token();if(value)url.searchParams.set('token',value);return url.pathname+url.search+url.hash}
+var loading=false;
+function withToken(path){var url=new URL(path,location.origin);return url.pathname+url.search+url.hash}
 async function api(path,method,body){var res=await fetch(withToken(path),{method:method||'GET',headers:body?{'content-type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});var text=await res.text(),data={};try{data=text?JSON.parse(text):{}}catch(error){throw new Error(text||('HTTP '+res.status))}if(!res.ok||data.ok===false)throw new Error(data.error||data.message||('HTTP '+res.status));return data}
 function status(message,bad){var node=document.getElementById('ggOutputLocaleStatus');if(!node)return;node.textContent=message||'';node.style.color=bad?'var(--gg-danger)':'var(--gg-muted)'}
 function normalize(value){return value==='zh-TW'||value==='en'?value:'zh-CN'}

@@ -55,6 +55,10 @@ class FakeWebSocket {
     });
   }
 
+  event(payload: unknown): void {
+    this.emit('message', { data: JSON.stringify(payload) });
+  }
+
   private emit(type: string, event: any): void {
     if (type === 'close') this.readyState = 3;
     const entries = [...(this.listeners.get(type) || [])];
@@ -300,6 +304,50 @@ async function verifyWebSocketRecoveryIsolation(): Promise<void> {
   }
 }
 
+async function verifyWebSocketInboundOrderingAndCapacity(): Promise<void> {
+  const sockets: FakeWebSocket[] = [];
+  const errors: string[] = [];
+  const client = new OneBotWsClient({
+    url: 'ws://example.invalid/onebot',
+    maxQueuedEvents: 1,
+    logger: { error: (message) => errors.push(message) },
+    webSocketFactory: () => {
+      const socket = new FakeWebSocket();
+      sockets.push(socket);
+      return socket;
+    }
+  });
+  const order: string[] = [];
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  client.onEvent(async (event) => {
+    order.push(`start:${event.id}`);
+    if (event.id === 1) await firstGate;
+    order.push(`end:${event.id}`);
+  });
+
+  try {
+    const started = client.start();
+    await waitFor(() => sockets.length === 1, 'ordering socket was not created');
+    sockets[0].open();
+    await started;
+    sockets[0].event({ id: 1 });
+    sockets[0].event({ id: 2 });
+    sockets[0].event({ id: 3 });
+    await waitFor(() => order.includes('start:1'), 'first event did not start');
+    assert.deepEqual(order, ['start:1'], 'later frames must not overtake a slow preceding frame');
+    assert.equal(client.getConnectionStatus().queuedEvents, 1);
+    assert.equal(client.getConnectionStatus().droppedEvents, 1);
+    assert.match(errors.join('\n'), /inbound event queue full/);
+    releaseFirst();
+    await waitFor(() => order.includes('end:2'), 'second queued event did not finish');
+    assert.deepEqual(order, ['start:1', 'end:1', 'start:2', 'end:2']);
+  } finally {
+    releaseFirst();
+    client.close();
+  }
+}
+
 function verifyWebSocketUrlRedaction(): void {
   const raw = 'wss://alice-private:credential-zeta@example.invalid/ws?Access_Token=alpha&ToKeN=beta&Api_Key=gamma&plain=visible#secret-fragment';
   const redacted = redactWebSocketUrl(raw);
@@ -319,6 +367,7 @@ async function main(): Promise<void> {
   verifyAtomicConfigSave();
   await verifyRecoverableInitialWebSocketFailure();
   await verifyWebSocketRecoveryIsolation();
+  await verifyWebSocketInboundOrderingAndCapacity();
   verifyWebSocketUrlRedaction();
   console.info('core stability verification passed');
 }

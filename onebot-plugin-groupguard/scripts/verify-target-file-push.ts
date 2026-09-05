@@ -14,6 +14,8 @@ import { TargetFilePushService } from '../src/services/target_file_push_service.
 import { renderTargetFilePushPage } from '../src/standalone/admin/target_file_push_page.ts';
 import { applyWebUiTheme } from '../src/standalone/admin/webui_theme.ts';
 
+process.env.TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS = '1';
+
 function success<T>(data: T): HostOperationResult<T> {
   return { state: 'success', data };
 }
@@ -124,6 +126,7 @@ async function main(): Promise<void> {
   const event = {
     schema: 'target-file-push.v1',
     event_id: 'sha256:event-a',
+    source_revision: 1,
     source_url: 'https://abc.lanzou.com/iTEST',
     fingerprint: 'sha256:file-v2',
     direct_url: fileServer.url,
@@ -205,6 +208,7 @@ async function main(): Promise<void> {
   const retainSecond = await retentionService.handleEvent({
     ...event,
     event_id: 'sha256:retain-b',
+    source_revision: 2,
     fingerprint: 'sha256:retain-file-b',
     file: { ...event.file, name: 'retain-b.zip' },
   }, retentionToken);
@@ -218,6 +222,17 @@ async function main(): Promise<void> {
   assert.deepEqual(retentionState.pendingCleanup, [], 'verified root reconciliation clears stale pending cleanup');
   assert.equal(retentionState.lastObservedFileCount, 1);
   assert.equal(retentionState.lastReconcileError, '');
+
+  const stale = await retentionService.handleEvent({
+    ...event,
+    event_id: 'sha256:retain-stale',
+    source_revision: 1,
+    fingerprint: 'sha256:retain-file-stale',
+    file: { ...event.file, name: 'retain-stale.zip' },
+  }, retentionToken);
+  assert.equal(stale.stale, true, 'an older source revision must never replace the accepted file');
+  assert.equal(retentionUploadCount, 2);
+  assert.deepEqual(managedFiles.map(file => file.fileId), ['qq-retain-2']);
 
   const failDir = path.join(workDir, 'failed-case');
   const failDataDir = path.join(failDir, 'data');

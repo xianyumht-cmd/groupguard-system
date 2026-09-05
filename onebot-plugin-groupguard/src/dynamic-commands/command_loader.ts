@@ -146,7 +146,7 @@ function sortCommands(commands: DynamicCommandDefinition[]): DynamicCommandDefin
   });
 }
 
-function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | null {
+export function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | null {
   if (!isRecord(value)) return null;
   const id = typeof value.id === 'string' ? value.id.trim() : '';
   const enabled = value.enabled !== false;
@@ -211,6 +211,31 @@ function normalizeCommandDefinition(value: unknown): DynamicCommandDefinition | 
     response: { type: responseType, textPath, template },
     fallbackText
   };
+}
+
+export function validateDynamicCommandsConfigForPersistence(value: unknown): {
+  config: DynamicCommandsConfigFile;
+  errors: string[];
+} {
+  if (!isRecord(value) || !Array.isArray(value.commands)) {
+    return { config: { version: '1', commands: [] }, errors: ['invalid_dynamic_commands_config_shape'] };
+  }
+  const version = typeof value.version === 'string' ? value.version.trim() || '1' : '1';
+  const commands: DynamicCommandDefinition[] = [];
+  const errors: string[] = [];
+  const ids = new Set<string>();
+  for (let index = 0; index < value.commands.length; index += 1) {
+    const command = normalizeCommandDefinition(value.commands[index]);
+    if (!command) {
+      errors.push(`invalid_command_shape:${index}`);
+      continue;
+    }
+    if (ids.has(command.id)) errors.push(`duplicate_command_id:${command.id}`);
+    ids.add(command.id);
+    for (const error of validateDynamicCommandDefinition(command)) errors.push(error.message);
+    commands.push(command);
+  }
+  return { config: { version, commands }, errors };
 }
 
 function normalizeConfigFile(value: unknown): DynamicCommandsConfigFile {

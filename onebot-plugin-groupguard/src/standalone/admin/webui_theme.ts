@@ -6,9 +6,7 @@ import { applyOutputLocaleWebUiPatch } from './output_locale_webui_patch';
 export const GROUPGUARD_WEBUI_THEME_STORAGE_KEY = CONTROL_PANEL_THEME_STORAGE_KEY;
 
 const TARGET_FILE_PUSH_NAVIGATION_PATCH = String.raw`<script id="groupguard-target-file-push-navigation-patch">(function(){
-var TOKEN_KEY='GROUPGUARD_WEBUI_TOKEN';
-function token(){try{return new URL(location.href).searchParams.get('token')||localStorage.getItem(TOKEN_KEY)||''}catch(error){return''}}
-function withToken(path){var url=new URL(path,location.origin),value=token();if(value)url.searchParams.set('token',value);return url.pathname+url.search}
+function withToken(path){var url=new URL(path,location.origin);return url.pathname+url.search}
 function mount(){
   var nav=document.querySelector('.gg-nav');
   if(!nav||nav.querySelector('[data-gg-target-file-push="1"]'))return false;

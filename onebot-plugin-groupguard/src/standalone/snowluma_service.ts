@@ -160,6 +160,7 @@ async function start(): Promise<RuntimeState> {
     dynamicCommandsConfigPath,
     logger
   });
+  runtime = { ctx, client };
 
   const consumeGeneratedUploadEvent = (event: Record<string, any>): boolean => {
     if (event.post_type !== 'notice' || event.notice_type !== 'group_upload') return false;
@@ -253,6 +254,7 @@ async function start(): Promise<RuntimeState> {
     },
     logger: console
   });
+  runtime.adminServer = adminServer;
 
   logger.info(`service started workDir=${workDir} config=${configPath} fileMirrorConfig=${groupFileMirrorConfigPath} dataDir=${dataDir} dynamicCommands=${dynamicCommandsConfigPath} backupDir=${backupDir}`);
   logger.info(`self-message capability=${hostProfile.capabilities.selfMessageEvents}; GroupGuard also schedules self-recall from send responses.`);
@@ -266,13 +268,14 @@ async function stop(signal: string, exitCode = 0): Promise<void> {
   if (stopping) return;
   stopping = true;
   console.info(`[GroupGuard:OneBot] stopping by ${signal}`);
-  try { runtime?.client.close(); } catch { /* noop */ }
   try { await runtime?.adminServer?.close(); } catch (error) {
     console.error(`[GroupGuard:OneBot] admin webui close failed: ${String(error)}`);
   }
   try { await shutdownGroupGuard(); } catch (error) {
     console.error(`[GroupGuard:OneBot] cleanup failed: ${String(error)}`);
   }
+  try { runtime?.client.close(); } catch { /* noop */ }
+  runtime = null;
   process.exit(exitCode);
 }
 
@@ -280,6 +283,7 @@ process.on('SIGINT', () => void stop('SIGINT'));
 process.on('SIGTERM', () => void stop('SIGTERM'));
 process.on('unhandledRejection', (reason) => {
   console.error(`[GroupGuard:OneBot] unhandledRejection: ${String(reason)}`);
+  void stop('unhandledRejection', 1);
 });
 process.on('uncaughtException', (error) => {
   console.error(`[GroupGuard:OneBot] uncaughtException: ${String(error)}`);
@@ -301,7 +305,7 @@ if (isDirectRun) {
     .then((state) => { runtime = state; })
     .catch((error) => {
       console.error(`[GroupGuard:OneBot] start failed: ${String(error)}`);
-      process.exit(1);
+      void stop('startup_failure', 1);
     });
 }
 

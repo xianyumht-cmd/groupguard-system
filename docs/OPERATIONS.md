@@ -190,6 +190,10 @@ GROUPGUARD_TRANSLATE_API_KEY
 GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK
 ```
 
+Network translation is disabled when `GROUPGUARD_TRANSLATE_ENDPOINT` is unset or `off`. Configure an endpoint only after approving the privacy boundary. Public fallback is disabled unless `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK` is explicitly enabled. Do not enable `TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS` in production; it exists only for isolated local contract tests.
+
+The target-file callback contract requires a positive monotonic `source_revision`. The producer must reuse the same revision when retrying the same source version and increase it only for a newer source version.
+
 Never commit translation API keys or other runtime secrets.
 
 ## Safety rules

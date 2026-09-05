@@ -14,12 +14,12 @@ export interface TargetFilePushConfig {
 
 export const DEFAULT_TARGET_FILE_PUSH_CONFIG: TargetFilePushConfig = {
   enabled: false,
-  sourceUrl: 'https://wwbvf.lanzn.com/b016kzvvmd',
-  targetGroupId: '960957757',
+  sourceUrl: '',
+  targetGroupId: '',
   apiBaseUrl: '',
-  callbackBaseUrl: 'http://192.168.3.89:6108',
+  callbackBaseUrl: '',
   checkIntervalSeconds: 300,
-  maxFileSizeMb: 2048,
+  maxFileSizeMb: 512,
   targetFolderId: '/',
 };
 

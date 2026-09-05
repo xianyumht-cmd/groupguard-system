@@ -23,6 +23,7 @@ let antiRecallDigestTimer: NodeJS.Timeout | null = null;
 
 const activityMem = new Map<string, any>();
 const activityDirty = new Set<string>();
+const activityVersions = new Map<string, number>();
 let activityFlushTimerReady = false;
 let activityFlushTimer: NodeJS.Timeout | null = null;
 const MAX_ACTIVITY_MEM = 2000;
@@ -110,12 +111,12 @@ async function flushAntiRecallDigest(): Promise<void> {
     const rows = Array.from(groupMap.entries()).sort((a, b) => b[1].count - a[1].count);
     if (!rows.length) continue;
     const total = rows.reduce((acc, [, v]) => acc + v.count, 0);
-    const lines = rows.slice(0, 20).map(([gid, v]) => `缇?{gid}: ${v.count}鏉★紙鏈€杩慟Q:${v.lastUserId || '-'})`);
+    const lines = rows.slice(0, 20).map(([gid, v]) => `群 ${gid}：${v.count} 条（最近 QQ：${v.lastUserId || '-'}）`);
     await send({
       channel: 'private',
       targetId: owner,
       scene: 'raw_text',
-      message: `馃敂 闃叉挙鍥炶仛鍚堥€氱煡\n30绉掑唴鍏?${total} 鏉℃挙鍥炰簨浠禱n${lines.join('\n')}`,
+      message: `🔔 防撤回聚合通知\n30 秒内共 ${total} 条撤回事件\n${lines.join('\n')}`,
       force: true,
       applyTemplate: false
     });
@@ -146,7 +147,6 @@ function activityKey(groupId: string, userId: string): string {
 async function flushActivityBatch(): Promise<void> {
   if (!activityDirty.size) return;
   const keys = Array.from(activityDirty);
-  activityDirty.clear();
   for (const key of keys) {
     const activity = activityMem.get(key);
     if (!activity) continue;
@@ -154,7 +154,14 @@ async function flushActivityBatch(): Promise<void> {
     if (sep <= 0) continue;
     const groupId = key.slice(0, sep);
     const userId = key.slice(sep + 1);
-    await groupguardRepository.updateActivity(groupId, userId, activity);
+    const version = activityVersions.get(key) || 0;
+    try {
+      await groupguardRepository.updateActivity(groupId, userId, activity);
+      if ((activityVersions.get(key) || 0) === version) activityDirty.delete(key);
+    } catch (error) {
+      activityDirty.add(key);
+      loggingStateService.warn(`活动批量保存失败，保留重试 key=${key}: ${String(error)}`);
+    }
   }
 }
 
@@ -539,7 +546,21 @@ export async function executeRecordActivity(groupId: string, userId: string): Pr
   } else {
     activity.msgCountToday++;
   }
+  if (!activityMem.has(key) && activityMem.size >= MAX_ACTIVITY_MEM) {
+    await flushActivityBatch();
+    for (const candidate of activityMem.keys()) {
+      if (activityDirty.has(candidate)) continue;
+      activityMem.delete(candidate);
+      activityVersions.delete(candidate);
+      if (activityMem.size < MAX_ACTIVITY_MEM) break;
+    }
+    if (activityMem.size >= MAX_ACTIVITY_MEM) {
+      await groupguardRepository.updateActivity(groupId, userId, activity);
+      return;
+    }
+  }
   activityMem.set(key, activity);
+  activityVersions.set(key, (activityVersions.get(key) || 0) + 1);
   activityDirty.add(key);
   if (activityMem.size > MAX_ACTIVITY_MEM) {
     const nowTs = Date.now();
@@ -554,6 +575,11 @@ export async function executeRecordActivity(groupId: string, userId: string): Pr
   }
 }
 
+export async function flushPassiveService(): Promise<void> {
+  await flushActivityBatch();
+  if (activityDirty.size) throw new Error(`activity_flush_incomplete:${activityDirty.size}`);
+}
+
 export function stopPassiveServiceTimers(): void {
   if (antiRecallDigestTimer) {
     clearInterval(antiRecallDigestTimer);
@@ -564,5 +590,9 @@ export function stopPassiveServiceTimers(): void {
     clearInterval(activityFlushTimer);
     activityFlushTimer = null;
     activityFlushTimerReady = false;
+  }
+  if (!activityDirty.size) {
+    activityMem.clear();
+    activityVersions.clear();
   }
 }

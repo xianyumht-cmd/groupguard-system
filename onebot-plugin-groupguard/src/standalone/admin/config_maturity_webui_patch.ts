@@ -4,9 +4,8 @@ const CONFIG_MATURITY_STYLE = String.raw`<style id="groupguard-config-maturity-s
 </style>`;
 
 const CONFIG_MATURITY_SCRIPT = String.raw`<script id="groupguard-config-maturity-controller">(function(){
-var TOKEN_KEY='GROUPGUARD_WEBUI_TOKEN',openingGlobal=false,globalMode=false,refreshingSources=false,sourceTimer=0,requestedGlobalMode=location.hash==='#global-config';
-function token(){try{return new URL(location.href).searchParams.get('token')||localStorage.getItem(TOKEN_KEY)||''}catch(error){return''}}
-function withToken(path){var url=new URL(path,location.origin),value=token();if(value)url.searchParams.set('token',value);return url.pathname+url.search+url.hash}
+var openingGlobal=false,globalMode=false,refreshingSources=false,sourceTimer=0,requestedGlobalMode=location.hash==='#global-config';
+function withToken(path){var url=new URL(path,location.origin);return url.pathname+url.search+url.hash}
 async function api(path,method,body){var res=await fetch(withToken(path),{method:method||'GET',headers:body?{'content-type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});var text=await res.text(),data={};try{data=text?JSON.parse(text):{}}catch(error){throw new Error(text||('HTTP '+res.status))}if(!res.ok||data.ok===false)throw new Error(data.error||data.message||('HTTP '+res.status));return data}
 function text(node,value){if(node)node.textContent=value}
 function dispatchInput(node){if(!node)return;node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}))}

@@ -27,29 +27,43 @@ import type {
 import { contextStateService } from './core/state-services/context_state_service';
 import { storageAdapter } from './storage_adapter';
 
-// 内存缓存
+// Only warning counters keep a small compatibility cache. Activity, sign-in and
+// invite history is read on demand so process memory is independent of lifetime
+// group/user cardinality.
 const cache = {
-    activity: new Map<string, Record<string, ActivityRecord>>(),
-    signin: new Map<string, Record<string, SigninData>>(),
-    invites: new Map<string, Record<string, InviteData>>(),
     warnings: new Map<string, Record<string, number>>(),
 };
+const MAX_WARNING_GROUPS = 200;
+const MAX_WARNING_USERS_PER_GROUP = 2000;
+
+function warningData(groupId: string): Record<string, number> {
+    let data = cache.warnings.get(groupId);
+    if (!data) {
+        while (cache.warnings.size >= MAX_WARNING_GROUPS) {
+            const oldest = cache.warnings.keys().next().value as string | undefined;
+            if (!oldest) break;
+            cache.warnings.delete(oldest);
+        }
+        data = {};
+        cache.warnings.set(groupId, data);
+    }
+    return data;
+}
+
+function setWarningCache(groupId: string, userId: string, count: number): void {
+    const data = warningData(groupId);
+    if (!(userId in data) && Object.keys(data).length >= MAX_WARNING_USERS_PER_GROUP) {
+        delete data[Object.keys(data)[0]];
+    }
+    data[userId] = count;
+}
+
+export function clearDbCaches(): void {
+    for (const map of Object.values(cache)) map.clear();
+}
 
 export async function initDB() {
     storageAdapter.init(contextStateService.getConfigDir());
-}
-
-function loadData<T>(type: keyof typeof cache, groupId: string): Record<string, T> {
-    if (cache[type].has(groupId)) {
-        return cache[type].get(groupId) as Record<string, T>;
-    }
-    let data: Record<string, T> = {} as Record<string, T>;
-    if (type === 'activity') data = storageAdapter.getAllActivity(groupId) as Record<string, T>;
-    else if (type === 'signin') data = storageAdapter.getAllSignin(groupId) as Record<string, T>;
-    else if (type === 'invites') data = storageAdapter.getAllInvites(groupId) as Record<string, T>;
-    else if (type === 'warnings') data = {} as Record<string, T>;
-    (cache[type] as Map<string, Record<string, T>>).set(groupId, data);
-    return data;
 }
 
 export const dbQuery = {
@@ -59,24 +73,16 @@ export const dbQuery = {
     },
     
     getActivityAsync: async (groupId: string, userId: string): Promise<ActivityRecord | undefined> => {
-        const data = loadData<ActivityRecord>('activity', groupId);
-        if (!data[userId]) {
-            const row = storageAdapter.getActivity(groupId, userId);
-            if (row) {
-                data[userId] = row;
-            }
-        }
-        return data[userId] ? { ...data[userId] } : undefined;
+        const row = storageAdapter.getActivity(groupId, userId);
+        return row ? { ...row } : undefined;
     },
 
     updateActivity: async (groupId: string, userId: string, data: ActivityRecord) => {
-        const allData = loadData<ActivityRecord>('activity', groupId);
-        allData[userId] = data;
         storageAdapter.setActivity(groupId, userId, data);
     },
 
     getAllActivity: async (groupId: string): Promise<Record<string, ActivityRecord>> => {
-        return { ...loadData<ActivityRecord>('activity', groupId) };
+        return { ...storageAdapter.getAllActivity(groupId) };
     },
     insertAuditEvent: async (entry: AuditEventRecord): Promise<void> => {
         storageAdapter.insertAuditEvent(entry);
@@ -123,53 +129,39 @@ export const dbQuery = {
 
     // Signin
     getSignin: async (groupId: string, userId: string): Promise<SigninData | undefined> => {
-        const data = loadData<SigninData>('signin', groupId);
-        if (!data[userId]) {
-            const row = storageAdapter.getSignin(groupId, userId);
-            if (row) data[userId] = row;
-        }
-        return data[userId] ? { ...data[userId] } : undefined;
+        const row = storageAdapter.getSignin(groupId, userId);
+        return row ? { ...row } : undefined;
     },
     updateSignin: async (groupId: string, userId: string, data: SigninData) => {
-        const allData = loadData<SigninData>('signin', groupId);
-        allData[userId] = data;
         storageAdapter.setSignin(groupId, userId, data);
     },
     getAllSignin: async (groupId: string): Promise<Record<string, SigninData>> => {
-        return { ...loadData<SigninData>('signin', groupId) };
+        return { ...storageAdapter.getAllSignin(groupId) };
     },
 
     // Invites
     getInvite: async (groupId: string, userId: string): Promise<InviteData | undefined> => {
-        const data = loadData<InviteData>('invites', groupId);
-        if (!data[userId]) {
-            const row = storageAdapter.getInvite(groupId, userId);
-            if (row) data[userId] = row;
-        }
-        return data[userId] ? { ...data[userId] } : undefined;
+        const row = storageAdapter.getInvite(groupId, userId);
+        return row ? { ...row } : undefined;
     },
     updateInvite: async (groupId: string, userId: string, data: InviteData) => {
-        const allData = loadData<InviteData>('invites', groupId);
-        allData[userId] = data;
         storageAdapter.setInvite(groupId, userId, data);
     },
     clearInvites: async (groupId: string): Promise<void> => {
-        cache.invites.delete(groupId);
         storageAdapter.clearInvites(groupId);
     },
     getAllInvites: async (groupId: string): Promise<Record<string, InviteData>> => {
-        return { ...loadData<InviteData>('invites', groupId) };
+        return { ...storageAdapter.getAllInvites(groupId) };
     },
 
     // Warnings
     getWarning: async (groupId: string, userId: string): Promise<number> => {
-        const data = loadData<number>('warnings', groupId);
-        if (data[userId] === undefined) data[userId] = storageAdapter.getWarning(groupId, userId);
+        const data = warningData(groupId);
+        if (data[userId] === undefined) setWarningCache(groupId, userId, storageAdapter.getWarning(groupId, userId));
         return data[userId] || 0;
     },
     setWarning: async (groupId: string, userId: string, count: number) => {
-        const allData = loadData<number>('warnings', groupId);
-        allData[userId] = count;
+        setWarningCache(groupId, userId, count);
         storageAdapter.setWarning(groupId, userId, count);
     },
     scheduleSelfRecallTask: async (input: SelfRecallScheduleInput): Promise<void> => {

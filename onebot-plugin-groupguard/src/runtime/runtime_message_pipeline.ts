@@ -66,6 +66,11 @@ export async function handlePluginMessage(ctx: GroupGuardRuntimeContext, event: 
       if (blacklisted) return;
     }
 
+    if (settings.enableVerify) {
+      const verifyHandled = await handleVerifyAnswer(groupId, userId, raw, messageId);
+      if (verifyHandled) return;
+    }
+
     const handled = await handleCommand(event, ctx);
     if (handled) return;
 
@@ -108,10 +113,6 @@ export async function handlePluginMessage(ctx: GroupGuardRuntimeContext, event: 
     await recordActivity(groupId, userId);
     cacheMessage(messageId, userId, groupId, raw, messageSegments);
     await handleEmojiReact(groupId, userId, messageId, selfId);
-
-    if (settings.enableVerify) {
-      await handleVerifyAnswer(groupId, userId, raw, messageId);
-    }
 
     await handleCardLockCheck(groupId, userId);
     const senderCard = String((event as any)?.sender?.card || '');

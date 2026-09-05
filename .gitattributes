@@ -1,3 +1,6 @@
 *.sh text eol=lf
 *.ps1 text eol=crlf
-*.cmd text eol=crlf
+# Batch launchers are stored byte-for-byte as CRLF. Marking them as text makes
+# fresh Windows worktrees appear dirty before any user change under some Git
+# autocrlf combinations.
+*.cmd -text
