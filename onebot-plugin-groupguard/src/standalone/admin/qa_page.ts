@@ -11,7 +11,7 @@ body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><div><h1>GroupGuard 问答管理</h1><div class="hint">支持全局问答和分群问答。分群新增会自动把该群切到独立配置。</div></div><a class="link" href="/?token=" id="backLink">返回主 WebUI</a></div>
+  <div class="top"><div><h1>GroupGuard 问答管理</h1><div class="hint">支持全局问答和分群问答。分群新增会自动把该群切到独立配置。</div></div><a class="link" href="/" id="backLink">返回主 WebUI</a></div>
   <div id="notice" class="card hidden"></div>
   <section class="card">
     <h2>查询范围</h2>
@@ -49,10 +49,9 @@ body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",
   </section>
 </div>
 <script>
-let token = new URL(location.href).searchParams.get('token') || localStorage.getItem('GROUPGUARD_WEBUI_TOKEN') || '';
-if (!token) token = prompt('请输入 GROUPGUARD_WEBUI_TOKEN / 启动日志里的临时 token') || '';
-localStorage.setItem('GROUPGUARD_WEBUI_TOKEN', token);
-document.getElementById('backLink').href='/?token='+encodeURIComponent(token);
+let token = '';
+localStorage.removeItem('GROUPGUARD_WEBUI_TOKEN');
+document.getElementById('backLink').href='/';
 function api(path, options){ options = options || {}; return fetch(path, { method: options.method || 'GET', body: options.body, headers: Object.assign({ 'content-type': 'application/json', 'x-groupguard-token': token }, options.headers || {}) }).then(async function(r){ var text = await r.text(); var data; try { data = JSON.parse(text); } catch(e) { data = { ok:false, error:text }; } if(!r.ok) throw new Error(data.error || text || r.statusText); return data; }); }
 function show(msg, ok){ var n=document.getElementById('notice'); n.className='card ' + (ok === false ? 'error' : 'ok'); n.textContent=msg; }
 function htmlEscape(v){ return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }

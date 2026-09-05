@@ -9,11 +9,12 @@ function getHeaderValue(value: string | string[] | undefined): string {
 }
 
 export function parseAuthToken(req: IncomingMessage, url: URL): string {
-  const queryToken = url.searchParams.get('token') || '';
   const headerToken = getHeaderValue(req.headers['x-groupguard-token']);
   const auth = getHeaderValue(req.headers.authorization);
   if (auth.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
-  return headerToken || queryToken;
+  const cookie = getHeaderValue(req.headers.cookie).split(';').map(part => part.trim()).find(part => part.startsWith('GG_ADMIN_SESSION='));
+  const cookieToken = cookie ? decodeURIComponent(cookie.slice('GG_ADMIN_SESSION='.length)) : '';
+  return headerToken || cookieToken;
 }
 
 export function isTokenMatch(provided: string, expected: string): boolean {

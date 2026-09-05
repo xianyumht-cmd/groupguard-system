@@ -101,6 +101,17 @@ try {
   assert.equal(unauthorizedLive.status, 401);
   const unauthorizedReady = await fetch(`${baseUrl}/api/readyz`);
   assert.equal(unauthorizedReady.status, 401);
+  const queryTokenApi = await fetch(`${baseUrl}/api/livez?token=${encodeURIComponent(token)}`, { redirect: 'manual' });
+  assert.equal(queryTokenApi.status, 401, 'query tokens must not authenticate API requests');
+  const bootstrap = await fetch(`${baseUrl}/?token=${encodeURIComponent(token)}`, { redirect: 'manual' });
+  assert.equal(bootstrap.status, 303);
+  assert.equal(bootstrap.headers.get('location'), '/');
+  const sessionCookie = String(bootstrap.headers.get('set-cookie') || '');
+  assert.match(sessionCookie, /GG_ADMIN_SESSION=/);
+  assert.match(sessionCookie, /HttpOnly/i);
+  assert.match(sessionCookie, /SameSite=Strict/i);
+  const cookieLive = await fetch(`${baseUrl}/api/livez`, { headers: { cookie: sessionCookie.split(';')[0] } });
+  assert.equal(cookieLive.status, 200);
 
   const live = await fetch(`${baseUrl}/api/livez`, { headers: authorizedHeaders });
   assert.equal(live.status, 200);

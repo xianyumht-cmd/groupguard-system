@@ -37,6 +37,8 @@ import type {
 const SCHEMA_SQL = `
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
+PRAGMA busy_timeout=5000;
+PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS storage_meta (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS group_config (group_id TEXT PRIMARY KEY, config_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS group_qa (group_id TEXT NOT NULL, keyword TEXT NOT NULL, mode TEXT NOT NULL, reply TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (group_id, keyword, mode));
@@ -379,6 +381,12 @@ export class StorageAdapter {
     const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec(SCHEMA_SQL);
+    const quickCheck = this.db.prepare('PRAGMA quick_check').get() as Record<string, unknown> | undefined;
+    if (quickCheck && !Object.values(quickCheck).some(value => String(value).toLowerCase() === 'ok')) {
+      this.close();
+      throw new Error('storage_integrity_check_failed');
+    }
+    this.db.prepare('INSERT OR REPLACE INTO storage_meta(k, v) VALUES (?, ?)').run('schema_version', '9');
     this.inited = true;
   }
 
@@ -1729,21 +1737,31 @@ export class StorageAdapter {
     const maxAgeDays = Math.max(1, Math.min(3650, toNumber(basePolicy.maxAgeDays, 30)));
     const maxRows = Math.max(100, Math.min(1000000, toNumber(basePolicy.maxRows, 20000)));
     const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-    let deleted = 0;
-    const oldRows = db.prepare('DELETE FROM audit_events WHERE created_at < ?').run(cutoff);
-    deleted += toNumber(oldRows?.changes, 0);
-    const countRow = db.prepare('SELECT COUNT(1) AS c FROM audit_events').get();
-    const overflow = toNumber(countRow?.c, 0) - maxRows;
-    if (overflow > 0) {
-      const overflowRows = db.prepare(`DELETE FROM audit_events
-        WHERE id IN (
-          SELECT id FROM audit_events
-          ORDER BY created_at ASC, id ASC
-          LIMIT ?
-        )`).run(overflow);
-      deleted += toNumber(overflowRows?.changes, 0);
-    }
-    return deleted;
+    return this.runInTransaction(() => {
+      let deleted = 0;
+      const oldIds = db.prepare('SELECT id FROM audit_events WHERE created_at < ?').all(cutoff) as Array<{ id: number }>;
+      const countRow = db.prepare('SELECT COUNT(1) AS c FROM audit_events WHERE created_at >= ?').get(cutoff);
+      const overflow = Math.max(0, toNumber(countRow?.c, 0) - maxRows);
+      const overflowIds = overflow > 0
+        ? db.prepare('SELECT id FROM audit_events WHERE created_at >= ? ORDER BY created_at ASC, id ASC LIMIT ?').all(cutoff, overflow) as Array<{ id: number }>
+        : [];
+      const ids = [...oldIds, ...overflowIds].map(row => Number(row.id)).filter(Number.isSafeInteger);
+      for (let offset = 0; offset < ids.length; offset += 500) {
+        const batch = ids.slice(offset, offset + 500);
+        const placeholders = batch.map(() => '?').join(',');
+        deleted += toNumber(db.prepare(`DELETE FROM audit_event_links WHERE audit_event_id IN (${placeholders})`).run(...batch)?.changes, 0);
+        deleted += toNumber(db.prepare(`DELETE FROM audit_events WHERE id IN (${placeholders})`).run(...batch)?.changes, 0);
+      }
+      deleted += toNumber(db.prepare('DELETE FROM audit_event_links WHERE audit_event_id NOT IN (SELECT id FROM audit_events)').run()?.changes, 0);
+      deleted += toNumber(db.prepare('DELETE FROM bot_send_events WHERE created_at < ?').run(cutoff)?.changes, 0);
+      const sendCount = toNumber(db.prepare('SELECT COUNT(1) AS c FROM bot_send_events').get()?.c, 0);
+      if (sendCount > maxRows) {
+        deleted += toNumber(db.prepare(`DELETE FROM bot_send_events WHERE id IN (
+          SELECT id FROM bot_send_events ORDER BY created_at ASC, id ASC LIMIT ?
+        )`).run(sendCount - maxRows)?.changes, 0);
+      }
+      return deleted;
+    });
   }
 
   pruneActionQueueEvents(policy: ActionQueueEventRetentionPolicy = {}): number {

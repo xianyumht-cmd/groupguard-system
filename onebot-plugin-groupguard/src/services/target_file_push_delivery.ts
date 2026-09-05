@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import type { HostGroupFileEntry, HostProfile } from '../hosts/host_profile';
 
@@ -32,15 +34,21 @@ export async function downloadTargetFile(options: {
   const timer = setTimeout(() => controller.abort(), 10 * 60 * 1000);
   let handle: fs.promises.FileHandle | null = null;
   try {
-    const response = await fetch(options.directUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'user-agent': 'GroupGuard-TargetFilePush/1.0',
-        accept: '*/*',
-      },
-    });
+    let currentUrl = new URL(options.directUrl);
+    let response: Response | null = null;
+    for (let redirects = 0; redirects <= 5; redirects += 1) {
+      await assertSafeDownloadUrl(currentUrl);
+      response = await fetch(currentUrl, {
+        method: 'GET', redirect: 'manual', signal: controller.signal,
+        headers: { 'user-agent': 'GroupGuard-TargetFilePush/1.0', accept: '*/*' },
+      });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get('location');
+      if (!location) throw new Error('文件下载重定向缺少 Location');
+      if (redirects === 5) throw new Error('文件下载重定向次数过多');
+      currentUrl = new URL(location, currentUrl);
+    }
+    if (!response) throw new Error('文件下载没有响应');
     if (!response.ok) throw new Error(`文件下载失败 HTTP ${response.status}`);
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
     if (contentType.includes('text/html')) throw new Error('直链返回了网页而不是文件，请重新解析直链');
@@ -73,6 +81,46 @@ export async function downloadTargetFile(options: {
     clearTimeout(timer);
     try { await handle?.close(); } catch { /* noop */ }
     try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch { /* noop */ }
+  }
+}
+
+function isPrivateAddress(address: string): boolean {
+  if (net.isIPv4(address)) {
+    const [a, b] = address.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+      || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  if (net.isIPv6(address)) {
+    const value = address.toLowerCase().split('%')[0];
+    if (value.startsWith('::ffff:')) {
+      const mapped = value.slice('::ffff:'.length);
+      if (net.isIPv4(mapped)) return isPrivateAddress(mapped);
+      const parts = mapped.split(':');
+      if (parts.length === 2 && parts.every(part => /^[0-9a-f]{1,4}$/.test(part))) {
+        const high = Number.parseInt(parts[0], 16);
+        const low = Number.parseInt(parts[1], 16);
+        return isPrivateAddress(`${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`);
+      }
+    }
+    return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd')
+      || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb')
+      || value.startsWith('ff');
+  }
+  return true;
+}
+
+async function assertSafeDownloadUrl(url: URL): Promise<void> {
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('target_file_push_invalid_download_protocol');
+  if (url.username || url.password) throw new Error('target_file_push_download_credentials_forbidden');
+  if (process.env.TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS === '1') return;
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
+    throw new Error('target_file_push_private_download_forbidden');
+  }
+  const addresses = net.isIP(hostname) ? [{ address: hostname }] : await dns.lookup(hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some(item => isPrivateAddress(item.address))) {
+    throw new Error('target_file_push_private_download_forbidden');
   }
 }
 

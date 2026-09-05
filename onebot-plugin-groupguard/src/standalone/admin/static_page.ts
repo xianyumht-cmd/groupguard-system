@@ -217,9 +217,8 @@ th{color:#93c5fd;background:#111827}
 </div>
 <script>
 (function(){
-var token = new URL(location.href).searchParams.get('token') || localStorage.getItem('GROUPGUARD_WEBUI_TOKEN') || '';
-if (!token) token = prompt('请输入 GROUPGUARD_WEBUI_TOKEN') || '';
-localStorage.setItem('GROUPGUARD_WEBUI_TOKEN', token);
+var token = '';
+localStorage.removeItem('GROUPGUARD_WEBUI_TOKEN');
 var config = {};
 var currentGroup = null;
 var statusLabels = {
@@ -341,17 +340,15 @@ var fieldMeta = {
   globalEmojiReact:['自动回应表情','开启所有群的自动表情回应。','娱乐统计'],
   'global.featureSwitches.query.lol_ban':['查封号','控制查封号查询入口。','查询功能'],
   'global.featureSwitches.query.lol_battle':['查战绩','控制查战绩查询入口。','查询功能'],
-  'global.featureSwitches.query.lol_hidden':['查隐藏','控制查隐藏查询入口。','查询功能'],
   'global.featureSwitches.query.lol_shard':['查合集','控制查合集查询入口。','查询功能'],
   'global.featureSwitches.query.scammer':['查骗子','控制骗子查询入口。','查询功能'],
   'global.featureSwitches.query.peer':['查同行','控制同行查询入口。','查询功能'],
   'global.lolQueryCommandSwitch.battleQuery':['查战绩旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
   'global.lolQueryCommandSwitch.banQuery':['查封号旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
-  'global.lolQueryCommandSwitch.hiddenQuery':['查隐藏旧指令开关','旧 LOL 查询指令级开关。','查询功能'],
   'global.replyProbability':['回复概率','机器人回复触发概率，0-100。','发送与风控'],
   'global.randomDelayMin':['最小随机延迟','机器人发送前的最小随机延迟毫秒。','发送与风控'],
   'global.randomDelayMax':['最大随机延迟','机器人发送前的最大随机延迟毫秒。','发送与风控'],
-  'global.lolQueryOutputFormat':['战绩输出格式','查战绩/查隐藏默认输出格式。','查询功能'],
+  'global.lolQueryOutputFormat':['战绩输出格式','查战绩默认输出格式。','查询功能'],
   shardQueryOutputFormat:['查合集输出格式','查合集默认输出格式。','查询功能'],
   lolApiBaseUrl:['英雄联盟接口根地址','本地英雄联盟查询服务的根地址。','接口地址'],
   lolQueryUrl:['自定义战绩查询地址','旧版自定义战绩查询接口地址。','接口地址'],
@@ -578,13 +575,11 @@ function renderForms(){
     + positiveSwitchHtml('LOL查询功能','global.disableLolQuery',get(config,'global.disableLolQuery',false),'开启表示允许旧 LOL 查询链路；保存时写入 disableLolQuery=false。')
     + switchHtml('查封号','global.featureSwitches.query.lol_ban',get(config,'global.featureSwitches.query.lol_ban',true),{meta:fieldMeta['global.featureSwitches.query.lol_ban']})
     + switchHtml('查战绩','global.featureSwitches.query.lol_battle',get(config,'global.featureSwitches.query.lol_battle',true),{meta:fieldMeta['global.featureSwitches.query.lol_battle']})
-    + switchHtml('查隐藏','global.featureSwitches.query.lol_hidden',get(config,'global.featureSwitches.query.lol_hidden',true),{meta:fieldMeta['global.featureSwitches.query.lol_hidden']})
     + switchHtml('查合集','global.featureSwitches.query.lol_shard',get(config,'global.featureSwitches.query.lol_shard',true),{meta:fieldMeta['global.featureSwitches.query.lol_shard']})
     + switchHtml('查骗子','global.featureSwitches.query.scammer',get(config,'global.featureSwitches.query.scammer',true),{meta:fieldMeta['global.featureSwitches.query.scammer']})
     + switchHtml('查同行','global.featureSwitches.query.peer',get(config,'global.featureSwitches.query.peer',true),{meta:fieldMeta['global.featureSwitches.query.peer']})
     + switchHtml('查战绩旧指令','global.lolQueryCommandSwitch.battleQuery',get(config,'global.lolQueryCommandSwitch.battleQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.battleQuery']})
     + switchHtml('查封号旧指令','global.lolQueryCommandSwitch.banQuery',get(config,'global.lolQueryCommandSwitch.banQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.banQuery']})
-    + switchHtml('查隐藏旧指令','global.lolQueryCommandSwitch.hiddenQuery',get(config,'global.lolQueryCommandSwitch.hiddenQuery',true),{meta:fieldMeta['global.lolQueryCommandSwitch.hiddenQuery']})
     + sectionTitle('问答功能')
     + positiveSwitchHtml('问答功能','global.disableQA',get(config,'global.disableQA',false),'开启表示允许问答；保存时写入 disableQA=false。')
     + sectionTitle('娱乐统计')
@@ -730,7 +725,6 @@ function renderGroupForm(data){
     + sectionTitle('本群查询开关')
     + switchHtml('查封号','featureSwitches.query.lol_ban',get(groupSrc,'featureSwitches.query.lol_ban',true))
     + switchHtml('查战绩','featureSwitches.query.lol_battle',get(groupSrc,'featureSwitches.query.lol_battle',true))
-    + switchHtml('查隐藏','featureSwitches.query.lol_hidden',get(groupSrc,'featureSwitches.query.lol_hidden',true))
     + switchHtml('查合集','featureSwitches.query.lol_shard',get(groupSrc,'featureSwitches.query.lol_shard',true))
     + switchHtml('查骗子','featureSwitches.query.scammer',get(groupSrc,'featureSwitches.query.scammer',true))
     + switchHtml('查同行','featureSwitches.query.peer',get(groupSrc,'featureSwitches.query.peer',true))
@@ -838,7 +832,7 @@ function ensureSubResourceUi(){
     gameplay.parentNode.insertBefore(section, gameplay.nextSibling);
   }
 }
-function resourceFileUrl(path){ return '/api/sub-gameplay/resource-file?token='+encodeURIComponent(token)+'&id='+encodeURIComponent(path); }
+function resourceFileUrl(path){ return '/api/sub-gameplay/resource-file?id='+encodeURIComponent(path); }
 function renderSubResources(data){
   var summary=data.summary||{};
   var integrity=data.integrity||{};
@@ -939,8 +933,8 @@ function switchTab(tab){
 }
 function bind(){
   ensureSubResourceUi();
-  el('qaLink').href='/qa.html?token='+encodeURIComponent(token);
-  el('queryLink').href='/query.html?token='+encodeURIComponent(token);
+  el('qaLink').href='/qa.html';
+  el('queryLink').href='/query.html';
   document.querySelectorAll('button.tab[data-tab]').forEach(function(btn){ btn.addEventListener('click',function(){ switchTab(btn.dataset.tab); }); });
   el('refreshBtn').addEventListener('click',reloadAll);
   document.querySelectorAll('[data-save-form]').forEach(function(btn){ btn.addEventListener('click',function(){ savePatch(btn.dataset.saveForm).catch(function(e){ show(e.message,false); }); }); });

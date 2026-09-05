@@ -132,6 +132,7 @@ const stats: QueueCounters = {
   timeoutCount: 0
 };
 let activeWorkers = 0;
+let acceptingActions = true;
 let actionSeq = 0;
 let dedupOrderSeq = 0;
 const recentLogs: QueueLogItem[] = [];
@@ -475,6 +476,10 @@ function insertTaskSorted(task: QueueTask): void {
 }
 
 function enqueueTask(task: QueueTask): 'ok' | 'queue_overflow' | 'backpressure_reject' | 'skip_duplicate' | 'bot_role_blocked' {
+  if (!acceptingActions) {
+    recordActionQueueEvent(task, 'dropped', { code: 'backpressure_reject', ok: false, reason: 'shutting_down' });
+    return 'backpressure_reject';
+  }
   const intent = task.type === 'self_recall' ? 'self_recall_like' : 'moderation_like';
   const roleBlock = shouldBlockByBotRole({ source: 'action_queue', rawMessage: taskSubject(task), intent, actionType: task.type });
   if (roleBlock.blocked) {
@@ -1102,6 +1107,22 @@ export function resetActionQueueRuntime(): { cleared: number; activeWorkers: num
     task.resolve({ ok: false, code: 'queue_reset' });
   }
   return { cleared, activeWorkers };
+}
+
+export function resumeActionQueueRuntime(): void {
+  acceptingActions = true;
+}
+
+export async function drainActionQueue(timeoutMs = 30_000): Promise<void> {
+  acceptingActions = false;
+  const deadline = Date.now() + Math.max(1, timeoutMs);
+  while (queue.length > 0 || activeWorkers > 0) {
+    if (Date.now() >= deadline) {
+      resetActionQueueRuntime();
+      throw new Error('action_queue_drain_timeout');
+    }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
 }
 
 export function getActionQueueRecentLogs(limit = 10): string[] {

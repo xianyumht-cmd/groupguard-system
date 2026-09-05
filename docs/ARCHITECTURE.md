@@ -41,13 +41,13 @@ Arbitrary natural-language text that cannot be satisfied by local fast paths may
 
 Runtime provider policy is deliberately explicit:
 
-1. If `GROUPGUARD_TRANSLATE_ENDPOINT` is **unset**, the built-in public chain is enabled: the default LibreTranslate endpoint is tried first, then MyMemory as public fallback.
-2. If `GROUPGUARD_TRANSLATE_ENDPOINT=off` (or is explicitly set empty), network translation is disabled. No public fallback is attempted.
+1. If `GROUPGUARD_TRANSLATE_ENDPOINT` is **unset**, network translation is disabled. Local deterministic translations remain available.
+2. If `GROUPGUARD_TRANSLATE_ENDPOINT=off` (or is explicitly set empty), network translation is also disabled. No public fallback is attempted.
 3. If `GROUPGUARD_TRANSLATE_ENDPOINT` is an explicit custom/private URL, only that endpoint is used by default. Failure does **not** silently send the same text to a public service.
 4. Public fallback from a custom/private endpoint is allowed only when `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK=1|true|yes|on` is explicitly configured.
 5. `GROUPGUARD_TRANSLATE_API_KEY` is sent only to the configured/default Libre-style POST endpoint; it is not sent to MyMemory.
 
-The Libre/custom POST request has an approximately 3.5-second timeout. MyMemory public fallback has an approximately 2.5-second timeout and rejects oversized payloads above its local limit before sending. Provider failures are not persisted as message data. Successful arbitrary translations are cached in memory only and the cache is bounded.
+The custom POST request has an approximately 3.5-second timeout. Explicitly enabled MyMemory public fallback has an approximately 2.5-second timeout and rejects oversized payloads above its local limit before sending. Provider failures are not persisted as message data. Successful arbitrary translations are cached in memory only, the cache is bounded, and remote translations share a global concurrency permit pool.
 
 This external dependency is intentionally isolated behind `output_translation_policy.ts` so security/operations work can audit whether a deployment permits public egress without searching business command implementations.
 
@@ -138,6 +138,8 @@ For the current deployment, QQ group-file root `/` is an **exclusive managed dir
 - After delete actions, GroupGuard re-lists the directory and records actual leftovers.
 - A failed replacement upload leaves the existing QQ group directory untouched.
 - Local target temp cleanup is independent from QQ group-file cleanup: the retryable current failed local file may remain while obsolete unreferenced local temp files are removed.
+- Callbacks require a positive monotonic `source_revision`; stale revisions cannot download, upload, replace or delete files.
+- Callback downloads reject URL credentials and private/special-use network destinations on the initial URL and every redirect hop.
 
 ### SnowLuma v1.12.4 host contract
 

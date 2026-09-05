@@ -38,15 +38,20 @@ function ensureInviteData(groupId: string): GroupInviteData {
       loaded = { forward: {}, reverse: {}, records: {} };
     }
   }
-  groupCache.set(groupId, loaded);
-  if (groupCache.size > MAX_GROUP_CACHE) {
-    const keys = Array.from(groupCache.keys());
-    for (let i = 0; i < keys.length - MAX_GROUP_CACHE; i += 1) {
-      groupCache.delete(keys[i]);
-      dirtyGroups.delete(keys[i]);
-    }
+  while (groupCache.size >= MAX_GROUP_CACHE) {
+    const cleanKey = Array.from(groupCache.keys()).find(key => !dirtyGroups.has(key));
+    if (!cleanKey) break;
+    groupCache.delete(cleanKey);
   }
+  if (groupCache.size < MAX_GROUP_CACHE) groupCache.set(groupId, loaded);
   return loaded;
+}
+
+async function writeInviteData(groupId: string, data: GroupInviteData): Promise<void> {
+  const target = path.join(inviteDataDir, `${groupId}.json`);
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(data), 'utf-8');
+  await fs.promises.rename(tmp, target);
 }
 
 async function flushDirty(): Promise<void> {
@@ -55,14 +60,16 @@ async function flushDirty(): Promise<void> {
   try {
     await fs.promises.mkdir(inviteDataDir, { recursive: true });
     const groups = Array.from(dirtyGroups);
-    dirtyGroups.clear();
     for (const groupId of groups) {
       const data = groupCache.get(groupId);
       if (!data) continue;
-      const target = path.join(inviteDataDir, `${groupId}.json`);
-      const tmp = `${target}.tmp`;
-      await fs.promises.writeFile(tmp, JSON.stringify(data), 'utf-8');
-      await fs.promises.rename(tmp, target);
+      try {
+        await writeInviteData(groupId, data);
+        dirtyGroups.delete(groupId);
+      } catch (error) {
+        dirtyGroups.add(groupId);
+        loggingStateService.warn(`[InviteStat] flush failed group=${groupId}: ${String(error)}`);
+      }
     }
   } finally {
     flushInProgress = false;
@@ -135,6 +142,11 @@ export async function recordInviteRelation(input: {
   store.forward[inviterQQ] = list;
   store.records[invitedQQ] = record;
   dirtyGroups.add(groupId);
+  if (!groupCache.has(groupId)) {
+    await fs.promises.mkdir(inviteDataDir, { recursive: true });
+    await writeInviteData(groupId, store);
+    dirtyGroups.delete(groupId);
+  }
   loggingStateService.info(`[InviteStat] group=${groupId} inviter=${inviterQQ} invited=${invitedQQ}`);
   return { created: true };
 }

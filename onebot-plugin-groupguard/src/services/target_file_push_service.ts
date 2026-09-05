@@ -70,6 +70,9 @@ export class TargetFilePushService {
   private state: TargetFilePushState = emptyTargetFilePushState();
   private stateHealthy = true;
   private readonly eventLocks = new Map<string, Promise<Record<string, any>>>();
+  private processingTail: Promise<void> = Promise.resolve();
+  private queuedEvents = 0;
+  private static readonly MAX_QUEUED_EVENTS = 32;
 
   bindRuntime(runtime: TargetFilePushRuntimeBinding): void {
     this.runtime = runtime;
@@ -332,8 +335,10 @@ export class TargetFilePushService {
     const directUrl = String(payload.direct_url || '').trim();
     const file = isRecord(payload.file) ? payload.file : {};
     const fileName = safeTargetFileName(file.name);
+    const sourceRevision = Number(payload.source_revision ?? file.source_revision ?? file.modified_at ?? 0);
     if (!eventId || eventId.length > 200) throw new Error('target_file_push_invalid_event_id');
     if (!fingerprint || fingerprint.length > 200) throw new Error('target_file_push_invalid_fingerprint');
+    if (!Number.isSafeInteger(sourceRevision) || sourceRevision <= 0) throw new Error('target_file_push_source_revision_required');
     if (stableUrl(sourceUrl) !== stableUrl(this.config.sourceUrl)) throw new Error('target_file_push_source_mismatch');
     if (!isHttpUrl(directUrl)) throw new Error('target_file_push_invalid_direct_url');
 
@@ -344,20 +349,33 @@ export class TargetFilePushService {
 
     const existing = this.eventLocks.get(eventId);
     if (existing) return existing;
-    const task = this.processEvent({ eventId, fingerprint, directUrl, fileName });
+    if (this.queuedEvents >= TargetFilePushService.MAX_QUEUED_EVENTS) throw new Error('target_file_push_queue_full');
+    this.queuedEvents += 1;
+    const previous = this.processingTail;
+    const task = previous.catch(() => undefined).then(async () => {
+      this.loadState();
+      if (!this.stateHealthy) throw new Error('target_file_push_state_unavailable');
+      if (sourceRevision <= this.state.lastAcceptedRevision) {
+        return { ok: true, uploaded: false, deduplicated: false, stale: true, eventId, sourceRevision };
+      }
+      return this.processEvent({ eventId, fingerprint, directUrl, fileName, sourceRevision });
+    });
+    this.processingTail = task.then(() => undefined, () => undefined);
     this.eventLocks.set(eventId, task);
     task.then(
       () => {
+        this.queuedEvents = Math.max(0, this.queuedEvents - 1);
         if (this.eventLocks.get(eventId) === task) this.eventLocks.delete(eventId);
       },
       () => {
+        this.queuedEvents = Math.max(0, this.queuedEvents - 1);
         if (this.eventLocks.get(eventId) === task) this.eventLocks.delete(eventId);
       },
     );
     return task;
   }
 
-  private async processEvent(input: { eventId: string; fingerprint: string; directUrl: string; fileName: string }): Promise<Record<string, any>> {
+  private async processEvent(input: { eventId: string; fingerprint: string; directUrl: string; fileName: string; sourceRevision: number }): Promise<Record<string, any>> {
     this.cleanupStaleTempFiles();
     let localPath = '';
     try {
@@ -376,6 +394,7 @@ export class TargetFilePushService {
           startedAt: Date.now(),
           updatedAt: Date.now(),
           lastError: '',
+          sourceRevision: input.sourceRevision,
         };
         this.saveState();
         if (superseded?.state === 'failed' && superseded.localPath) {
@@ -414,7 +433,9 @@ export class TargetFilePushService {
         fileName: input.fileName,
         fileId,
         uploadedAt,
+        sourceRevision: input.sourceRevision,
       };
+      this.state.lastAcceptedRevision = input.sourceRevision;
       this.state.lastSuccessAt = uploadedAt;
       this.state.lastErrorAt = 0;
       this.state.lastError = '';

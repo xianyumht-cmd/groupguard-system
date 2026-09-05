@@ -88,3 +88,33 @@ The target-file WebUI described the last step only as deleting the local tempora
 - If a feature owns an external resource destructively, state that ownership explicitly in the UI.
 - Show the ordering invariant in the visible workflow: upload replacement first, then clean old group files, then verify, then delete local temp.
 - Expose reconciliation status, current kept file, observed managed-file count, and remaining cleanup count so production behavior can be verified without inspecting JSON state files.
+
+## A successful local action request is not a successful business action
+
+Observed: 2026-09-05
+
+### Failure pattern
+
+Callers displayed success or deducted points after enqueueing an action even when the host returned a failed action result. Shutdown also cleared pending queues before their results settled.
+
+### Prevention
+
+- Treat the final `GuardResult.ok` as the business commit boundary.
+- Apply irreversible local effects such as point deductions only after the remote action succeeds.
+- Stop accepting work before shutdown, drain bounded queues while their transport is still available, then close transports and persistence.
+- Test failure, timeout, overload and shutdown paths; a resolved Promise alone is not evidence of success.
+
+## Callback identity does not establish source ordering
+
+Observed: 2026-09-05
+
+### Failure pattern
+
+Unique event IDs prevented exact duplicate processing but allowed an older callback arriving late to replace a newer target file.
+
+### Prevention
+
+- Require a positive monotonic source revision in every callback.
+- Serialize target mutations per destination and persist the last accepted revision.
+- Acknowledge stale revisions without downloading, uploading or deleting files.
+- Validate every download URL and redirect hop against private/link-local destinations.

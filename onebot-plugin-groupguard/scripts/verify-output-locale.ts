@@ -37,10 +37,10 @@ async function verifyTranslationPrivacyPolicy(): Promise<void> {
     { mode: 'custom', endpoint: 'https://translate.internal/v1', allowPublicFallback: true },
     'public fallback must require an explicit opt-in for custom endpoints'
   );
-  assert.equal(
-    resolveOutputTranslationPolicy({} as NodeJS.ProcessEnv).mode,
-    'public-default',
-    'unset endpoint keeps the documented built-in public provider chain'
+  assert.deepEqual(
+    resolveOutputTranslationPolicy({} as NodeJS.ProcessEnv),
+    { mode: 'disabled', endpoint: '', allowPublicFallback: false },
+    'network translation must require explicit operator configuration'
   );
 
   const originalFetch = globalThis.fetch;

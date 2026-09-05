@@ -24,7 +24,7 @@ export function resolveOutputTranslationPolicy(env: NodeJS.ProcessEnv = process.
       allowPublicFallback: ['1', 'true', 'yes', 'on'].includes(String(env.GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK || '').trim().toLowerCase())
     };
   }
-  return { mode: 'public-default', endpoint: DEFAULT_LIBRE_ENDPOINT, allowPublicFallback: true };
+  return { mode: 'disabled', endpoint: '', allowPublicFallback: false };
 }
 
 async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Promise<any> {

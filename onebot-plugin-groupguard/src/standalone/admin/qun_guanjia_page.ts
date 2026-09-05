@@ -63,10 +63,9 @@ export function renderQunGuanjiaPage(): string {
   </section>
 </div>
 <script>
-var token = new URL(location.href).searchParams.get('token') || localStorage.getItem('GROUPGUARD_WEBUI_TOKEN') || '';
-if (!token) token = prompt('请输入 GROUPGUARD_WEBUI_TOKEN / 启动日志里的临时 token') || '';
-localStorage.setItem('GROUPGUARD_WEBUI_TOKEN', token);
-document.getElementById('homeLink').href = '/?token=' + encodeURIComponent(token);
+var token = '';
+localStorage.removeItem('GROUPGUARD_WEBUI_TOKEN');
+document.getElementById('homeLink').href = '/';
 var config = {};
 function api(path, options){ options=options||{}; return fetch(path,{method:options.method||'GET',body:options.body,headers:Object.assign({'content-type':'application/json','x-groupguard-token':token},options.headers||{})}).then(async function(r){var text=await r.text();var data;try{data=JSON.parse(text)}catch(e){data={ok:false,error:text}}if(!r.ok)throw new Error(data.error||text||r.statusText);return data}) }
 function show(message, ok){var box=document.getElementById('notice');box.style.display='block';box.className='card '+(ok===false?'error':'ok');box.textContent=message}

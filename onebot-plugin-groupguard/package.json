@@ -8,7 +8,7 @@
   "author": "冷曦",
   "license": "MIT",
   "dependencies": {
-    "jimp": "^1.6.0",
+    "jimp": "1.6.1",
     "jsqr": "^1.4.0",
     "undici": "^7.29.0"
   },

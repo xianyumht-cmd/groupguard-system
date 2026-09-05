@@ -93,7 +93,7 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
   }
   if (text === '全体禁言' || text === '全体解禁') {
     if (!await isAdminOrOwner(groupId, userId)) { await sendGroupScene(groupId, 'permission_denied', '需要管理员权限'); return true; }
-    await enqueueMiscAction({
+    const result = await enqueueMiscAction({
       groupId,
       action: 'set_group_whole_ban',
       params: { group_id: groupId, enable: text === '全体禁言' },
@@ -101,7 +101,8 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
       dedupKey: `${groupId}:whole_ban:${text}`,
       maxRetries: 1
     });
-    await sendGroupScene(groupId, 'action_success', text === '全体禁言' ? '已开启全体禁言' : '已关闭全体禁言');
+    if (result.ok) await sendGroupScene(groupId, 'action_success', text === '全体禁言' ? '已开启全体禁言' : '已关闭全体禁言');
+    else await sendGroupScene(groupId, 'raw_text', `${text}失败：${result.code}`);
     return true;
   }
   if (text.startsWith('授予头衔') || text.startsWith('清除头衔')) {
@@ -110,7 +111,7 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
     const target = getTarget(raw, rest);
     if (!target) { await sendGroupScene(groupId, 'command_format_error', '请指定目标', { example: '授予头衔@某人 高管' }); return true; }
     const title = text.startsWith('清除头衔') ? '' : rest.replace(/\[CQ:[^\]]+\]/g, '').replace(/\d{5,12}/, '').trim();
-    await enqueueMiscAction({
+    const result = await enqueueMiscAction({
       groupId,
       action: 'set_group_special_title',
       params: { group_id: groupId, user_id: target, special_title: title },
@@ -118,7 +119,8 @@ export async function executeModerationCommand(input: CommandExecutionContext): 
       dedupKey: `${groupId}:title:${target}`,
       maxRetries: 1
     });
-    await sendGroupScene(groupId, 'action_success', text.startsWith('清除头衔') ? `已清除 ${target} 的头衔` : `已为 ${target} 设置头衔：${title || '(空)'}`, { target });
+    if (result.ok) await sendGroupScene(groupId, 'action_success', text.startsWith('清除头衔') ? `已清除 ${target} 的头衔` : `已为 ${target} 设置头衔：${title || '(空)'}`, { target });
+    else await sendGroupScene(groupId, 'raw_text', `设置头衔失败：${result.code}`, { target });
     return true;
   }
   if (text.startsWith('锁定名片') || text.startsWith('解锁名片')) {

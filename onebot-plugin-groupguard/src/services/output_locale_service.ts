@@ -5,6 +5,9 @@ export type OutputTranslationFn = (text: string, locale: Exclude<OutputLocale, '
 const CACHE_LIMIT = 2000;
 const translationCache = new Map<string, string>();
 const inflightTranslations = new Map<string, Promise<string>>();
+const TRANSLATION_CONCURRENCY = 8;
+let activeTranslations = 0;
+const translationWaiters: Array<() => void> = [];
 const CJK_PATTERN = /[\u3400-\u9fff]/;
 
 const EXACT_TRANSLATIONS: Record<string, { 'zh-TW': string; en: string }> = {
@@ -84,6 +87,19 @@ function trimCache(): void {
   if (translationCache.size <= CACHE_LIMIT) return;
   const removeCount = translationCache.size - CACHE_LIMIT;
   for (const key of Array.from(translationCache.keys()).slice(0, removeCount)) translationCache.delete(key);
+}
+
+async function withTranslationPermit<T>(operation: () => Promise<T>): Promise<T> {
+  if (activeTranslations >= TRANSLATION_CONCURRENCY) {
+    await new Promise<void>((resolve) => translationWaiters.push(resolve));
+  }
+  activeTranslations += 1;
+  try {
+    return await operation();
+  } finally {
+    activeTranslations -= 1;
+    translationWaiters.shift()?.();
+  }
 }
 
 function fastTranslateWhole(text: string, locale: Exclude<OutputLocale, 'zh-CN'>): string | null {
@@ -243,7 +259,7 @@ export async function localizeOutputText(
   const operation = (async () => {
     const protectedValue = protectText(text);
     try {
-      const translated = await translator(protectedValue.protectedText, locale);
+      const translated = await withTranslationPermit(() => translator(protectedValue.protectedText, locale));
       const restored = protectedValue.restore(String(translated || '').trim());
       if (!restored) throw new Error('empty_translation');
       translationCache.set(cacheKey, restored);

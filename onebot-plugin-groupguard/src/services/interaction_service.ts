@@ -2157,9 +2157,7 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       if (userSignin.points < cost) { await sendGroupScene(groupId, 'invalid_range', `积分不足，需要 ${cost} 积分`); return true; }
       if (!param) { await sendGroupScene(groupId, 'command_format_error', '请指定头衔内容：兑换 头衔 <内容>', { example: '兑换 头衔 传奇守护者' }); return true; }
       if (!await authStateService.isBotAdmin(groupId)) { await sendGroupScene(groupId, 'permission_denied', '兑换失败：机器人非管理员，无法设置头衔'); return true; }
-      userSignin.points -= cost;
-      await groupguardRepository.updateSignin(groupId, userId, userSignin);
-      await enqueueMiscAction({
+      const result = await enqueueMiscAction({
         groupId,
         action: 'set_group_special_title',
         params: { group_id: groupId, user_id: userId, special_title: param },
@@ -2167,6 +2165,9 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
         dedupKey: `${groupId}:shop_title:${userId}`,
         maxRetries: 1
       });
+      if (!result.ok) { await sendGroupScene(groupId, 'raw_text', `兑换失败：${result.code}`); return true; }
+      userSignin.points -= cost;
+      await groupguardRepository.updateSignin(groupId, userId, userSignin);
       await sendGroupScene(groupId, 'action_success', `兑换成功！头衔已设置为：${param}\n剩余积分：${userSignin.points}`, { user: userId });
       return true;
     }
@@ -2175,10 +2176,10 @@ export async function executeInteractionCommand(input: CommandExecutionContext):
       const target = getTarget(raw, param) || userId;
       if (userSignin.points < cost) { await sendGroupScene(groupId, 'invalid_range', `积分不足，需要 ${cost} 积分`); return true; }
       if (!await authStateService.isBotAdmin(groupId)) { await sendGroupScene(groupId, 'permission_denied', '机器人非管理员'); return true; }
-      userSignin.points -= cost;
-      await groupguardRepository.updateSignin(groupId, userId, userSignin);
       const result = await executeManualPolicyAction({ type: 'ban', groupId, userId: target, durationSeconds: 0, reason: 'shop_unban', ignoreTargetProtection: true, maxRetries: 1 });
       if (!result.ok) { await sendGroupScene(groupId, 'raw_text', `兑换失败：${result.code}`); return true; }
+      userSignin.points -= cost;
+      await groupguardRepository.updateSignin(groupId, userId, userSignin);
       await sendGroupScene(groupId, 'action_success', `兑换成功！已解除 ${target} 的禁言。\n剩余积分：${userSignin.points}`, { user: userId, target });
       return true;
     }

@@ -39,10 +39,9 @@ export function renderTargetFilePushPage(): string {
 </div>
 <script>
 (function(){
-var token=new URL(location.href).searchParams.get('token')||localStorage.getItem('GROUPGUARD_WEBUI_TOKEN')||'';
-if(!token)token=prompt('请输入控制台访问令牌')||'';
-localStorage.setItem('GROUPGUARD_WEBUI_TOKEN',token);
-document.getElementById('homeLink').href='/?token='+encodeURIComponent(token);
+var token='';
+localStorage.removeItem('GROUPGUARD_WEBUI_TOKEN');
+document.getElementById('homeLink').href='/';
 var busy=false;
 function api(path,options){options=options||{};return fetch(path,{method:options.method||'GET',headers:{'content-type':'application/json','x-groupguard-token':token},body:options.body}).then(async function(r){var text=await r.text();var data;try{data=JSON.parse(text)}catch(e){data={ok:false,error:text}}if(!r.ok)throw new Error(data.error||data.detail||'操作失败');return data})}
 function show(msg,ok){var box=document.getElementById('notice');box.className='notice '+(ok===false?'error':'ok');box.textContent=msg;window.scrollTo({top:0,behavior:'smooth'})}
@@ -56,7 +55,7 @@ function renderStatus(data){var local=data.local||{},ret=local.retention||{},lat
 async function load(){if(busy)return;setBusy(true);try{var data=await api('/api/target-file-push');fill(data)}catch(e){show(e.message,false)}finally{setBusy(false)}}
 async function save(){if(busy)return;setBusy(true);try{var payload={config:read(),apiToken:document.getElementById('apiToken').value.trim()};var data=await api('/api/target-file-push',{method:'POST',body:JSON.stringify(payload)});document.getElementById('apiToken').value='';fill(data);show(data.message||'已保存',!data.syncError)}catch(e){show(e.message,false)}finally{setBusy(false)}}
 async function action(path,label){if(busy)return;setBusy(true);try{var data=await api(path,{method:'POST',body:'{}'});fill(data);show(label+'完成',true)}catch(e){show(e.message,false)}finally{setBusy(false)}}
-async function checkNow(){if(busy)return;setBusy(true);try{var data=await api('/api/target-file-push/check',{method:'POST',body:'{}'});fill(data);if(data.reconciliationError){show('蓝奏检查已执行，但群文件整理失败：'+data.reconciliationError,false);return}var r=data.reconciliation||{};if(r.ok===false){show('蓝奏检查已执行，但群目录仍有 '+String(r.leftoverCount||0)+' 个待清理文件：'+String(r.error||'未完全收敛'),false);return}show('检查完成；群文件根目录已整理为 '+String(r.observedAfter==null?'--':r.observedAfter)+' 个文件',true)}catch(e){show(e.message,false)}finally{setBusy(false)}}
+async function checkNow(){if(busy)return;var groupId=document.getElementById('targetGroupId').value.trim()||'(未配置)';if(!confirm('即将整理目标群 '+groupId+' 的根目录。系统会保留记录中的最新文件（记录失效时保留上传时间最新的文件），并删除其余根目录文件。此操作不可撤销，是否继续？'))return;setBusy(true);try{var data=await api('/api/target-file-push/check',{method:'POST',body:JSON.stringify({confirmed:true})});fill(data);if(data.reconciliationError){show('蓝奏检查已执行，但群文件整理失败：'+data.reconciliationError,false);return}var r=data.reconciliation||{};if(r.ok===false){show('蓝奏检查已执行，但群目录仍有 '+String(r.leftoverCount||0)+' 个待清理文件：'+String(r.error||'未完全收敛'),false);return}show('检查完成；群文件根目录已整理为 '+String(r.observedAfter==null?'--':r.observedAfter)+' 个文件',true)}catch(e){show(e.message,false)}finally{setBusy(false)}}
 document.getElementById('saveBtn').onclick=save;document.getElementById('refreshBtn').onclick=load;document.getElementById('checkBtn').onclick=checkNow;document.getElementById('rebaselineBtn').onclick=function(){if(confirm('确定重新建立基线？当前蓝奏目录里的现有文件不会上传。'))action('/api/target-file-push/rebaseline','重新建立基线')};load();
 })();
 </script>

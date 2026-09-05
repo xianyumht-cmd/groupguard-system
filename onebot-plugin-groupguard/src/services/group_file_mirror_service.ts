@@ -111,6 +111,9 @@ const DEFAULT_CONFIG: GroupFileMirrorConfig = {
 };
 
 const RECENT_MESSAGE_TTL_MS = 10 * 60 * 1000;
+const MAX_RECENT_MESSAGE_KEYS = 4000;
+const MAX_QUEUED_TASKS_PER_RULE = 64;
+const MAX_QUEUED_BYTES_PER_RULE = 2 * 1024 * 1024 * 1024;
 const TARGET_FILE_DELETE_VERIFY_DELAYS_MS = [0, 1500, 5000] as const;
 
 function isRecord(value: unknown): value is Record<string, any> {
@@ -315,9 +318,13 @@ export class GroupFileMirrorService {
   private stateWritable = true;
   private readonly recentMessages = new Map<string, RecentFileMessage>();
   private readonly ruleTails = new Map<string, Promise<void>>();
+  private readonly queuedTasksByRule = new Map<string, number>();
+  private readonly queuedBytesByRule = new Map<string, number>();
+  private acceptingEvents = true;
 
   bindRuntime(runtime: RuntimeBinding): void {
     this.runtime = runtime;
+    this.acceptingEvents = true;
     this.ensureConfigLoaded();
     this.ensureStateLoaded();
   }
@@ -427,6 +434,11 @@ export class GroupFileMirrorService {
     this.pruneRecentMessages();
     if (message.fileId) this.recentMessages.set(`${message.groupId}:id:${message.fileId}`, message);
     if (message.fileName) this.recentMessages.set(`${message.groupId}:name:${message.fileName}`, message);
+    while (this.recentMessages.size > MAX_RECENT_MESSAGE_KEYS) {
+      const oldest = this.recentMessages.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.recentMessages.delete(oldest);
+    }
   }
 
   private findRecentMessage(groupId: string, fileId: string, fileName: string, fileSize = 0): RecentFileMessage | null {
@@ -513,7 +525,7 @@ export class GroupFileMirrorService {
 
     for (const rule of this.config.rules) {
       if (!fileEventMatchesRule(rule, groupId, uploaderId, file)) continue;
-      this.enqueue(rule.id, async () => this.mirrorUpload(rule, uploaderId, file));
+      this.enqueue(rule.id, async () => this.mirrorUpload(rule, uploaderId, file), file.size);
     }
   }
 
@@ -530,7 +542,24 @@ export class GroupFileMirrorService {
     }
   }
 
-  private enqueue(ruleId: string, task: () => Promise<void>): void {
+  private enqueue(ruleId: string, task: () => Promise<void>, bytes = 0): void {
+    if (!this.acceptingEvents) {
+      this.log('warn', `规则 ${ruleId} 在关闭排空期间拒绝新事件`);
+      return;
+    }
+    const queuedTasks = this.queuedTasksByRule.get(ruleId) || 0;
+    const queuedBytes = this.queuedBytesByRule.get(ruleId) || 0;
+    const normalizedBytes = Math.max(0, Number(bytes) || 0);
+    if (queuedTasks >= MAX_QUEUED_TASKS_PER_RULE || queuedBytes + normalizedBytes > MAX_QUEUED_BYTES_PER_RULE) {
+      const state = this.getRuleState(ruleId);
+      state.lastErrorAt = Date.now();
+      state.lastError = `group_file_mirror_queue_full:tasks=${queuedTasks}:bytes=${queuedBytes}`;
+      this.saveState();
+      this.log('error', `规则 ${ruleId} 队列已满，拒绝新事件 tasks=${queuedTasks} bytes=${queuedBytes}`);
+      return;
+    }
+    this.queuedTasksByRule.set(ruleId, queuedTasks + 1);
+    this.queuedBytesByRule.set(ruleId, queuedBytes + normalizedBytes);
     const previous = this.ruleTails.get(ruleId) || Promise.resolve();
     const next = previous
       .catch(() => undefined)
@@ -544,8 +573,31 @@ export class GroupFileMirrorService {
       });
     this.ruleTails.set(ruleId, next);
     void next.finally(() => {
+      const remainingTasks = Math.max(0, (this.queuedTasksByRule.get(ruleId) || 1) - 1);
+      const remainingBytes = Math.max(0, (this.queuedBytesByRule.get(ruleId) || normalizedBytes) - normalizedBytes);
+      if (remainingTasks) this.queuedTasksByRule.set(ruleId, remainingTasks);
+      else this.queuedTasksByRule.delete(ruleId);
+      if (remainingBytes) this.queuedBytesByRule.set(ruleId, remainingBytes);
+      else this.queuedBytesByRule.delete(ruleId);
       if (this.ruleTails.get(ruleId) === next) this.ruleTails.delete(ruleId);
     });
+  }
+
+  async drain(timeoutMs = 15_000): Promise<void> {
+    this.acceptingEvents = false;
+    const tails = Array.from(this.ruleTails.values());
+    if (!tails.length) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      await Promise.race([
+        Promise.allSettled(tails).then(() => undefined),
+        new Promise<void>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('group_file_mirror_drain_timeout')), Math.max(1, timeoutMs));
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   private async runWithRetry<T>(

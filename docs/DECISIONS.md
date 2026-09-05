@@ -208,3 +208,32 @@ Target-file retention requires deletion of the previously uploaded QQ group file
 - Target-file retention can drain its existing pending queue once the repaired build is later deployed.
 - Group-file listing was initially kept independently adapter-gated because that repair did not require list semantics. The later live-directory reconciliation decision above supersedes that restriction after the exact v1.12.4 pagination behavior was verified.
 - Future changes to the production SnowLuma version must re-check this contract if the action semantics change.
+
+## 2026-09-05 — Reliability work is bounded, ordered and drainable
+
+### Decision
+
+Every long-lived in-memory queue, cache, waiter set and external request path must have a hard capacity, expiry or retention rule, observable rejection/failure semantics, and a shutdown owner. OneBot events are processed in receive order; action and file work is drained before transports close.
+
+Target-file callbacks additionally require a positive monotonic `source_revision`. Revisions at or below the last accepted value are stale no-ops. Download URLs and every redirect hop reject credentials and private, loopback, link-local or special-use addresses by default.
+
+### Reason
+
+Deduplication alone did not prevent stale replacement, and unbounded Promise tails/caches turned temporary downstream slowness into process-wide memory risk. Closing transports before work settled could also convert an orderly restart into silent data loss.
+
+### Consequences
+
+- Callback producers must send `source_revision` and retry the same revision for the same source version.
+- Local/private download targets are rejected in production; the private-download override is test-only and must not be enabled in deployed service configuration.
+- Overload is explicit backpressure rather than unlimited buffering.
+- Shutdown has a finite drain deadline and reports work that cannot settle.
+
+## 2026-09-05 — Network translation requires explicit operator consent
+
+### Decision
+
+When `GROUPGUARD_TRANSLATE_ENDPOINT` is unset, network translation is disabled. A configured endpoint enables that endpoint; public fallback requires the separate explicit `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK` opt-in. Translation calls share a global concurrency limit.
+
+### Reason
+
+Administrator-authored and user message text must not be sent to a public service merely because an output locale was selected.

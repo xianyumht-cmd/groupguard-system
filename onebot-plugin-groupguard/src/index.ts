@@ -12,10 +12,11 @@ import { contextStateService } from './core/state-services/context_state_service
 import { cacheStateService } from './core/state-services/cache_state_service';
 import { identityStateService } from './core/state-services/identity_state_service';
 import { loggingStateService } from './core/state-services/logging_state_service';
-import { initDB } from './db';
+import { clearDbCaches, initDB } from './db';
 import { storageAdapter } from './storage_adapter';
 import { clearAllSessions } from './verify';
-import { startSelfRecallRecovery, stopSelfRecallRecovery } from './services/action_queue_service';
+import { drainActionQueue, resumeActionQueueRuntime, startSelfRecallRecovery, stopSelfRecallRecovery } from './services/action_queue_service';
+import { groupFileMirrorService } from './services/group_file_mirror_service';
 import { auditReplyTemplates } from './reply_template_audit';
 import { BUILTIN_REPLY_SCENE_TEMPLATES } from './reply_templates';
 import { flushInviteService, initInviteService, stopInviteService } from './services/invite_service';
@@ -23,7 +24,7 @@ import { registerRuntimeRoutes } from './runtime/runtime_routes';
 import { handlePluginMessage } from './runtime/runtime_message_pipeline';
 import { handlePluginEvent } from './runtime/runtime_event_pipeline';
 import { saveConfig, initCommandValidation } from './commands';
-import { stopPassiveServiceTimers } from './services/passive_service';
+import { flushPassiveService, stopPassiveServiceTimers } from './services/passive_service';
 import { stopJoinVerifier } from './join_verifier';
 
 export let plugin_config_ui: unknown[] = [];
@@ -123,6 +124,9 @@ async function initializeOnce(ctx: GroupGuardRuntimeContext): Promise<void> {
     throw new Error('incompatible_groupguard_runtime_context');
   }
   activeContext = ctx;
+  resumeActionQueueRuntime();
+  const { pluginState } = await import('./state');
+  pluginState.resumeSendQueue();
   bindRuntimeContext(ctx);
   loggingStateService.info(`GroupGuard 正在初始化 hostProfile=${ctx.hostProfile.id}`);
   await initCommandValidation();
@@ -229,8 +233,16 @@ export async function shutdownGroupGuard(): Promise<void> {
   try {
     const { pluginState } = await import('./state');
     pluginState.clearSelfRecallTimers();
-  } catch { /* runtime may have failed before state initialization */ }
-  await flushInviteService();
+    await Promise.all([
+      pluginState.drainSendQueue(30_000),
+      drainActionQueue(30_000),
+      groupFileMirrorService.drain(30_000),
+    ]);
+  } catch (error) {
+    loggingStateService.error(`关闭排空失败: ${String(error)}`);
+  }
+  try { await flushInviteService(); } catch (error) { loggingStateService.error(`邀请数据最终保存失败: ${String(error)}`); }
+  try { await flushPassiveService(); } catch (error) { loggingStateService.error(`活动数据最终保存失败: ${String(error)}`); }
   stopInviteService();
   stopPassiveServiceTimers();
   stopJoinVerifier();
@@ -240,6 +252,7 @@ export async function shutdownGroupGuard(): Promise<void> {
   cacheStateService.clearRepeatCache();
   cacheStateService.clearQaCooldowns();
   cacheStateService.clearAdminCache();
+  clearDbCaches();
   storageAdapter.close();
   activeContext = null;
 }

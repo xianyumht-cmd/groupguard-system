@@ -2,7 +2,7 @@ import http, { type Server } from 'http';
 import fs from 'fs';
 import path from 'node:path';
 import { URL } from 'node:url';
-import { createToken, requireAuth } from './auth';
+import { createToken, isTokenMatch, requireAuth } from './auth';
 import { HttpBodyTooLargeError, readBody, send, sendBuffer, sendJson } from './http';
 import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
@@ -113,6 +113,18 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
   const server: Server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${host}:${port}`);
     try {
+      const queryToken = url.searchParams.get('token') || '';
+      if (req.method === 'GET' && !url.pathname.startsWith('/api/') && queryToken && isTokenMatch(queryToken, token)) {
+        url.searchParams.delete('token');
+        res.writeHead(303, {
+          location: `${url.pathname}${url.search}${url.hash}` || '/',
+          'set-cookie': `GG_ADMIN_SESSION=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800`,
+          'cache-control': 'no-store',
+          'referrer-policy': 'no-referrer',
+        });
+        res.end();
+        return;
+      }
       if (req.method === 'POST' && url.pathname === '/api/target-file-push/event') {
         try {
           const payload = JSON.parse(await readBody(req) || '{}');
@@ -192,6 +204,11 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
       }
 
       if (req.method === 'POST' && url.pathname === '/api/target-file-push/check') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        if (payload.confirmed !== true) {
+          sendJson(res, 400, { ok: false, error: 'target_file_push_cleanup_confirmation_required' });
+          return;
+        }
         sendJson(res, 200, await checkTargetFilePushNow(options));
         return;
       }
