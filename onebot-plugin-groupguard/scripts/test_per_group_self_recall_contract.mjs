@@ -22,6 +22,9 @@ assert.match(queue, /before dedup\/rate-limit early exits/, 'disabled self-recal
 assert.match(queue, /Re-check after queue delay/, 'self-recall must be checked again immediately before delete');
 assert.match(queue, /resolveSelfRecallTask\(task\.payload\.taskId, 'skip_duplicate', true, 0\)/, 'self-recall dedup must resolve durable state');
 assert.match(queue, /resolveSelfRecallTask\(task\.payload\.taskId, 'skip_rate_limited', false, retryAfter\)/, 'self-recall rate limit must persist retry state');
+assert.match(queue, /retryableAdmissionFailure = code === 'backpressure_reject' \|\| code === 'skip_queue_overflow'/, 'self-recall admission pressure must persist a delayed retry');
+assert.match(queue, /self_recall_enqueue_result_write_failed/, 'self-recall admission outcome persistence must be observable');
+assert.match(queue, /task\.type === 'self_recall'[\s\S]*resolveSelfRecallTask\(task\.payload\.taskId, 'exception'/, 'self-recall worker exceptions must update durable state');
 assert.match(queue, /skip_self_recall_disabled/, 'disabled queued recall must terminate without delete');
 assert.match(guard, /skip_self_recall_disabled/, 'GuardResult must type the terminal skip code');
 assert.ok(pkg.scripts.test.includes('verify:per-group-self-recall'), 'focused contract must run under npm test');

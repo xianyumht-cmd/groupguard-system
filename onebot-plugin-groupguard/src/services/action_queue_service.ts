@@ -849,6 +849,8 @@ async function executeTask(task: QueueTask): Promise<void> {
   } catch (e) {
     if (task.type === 'recall') {
       await groupguardRepository.resolveRecallTask(task.payload.taskId, 'exception', false, 0);
+    } else if (task.type === 'self_recall') {
+      await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, 'exception', false, computeSelfRecallRetryDelayMs(task.retries + 1));
     }
     appendQueueLog(`${task.type} ${taskSubject(task)} exception`);
     recordActionQueueEvent(task, 'exception', { code: 'exception', ok: false, payload: JSON.stringify({ error: String(e) }) });
@@ -970,7 +972,15 @@ export async function enqueueSelfRecallAction(opts: {
       reject
     };
     const enqueueResult = enqueueTask(task);
-    if (enqueueResult !== 'ok') resolve({ ok: false, code: mapEnqueueFailureCode(enqueueResult) });
+    if (enqueueResult !== 'ok') {
+      const code = mapEnqueueFailureCode(enqueueResult);
+      const retryableAdmissionFailure = code === 'backpressure_reject' || code === 'skip_queue_overflow';
+      const retryAfter = retryableAdmissionFailure ? computeSelfRecallRetryDelayMs(1) : 0;
+      void groupguardRepository.resolveSelfRecallTask(taskId, code, !retryableAdmissionFailure, retryAfter).catch((error) => {
+        loggingStateService.debug(`[ActionQueue] self_recall_enqueue_result_write_failed task=${taskId} ${String(error)}`);
+      });
+      resolve({ ok: false, code });
+    }
   });
 }
 

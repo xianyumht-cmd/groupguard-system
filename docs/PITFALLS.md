@@ -28,6 +28,7 @@ A disabled persisted self-recall task was checked only after deduplication and r
 
 - Evaluate terminal business-state conditions before generic dedup/rate-limit exits when those exits do not themselves finalize durable state.
 - Ensure dedup/rate-limit outcomes for durable tasks update their persistent row.
+- Admission failures before worker execution must also update durable state: transient queue pressure gets a delayed retry, while terminal admission rejection must not remain immediately due forever.
 - Keep a final configuration check immediately before the external side effect to cover changes that occur while queued.
 
 
