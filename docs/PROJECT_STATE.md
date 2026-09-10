@@ -1,22 +1,23 @@
 # GroupGuard Project State
 
-Updated: 2026-09-10
+Updated: 2026-09-11
 
+## Accepted per-group controls + WebUI self-update — 2026-09-11
 
-## Selected-group LOL patch notices + SnowLuma WebUI self-update candidate — 2026-09-11
+- PR #59 (per-group self-recall) is merged into `main`.
+- PR #60 (selected-group LOL patch notices + SnowLuma WebUI self-update) is merged into `main`.
+- PR #61 fixes the production `self_update_artifact_http_415` failure and is merged into `main`; accepted updater implementation commit is `38fa481e1c1dec41f5fa3c05f94bb9a08711c5d1`.
+- LOL patch `@全体` recipients are explicit `lolPatchNotifyGroupIds` intersected with currently valid authorized groups; missing/empty means no destinations.
+- Per-group self-recall is independently configurable and preserves sparse inheritance semantics instead of materializing inherited values as new group overrides.
+- SnowLuma admin WebUI exposes authenticated update status/token/check/apply controls under **系统更新**. Update source is fixed to the private canonical repository and successful `main` `GroupGuard Build` artifacts named `groupguard-self-update-<commit>`.
+- Private-repository updater credentials are accepted from `GROUPGUARD_UPDATE_GITHUB_TOKEN` or the private data file `self-update/github-actions-token.txt`; they are not written back to `config.json` or exposed by the status UI.
+- Candidate validation covers managed runtime entry, archive path/type/size limits, exact `dist` file-set manifest, per-file SHA-256/size, build-info commit, supervised exact-commit startup, automatic rollback, and updater-owned temporary-directory cleanup.
+- GitHub Actions artifact download follows the verified two-step protocol: authenticated REST request with `Accept: application/vnd.github+json` and `redirect: manual`, require HTTP 302 + HTTPS `Location`, then download the signed URL without forwarding the repository token.
+- A live protocol test against a real private `main` artifact passed before PR #61 merge.
+- Operator-provided ARM Docker acceptance evidence confirms one live SnowLuma deployment completed a real WebUI one-click update to `38fa481e1c1dec41f5fa3c05f94bb9a08711c5d1` with `受管运行入口=是`, `complete / complete`, `100%`, and “新版本已启动并通过提交校验”。No manual container restart was used after pressing the update button.
+- This acceptance proves the end-to-end path for that live deployment: private-repo authentication → artifact discovery/download → ZIP/manifest/hash validation → `dist` switch → supervisor restart → exact commit ready check. It does **not** by itself assert that every historical ARM host has been upgraded to the same commit.
 
-- Development branch: `feat/lol-notify-groups-and-webui-updater-20260910`, stacked on the finalized per-group self-recall candidate.
-- LOL patch `@全体` recipients are explicit `lolPatchNotifyGroupIds` intersected with currently valid authorized groups; empty/missing means no destinations.
-- SnowLuma admin WebUI exposes authenticated update status/token/check/apply controls. Update source is fixed to the private canonical repository and successful `main` `GroupGuard Build` artifacts.
-- Candidate update validation covers managed runtime entry, archive path/type/size limits, exact dist file-set manifest, per-file SHA-256/size, build-info commit, supervised exact-commit startup, automatic rollback, and updater-owned temporary-directory cleanup.
-- Combined per-group self-recall + notification routing + updater verification passes the normal package test/build path before PR publication.
-- Production is unchanged; neither ARM host has been updated or restarted by this development work.
-
-## Active self-recall / notification-update work — 2026-09-10
-
-- PR #59 (`feat/per-group-self-recall-20260910`) is the active review unit for sparse per-group self-recall. Review remediation keeps explicit `false`, prevents inherited mode/delay values from becoming new overrides, keeps the scoped controls reachable, finalizes disabled durable queue rows before generic early exits, and wires the focused contract into `npm test`.
-- Dependent branch `feat/lol-notify-groups-and-webui-updater-20260910` adds selected-group LOL patch notifications and authenticated WebUI self-update. It is intentionally not merged into `main` while #59 review findings are being reconciled.
-- `main` and production deployment remain separate from these review branches. No main merge or automated ARM deployment is authorized by this review-remediation step.
+The earlier “candidate / production unchanged” notes for this feature are superseded by this accepted state.
 
 ## Reliability hardening candidate — 2026-09-05
 
@@ -80,6 +81,8 @@ The accepted merge commit `23ed0084...` has successful `main` push builds:
 - the immutable deployment bundle artifact id is `9671262220` with digest `sha256:9583d103d6783a0bc321d8bf83768380006f34b1c0fb3f31cc042650d5870e6e`;
 - that Actions artifact is currently retained until `2026-11-26T01:44:40Z`.
 
+For current self-update capable builds, `GroupGuard Build` also produces `groupguard-self-update-<commit>` artifacts consumed by the WebUI updater. The updater only considers successful `main` push builds and validates the exact target commit before switching runtime code.
+
 The preferred production handoff is the `GroupGuard Build` artifact produced from an accepted `main` commit, not a PR-head artifact.
 
 To avoid losing the ability to produce a current deployment bundle after stored Actions artifacts expire, `GroupGuard Build` supports manual `workflow_dispatch`. An operator can open GitHub Actions, run `GroupGuard Build` on `main`, and receive a fresh `groupguard-deployment-bundle-<current-main-commit>` without changing production first.
@@ -92,14 +95,18 @@ Before either host changes code, the bundle must resolve and verify both host to
 
 > both hosts finish on the accepted new commit, or every host already completed by that release attempt is rolled back to its recorded pre-deployment code.
 
+The WebUI self-updater has a separate single-runtime invariant: it may only replace the managed application `dist`; it keeps the previous `dist` as a rollback candidate, starts the new worker through the supervisor, and accepts the switch only after an exact target-commit ready signal. Runtime configuration/data/logs/secrets remain outside the replacement set.
+
 Never create a guessed application directory merely to make deployment proceed. Runtime configuration/data/logs/secrets stay outside the replacement set.
 
 ## Next engineering priorities
 
-The battle output-precedence defect is closed at code level and has passed 121 production acceptance. Remaining independent findings from the 121 configuration audit are separate tasks, especially:
+The battle output-precedence defect is closed at code level and has passed 121 production acceptance. The per-group self-recall, selected-group LOL patch notification routing, and WebUI self-update work are also closed at code level, with one live ARM Docker self-update acceptance recorded above.
+
+Remaining independent findings are separate tasks, especially:
 
 - intermittent OneBot `send_group_msg` rejection with result `120`;
 - dynamic-command validation failures for legacy/identifier mappings;
 - historical per-group configuration snapshots that may need controlled compaction rather than blind overwrite.
 
-Do not conflate those items with the now-fixed battle image-preference bug.
+Do not conflate those items with the now-fixed battle image-preference or self-update issues.

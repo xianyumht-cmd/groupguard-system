@@ -31,6 +31,7 @@ GroupGuard pure OneBot runtime with SnowLuma and generic host profiles
 - 入群验证、欢迎语和群级配置；
 - 违禁词、刷屏、复读与多类消息过滤；
 - 撤回相关记录与管理；
+- **机器人自身消息自动撤回支持按群独立配置**，可分别控制开关、模式和延迟，并保持全局/分群稀疏继承语义；
 - 踢人、禁言、解禁、全员禁言等 OneBot 管理动作；
 - 风险策略与系统写入边界检查。
 
@@ -44,12 +45,50 @@ GroupGuard pure OneBot runtime with SnowLuma and generic host profiles
 ### WebUI 与运维
 
 - WebUI 配置与管理；
+- **LOL 版本更新 `@全体` 通知支持按群选择**：只有 WebUI 中明确开启且当前授权仍有效的群才会收到，未配置/空列表默认不发送；
+- **系统更新 / 一键更新**：从固定私有仓库 `xianyumht-cmd/groupguard-system` 的 `main` 成功 `GroupGuard Build` 中发现不可变自更新产物；
 - 管理健康检查；
 - iOS / Glass 方向的 WebUI 验证；
 - SnowLuma 配置迁移与 Host Profile 验证；
 - Release Safety、内容风险与架构边界检查。
 
-### 蓝奏更新与 QQ 群文件
+## WebUI 一键更新
+
+SnowLuma 管理后台的 **系统更新** 页面已经具备实际可用的一键更新链路，不是仅展示状态的占位入口。
+
+### 首次配置
+
+私有仓库需要 GitHub Fine-grained Personal Access Token。推荐只授权仓库 `xianyumht-cmd/groupguard-system`，并仅开启：
+
+- `Actions: Read-only`；
+- `Metadata: Read-only`。
+
+Token 可通过 WebUI 保存到 GroupGuard 数据目录下的 `self-update/github-actions-token.txt`，或由环境变量 `GROUPGUARD_UPDATE_GITHUB_TOKEN` 提供；**不会写入或回显到 `config.json`**。
+
+### 更新来源与安全边界
+
+更新器只接受：
+
+1. 固定仓库 `xianyumht-cmd/groupguard-system`；
+2. `main` 分支；
+3. 成功完成的 `GroupGuard Build`；
+4. 名称与目标提交精确对应的 `groupguard-self-update-<commit>` artifact。
+
+候选包在切换前会验证受管运行入口、ZIP 路径/类型/大小、manifest 与 `dist` 文件集合完全一致、每个文件的 SHA-256 与大小、`build-info.json` 的精确 commit 和 `dirty=false`。更新时旧 `dist` 会先保留为回滚候选；supervisor 启动新 worker 后必须收到**精确目标 commit** 的 ready 确认，否则自动恢复上一版。
+
+GitHub Actions artifact 下载采用官方两段式流程：先通过认证的 REST 请求取得短时 302 HTTPS 下载地址，再在不转发仓库 Token 的情况下下载签名 ZIP，避免跨域泄露凭据。
+
+### 正常使用
+
+```text
+系统更新 → 检查更新 → 一键更新
+```
+
+安装了具备自更新能力的版本后，日常升级不再需要手工替换 `dist`。首次安装、无法启动或自更新器自身损坏时，仍保留人工部署/回滚通道。
+
+2026-09-11 已完成 ARM Docker 实机验收：私有仓库鉴权、artifact 下载、完整性校验、`dist` 切换、supervisor 自动重启和新版本 commit 校验均实际通过；WebUI 最终状态为 `complete / complete`、进度 `100%`，并确认运行入口受管。
+
+## 蓝奏更新与 QQ 群文件
 
 当前生产链已经包含蓝奏更新 → 下载 → QQ 群文件上传 → 根目录整理的完整流程。
 
@@ -159,6 +198,9 @@ npm run build
 - 查询合同与 GroupGuard 交付合同；
 - 英雄碎片、战绩、风险、动态查询链路；
 - 多查询模式与客户端边界；
+- **分群自身消息撤回合同**；
+- **LOL 版本更新通知分群路由合同**；
+- **WebUI self-update 下载、校验、受管运行与 supervisor/rollback 合同**；
 - WebUI Glass 视觉合同；
 - 蓝奏更新；
 - Admin Health；
@@ -193,6 +235,8 @@ README 只描述仓库当前架构和维护入口，不替代完整用户指令�
 - 生产排查优先按 SnowLuma + OneBot 链路判断，不直接套用 NapCat 专属接口；
 - 群文件替换坚持“先上传成功，再删除旧文件”；
 - 真实目录状态优先于历史缓存或 pending 记录；
+- 自更新只消费固定私有仓库 `main` 的成功不可变构建，不允许 WebUI 指定任意仓库/URL/命令；
+- 自更新 Token 坚持最小权限，并保持在运行数据/环境边界之外，不进入 `config.json`；
 - 不提交 Token、账号密码、Cookie、私有配置或运行态凭据；
 - 对踢人、禁言、删除群文件等高影响动作保持明确权限边界和验证；
 - 当前生产事实出现变化时，应同步更新 `docs/PROJECT_STATE.md` 和本 README，避免 README 再次滞后于代码。
