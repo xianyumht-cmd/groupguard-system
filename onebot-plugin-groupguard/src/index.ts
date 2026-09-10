@@ -17,6 +17,7 @@ import { storageAdapter } from './storage_adapter';
 import { clearAllSessions } from './verify';
 import { drainActionQueue, resumeActionQueueRuntime, startSelfRecallRecovery, stopSelfRecallRecovery } from './services/action_queue_service';
 import { groupFileMirrorService } from './services/group_file_mirror_service';
+import { startLolPatchNotifier, stopLolPatchNotifier } from './services/lol_patch_notifier';
 import { auditReplyTemplates } from './reply_template_audit';
 import { BUILTIN_REPLY_SCENE_TEMPLATES } from './reply_templates';
 import { flushInviteService, initInviteService, stopInviteService } from './services/invite_service';
@@ -162,6 +163,7 @@ async function initializeOnce(ctx: GroupGuardRuntimeContext): Promise<void> {
   initInviteService(ctx.configDir);
   startSelfRecallRecovery();
   authManager.init();
+  startLolPatchNotifier(ctx);
 
   if (configFlushTimer) clearInterval(configFlushTimer);
   configFlushTimer = setInterval(() => {
@@ -228,6 +230,7 @@ export async function shutdownGroupGuard(): Promise<void> {
     clearInterval(configFlushTimer);
     configFlushTimer = null;
   }
+  stopLolPatchNotifier();
   authManager.cleanup();
   stopSelfRecallRecovery();
   try {
