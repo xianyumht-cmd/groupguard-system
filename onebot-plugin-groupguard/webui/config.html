@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -2387,11 +2387,7 @@
     function fillGroup (gid) {
       const gs = (C.groups || {})[gid] || {};
       const g = C.global || {};
-      // Merge with global defaults if undefined
-      const m = (k, def) => gs[k] !== undefined ? gs[k] : (def !== undefined ? def : g[k]);
-      // Actually, we should just fill fields, and let UI show current values.
-      // But we need to handle "inherit" logic. 
-      // For simplicity in this WebUI, if not using global, we show group values, defaulting to global if missing.
+      // Display the effective nested policy without turning inherited fields into stored overrides.
       const mixed = {
         ...g,
         ...gs,
@@ -2400,6 +2396,56 @@
       fillFields(mixed);
       sv('c-bl', (gs.groupBlacklist || []).join(',')); // Group blacklist
       sv('c-wl-list', ''); // No group whitelist
+    }
+
+    const SELF_RECALL_MANAGED_KEYS = ['enabled', 'mode', 'fixedDelay', 'minDelay', 'maxDelay', 'jitter'];
+    function hasOwnField (obj, key) {
+      return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+    }
+    function globalSelfRecallView (settings) {
+      const sr = settings?.selfRecall || {};
+      const fixedDelay = hasOwnField(sr, 'fixedDelay') ? sr.fixedDelay : (settings?.autoRecallSelfDelay ?? 60);
+      const minDelay = hasOwnField(sr, 'minDelay') ? sr.minDelay : Math.max(0, Number(fixedDelay) - 15);
+      return {
+        enabled: hasOwnField(sr, 'enabled') ? sr.enabled === true : settings?.autoRecallSelf === true,
+        mode: sr.mode === 'random' ? 'random' : 'fixed',
+        fixedDelay,
+        minDelay,
+        maxDelay: hasOwnField(sr, 'maxDelay') ? sr.maxDelay : Math.max(Number(minDelay), Number(fixedDelay) + 30),
+        jitter: hasOwnField(sr, 'jitter') ? sr.jitter : 0
+      };
+    }
+    function compactGroupSelfRecall (previousGroup, globalSettings, currentSelfRecall) {
+      const previousSr = previousGroup?.selfRecall && typeof previousGroup.selfRecall === 'object'
+        ? previousGroup.selfRecall
+        : {};
+      const current = currentSelfRecall || {};
+      const globalSr = globalSelfRecallView(globalSettings || {});
+      const sparse = { ...previousSr };
+
+      SELF_RECALL_MANAGED_KEYS.forEach((key) => {
+        // Existing explicit nested ownership stays explicit, even when its value currently equals global.
+        if (hasOwnField(previousSr, key)) {
+          sparse[key] = current[key];
+          return;
+        }
+        delete sparse[key];
+        // Newly edited/displayed values are stored only when they actually differ from global.
+        if (!Object.is(current[key], globalSr[key])) sparse[key] = current[key];
+      });
+
+      // Migrate historical legacy group ownership into the structured policy on the next save.
+      // This preserves intent without making untouched inherited fields explicit.
+      if (!hasOwnField(previousSr, 'enabled') && hasOwnField(previousGroup, 'autoRecallSelf')) {
+        sparse.enabled = current.enabled;
+      }
+      if (!hasOwnField(previousSr, 'fixedDelay') && hasOwnField(previousGroup, 'autoRecallSelfDelay')) {
+        sparse.fixedDelay = current.fixedDelay;
+      }
+      if (!hasOwnField(previousSr, 'probability') && hasOwnField(previousGroup, 'autoRecallSelfProbability')) {
+        sparse.probability = previousGroup.autoRecallSelfProbability;
+      }
+      return Object.keys(sparse).length ? sparse : undefined;
     }
 
     function collectFields () {
@@ -2563,7 +2609,18 @@
 
     function collectGroup (gid) {
       C.groups = C.groups || {};
+      const previous = C.groups[gid] || {};
       const payload = { ...collectFields(), useGlobal: false, groupBlacklist: ($('c-bl')?.value || '').split(',').map(s => s.trim()).filter(Boolean) };
+      const sparseSelfRecall = compactGroupSelfRecall(previous, C.global || {}, payload.selfRecall);
+      if (sparseSelfRecall) payload.selfRecall = sparseSelfRecall;
+      else delete payload.selfRecall;
+
+      // collectFields() exposes compatibility aliases for global saves. Do not create those aliases
+      // in a group just because inherited values were displayed. Preserve only aliases that existed.
+      if (!hasOwnField(previous, 'autoRecallSelf')) delete payload.autoRecallSelf;
+      if (!hasOwnField(previous, 'autoRecallSelfDelay')) delete payload.autoRecallSelfDelay;
+      if (hasOwnField(previous, 'autoRecallSelfProbability')) payload.autoRecallSelfProbability = previous.autoRecallSelfProbability;
+      else delete payload.autoRecallSelfProbability;
       delete payload.disableReplyTemplate;
       C.groups[gid] = payload;
     }
@@ -2696,8 +2753,17 @@
       if (antiRisk) {
         antiRisk.style.display = '';
         const selfRecallIds = new Set(['c-ars', 'c-srm', 'c-srfd', 'c-srmin', 'c-srmax', 'c-srj']);
+        if (isGroupMode) {
+          if (!hasOwnField(antiRisk.dataset, 'groupRecallWasCollapsed')) {
+            antiRisk.dataset.groupRecallWasCollapsed = antiRisk.classList.contains('manage-collapsed') ? '1' : '0';
+          }
+          antiRisk.classList.remove('manage-collapsed');
+        } else if (hasOwnField(antiRisk.dataset, 'groupRecallWasCollapsed')) {
+          antiRisk.classList.toggle('manage-collapsed', antiRisk.dataset.groupRecallWasCollapsed === '1');
+          delete antiRisk.dataset.groupRecallWasCollapsed;
+        }
         Array.from(antiRisk.children).forEach((child) => {
-          if (!isGroupMode) { child.style.display = ''; return; }
+          if (!isGroupMode || child.classList.contains('manage-head')) { child.style.display = ''; return; }
           const containsSelfRecall = Array.from(child.querySelectorAll('[id]')).some((node) => selfRecallIds.has(node.id));
           child.style.display = containsSelfRecall ? '' : 'none';
         });

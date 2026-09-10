@@ -1,5 +1,22 @@
 # GroupGuard Architecture
 
+## Group-aware self-recall lifecycle
+
+Self-recall is part of the existing configuration inheritance model, not a separate notification-group schema. Runtime resolves `global.selfRecall` plus the active sparse group overlay through the canonical effective-config resolver. The WebUI may render inherited mode/delay values for convenience, but those effective values are not automatically persisted as group ownership.
+
+Durable self-recall execution has two configuration gates:
+
+```text
+persisted/due self_recall
+  -> resolve current effective group policy before dedup/rate-limit exits
+  -> queue delay
+  -> resolve current effective group policy again
+  -> safeRecall / OneBot delete_msg
+```
+
+If either gate observes self-recall disabled, the durable row is terminally resolved with `skip_self_recall_disabled` and no host delete call is made. The second gate is required because configuration can change while the task waits.
+
+
 ## Global output localization
 
 GroupGuard treats multilingual output as a final transport concern. The persisted source text remains authoritative; localization is applied immediately before the selected outbound transport sends text.

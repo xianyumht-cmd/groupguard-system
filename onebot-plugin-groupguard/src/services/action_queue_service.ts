@@ -262,6 +262,16 @@ function isSelfRecallEnabledForGroup(groupId: string): boolean {
   return policy ? policy.enabled === true : settings.autoRecallSelf === true;
 }
 
+async function skipDisabledSelfRecallTask(task: SelfRecallTask): Promise<void> {
+  const code = 'skip_self_recall_disabled' as const;
+  await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, code, true, 0);
+  task.resolve({ ok: false, code });
+  stats.queueDropped += 1;
+  recordMinuteMetric('dropped');
+  appendQueueLog(`self_recall ${taskSubject(task)} skipped_disabled_for_group`);
+  recordActionQueueEvent(task, 'skipped', { code, ok: false, reason: 'self_recall_disabled_for_group' });
+}
+
 function getGroupQueueLimit(groupId: string): number {
   const settings = configStateService.resolveGroupSettings(groupId);
   const n = Number(settings.maxActionQueueSizePerGroup ?? 200);
@@ -564,11 +574,20 @@ async function executeTask(task: QueueTask): Promise<void> {
   recordActionQueueEvent(task, 'executing');
   incActiveType(task.type);
   try {
+    // A disabled durable self-recall must be terminal before dedup/rate-limit early exits,
+    // otherwise its persisted row can stay recoverable forever.
+    if (task.type === 'self_recall' && !isSelfRecallEnabledForGroup(task.groupId)) {
+      await skipDisabledSelfRecallTask(task);
+      return;
+    }
     if (task.retries <= 0 && isDedupHit(task.groupId, task.dedupKey)) {
       if (task.type === 'misc') task.resolve({ ok: false, code: 'skip_duplicate' });
       else task.resolve({ ok: false, code: 'skip_duplicate' });
       if (task.type === 'recall') {
         await groupguardRepository.resolveRecallTask(task.payload.taskId, 'skip_duplicate', true, 0);
+      }
+      if (task.type === 'self_recall') {
+        await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, 'skip_duplicate', true, 0);
       }
       stats.queueDropped += 1;
       recordMinuteMetric('dropped');
@@ -581,6 +600,11 @@ async function executeTask(task: QueueTask): Promise<void> {
         task.retries += 1;
         const retryAfter = task.retries <= task.maxRetries ? computeRecallRetryDelayMs(task.retries) : 0;
         await groupguardRepository.resolveRecallTask(task.payload.taskId, 'skip_rate_limited', false, retryAfter);
+      }
+      if (task.type === 'self_recall') {
+        task.retries += 1;
+        const retryAfter = task.retries <= task.maxRetries ? computeSelfRecallRetryDelayMs(task.retries) : 0;
+        await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, 'skip_rate_limited', false, retryAfter);
       }
       if (task.type === 'misc') task.resolve({ ok: false, code: 'skip_rate_limited' });
       else task.resolve({ ok: false, code: 'skip_rate_limited' });
@@ -647,14 +671,9 @@ async function executeTask(task: QueueTask): Promise<void> {
       return;
     }
     if (task.type === 'self_recall') {
+      // Re-check after queue delay as configuration may have changed while this task waited.
       if (!isSelfRecallEnabledForGroup(task.groupId)) {
-        const code = 'skip_self_recall_disabled' as const;
-        await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, code, true, 0);
-        task.resolve({ ok: false, code });
-        stats.queueDropped += 1;
-        recordMinuteMetric('dropped');
-        appendQueueLog(`self_recall ${taskSubject(task)} skipped_disabled_for_group`);
-        recordActionQueueEvent(task, 'skipped', { code, ok: false, reason: 'self_recall_disabled_for_group' });
+        await skipDisabledSelfRecallTask(task);
         return;
       }
       await groupguardRepository.markSelfRecallTaskQueued(task.payload.taskId);
