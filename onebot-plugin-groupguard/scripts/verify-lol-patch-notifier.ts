@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   buildLolPatchNoticeSegments,
   reconcileLolPatchNotifications,
+  resolveLolPatchNotificationGroupIds,
   validateLolPatchStatus,
   type LolPatchStatus,
 } from '../src/services/lol_patch_notifier.ts';
@@ -58,6 +59,14 @@ function createHarness(overrides: Record<string, unknown> = {}) {
 }
 
 async function main() {
+  {
+    assert.deepEqual(resolveLolPatchNotificationGroupIds([], ['10001', '10002']), []);
+    assert.deepEqual(resolveLolPatchNotificationGroupIds(undefined, ['10001']), []);
+    assert.deepEqual(resolveLolPatchNotificationGroupIds(['10002'], ['10001', '10002', '10003']), ['10002']);
+    assert.deepEqual(resolveLolPatchNotificationGroupIds(['10002', '99999'], ['10001', '10002']), ['10002']);
+    assert.deepEqual(resolveLolPatchNotificationGroupIds(['10002', '10002'], ['10002']), ['10002']);
+  }
+
   {
     const harness = createHarness({ now: new Date('2026-09-10T03:59:00.000Z') });
     const result = await reconcileLolPatchNotifications(harness.options as any);

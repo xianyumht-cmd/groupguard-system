@@ -38,6 +38,7 @@ import { getSubGameplayResourceFile, getSubGameplayResourceOverview, verifySubGa
 import { qunGuanjiaService } from '../../services/qun_guanjia_service';
 import type { SnowLumaAdminServerOptions, SnowLumaAdminServerRuntime } from './types';
 import { getBuildInfo } from '../../build_info';
+import { selfUpdateService } from '../../services/self_update_service';
 
 function contentTypeForResource(filePath: string): string {
   const lower = filePath.toLowerCase();
@@ -270,6 +271,29 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
             detail: String((error as Error)?.message || error).slice(0, 300)
           });
         }
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/self-update/status') {
+        const refresh = url.searchParams.get('refresh') === '1';
+        sendJson(res, 200, await selfUpdateService.getStatus(refresh));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/self-update/token') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        sendJson(res, 200, selfUpdateService.saveToken(String(payload.token || '')));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/self-update/apply') {
+        const payload = JSON.parse(await readBody(req) || '{}');
+        if (payload.confirmed !== true) {
+          sendJson(res, 400, { ok: false, error: 'self_update_confirmation_required' });
+          return;
+        }
+        const result = selfUpdateService.startUpdate();
+        sendJson(res, result.accepted ? 202 : 409, result);
         return;
       }
 

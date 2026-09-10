@@ -193,6 +193,8 @@ export interface PluginConfig {
   lolBanBackupUrls?: string[];
   /** 本地 LOL API 服务根地址（如 http://127.0.0.1:5001） */
   lolApiBaseUrl?: string;
+  /** Explicit destinations for LOL patch-day @all notices. Missing/empty means no broadcast. */
+  lolPatchNotifyGroupIds?: string[];
   eleBuildApiBaseUrl?: string;
   shardDataUrl?: string;
   shardHeroListUrl?: string;

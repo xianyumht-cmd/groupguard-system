@@ -310,9 +310,17 @@ function runtimeLog(level: 'debug' | 'info' | 'warn' | 'error', message: string)
   loggingStateService[level](message);
 }
 
-function authorizedGroupIds(): string[] {
-  const licenses = configStateService.getConfig().licenses || {};
-  return Object.keys(licenses).filter((groupId) => Boolean(authManager.getGroupLicense(groupId)));
+export function resolveLolPatchNotificationGroupIds(configured: unknown, authorized: string[]): string[] {
+  const allowed = new Set(authorized.map((value) => String(value || '').trim()).filter(Boolean));
+  const selected = Array.isArray(configured) ? configured : [];
+  return [...new Set(selected.map((value) => String(value || '').trim()).filter(Boolean))].filter((groupId) => allowed.has(groupId));
+}
+
+function configuredAuthorizedGroupIds(): string[] {
+  const config = configStateService.getConfig();
+  const licenses = config.licenses || {};
+  const authorized = Object.keys(licenses).filter((groupId) => Boolean(authManager.getGroupLicense(groupId)));
+  return resolveLolPatchNotificationGroupIds(config.lolPatchNotifyGroupIds, authorized);
 }
 
 async function runRuntimeReconcile(): Promise<void> {
@@ -330,7 +338,7 @@ async function runRuntimeReconcile(): Promise<void> {
       notificationTime: envText('LOL_PATCH_NOTIFY_TIME', DEFAULT_NOTIFICATION_TIME),
       baseUrl,
       timeoutMs: envPositiveNumber('LOL_PATCH_NOTIFY_TIMEOUT_MS', DEFAULT_TIMEOUT_MS, 500),
-      groupIds: authorizedGroupIds(),
+      groupIds: configuredAuthorizedGroupIds(),
       hasDelivered: (eventId, groupId) => stateStore!.has(eventId, groupId),
       markDelivered: (eventId, groupId, sentAt) => stateStore!.mark(eventId, groupId, sentAt),
       log: runtimeLog,

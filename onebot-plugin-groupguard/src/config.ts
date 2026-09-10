@@ -617,6 +617,7 @@ export const DEFAULT_PLUGIN_CONFIG: PluginConfig = {
   lolBanPrimaryUrl: '',
   lolBanBackupUrls: [],
   lolApiBaseUrl: '',
+  lolPatchNotifyGroupIds: [],
   eleBuildApiBaseUrl: '',
   shardDataUrl: '',
   shardHeroListUrl: 'https://game.gtimg.cn/images/lol/act/img/js/heroList/hero_list.js',
@@ -677,6 +678,7 @@ export function normalizePluginConfig(input: PluginConfig): PluginConfig {
       botAntiRiskLimitFallbackMode: (merged.global as any)?.botAntiRiskLimitFallbackMode || 'drop'
     };
   }
+  merged.lolPatchNotifyGroupIds = Array.from(new Set(normalizeStringArray((merged as any).lolPatchNotifyGroupIds)));
   merged.msgFilter = normalizeMsgFilter((merged as any).msgFilter);
   merged.lanzouUpdatePush = normalizeLanzouUpdatePush((merged as any).lanzouUpdatePush);
   merged.contentRisk = normalizeContentRisk((merged as any).contentRisk, merged.msgFilter);
