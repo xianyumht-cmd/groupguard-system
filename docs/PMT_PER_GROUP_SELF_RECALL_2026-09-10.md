@@ -14,7 +14,7 @@ Add a production-safe per-group self-recall switch while preserving the existing
 2. A group with no explicit self-recall override inherits the global setting.
 3. A group with an explicit `selfRecall.enabled=false` must not schedule or execute self-recall, even when global self-recall is enabled.
 4. A group with an explicit `selfRecall.enabled=true` may enable self-recall even when global self-recall is disabled, provided the group is in per-group override mode.
-5. Legacy `autoRecallSelf`, `autoRecallSelfDelay`, and `autoRecallSelfProbability` remain backward-compatible through the existing normalization layer; do not add a second allowlist/denylist schema.
+5. Legacy `autoRecallSelf`, `autoRecallSelfDelay`, and `autoRecallSelfProbability` remain backward-compatible through the existing normalization layer; do not add a second allowlist/denylist schema. When both the structured `selfRecall.enabled` field and legacy `autoRecallSelf` are present, the structured field is authoritative even when its value is `false`; legacy values are fallback-only when the structured field is omitted.
 6. `false`, `0`, and other defined values are valid sparse overrides; only omitted/undefined values inherit.
 7. Disabling self-recall for a group must take effect for newly sent messages immediately after configuration is saved.
 8. A queued or persisted self-recall task must be re-validated against the current effective group setting immediately before the delete action. If self-recall is now disabled, complete/resolve the task as skipped and do not call OneBot `delete_msg`. This prevents a notification sent before the operator toggled the switch from disappearing afterwards.
@@ -55,6 +55,7 @@ On the global scope page, behavior remains unchanged and the switch edits the gl
 On the group scope page:
 - Stop describing the switch as global-only. Explain that it follows the current scope and can inherit from the global setting or be overridden for the selected group.
 - Build the displayed effective self-recall object using a nested merge of global `selfRecall` plus group `selfRecall`; do not shallow-merge the parent object and then force the self-recall controls back to global values.
+- When rendering the enabled switch, prefer a defined `selfRecall.enabled` value over `autoRecallSelf`; this must preserve an explicit `false` instead of letting an inherited legacy `true` turn the UI back on.
 - Stop deleting `autoRecallSelf`, `autoRecallSelfDelay`, and `selfRecall` from the group save payload.
 - Preserve the existing `useGlobal`/inheritance behavior. A group that still uses global settings must remain read-only/inherited. Once group override mode is enabled, saving `selfRecall.enabled=false` must persist a sparse group override.
 - Do not accidentally make unrelated global-only fields group-scoped.
@@ -74,6 +75,7 @@ Add or extend automated checks for these cases:
 - global=true, group=false => effective=false
 - global=false, group omitted => effective=false
 - global=false, group=true => effective=true
+- structured `selfRecall.enabled=false` remains false even when a legacy/inherited `autoRecallSelf=true` is present
 - group self-recall delay/mode fields inherit individually when omitted
 - WebUI group save payload retains `selfRecall` and legacy compatibility fields instead of deleting them
 - WebUI group fill logic uses effective nested self-recall values and does not force global values
