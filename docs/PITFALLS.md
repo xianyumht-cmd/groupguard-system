@@ -167,3 +167,18 @@ A writable working directory is not sufficient proof that it is the application 
 - Remove guarded updater-owned staging directories on every failure path.
 - Keep the rollback directory only until the new worker reports the exact target commit; then remove it so repeated updates do not consume unbounded storage.
 - Do not perform a write/delete probe on every WebUI status poll; reserve that mutation for an explicit update attempt.
+
+## GitHub Actions artifact download is a redirect API, not a release-asset binary endpoint
+
+Observed: 2026-09-11
+
+### Failure pattern
+
+The self-updater used `Accept: application/octet-stream` directly on the GitHub Actions artifact archive endpoint and let `fetch()` follow redirects implicitly. That media type belongs to release-asset binary download semantics, while the Actions artifact archive endpoint is a GitHub REST redirect endpoint. Production returned HTTP 415 before any `dist` switch occurred.
+
+### Prevention
+
+- Request the Actions artifact archive endpoint with `Accept: application/vnd.github+json` and the GitHub API version header.
+- Handle the GitHub redirect explicitly, require an HTTPS `Location`, then fetch the signed archive URL separately without forwarding the GitHub authorization header.
+- Keep Actions-artifact download semantics separate from release-asset download semantics.
+- Lock the request/redirect contract in `verify:self-update` so `application/octet-stream` cannot silently return to this path.
