@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
+// This focused contract is intentionally wired into npm test so group inheritance,
+// durable queue finalization, and legacy WebUI scope behavior cannot regress silently.
 const root = path.resolve(import.meta.dirname, '..');
 const html = fs.readFileSync(path.join(root, 'webui/config.html'), 'utf8');
 const queue = fs.readFileSync(path.join(root, 'src/services/action_queue_service.ts'), 'utf8');
