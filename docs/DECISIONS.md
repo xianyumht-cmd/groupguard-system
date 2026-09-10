@@ -1,5 +1,27 @@
 # GroupGuard Decisions
 
+## 2026-09-10 — Self-recall uses sparse per-group overrides with execution-time revalidation
+
+### Decision
+
+`global.selfRecall` remains the default policy, while an active group overlay may override individual `selfRecall` fields. Missing fields inherit; explicit `false` and `0` remain real overrides. The structured `selfRecall` field is authoritative over same-scope legacy aliases when present. Broad WebUI saves must not turn displayed effective self-recall values into new group ownership: existing explicit nested fields remain explicit, newly introduced fields are stored only when they differ from global, and unedited/unknown nested fields such as `probability` are preserved.
+
+Durable `self_recall` queue work is revalidated against current effective group settings before queue-level early exits and again immediately before `delete_msg`. Once disabled, the persisted task is terminally resolved as `skip_self_recall_disabled`; it must not remain recoverable or be retried later.
+
+### Reason
+
+A rendered effective value is not proof that the group owns that field, and a delayed recall can outlive the configuration that originally scheduled it. Persisting the preview would break future global inheritance, while validating only at scheduling time could still delete a notification after the operator disabled recall for that group.
+
+### Consequences
+
+- Operators can keep global self-recall enabled while disabling it for selected groups.
+- Global mode/delay changes continue to propagate through omitted group fields.
+- Historical explicit group paths are not silently deleted merely because they equal the current global value.
+- Legacy aliases remain compatibility inputs, but new group saves prefer the structured policy and avoid creating inherited aliases.
+- Disabled durable tasks are resolved before dedup/rate-limit paths and are checked again after queue delay before host deletion.
+- No database migration is required.
+
+
 ## 2026-08-28 — Battle query uses an image feature default without inventing group overrides
 
 ### Decision

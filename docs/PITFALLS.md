@@ -1,5 +1,37 @@
 # GroupGuard Pitfalls
 
+## Rendering an inherited value does not authorize persisting it as a group override
+
+Observed: 2026-09-10
+
+### Failure pattern
+
+A broad group WebUI rendered the effective `selfRecall` policy and then saved every displayed mode/delay field. That converted inherited values into explicit group ownership, prevented later global changes from propagating, and could discard an unrendered nested field such as `probability`. A collapsed layout also hid the section header in group mode, leaving the remaining controls clipped and impossible to expand.
+
+### Prevention
+
+- Treat effective values as preview data, not proof of ownership.
+- Preserve previously explicit nested fields, compact newly introduced fields against global, and retain unknown existing nested keys.
+- Do not materialize legacy aliases merely because compatibility controls are displayed.
+- When scope filtering hides siblings inside a collapsible section, keep its header/control reachable or force the scoped section open and restore the previous collapsed state afterward.
+- Add the focused WebUI contract to the normal `npm test` path so these rules cannot silently regress.
+
+## Durable work must be finalized before generic queue early exits
+
+Observed: 2026-09-10
+
+### Failure pattern
+
+A disabled persisted self-recall task was checked only after deduplication and rate limiting. When an earlier generic queue branch returned, the SQLite row could remain scheduled, so recovery repeatedly re-enqueued work that should have been terminally skipped.
+
+### Prevention
+
+- Evaluate terminal business-state conditions before generic dedup/rate-limit exits when those exits do not themselves finalize durable state.
+- Ensure dedup/rate-limit outcomes for durable tasks update their persistent row.
+- Admission failures before worker execution must also update durable state: transient queue pressure gets a delayed retry, while terminal admission rejection must not remain immediately due forever.
+- Keep a final configuration check immediately before the external side effect to cover changes that occur while queued.
+
+
 ## Effective config cannot prove that a group field was explicitly overridden
 
 Observed: 2026-08-28

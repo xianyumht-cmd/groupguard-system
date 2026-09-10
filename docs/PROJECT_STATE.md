@@ -1,6 +1,12 @@
 # GroupGuard Project State
 
-Updated: 2026-09-05
+Updated: 2026-09-10
+
+## Active self-recall / notification-update work — 2026-09-10
+
+- PR #59 (`feat/per-group-self-recall-20260910`) is the active review unit for sparse per-group self-recall. Review remediation keeps explicit `false`, prevents inherited mode/delay values from becoming new overrides, keeps the scoped controls reachable, finalizes disabled durable queue rows before generic early exits, and wires the focused contract into `npm test`.
+- Dependent branch `feat/lol-notify-groups-and-webui-updater-20260910` adds selected-group LOL patch notifications and authenticated WebUI self-update. It is intentionally not merged into `main` while #59 review findings are being reconciled.
+- `main` and production deployment remain separate from these review branches. No main merge or automated ARM deployment is authorized by this review-remediation step.
 
 ## Reliability hardening candidate — 2026-09-05
 

@@ -12,7 +12,7 @@ type RiskLevel = 'normal' | 'warn' | 'protect';
 
 export interface GuardResult {
   ok: boolean;
-  code: 'ok' | 'unknown_timeout' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'queue_reset' | 'action_failed_timeout' | 'fail_api' | 'backpressure_reject' | 'bot_role_blocked';
+  code: 'ok' | 'unknown_timeout' | 'skip_bot_not_admin' | 'skip_target_protected' | 'skip_duplicate' | 'skip_rate_limited' | 'skip_risk_protect' | 'skip_replaced' | 'skip_queue_overflow' | 'queue_reset' | 'action_failed_timeout' | 'fail_api' | 'backpressure_reject' | 'bot_role_blocked' | 'skip_self_recall_disabled';
   role?: 'member' | 'admin' | 'owner' | 'unknown';
 }
 
