@@ -150,3 +150,20 @@ Unique event IDs prevented exact duplicate processing but allowed an older callb
 - Serialize target mutations per destination and persist the last accepted revision.
 - Acknowledge stale revisions without downloading, uploading or deleting files.
 - Validate every download URL and redirect hop against private/link-local destinations.
+
+
+## Self-update must not trust process working directory or a partial artifact manifest
+
+Observed: 2026-09-11
+
+### Failure pattern
+
+A writable working directory is not sufficient proof that it is the application root currently executing GroupGuard. Replacing `<cwd>/dist` from an unexpected launch topology could modify the wrong directory. Likewise, verifying hashes only for files listed in a manifest does not reject an extra unlisted file included in the archive. Failed verification can also accumulate staging directories if cleanup exists only after a successful switch.
+
+### Prevention
+
+- Require `process.argv[1]` to resolve exactly to `<workDir>/dist/snowluma-service.mjs` before any update mutation.
+- Require the manifest file set and the extracted regular-file set under `dist` to be identical, then verify size and SHA-256 for every file.
+- Remove guarded updater-owned staging directories on every failure path.
+- Keep the rollback directory only until the new worker reports the exact target commit; then remove it so repeated updates do not consume unbounded storage.
+- Do not perform a write/delete probe on every WebUI status poll; reserve that mutation for an explicit update attempt.

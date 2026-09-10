@@ -151,6 +151,56 @@ jobs:
           EOF
 
           pwsh -NoLogo -NoProfile -File "$bundle/groupguard-deploy-bundle.ps1" -PreflightOnly
+      - name: Build WebUI self-update artifact
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          update_root="../self-update-artifact"
+          rm -rf "$update_root"
+          mkdir -p "$update_root"
+          cp -a dist "$update_root/dist"
+          RELEASE_COMMIT="$RELEASE_COMMIT" UPDATE_ROOT="$update_root" node --input-type=module <<'NODE'
+          import crypto from 'node:crypto';
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root = path.resolve(process.env.UPDATE_ROOT);
+          const dist = path.join(root, 'dist');
+          const files = [];
+          function walk(dir) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+              const full = path.join(dir, entry.name);
+              if (entry.isSymbolicLink()) throw new Error('self-update artifact must not contain symlinks: ' + full);
+              if (entry.isDirectory()) { walk(full); continue; }
+              if (!entry.isFile()) throw new Error('unsupported artifact entry: ' + full);
+              const data = fs.readFileSync(full);
+              files.push({
+                path: 'dist/' + path.relative(dist, full).split(path.sep).join('/'),
+                sha256: crypto.createHash('sha256').update(data).digest('hex'),
+                size: data.length,
+              });
+            }
+          }
+          walk(dist);
+          const manifest = {
+            schema_version: 'groupguard-self-update.v1',
+            commit_sha: process.env.RELEASE_COMMIT,
+            created_at_utc: new Date().toISOString(),
+            files,
+          };
+          fs.writeFileSync(path.join(root, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+          test -f "$update_root/dist/snowluma-service.mjs"
+          test -f "$update_root/dist/build-info.json"
+          test -f "$update_root/manifest.json"
+      - name: Upload WebUI self-update artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: groupguard-self-update-${{ github.event.pull_request.head.sha || github.sha }}
+          path: self-update-artifact
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload immutable deployment bundle
         uses: actions/upload-artifact@v4
         with:

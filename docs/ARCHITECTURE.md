@@ -182,3 +182,26 @@ SnowLuma's `GroupFileApi.list()` performs the underlying paginated `ListGroupFil
 - last reconciliation error.
 
 The QQ directory itself remains authoritative for actual file existence.
+
+
+## LOL patch notification routing and WebUI self-update
+
+Patch notifications and group runtime settings have separate ownership. `lolPatchNotifyGroupIds` is a top-level operator allowlist. `LolPatchNotifier` first computes currently valid authorized groups, then intersects that set with the configured destination IDs. It never treats all licensed groups as implicit recipients.
+
+SnowLuma self-update is a code-only pipeline:
+
+```text
+WebUI authenticated confirmation
+  -> fixed GitHub Actions main-success discovery
+  -> immutable groupguard-self-update-<commit> artifact
+  -> ZIP path/type/size validation
+  -> manifest exact-file-set + SHA-256 + build-info commit validation
+  -> atomic dist/rollback rename
+  -> worker exit code 75
+  -> in-memory supervisor starts <workDir>/dist/snowluma-service.mjs
+  -> worker ready IPC includes exact build commit
+       |- matches -> mark complete and remove updater rollback dir
+       `- mismatch/start failure/timeout -> restore previous dist and start rollback worker
+```
+
+The supervisor intentionally stays in the old process image while `dist` is replaced, so it can restore the previous files even when the newly written worker cannot start. The updater is enabled only when the current Node entry resolves exactly to the managed SnowLuma dist under the active work directory. Runtime config, SQLite/data, logs, credentials, and unrelated application directories are outside the replacement set.

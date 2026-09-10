@@ -78,6 +78,7 @@ th{color:#93c5fd;background:#111827}
     <button class="tab" data-tab="presets">推荐档位</button>
     <button class="tab" data-tab="risklog">日志分析</button>
     <button class="tab" data-tab="health">健康监控</button>
+    <button class="tab" data-tab="self-update">系统更新</button>
     <button class="tab" data-tab="gameplay">SUB玩法</button>
     <button class="tab" data-tab="content-risk">内容风险</button>
     <button class="tab" data-tab="ele">ELE构建</button>
@@ -170,6 +171,22 @@ th{color:#93c5fd;background:#111827}
     <h2>远端健康监控</h2>
     <div class="toolbar"><button id="loadHealthBtn">刷新健康状态</button></div>
     <div id="healthBox"></div>
+  </section>
+
+  <section id="tab-self-update" class="card hidden">
+    <h2>系统更新</h2>
+    <p class="hint">从固定仓库 main 最近成功的不可变构建更新 GroupGuard。候选包会校验提交和文件哈希，切换前保留上一版；新版本启动失败会自动回滚。</p>
+    <div id="selfUpdateBox" class="status-grid"></div>
+    <div class="row" style="margin-top:12px">
+      <label><span>GitHub 只读 Token（私有仓库首次配置一次）</span><input id="selfUpdateToken" type="password" autocomplete="new-password" placeholder="不会回显或写入 config.json"></label>
+      <button id="saveSelfUpdateTokenBtn" class="secondary">保存 Token</button>
+      <button id="clearSelfUpdateTokenBtn" class="secondary">清除 Token</button>
+    </div>
+    <div class="toolbar">
+      <button id="checkSelfUpdateBtn" class="secondary">检查更新</button>
+      <button id="applySelfUpdateBtn">一键更新</button>
+    </div>
+    <p class="muted">更新时页面可能短暂断开，supervisor 会自动重启服务；页面会继续轮询直到新版本恢复。</p>
   </section>
 
   <section id="tab-gameplay" class="card hidden">
@@ -696,13 +713,18 @@ function renderGroupList(groups){
     sel.innerHTML+='<option value="'+esc(g.groupId)+'">'+esc(g.groupId+' - '+tag)+'</option>';
   });
 }
+function notificationRouteHtml(groupId){
+  var enabled=(config.lolPatchNotifyGroupIds||[]).map(String).indexOf(String(groupId))>=0;
+  return '<div class="section-title">通知路由</div><label class="switch-row full"><span class="switch-copy"><span class="switch-title">LOL版本更新通知（@全体）</span><span class="field-desc">仅对当前群设置通知路由，不受“使用全局配置”影响；群授权有效时才会实际发送。</span></span><input id="lolPatchNotifyGroupSwitch" type="checkbox" '+(enabled?'checked':'')+'></label>';
+}
 function renderGroupForm(data){
   currentGroup=data;
   el('groupIdInput').value=data.groupId;
   el('groupMeta').textContent='群 '+data.groupId+'：'+(data.licensed?'已授权':'未授权')+'，'+(data.configured?'存在专属配置':'当前走全局/默认配置');
   var g=data.group||{}; var e=data.effective||{}; var groupSrc=mergedGroupSettings(e,g);
   el('groupForm').innerHTML =
-    switchHtml('使用全局配置','useGlobal',get(g,'useGlobal',false))
+    notificationRouteHtml(data.groupId)
+    + switchHtml('使用全局配置','useGlobal',get(g,'useGlobal',false))
     + switchHtml('总开关','masterEnabled',get(groupSrc,'masterEnabled',true))
     + selectHtml('静默模式','silentMode',get(groupSrc,'silentMode','off'),selectOptionsByKey.silentMode)
     + switchHtml('主动发送','activeReplyEnabled',get(groupSrc,'activeReplyEnabled',true))
@@ -874,6 +896,42 @@ function loadSubResources(){
 }
 function loadRiskDashboard(){ return api('/api/risk/dashboard?hours='+encodeURIComponent(el('riskHours').value||24)).then(renderRiskDashboard); }
 function loadHealth(){ return api('/api/health').then(renderHealth); }
+var selfUpdatePollTimer=null;
+function selfUpdateTerminal(status){ return ['current','complete','failed','rolled_back','rollback_failed'].indexOf(String(status||''))>=0; }
+function renderSelfUpdate(data){
+  var state=data.state||{}; var latest=data.latest||{};
+  var received=Number(state.downloadedBytes||0), total=Number(state.totalBytes||0);
+  var progress=total>0?Math.min(100,Math.round(received*100/total))+'%':(received?Math.round(received/1024/1024)+' MB':'-');
+  var html=''
+    + '<div class="k">当前版本</div><div class="v">'+esc(data.currentVersion||'-')+'</div>'
+    + '<div class="k">当前提交</div><div class="v">'+esc(data.currentCommit||'-')+'</div>'
+    + '<div class="k">最新成功构建</div><div class="v">'+esc(latest.commit||'-')+'</div>'
+    + '<div class="k">有可用更新</div><div class="v">'+(data.updateAvailable?'<span class="ok">是</span>':'否')+'</div>'
+    + '<div class="k">Token</div><div class="v">'+(data.tokenConfigured?'已配置（'+esc(data.tokenSource||'')+'）':'<span class="error">未配置</span>')+'</div>'
+    + '<div class="k">应用目录可写</div><div class="v">'+(data.writable?'<span class="ok">是</span>':'<span class="error">否</span>')+'</div>'
+    + '<div class="k">受管运行入口</div><div class="v">'+(data.managedRuntime?'<span class="ok">是</span>':'<span class="error">否（禁止自更新）</span>')+'</div>'
+    + '<div class="k">更新状态</div><div class="v">'+esc(state.status||'idle')+' / '+esc(state.phase||'-')+'</div>'
+    + '<div class="k">进度</div><div class="v">'+esc(progress)+'</div>'
+    + '<div class="k">说明</div><div class="v">'+esc(state.message||data.latestError||'-')+'</div>'
+    + (state.error?'<div class="k">错误</div><div class="v error">'+esc(state.error)+'</div>':'');
+  el('selfUpdateBox').innerHTML=html;
+  var btn=el('applySelfUpdateBtn'); if(btn) btn.disabled=!!data.busy || !data.writable || !data.managedRuntime;
+  if(selfUpdateTerminal(state.status) && selfUpdatePollTimer){ clearInterval(selfUpdatePollTimer); selfUpdatePollTimer=null; }
+}
+function loadSelfUpdate(refresh){ return api('/api/self-update/status'+(refresh?'?refresh=1':'')).then(renderSelfUpdate); }
+function startSelfUpdatePolling(){
+  if(selfUpdatePollTimer) clearInterval(selfUpdatePollTimer);
+  selfUpdatePollTimer=setInterval(function(){ loadSelfUpdate(false).catch(function(){}); },1500);
+}
+function saveSelfUpdateToken(clear){
+  var token=clear?'':el('selfUpdateToken').value.trim();
+  if(!clear&&!token){ show('请输入 GitHub 只读 Token',false); return Promise.resolve(); }
+  return api('/api/self-update/token',{method:'POST',body:JSON.stringify({token:token})}).then(function(){ el('selfUpdateToken').value=''; show(clear?'更新 Token 已清除':'更新 Token 已保存'); return loadSelfUpdate(true); });
+}
+function applySelfUpdate(){
+  if(!confirm('确认将 GroupGuard 更新到 main 最近成功构建？更新会自动备份当前 dist，并重启 GroupGuard worker。')) return Promise.resolve();
+  return api('/api/self-update/apply',{method:'POST',body:JSON.stringify({confirmed:true})}).then(function(){ show('更新已开始，请保持页面打开查看状态'); startSelfUpdatePolling(); return loadSelfUpdate(false); });
+}
 function applyRiskPreset(level){
   el('presetBox').textContent='应用中...';
   return api('/api/risk/preset',{method:'POST',body:JSON.stringify({level:level})}).then(function(res){
@@ -897,11 +955,20 @@ function savePatch(formId){
   return api('/api/config/patch',{method:'POST',body:JSON.stringify({patch:collectPatch(formId)})})
     .then(function(res){ show(res.message||'保存成功'); return loadConfig().then(loadStatus); });
 }
+function saveLolPatchNotificationRoute(id){
+  var list=Array.isArray(config.lolPatchNotifyGroupIds)?config.lolPatchNotifyGroupIds.map(String):[];
+  var enabled=!!(el('lolPatchNotifyGroupSwitch')&&el('lolPatchNotifyGroupSwitch').checked);
+  var next=list.filter(function(value){ return value!==String(id); });
+  if(enabled) next.push(String(id));
+  next=Array.from(new Set(next));
+  return api('/api/config/patch',{method:'POST',body:JSON.stringify({patch:{lolPatchNotifyGroupIds:next}})}).then(function(){ config.lolPatchNotifyGroupIds=next; });
+}
 function saveGroupPatch(){
   var id=el('groupIdInput').value.trim();
   if(!id){ show('请先输入群号',false); return; }
   return api('/api/groups/'+encodeURIComponent(id),{method:'POST',body:JSON.stringify({patch:collectPatch('groupForm')})})
-    .then(function(data){ renderGroupForm(data); show('本群配置已保存'); return loadGroups(); });
+    .then(function(){ return saveLolPatchNotificationRoute(id); })
+    .then(function(){ show('本群配置和通知路由已保存'); return loadConfig().then(loadGroups).then(loadSelectedGroup); });
 }
 function deleteGroupConfig(){
   var id=el('groupIdInput').value.trim();
@@ -924,7 +991,7 @@ function deleteLicense(){
 function createBackupSnapshot(){ return api('/api/backups/snapshot',{method:'POST',body:'{}'}).then(function(res){ show(res.message||'快照已创建'); return loadBackups(); }); }
 function saveRawConfig(){ var parsed=JSON.parse(el('configEditor').value); return api('/api/config',{method:'POST',body:JSON.stringify({config:parsed})}).then(function(res){ show(res.message||'保存成功'); return reloadAll(); }); }
 function saveCommands(){ var parsed=JSON.parse(el('commandsEditor').value); return api('/api/dynamic-commands',{method:'POST',body:JSON.stringify({config:parsed})}).then(function(res){ show(res.message||'保存成功'); return loadCommands().then(loadStatus); }); }
-function reloadAll(){ return Promise.resolve().then(loadStatus).then(loadConfig).then(loadCommands).then(loadGroups).then(loadLicenses).then(loadBackups).then(loadRiskDashboard).then(loadHealth).then(function(){ show('已刷新'); }).catch(function(e){ show(e.message || e, false); }); }
+function reloadAll(){ return Promise.resolve().then(loadStatus).then(loadConfig).then(loadCommands).then(loadGroups).then(loadLicenses).then(loadBackups).then(loadRiskDashboard).then(loadHealth).then(function(){ return loadSelfUpdate(false).catch(function(){}); }).then(function(){ show('已刷新'); }).catch(function(e){ show(e.message || e, false); }); }
 function switchTab(tab){
   document.querySelectorAll('button.tab[data-tab]').forEach(function(b){ b.classList.remove('active'); });
   document.querySelectorAll('section[id^="tab-"]').forEach(function(s){ s.classList.add('hidden'); });
@@ -935,7 +1002,7 @@ function bind(){
   ensureSubResourceUi();
   el('qaLink').href='/qa.html';
   el('queryLink').href='/query.html';
-  document.querySelectorAll('button.tab[data-tab]').forEach(function(btn){ btn.addEventListener('click',function(){ switchTab(btn.dataset.tab); }); });
+  document.querySelectorAll('button.tab[data-tab]').forEach(function(btn){ btn.addEventListener('click',function(){ switchTab(btn.dataset.tab); if(btn.dataset.tab==='self-update') loadSelfUpdate(true).catch(function(e){ show(e.message,false); }); }); });
   el('refreshBtn').addEventListener('click',reloadAll);
   document.querySelectorAll('[data-save-form]').forEach(function(btn){ btn.addEventListener('click',function(){ savePatch(btn.dataset.saveForm).catch(function(e){ show(e.message,false); }); }); });
   el('loadGroupBtn').addEventListener('click',function(){ Promise.resolve(loadSelectedGroup()).catch(function(e){ show(e.message,false); }); });
@@ -947,6 +1014,10 @@ function bind(){
   el('loadBackupsBtn').addEventListener('click',function(){ loadBackups().catch(function(e){ show(e.message,false); }); });
   el('loadRiskBtn').addEventListener('click',function(){ loadRiskDashboard().catch(function(e){ show(e.message,false); }); });
   el('loadHealthBtn').addEventListener('click',function(){ loadHealth().catch(function(e){ show(e.message,false); }); });
+  el('checkSelfUpdateBtn').addEventListener('click',function(){ loadSelfUpdate(true).catch(function(e){ show(e.message,false); }); });
+  el('applySelfUpdateBtn').addEventListener('click',function(){ applySelfUpdate().catch(function(e){ show(e.message,false); }); });
+  el('saveSelfUpdateTokenBtn').addEventListener('click',function(){ saveSelfUpdateToken(false).catch(function(e){ show(e.message,false); }); });
+  el('clearSelfUpdateTokenBtn').addEventListener('click',function(){ saveSelfUpdateToken(true).catch(function(e){ show(e.message,false); }); });
   el('loadResourcesBtn').addEventListener('click',function(){ loadSubResources().catch(function(e){ show(e.message,false); }); });
   document.querySelectorAll('[data-risk-preset]').forEach(function(btn){ btn.addEventListener('click',function(){ applyRiskPreset(btn.dataset.riskPreset).catch(function(e){ show(e.message,false); }); }); });
   el('saveRawBtn').addEventListener('click',function(){ Promise.resolve(saveRawConfig()).catch(function(e){ show(e.message,false); }); });

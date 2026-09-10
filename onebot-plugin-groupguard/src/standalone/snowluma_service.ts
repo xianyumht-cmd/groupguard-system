@@ -1,4 +1,5 @@
 import path from 'path';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { OneBotWsClient } from './onebot_ws_client';
 import { OneBotActionCaller } from './onebot_action_caller';
@@ -19,6 +20,14 @@ import { GenericOneBotProfile } from '../hosts/generic_onebot_profile';
 import type { HostProfile } from '../hosts/host_profile';
 import type { OneBotActionClient } from '../protocol/onebot11/action_client';
 import { isOneBotMessageEvent, normalizeOneBotEvent } from '../protocol/onebot11/types';
+import { getBuildInfo } from '../build_info';
+import {
+  SELF_UPDATE_RESTART_EXIT_CODE,
+  getSupervisorUpdateState,
+  markSupervisorUpdateComplete,
+  rollbackPendingSelfUpdate,
+  selfUpdateService,
+} from '../services/self_update_service';
 import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
 import {
   installQunGuanjiaRealtimeCapture,
@@ -238,6 +247,8 @@ async function start(): Promise<RuntimeState> {
   runtimeReady = true;
   for (const event of pendingEvents.splice(0)) await dispatchEvent(event);
 
+  selfUpdateService.configure({ workDir, dataDir, logger });
+
   const adminServer = startSnowLumaAdminServer({
     ctx,
     workDir,
@@ -279,16 +290,139 @@ async function stop(signal: string, exitCode = 0): Promise<void> {
   process.exit(exitCode);
 }
 
-process.on('SIGINT', () => void stop('SIGINT'));
-process.on('SIGTERM', () => void stop('SIGTERM'));
-process.on('unhandledRejection', (reason) => {
-  console.error(`[GroupGuard:OneBot] unhandledRejection: ${String(reason)}`);
-  void stop('unhandledRejection', 1);
-});
-process.on('uncaughtException', (error) => {
-  console.error(`[GroupGuard:OneBot] uncaughtException: ${String(error)}`);
-  void stop('uncaughtException', 1);
-});
+function installWorkerProcessHandlers(): void {
+  process.on('SIGINT', () => void stop('SIGINT'));
+  process.on('SIGTERM', () => void stop('SIGTERM'));
+  process.on('unhandledRejection', (reason) => {
+    console.error(`[GroupGuard:OneBot] unhandledRejection: ${String(reason)}`);
+    void stop('unhandledRejection', 1);
+  });
+  process.on('uncaughtException', (error) => {
+    console.error(`[GroupGuard:OneBot] uncaughtException: ${String(error)}`);
+    void stop('uncaughtException', 1);
+  });
+}
+
+async function runWorkerProcess(): Promise<void> {
+  installWorkerProcessHandlers();
+  try {
+    runtime = await start();
+    if (typeof process.send === 'function') {
+      process.send({ type: 'groupguard-ready', commit: String(getBuildInfo().commit_sha || '') });
+    }
+  } catch (error) {
+    console.error(`[GroupGuard:OneBot] start failed: ${String(error)}`);
+    await stop('startup_failure', 1);
+  }
+}
+
+function runSupervisorProcess(): void {
+  const entry = path.resolve(process.argv[1] || fileURLToPath(import.meta.url));
+  let child: ChildProcess | null = null;
+  let supervisorStopping = false;
+  let expectingUpdatedWorker = false;
+  let restartTimer: NodeJS.Timeout | null = null;
+  let rollbackAfterExit = false;
+
+  const clearRestartTimer = () => {
+    if (restartTimer) clearTimeout(restartTimer);
+    restartTimer = null;
+  };
+
+  const spawnWorker = () => {
+    const worker = spawn(process.execPath, [entry], {
+      cwd: process.cwd(),
+      env: { ...process.env, GROUPGUARD_SERVICE_WORKER: '1' },
+      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+    });
+    child = worker;
+    worker.on('message', (message: any) => {
+      if (!message || message.type !== 'groupguard-ready') return;
+      const commit = String(message.commit || '').toLowerCase();
+      if (!expectingUpdatedWorker) {
+        console.info(`[GroupGuard:Supervisor] worker ready commit=${commit || 'unknown'}`);
+        return;
+      }
+      const target = String(getSupervisorUpdateState().targetCommit || '').toLowerCase();
+      if (target && commit === target) {
+        try {
+          markSupervisorUpdateComplete(commit);
+          expectingUpdatedWorker = false;
+          rollbackAfterExit = false;
+          clearRestartTimer();
+          console.info(`[GroupGuard:Supervisor] updated worker verified commit=${commit}`);
+        } catch (error) {
+          console.error(`[GroupGuard:Supervisor] update verification failed: ${String(error)}`);
+          rollbackAfterExit = true;
+          worker.kill('SIGTERM');
+        }
+        return;
+      }
+      console.error(`[GroupGuard:Supervisor] update commit mismatch expected=${target || 'unknown'} actual=${commit || 'unknown'}`);
+      rollbackAfterExit = true;
+      worker.kill('SIGTERM');
+    });
+    worker.on('exit', (code, signal) => {
+      if (child === worker) child = null;
+      if (supervisorStopping) {
+        clearRestartTimer();
+        process.exit(code ?? (signal ? 0 : 1));
+        return;
+      }
+      if (code === SELF_UPDATE_RESTART_EXIT_CODE) {
+        expectingUpdatedWorker = true;
+        rollbackAfterExit = false;
+        console.info('[GroupGuard:Supervisor] worker requested self-update restart');
+        spawnWorker();
+        clearRestartTimer();
+        restartTimer = setTimeout(() => {
+          if (!expectingUpdatedWorker || !child) return;
+          rollbackAfterExit = true;
+          console.error('[GroupGuard:Supervisor] updated worker readiness timeout; rolling back');
+          child.kill('SIGTERM');
+        }, 45_000);
+        restartTimer.unref();
+        return;
+      }
+      if (expectingUpdatedWorker || rollbackAfterExit) {
+        clearRestartTimer();
+        const reason = `updated_worker_exit code=${String(code)} signal=${String(signal)}`;
+        const rolledBack = rollbackPendingSelfUpdate(reason);
+        expectingUpdatedWorker = false;
+        rollbackAfterExit = false;
+        if (!rolledBack) {
+          console.error('[GroupGuard:Supervisor] automatic rollback failed; supervisor exiting');
+          process.exit(1);
+          return;
+        }
+        console.warn('[GroupGuard:Supervisor] previous dist restored; starting rollback worker');
+        spawnWorker();
+        return;
+      }
+      console.error(`[GroupGuard:Supervisor] worker exited unexpectedly code=${String(code)} signal=${String(signal)}`);
+      process.exit(code ?? 1);
+    });
+  };
+
+  const stopSupervisor = (signal: NodeJS.Signals) => {
+    if (supervisorStopping) return;
+    supervisorStopping = true;
+    clearRestartTimer();
+    if (child) child.kill(signal);
+    else process.exit(0);
+  };
+  process.on('SIGINT', () => stopSupervisor('SIGINT'));
+  process.on('SIGTERM', () => stopSupervisor('SIGTERM'));
+  process.on('uncaughtException', (error) => {
+    console.error(`[GroupGuard:Supervisor] uncaughtException: ${String(error)}`);
+    stopSupervisor('SIGTERM');
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error(`[GroupGuard:Supervisor] unhandledRejection: ${String(reason)}`);
+    stopSupervisor('SIGTERM');
+  });
+  spawnWorker();
+}
 
 const isDirectRun = (() => {
   try {
@@ -301,12 +435,8 @@ const isDirectRun = (() => {
 })();
 
 if (isDirectRun) {
-  start()
-    .then((state) => { runtime = state; })
-    .catch((error) => {
-      console.error(`[GroupGuard:OneBot] start failed: ${String(error)}`);
-      void stop('startup_failure', 1);
-    });
+  if (process.env.GROUPGUARD_SERVICE_WORKER === '1') void runWorkerProcess();
+  else runSupervisorProcess();
 }
 
 export { start };

@@ -2,6 +2,16 @@
 
 Updated: 2026-09-10
 
+
+## Selected-group LOL patch notices + SnowLuma WebUI self-update candidate — 2026-09-11
+
+- Development branch: `feat/lol-notify-groups-and-webui-updater-20260910`, stacked on the finalized per-group self-recall candidate.
+- LOL patch `@全体` recipients are explicit `lolPatchNotifyGroupIds` intersected with currently valid authorized groups; empty/missing means no destinations.
+- SnowLuma admin WebUI exposes authenticated update status/token/check/apply controls. Update source is fixed to the private canonical repository and successful `main` `GroupGuard Build` artifacts.
+- Candidate update validation covers managed runtime entry, archive path/type/size limits, exact dist file-set manifest, per-file SHA-256/size, build-info commit, supervised exact-commit startup, automatic rollback, and updater-owned temporary-directory cleanup.
+- Combined per-group self-recall + notification routing + updater verification passes the normal package test/build path before PR publication.
+- Production is unchanged; neither ARM host has been updated or restarted by this development work.
+
 ## Active self-recall / notification-update work — 2026-09-10
 
 - PR #59 (`feat/per-group-self-recall-20260910`) is the active review unit for sparse per-group self-recall. Review remediation keeps explicit `false`, prevents inherited mode/delay values from becoming new overrides, keeps the scoped controls reachable, finalizes disabled durable queue rows before generic early exits, and wires the focused contract into `npm test`.

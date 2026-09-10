@@ -259,3 +259,23 @@ When `GROUPGUARD_TRANSLATE_ENDPOINT` is unset, network translation is disabled. 
 ### Reason
 
 Administrator-authored and user message text must not be sent to a public service merely because an output locale was selected.
+
+
+## 2026-09-11 — LOL patch announcements use an explicit destination allowlist and WebUI self-update consumes immutable main artifacts
+
+### Decision
+
+LOL patch-day `@全体` announcements are routed only to group IDs explicitly selected in `lolPatchNotifyGroupIds` and still holding a valid current GroupGuard authorization. Missing or empty configuration means no patch announcement destinations; this routing is independent from per-group `useGlobal` inheritance.
+
+The SnowLuma standalone WebUI may update GroupGuard only from the fixed private repository `xianyumht-cmd/groupguard-system`, fixed `GroupGuard Build` workflow, and the latest successful `main` push artifact named for its exact commit. The updater does not accept browser-supplied repository URLs, filesystem roots, commands, or arbitrary packages. Private-repository access uses `GROUPGUARD_UPDATE_GITHUB_TOKEN` or the mode-0600 updater token file under the GroupGuard data directory.
+
+Before switching code, the updater requires the running entry to be the managed `<workDir>/dist/snowluma-service.mjs`, validates the candidate build commit, requires a manifest entry for every regular file in `dist`, verifies every declared size/SHA-256, and rejects extra files, symlinks, unsafe paths, and unsupported archive entries. Switching is `dist -> rollback` then verified staged `dist -> dist`. A lightweight supervisor restarts the worker and requires the new worker to report the exact target commit; startup failure, timeout, or commit mismatch restores the rollback dist. After verified startup, the updater-owned rollback directory is removed.
+
+### Consequences
+
+- Existing installations with no `lolPatchNotifyGroupIds` stop broadcasting patch notices by default rather than notifying every licensed group.
+- Notification routing remains an operator destination decision, not a group-settings inheritance field.
+- The current production build must receive this updater implementation once through the existing code deployment path before future WebUI one-click updates are possible.
+- A private-repository read token must be configured once unless supplied by environment.
+- WebUI status polling performs only a permission check; the destructive write probe runs only when an update is actually requested.
+- Production deployment/restart remains a separate operator action; introducing this code does not itself update either ARM host.

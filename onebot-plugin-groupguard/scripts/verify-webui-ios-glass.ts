@@ -47,6 +47,9 @@ for (const raw of pages) {
   assert.ok(designed.includes("api('/api/build-info')"));
   assert.ok(designed.includes("['群管配置'"));
   assert.ok(designed.includes("['服务与风控'"));
+  assert.ok(designed.includes("'self-update':['系统更新'"));
+  assert.ok(designed.includes("['高级设置',['self-update','advanced','raw']]"));
+  assert.ok(designed.includes("['高级设置','系统更新','/#self-update','更']"));
   assert.ok(designed.includes("dataset.ggGlobalConfig='1'"));
   assert.ok(designed.includes("textContent='全局配置'"));
   assert.ok(designed.includes("api('/api/groups/batch','POST'"));
