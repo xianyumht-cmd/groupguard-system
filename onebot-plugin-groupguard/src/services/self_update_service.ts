@@ -214,13 +214,35 @@ async function findLatestCandidate(token: string): Promise<UpdateCandidate> {
 }
 
 async function downloadArtifact(candidate: UpdateCandidate, token: string, onProgress: (received: number, total: number) => void): Promise<Buffer> {
-  const response = await fetch(candidate.archiveDownloadUrl, {
-    redirect: 'follow',
+  // GitHub's Actions artifact endpoint is a JSON REST endpoint that returns a
+  // short-lived 302 download URL. Request that redirect explicitly, then fetch
+  // the signed URL without forwarding the repository token across origins.
+  const redirectResponse = await fetch(candidate.archiveDownloadUrl, {
+    redirect: 'manual',
     headers: {
-      accept: 'application/octet-stream',
+      accept: 'application/vnd.github+json',
       'user-agent': 'GroupGuard-Self-Updater/1',
       'x-github-api-version': '2022-11-28',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (redirectResponse.status !== 302) {
+    throw new Error(`self_update_artifact_http_${redirectResponse.status}`);
+  }
+  const location = String(redirectResponse.headers.get('location') || '').trim();
+  if (!location) throw new Error('self_update_artifact_redirect_missing');
+  let downloadUrl: URL;
+  try {
+    downloadUrl = new URL(location, candidate.archiveDownloadUrl);
+  } catch {
+    throw new Error('self_update_artifact_redirect_invalid');
+  }
+  if (downloadUrl.protocol !== 'https:') throw new Error('self_update_artifact_redirect_insecure');
+
+  const response = await fetch(downloadUrl, {
+    redirect: 'follow',
+    headers: {
+      'user-agent': 'GroupGuard-Self-Updater/1',
     },
   });
   if (!response.ok) throw new Error(`self_update_artifact_http_${response.status}`);
