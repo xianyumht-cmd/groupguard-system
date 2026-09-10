@@ -256,6 +256,12 @@ function getActionPriority(groupId: string, type: ActionType): number {
   return DEFAULT_ACTION_PRIORITY.misc;
 }
 
+function isSelfRecallEnabledForGroup(groupId: string): boolean {
+  const settings = configStateService.resolveGroupSettings(groupId);
+  const policy = settings.selfRecall;
+  return policy ? policy.enabled === true : settings.autoRecallSelf === true;
+}
+
 function getGroupQueueLimit(groupId: string): number {
   const settings = configStateService.resolveGroupSettings(groupId);
   const n = Number(settings.maxActionQueueSizePerGroup ?? 200);
@@ -641,6 +647,16 @@ async function executeTask(task: QueueTask): Promise<void> {
       return;
     }
     if (task.type === 'self_recall') {
+      if (!isSelfRecallEnabledForGroup(task.groupId)) {
+        const code = 'skip_self_recall_disabled' as const;
+        await groupguardRepository.resolveSelfRecallTask(task.payload.taskId, code, true, 0);
+        task.resolve({ ok: false, code });
+        stats.queueDropped += 1;
+        recordMinuteMetric('dropped');
+        appendQueueLog(`self_recall ${taskSubject(task)} skipped_disabled_for_group`);
+        recordActionQueueEvent(task, 'skipped', { code, ok: false, reason: 'self_recall_disabled_for_group' });
+        return;
+      }
       await groupguardRepository.markSelfRecallTaskQueued(task.payload.taskId);
       const call = safeRecall({
         groupId: task.groupId,

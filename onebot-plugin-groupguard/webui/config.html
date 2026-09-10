@@ -2263,7 +2263,7 @@
       stg('c-ec', g.enableCurfew);
       sv('c-cs', g.curfewStart || '00:00'); sv('c-ce', g.curfewEnd || '06:00');
       const sr = g.selfRecall || {};
-      stg('c-ars', sr.enabled === true || g.autoRecallSelf === true);
+      stg('c-ars', sr.enabled !== undefined ? sr.enabled === true : g.autoRecallSelf === true);
       $('c-srm').value = sr.mode === 'random' ? 'random' : 'fixed';
       sv('c-srfd', sr.fixedDelay !== undefined ? sr.fixedDelay : (g.autoRecallSelfDelay || 60));
       sv('c-srmin', sr.minDelay !== undefined ? sr.minDelay : 45);
@@ -2392,15 +2392,12 @@
       // Actually, we should just fill fields, and let UI show current values.
       // But we need to handle "inherit" logic. 
       // For simplicity in this WebUI, if not using global, we show group values, defaulting to global if missing.
-      const mixed = { ...g, ...gs }; 
+      const mixed = {
+        ...g,
+        ...gs,
+        selfRecall: { ...(g.selfRecall || {}), ...(gs.selfRecall || {}) }
+      };
       fillFields(mixed);
-      const sr = g.selfRecall || {};
-      stg('c-ars', sr.enabled === true || g.autoRecallSelf === true);
-      $('c-srm').value = sr.mode === 'random' ? 'random' : 'fixed';
-      sv('c-srfd', sr.fixedDelay !== undefined ? sr.fixedDelay : (g.autoRecallSelfDelay || 60));
-      sv('c-srmin', sr.minDelay !== undefined ? sr.minDelay : 45);
-      sv('c-srmax', sr.maxDelay !== undefined ? sr.maxDelay : 90);
-      sv('c-srj', sr.jitter !== undefined ? sr.jitter : 0);
       sv('c-bl', (gs.groupBlacklist || []).join(',')); // Group blacklist
       sv('c-wl-list', ''); // No group whitelist
     }
@@ -2567,9 +2564,6 @@
     function collectGroup (gid) {
       C.groups = C.groups || {};
       const payload = { ...collectFields(), useGlobal: false, groupBlacklist: ($('c-bl')?.value || '').split(',').map(s => s.trim()).filter(Boolean) };
-      delete payload.autoRecallSelf;
-      delete payload.autoRecallSelfDelay;
-      delete payload.selfRecall;
       delete payload.disableReplyTemplate;
       C.groups[gid] = payload;
     }
@@ -2695,6 +2689,23 @@
         const show = scope === 'group' ? isGroupMode : !isGroupMode;
         el.style.display = show ? '' : 'none';
       });
+
+      // Self-recall is global-by-default but can be overridden for a selected group.
+      // Keep the existing anti-risk section global-only except for the self-recall controls.
+      const antiRisk = $('sec-antirisk');
+      if (antiRisk) {
+        antiRisk.style.display = '';
+        const selfRecallIds = new Set(['c-ars', 'c-srm', 'c-srfd', 'c-srmin', 'c-srmax', 'c-srj']);
+        Array.from(antiRisk.children).forEach((child) => {
+          if (!isGroupMode) { child.style.display = ''; return; }
+          const containsSelfRecall = Array.from(child.querySelectorAll('[id]')).some((node) => selfRecallIds.has(node.id));
+          child.style.display = containsSelfRecall ? '' : 'none';
+        });
+        const hint = $('c-ars')?.parentElement?.querySelector('.text-xs.text-slate-400');
+        if (hint) hint.textContent = isGroupMode
+          ? '当前群可独立覆盖全局设置；关闭后机器人在本群发送的通知不会自动撤回'
+          : '全局默认设置；未配置分群覆盖的群将继承此开关';
+      }
     }
     function onGrp () {
       if (editMode) collectGroup(editMode); else collectGlobal();
