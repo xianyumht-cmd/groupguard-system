@@ -34,6 +34,7 @@ import { shouldBlockByBotRole } from '../core/bot_role';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
+import { toFeaturePermission, type LegacyPermission } from './legacy_permission';
 import { captureCommandResponseDeliveries } from './response_capture_runtime';
 
 type LegacyHandler = (event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext) => Promise<boolean>;
@@ -42,7 +43,7 @@ interface LegacyModuleDescriptor {
   domain: 'auth' | 'moderation' | 'interaction' | 'risk' | 'qa' | 'system';
   name: string;
   priority: number;
-  permission: string;
+  permission: LegacyPermission;
   scope: string;
   desc: string;
   exact: string[];
@@ -149,7 +150,7 @@ function createLegacyPlugin(descriptor: LegacyModuleDescriptor, triggerType: 'ex
       allowedGroups: [],
       blockedGroups: [],
       requiresLicense: descriptor.scope !== 'private',
-      permission: descriptor.permission === 'admin' ? 'admin' : descriptor.permission === 'owner' ? 'owner' : 'all',
+      permission: toFeaturePermission(descriptor.permission),
       trigger: {
         type: triggerType,
         value: triggerValue

@@ -9,6 +9,7 @@ import { checkFeatureGate } from '../src/core/feature_gate';
 import { configStateService } from '../src/core/state-services/config_state_service';
 import { authDomainService } from '../src/domain/auth/auth_domain_service';
 import { normalizeCommandDefinition } from '../src/dynamic-commands/command_loader';
+import { toFeaturePermission } from '../src/dynamic-commands/legacy_permission';
 import { normalizeGroupFileMirrorConfig } from '../src/services/group_file_mirror_service';
 import { isIntranetHostname } from '../src/services/groupguard_query_delivery_client';
 import { resolveContainedSubGameplayResourcePath } from '../src/services/sub_gameplay_resources';
@@ -113,6 +114,11 @@ const defaultPaidCommand = normalizeCommandDefinition({
   response: { type: 'structured' },
 });
 assert.equal(defaultPaidCommand?.minimumLicenseLevel, 'pro', 'dynamic commands must default to pro minimum');
+
+assert.equal(toFeaturePermission('owner/admin'), 'admin', 'legacy owner/admin must not degrade to public access');
+assert.equal(toFeaturePermission('admin'), 'admin', 'legacy admin must remain admin');
+assert.equal(toFeaturePermission('owner'), 'owner', 'legacy owner must remain owner');
+assert.equal(toFeaturePermission('all'), 'all', 'legacy public commands must remain public');
 
 const gateGroupId = '987654321';
 const gateConfig = configStateService.getConfig();
