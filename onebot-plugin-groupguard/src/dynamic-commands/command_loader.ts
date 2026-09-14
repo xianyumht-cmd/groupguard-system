@@ -62,6 +62,10 @@ function normalizePermission(value: unknown): DynamicCommandDefinition['permissi
   return value === 'admin' || value === 'owner' || value === 'all' ? value : 'all';
 }
 
+function normalizeMinimumLicenseLevel(value: unknown): DynamicCommandDefinition['minimumLicenseLevel'] {
+  return value === 'enterprise' ? 'enterprise' : 'pro';
+}
+
 export function getDynamicCommandsConfigPath(): string {
   const explicitPath = process.env.DYNAMIC_COMMANDS_CONFIG_PATH || contextStateService.getDynamicCommandsConfigPath();
   if (explicitPath) return path.resolve(explicitPath);
@@ -203,6 +207,7 @@ export function normalizeCommandDefinition(value: unknown): DynamicCommandDefini
     allowedGroups: normalizeStringList(value.allowedGroups),
     blockedGroups: normalizeStringList(value.blockedGroups),
     requiresLicense: value.requiresLicense !== false,
+    minimumLicenseLevel: normalizeMinimumLicenseLevel(value.minimumLicenseLevel),
     permission: normalizePermission(value.permission),
     trigger: { type: triggerType, value: triggerValue },
     parameters: normalizedParameters,
