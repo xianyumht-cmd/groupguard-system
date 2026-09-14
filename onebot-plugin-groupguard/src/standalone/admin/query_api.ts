@@ -5,6 +5,7 @@ import { applyPatch } from './object_patch';
 import type { SnowLumaAdminServerOptions } from './types';
 
 const MAX_BODY_PREVIEW = 12000;
+const MAX_RESPONSE_BODY_BYTES = 256 * 1024;
 
 type QueryType = 'lol_ban' | 'lol_battle' | 'lol_hidden' | 'lol_shard' | 'lol_aram_augments' | 'scammer' | 'peer' | 'ele_build' | 'custom';
 const QUERY_TYPE_SET = new Set<QueryType>([
@@ -253,10 +254,8 @@ function addQueryParam(urlText: string, key: string, value: string): string {
 
 function buildTestUrl(type: QueryType, param: string, payload: any): string {
   const config = getConfigAny();
-  const rawCustomUrl = String(payload?.url || '').trim();
   if (type === 'custom') {
-    if (!rawCustomUrl) throw new Error('custom 测试必须填写 URL');
-    return replaceTemplate(rawCustomUrl, param, payload || {});
+    throw new Error('WebUI 查询测试器已禁止任意 URL；请先在查询配置中保存数据源后再测试');
   }
   if (type === 'lol_ban') {
     let url = '';
@@ -300,8 +299,8 @@ function buildTestUrl(type: QueryType, param: string, payload: any): string {
   }
   if (type === 'scammer') {
     const urls = Array.isArray(config.scammerQueryUrls) ? config.scammerQueryUrls : [];
-    let url = replaceTemplate(String(payload?.url || urls[0] || ''), param);
-    if (!url) throw new Error('未配置 scammerQueryUrls，也未填写测试 URL');
+    let url = replaceTemplate(String(urls[0] || ''), param);
+    if (!url) throw new Error('未配置 scammerQueryUrls');
     if (!/[?&](qq|uin|account|keyword)=/.test(url) && !url.includes('{') && !url.includes('$')) url = addQueryParam(url, 'qq', param);
     return url;
   }
@@ -309,10 +308,50 @@ function buildTestUrl(type: QueryType, param: string, payload: any): string {
     throw new Error('同行查询走本地数据库，不使用外部 URL');
   }
   if (type === 'ele_build') {
-    const base = String(payload?.url || config.eleBuildApiBaseUrl || 'http://www.ele00001.cc.cd/api').replace(/\/+$/, '');
+    const base = String(config.eleBuildApiBaseUrl || 'http://www.ele00001.cc.cd/api').replace(/\/+$/, '');
     return `${base}/build/active/${encodeURIComponent(param)}`;
   }
   throw new Error(`未知查询类型: ${type}`);
+}
+
+function assertSafeTestUrl(url: string): void {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('查询测试器仅允许 http/https 数据源');
+  }
+}
+
+function assertNoCustomHeaders(payload: any): void {
+  if (payload?.headers === undefined || payload?.headers === null) return;
+  if (typeof payload.headers === 'object' && !Array.isArray(payload.headers) && Object.keys(payload.headers).length === 0) return;
+  throw new Error('WebUI 查询测试器已禁止自定义请求头；请在受控的数据源配置中完成鉴权');
+}
+
+async function readResponseBodyLimited(response: Response, maxBytes = MAX_RESPONSE_BODY_BYTES): Promise<string> {
+  const declared = Number(response.headers.get('content-length') || '');
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { await response.body?.cancel(); } catch {}
+    throw new Error(`upstream_body_too_large_${Math.trunc(declared)}`);
+  }
+  if (!response.body) return '';
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let body = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      try { await reader.cancel(); } catch {}
+      throw new Error(`upstream_body_too_large_${total}`);
+    }
+    body += decoder.decode(value, { stream: true });
+  }
+  body += decoder.decode();
+  return body;
 }
 
 function normalizeShardPreferred(value: unknown): 'auto' | 'text' | 'image' | 'forward' {
@@ -412,24 +451,32 @@ export async function testQueryEndpoint(payload: any) {
   const type = rawType as QueryType;
   const param = String(payload?.param || '').trim();
   if (!param) throw new Error('测试参数不能为空');
+  if (type === 'custom') throw new Error('WebUI 查询测试器已禁止任意 URL；请先在查询配置中保存数据源后再测试');
   if (type === 'lol_ban' && !/^\d{5,11}$/.test(param)) throw new Error('查封号测试参数必须是 5-11 位 QQ 号');
   if (type === 'peer') return testPeerLocalQuery(param);
   if (type === 'lol_shard') return testShardDeliveryQuery(param, payload);
+
+  assertNoCustomHeaders(payload);
   const url = buildTestUrl(type, param, payload);
+  assertSafeTestUrl(url);
   const timeoutMs = Math.max(3000, Math.min(Number(payload?.timeoutMs || (getGlobalAny().lolQueryRequestTimeoutSeconds || 20) * 1000), 120000));
   const startedAt = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const headers: Record<string, string> = { accept: 'application/json,text/plain,*/*' };
-    if (payload?.headers && typeof payload.headers === 'object' && !Array.isArray(payload.headers)) {
-      for (const [k, v] of Object.entries(payload.headers)) if (k) headers[k] = String(v);
-    }
-    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal } as any);
-    const body = await response.text();
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+      redirect: 'manual'
+    } as any);
+    const body = await readResponseBodyLimited(response);
     let parsed: any = null;
     try { parsed = JSON.parse(body); } catch {}
-    const preview = body.length > MAX_BODY_PREVIEW ? `${body.slice(0, MAX_BODY_PREVIEW)}\n...<truncated ${body.length - MAX_BODY_PREVIEW} chars>` : body;
+    const preview = body.length > MAX_BODY_PREVIEW
+      ? `${body.slice(0, MAX_BODY_PREVIEW)}\n...<truncated ${body.length - MAX_BODY_PREVIEW} chars>`
+      : body;
     const parsedPreview = summarizeParsedResult(type, parsed, body);
     const finalReplyPreview = response.ok
       ? buildFinalReplyPreview(type, param, parsedPreview, parsed, body)
