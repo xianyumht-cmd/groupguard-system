@@ -26,10 +26,25 @@ function isLicenseRecord(license: GroupLicense | undefined): license is GroupLic
   return Number.isFinite(expireTime) && expireTime >= 0 && ['free', 'pro', 'enterprise'].includes(level);
 }
 
-function daysToExpireTime(days: any): number {
+function daysToExpireTime(days: any, now: number): number {
   const value = Number(days);
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error('授权天数必须是正整数，0 仅用于明确的永久授权');
-  return Date.now() + value * 24 * 60 * 60 * 1000;
+  return now + value * 24 * 60 * 60 * 1000;
+}
+
+export function resolveLicenseExpireTime(payload: any, now = Date.now()): number {
+  const permanent = payload?.permanent === true;
+  if (permanent) {
+    const submittedDays = Number(payload?.days ?? 0);
+    if (!Number.isFinite(submittedDays) || submittedDays !== 0) {
+      throw new Error('永久授权必须明确填写 0 天');
+    }
+    return 0;
+  }
+  if (payload?.days !== undefined && payload?.days !== null && payload?.days !== '') {
+    return daysToExpireTime(payload.days, now);
+  }
+  return normalizeExpireTime(payload?.expireTime);
 }
 
 function formatLicense(groupId: string, license: GroupLicense | undefined) {
@@ -82,23 +97,9 @@ export function saveLicense(options: SnowLumaAdminServerOptions, groupId: string
   const config = configStateService.getConfig();
   if (!config.licenses) config.licenses = {};
 
-  const permanent = payload?.permanent === true;
-  let expireTime: number;
-  if (permanent) {
-    const submittedDays = Number(payload?.days ?? 0);
-    if (!Number.isFinite(submittedDays) || submittedDays !== 0) {
-      throw new Error('永久授权必须明确填写 0 天');
-    }
-    expireTime = 0;
-  } else if (payload?.days !== undefined && payload?.days !== null && payload?.days !== '') {
-    expireTime = daysToExpireTime(payload.days);
-  } else {
-    expireTime = normalizeExpireTime(payload?.expireTime);
-  }
-
   config.licenses[id] = {
     level: normalizeLevel(payload?.level),
-    expireTime
+    expireTime: resolveLicenseExpireTime(payload)
   };
   configStateService.setConfig(config);
   saveConfigStrict(options.ctx);
