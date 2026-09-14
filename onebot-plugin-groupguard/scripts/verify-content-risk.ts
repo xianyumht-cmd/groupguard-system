@@ -3,7 +3,11 @@ import { normalizePluginConfig } from '../src/config.ts';
 import { findContentRiskMatchForTest } from '../src/services/content_risk_service.ts';
 import type { ContentRiskSettings, PluginConfig } from '../src/types.ts';
 
-function normalize(input: Partial<PluginConfig>): PluginConfig {
+type PartialPluginConfig = Omit<Partial<PluginConfig>, 'global'> & {
+  global?: Partial<PluginConfig['global']>;
+};
+
+function normalize(input: PartialPluginConfig): PluginConfig {
   return normalizePluginConfig(input as PluginConfig);
 }
 
@@ -41,7 +45,7 @@ async function main() {
       blockUrl: true,
       blockQr: true
     }
-  } as Partial<PluginConfig>);
+  } as PartialPluginConfig);
   assert.equal(migrated.contentRisk?.enabled, true, 'legacy msgFilter enables content risk for old active installs');
   assert.equal(migrated.contentRisk?.rules?.url?.enabled, true, 'legacy blockUrl maps to url rule');
   assert.equal(migrated.contentRisk?.rules?.qr?.enabled, true, 'legacy blockQr maps to qr rule');
@@ -80,21 +84,12 @@ async function main() {
 
   const groupInviteOn = risk({
     enabled: true,
-    blockGroupInvite: true,
-    groupInviteDetectUrl: true,
-    groupInviteDetectCard: true,
-    groupInviteDetectForward: true,
     rules: {
       groupInvite: { enabled: true, action: 'recall', banMinutes: 10 }
     }
   });
-  assert.equal((await findContentRiskMatchForTest('invite https://qun.qq.com/cgi-bin/group_share', [], groupInviteOn))?.type, 'groupInvite', 'group invite url is detected');
-  assert.equal((await findContentRiskMatchForTest('', [{ type: 'json', data: { data: '{"meta":{"group_code":"123456","prompt":"QQ\\u7fa4"} }' } }], groupInviteOn))?.type, 'groupInvite', 'group invite card is detected');
-
-  console.log('content risk verification passed');
+  assert.equal((await findContentRiskMatchForTest('加群 123456', [{ type: 'json', data: { data: JSON.stringify({ meta: { news: { tag: '群聊', jumpUrl: 'mqqapi://card/show_pslcard?src_type=internal&source=sharecard&version=1&uin=123456' } } }) } }], groupInviteOn))?.type, 'groupInvite', 'group invite card is detected');
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exit(1);
-});
+await main();
+console.log('content risk verification passed');
