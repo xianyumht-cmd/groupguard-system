@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { normalizePluginConfig } from '../src/config';
 import { selectGroupsForPersistence } from '../src/config_persistence_guard';
+import { checkFeatureGate } from '../src/core/feature_gate';
+import { configStateService } from '../src/core/state-services/config_state_service';
 import { authDomainService } from '../src/domain/auth/auth_domain_service';
 import { normalizeGroupFileMirrorConfig } from '../src/services/group_file_mirror_service';
 import { isIntranetHostname } from '../src/services/groupguard_query_delivery_client';
@@ -84,6 +86,48 @@ assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: -1 }, fix
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: 1.5 }, fixedNow));
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: 'abc' }, fixedNow));
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, expireTime: 0 }, fixedNow));
+
+const gateGroupId = '987654321';
+const gateConfig = configStateService.getConfig();
+if (!gateConfig.licenses) gateConfig.licenses = {};
+const previousGateLicense = gateConfig.licenses[gateGroupId];
+const gateInput = {
+  featureType: 'moderation' as const,
+  featureKey: 'builtin.moderation',
+  groupId: gateGroupId,
+  userId: '123456789',
+  messageType: 'group' as const,
+  source: 'builtin' as const,
+  scope: 'group' as const,
+  requiresLicense: true,
+  permission: 'all' as const,
+  botSend: false,
+};
+try {
+  gateConfig.licenses[gateGroupId] = { level: 'free', expireTime: 0 };
+  configStateService.setConfig(gateConfig);
+  const freeGate = await checkFeatureGate(gateInput);
+  assert.equal(freeGate.allowed, false, 'free license must not unlock paid group features');
+  assert.equal(freeGate.reason, 'license_level_insufficient');
+
+  gateConfig.licenses[gateGroupId] = { level: 'pro', expireTime: 0 };
+  configStateService.setConfig(gateConfig);
+  const proGate = await checkFeatureGate(gateInput);
+  assert.equal(proGate.allowed, true, 'pro license must keep existing paid feature access');
+
+  const proEnterpriseGate = await checkFeatureGate({ ...gateInput, minimumLicenseLevel: 'enterprise' });
+  assert.equal(proEnterpriseGate.allowed, false, 'pro license must not pass an explicitly enterprise-only gate');
+  assert.equal(proEnterpriseGate.reason, 'license_level_insufficient');
+
+  gateConfig.licenses[gateGroupId] = { level: 'enterprise', expireTime: 0 };
+  configStateService.setConfig(gateConfig);
+  const enterpriseGate = await checkFeatureGate({ ...gateInput, minimumLicenseLevel: 'enterprise' });
+  assert.equal(enterpriseGate.allowed, true, 'enterprise license must pass an enterprise-only gate');
+} finally {
+  if (previousGateLicense) gateConfig.licenses[gateGroupId] = previousGateLicense;
+  else delete gateConfig.licenses[gateGroupId];
+  configStateService.setConfig(gateConfig);
+}
 
 const tempResourceFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-sub-resource-'));
 try {
