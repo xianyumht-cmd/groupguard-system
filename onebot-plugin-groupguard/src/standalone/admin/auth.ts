@@ -10,10 +10,6 @@ export type ParsedAuthCredential = {
   source: AuthCredentialSource;
 };
 
-export type RequireAuthOptions = {
-  allowLegacyCookieMigration?: boolean;
-};
-
 const ADMIN_SESSION_VERSION = 'v1';
 export const ADMIN_SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 export const LEGACY_COOKIE_MIGRATION_WINDOW_MS = 15 * 60 * 1000;
@@ -91,9 +87,43 @@ export function isAdminSessionTokenValid(provided: string, expectedToken: string
   return isTokenMatch(signature, signAdminSessionPayload(payload, expectedToken));
 }
 
-export function buildAdminSessionCookie(expectedToken: string, now = Date.now()): string {
-  const sessionToken = createAdminSessionToken(expectedToken, now);
+function serializeAdminSessionCookie(sessionToken: string): string {
   return `GG_ADMIN_SESSION=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ADMIN_SESSION_MAX_AGE_SECONDS}`;
+}
+
+export function buildAdminSessionCookie(expectedToken: string, now = Date.now()): string {
+  return serializeAdminSessionCookie(createAdminSessionToken(expectedToken, now));
+}
+
+function replaceAdminSessionCookieHeader(req: IncomingMessage, sessionToken: string): void {
+  const replacement = `GG_ADMIN_SESSION=${encodeURIComponent(sessionToken)}`;
+  const parts = getHeaderValue(req.headers.cookie)
+    .split(';')
+    .map(part => part.trim())
+    .filter(Boolean);
+  let replaced = false;
+  const next = parts.map((part) => {
+    if (!replaced && part.startsWith('GG_ADMIN_SESSION=')) {
+      replaced = true;
+      return replacement;
+    }
+    return part;
+  });
+  if (!replaced) next.push(replacement);
+  req.headers.cookie = next.join('; ');
+}
+
+export function migrateLegacyAdminSessionCookie(
+  req: IncomingMessage,
+  res: ServerResponse,
+  expectedToken: string,
+): boolean {
+  const credential = parseAuthCredential(req);
+  if (credential.source !== 'cookie' || !isTokenMatch(credential.token, expectedToken)) return false;
+  const sessionToken = createAdminSessionToken(expectedToken);
+  replaceAdminSessionCookieHeader(req, sessionToken);
+  res.setHeader('set-cookie', serializeAdminSessionCookie(sessionToken));
+  return true;
 }
 
 function isStateChangingMethod(method: string | undefined): boolean {
@@ -122,20 +152,11 @@ export function requireAuth(
   res: ServerResponse,
   _url: URL,
   expectedToken: string,
-  options: RequireAuthOptions = {},
 ): boolean {
   const credential = parseAuthCredential(req);
-  let authenticated = false;
-
-  if (credential.source === 'cookie') {
-    authenticated = isAdminSessionTokenValid(credential.token, expectedToken);
-    if (!authenticated && options.allowLegacyCookieMigration === true && isTokenMatch(credential.token, expectedToken)) {
-      authenticated = true;
-      res.setHeader('set-cookie', buildAdminSessionCookie(expectedToken));
-    }
-  } else {
-    authenticated = isTokenMatch(credential.token, expectedToken);
-  }
+  const authenticated = credential.source === 'cookie'
+    ? isAdminSessionTokenValid(credential.token, expectedToken)
+    : isTokenMatch(credential.token, expectedToken);
 
   if (!authenticated) {
     sendJson(res, 401, { ok: false, error: 'unauthorized: missing or invalid token' });
