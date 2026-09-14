@@ -29,7 +29,7 @@ export async function handlePluginEvent(ctx: GroupGuardRuntimeContext, event: un
   };
 
   const groupId = String(e.group_id);
-  const license = authManager.getGroupLicense(groupId);
+  const license = authManager.getPaidGroupLicense(groupId);
   if (!license && groupId !== 'undefined') return;
   const splitRole = isQueryOnlyBotRole() || isQaOnlyBotRole();
 

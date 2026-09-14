@@ -1,3 +1,4 @@
+import type { PaidAuthLevel } from '../auth';
 import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
 import type { OneBotMessageEvent } from '../protocol/onebot11/types';
 import type { FeaturePermission, FeatureScope, FeatureType } from '../types';
@@ -67,6 +68,7 @@ export interface DynamicCommandDefinition {
   allowedGroups?: string[];
   blockedGroups?: string[];
   requiresLicense?: boolean;
+  minimumLicenseLevel?: PaidAuthLevel;
   permission?: FeaturePermission;
   trigger: DynamicCommandTriggerDefinition;
   parameters?: Record<string, string>;

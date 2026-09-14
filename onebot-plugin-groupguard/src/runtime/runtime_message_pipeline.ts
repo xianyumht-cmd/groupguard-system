@@ -32,7 +32,7 @@ export async function handlePluginMessage(ctx: GroupGuardRuntimeContext, event: 
 
   if (event.message_type === 'group') {
     const groupId = String(event.group_id);
-    const license = authManager.getGroupLicense(groupId);
+    const license = authManager.getPaidGroupLicense(groupId);
     if (!license) {
       return;
     }

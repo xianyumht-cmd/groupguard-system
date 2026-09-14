@@ -1,9 +1,11 @@
-import { authManager } from '../auth';
+import { authManager, type PaidAuthLevel } from '../auth';
 import { getGroupGuardBotRole, shouldBlockByBotRole } from './bot_role';
 import { authStateService } from './state-services/auth_state_service';
 import { communicationStateService } from './state-services/communication_state_service';
 import { configStateService } from './state-services/config_state_service';
 import type { FeaturePermission, FeatureScope, FeatureType, GroupGuardSettings, SilentMode } from '../types';
+
+export type MinimumLicenseLevel = PaidAuthLevel;
 
 export interface FeatureGateInput {
   featureType: FeatureType;
@@ -16,6 +18,7 @@ export interface FeatureGateInput {
   allowedGroups?: string[];
   blockedGroups?: string[];
   requiresLicense?: boolean;
+  minimumLicenseLevel?: MinimumLicenseLevel;
   permission?: FeaturePermission;
   passiveReply?: boolean;
   botSend?: boolean;
@@ -192,8 +195,13 @@ export async function checkFeatureGate(input: FeatureGateInput): Promise<Feature
     const allowed = (input.allowedGroups || []).map(String);
     if (blocked.includes(groupId)) return { allowed: false, reason: 'group_blocked' };
     if (allowed.length && !allowed.includes(groupId)) return { allowed: false, reason: 'group_not_allowed' };
-    if (input.requiresLicense !== false && !authManager.getGroupLicense(groupId)) {
-      return { allowed: false, reason: 'group_unlicensed' };
+    if (input.requiresLicense !== false) {
+      const license = authManager.getGroupLicense(groupId);
+      if (!license) return { allowed: false, reason: 'group_unlicensed' };
+      const minimumLevel: MinimumLicenseLevel = input.minimumLicenseLevel === 'enterprise' ? 'enterprise' : 'pro';
+      if (!authManager.getPaidGroupLicense(groupId, minimumLevel)) {
+        return { allowed: false, reason: 'license_level_insufficient' };
+      }
     }
   }
 
