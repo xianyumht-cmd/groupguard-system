@@ -43,7 +43,7 @@
     "verify:config-inheritance": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-config-inheritance.ts",
     "verify:content-risk": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-content-risk.ts",
     "verify:group-file-mirror": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-group-file-mirror.ts",
-    "verify:target-file-push": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-target-file-push.ts",
+    "verify:target-file-push": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-target-file-push.ts && node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-target-file-dns-pinning.ts",
     "verify:target-file-retention-snowluma": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-target-file-retention-snowluma.ts",
     "verify:action-queue": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/action_queue_regression_test.ts",
     "verify:core-stability": "node --experimental-strip-types --import ./scripts/register-ts-loader.mjs scripts/verify-core-stability.ts",
