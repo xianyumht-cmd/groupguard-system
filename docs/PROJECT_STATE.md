@@ -1,6 +1,19 @@
 # GroupGuard Project State
 
-Updated: 2026-09-11
+Updated: 2026-09-14
+
+## Authorization security release ready for WebUI self-update — 2026-09-14
+
+- PR #64 (`fix: harden authorization before WebUI self-update`) is merged into `main` at `9318d86415cbb726b022511d11d6a598b4237216`.
+- The unsafe legacy group activation path no longer treats `PRO-30-*` or `PRO-PERM-*` prefixes as valid paid activation codes. Group activation is fail-closed until a verifiable activation mechanism exists; authorization/renewal remains available through the robot-owner flow and authenticated WebUI.
+- Owner-granted durations now accept only a positive integer number of days or `永久`. WebUI license writes reject malformed/negative/non-integer durations rather than converting invalid input into a permanent authorization. Stored `expireTime=0` is rendered consistently as permanent.
+- The hourly `AuthManager` sweep consumes its timer Promise rejection locally and isolates each group-notification send failure, so one OneBot send rejection does not abort the remaining license sweep or reach the worker-level fatal `unhandledRejection` handler.
+- Authorization security behavior is covered by the existing `verify:project-wide-bugfixes` gate inside normal `npm test`.
+- PR validation passed `GroupGuard CI`, `GroupGuard Build`, and `WebUI Browser Acceptance`.
+- The accepted `main` push `GroupGuard Build` run `34851006479` completed successfully and produced `groupguard-self-update-9318d86415cbb726b022511d11d6a598b4237216` (artifact id `10351326649`, digest `sha256:2e1cd58e743e8dec80d8772123d02dcb3a2c75522f13f38cf36f25ace6506bf3`, retained through 2026-10-14).
+- The same `main` commit passed `GroupGuard CI` run `34851006474`, including `npm test`, production dependency audit, deployment safety checks, SnowLuma build, and cross-repository mock contracts.
+- Automated plugin metadata then advanced `main` to `25ab5e0a33d8eb9d4eb84bb9b9843df674b126f8` with `chore: auto-update plugin.json [skip ci]`. This does not invalidate the updater candidate: the WebUI updater selects successful `main` `GroupGuard Build` runs with an exact matching `groupguard-self-update-<run-head-sha>` artifact, so `9318d864...` remains the newest verified self-update candidate for this release.
+- No ARM runtime was changed or restarted by this repository task. The operator may use the already accepted WebUI **系统更新 → 检查更新 → 一键更新** flow on a self-update-capable runtime whose private-repository update token is configured.
 
 ## Accepted per-group controls + WebUI self-update — 2026-09-11
 
@@ -101,12 +114,15 @@ Never create a guessed application directory merely to make deployment proceed. 
 
 ## Next engineering priorities
 
-The battle output-precedence defect is closed at code level and has passed 121 production acceptance. The per-group self-recall, selected-group LOL patch notification routing, and WebUI self-update work are also closed at code level, with one live ARM Docker self-update acceptance recorded above.
+The battle output-precedence defect is closed at code level and has passed 121 production acceptance. The per-group self-recall, selected-group LOL patch notification routing, and WebUI self-update work are also closed at code level, with one live ARM Docker self-update acceptance recorded above. The 2026-09-14 authorization security release is merged and has a verified `main` self-update artifact; production remains unchanged until an operator applies it.
 
 Remaining independent findings are separate tasks, especially:
 
+- authenticated query-console SSRF hardening and response-byte limits;
+- explicit WebUI Origin/CSRF defense for cookie-authenticated mutation routes;
+- target-file DNS rebinding/connection pinning hardening;
 - intermittent OneBot `send_group_msg` rejection with result `120`;
 - dynamic-command validation failures for legacy/identifier mappings;
 - historical per-group configuration snapshots that may need controlled compaction rather than blind overwrite.
 
-Do not conflate those items with the now-fixed battle image-preference or self-update issues.
+Do not conflate those items with the now-fixed battle image-preference, self-update implementation, or authorization activation bypass.
