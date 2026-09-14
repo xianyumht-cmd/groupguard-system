@@ -14,8 +14,8 @@ function normalizeLevel(level: any): GroupLicense['level'] {
 }
 
 function normalizeExpireTime(input: any): number {
-  const value = Number(input || 0);
-  if (!Number.isFinite(value) || value < 0) return 0;
+  const value = Number(input);
+  if (!Number.isFinite(value) || value <= 0) throw new Error('授权到期时间格式不正确');
   return Math.floor(value);
 }
 
@@ -27,9 +27,9 @@ function isLicenseRecord(license: GroupLicense | undefined): license is GroupLic
 }
 
 function daysToExpireTime(days: any): number {
-  const value = Number(days || 0);
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  return Date.now() + Math.floor(value * 24 * 60 * 60 * 1000);
+  const value = Number(days);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error('授权天数必须是正整数，0 仅用于明确的永久授权');
+  return Date.now() + value * 24 * 60 * 60 * 1000;
 }
 
 function formatLicense(groupId: string, license: GroupLicense | undefined) {
@@ -48,12 +48,12 @@ function formatLicense(groupId: string, license: GroupLicense | undefined) {
     };
   }
 
-  const expireTime = normalizeExpireTime(license?.expireTime || 0);
+  const expireTime = license.expireTime;
   const now = Date.now();
   const expired = expireTime > 0 && expireTime <= now;
   return {
     groupId,
-    level: normalizeLevel(license?.level),
+    level: normalizeLevel(license.level),
     expireTime,
     permanent: expireTime === 0,
     expired,
@@ -81,7 +81,21 @@ export function saveLicense(options: SnowLumaAdminServerOptions, groupId: string
   const id = cleanGroupId(groupId);
   const config = configStateService.getConfig();
   if (!config.licenses) config.licenses = {};
-  const expireTime = payload?.permanent ? 0 : (payload?.days ? daysToExpireTime(payload.days) : normalizeExpireTime(payload?.expireTime));
+
+  const permanent = payload?.permanent === true;
+  let expireTime: number;
+  if (permanent) {
+    const submittedDays = Number(payload?.days ?? 0);
+    if (!Number.isFinite(submittedDays) || submittedDays !== 0) {
+      throw new Error('永久授权必须明确填写 0 天');
+    }
+    expireTime = 0;
+  } else if (payload?.days !== undefined && payload?.days !== null && payload?.days !== '') {
+    expireTime = daysToExpireTime(payload.days);
+  } else {
+    expireTime = normalizeExpireTime(payload?.expireTime);
+  }
+
   config.licenses[id] = {
     level: normalizeLevel(payload?.level),
     expireTime
