@@ -34,11 +34,10 @@ import { shouldBlockByBotRole } from '../core/bot_role';
 import { loggingStateService } from '../core/state-services/logging_state_service';
 import { registerCommandPluginBatch } from './command_plugin_store';
 import type { CommandPlugin } from './command_runtime_plugin';
+import { toFeaturePermission, type LegacyPermission } from './legacy_permission';
 import { captureCommandResponseDeliveries } from './response_capture_runtime';
-import type { FeaturePermission } from '../types';
 
 type LegacyHandler = (event: OneBotMessageEvent, ctx: GroupGuardRuntimeContext) => Promise<boolean>;
-type LegacyPermission = FeaturePermission | 'owner/admin';
 
 interface LegacyModuleDescriptor {
   domain: 'auth' | 'moderation' | 'interaction' | 'risk' | 'qa' | 'system';
@@ -58,11 +57,6 @@ function toFeatureType(domain: LegacyModuleDescriptor['domain']) {
   if (domain === 'moderation') return 'moderation';
   if (domain === 'risk') return 'risk';
   return 'system';
-}
-
-function toFeaturePermission(permission: LegacyPermission): FeaturePermission {
-  if (permission === 'owner/admin') return 'admin';
-  return permission;
 }
 
 const LEGACY_MODULES: LegacyModuleDescriptor[] = [
