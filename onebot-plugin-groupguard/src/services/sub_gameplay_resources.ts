@@ -89,11 +89,23 @@ export function getSubGameplayResourceManifest(): SubGameplayResourceManifest | 
   return cachedManifest;
 }
 
-export function getSubGameplayResourcePath(relativePath: string): string | null {
+export function resolveContainedSubGameplayResourcePath(root: string, relativePath: string): string | null {
   const normalized = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!normalized || normalized.includes('..')) return null;
-  const fullPath = path.join(resolveResourceRoot(), normalized);
-  return fs.existsSync(fullPath) ? fullPath : null;
+  if (!normalized || normalized.includes('\0') || normalized.includes('..')) return null;
+  try {
+    const realRoot = fs.realpathSync(root);
+    const realPath = fs.realpathSync(path.join(root, normalized));
+    const relative = path.relative(realRoot, realPath);
+    if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    if (!fs.statSync(realPath).isFile()) return null;
+    return realPath;
+  } catch {
+    return null;
+  }
+}
+
+export function getSubGameplayResourcePath(relativePath: string): string | null {
+  return resolveContainedSubGameplayResourcePath(resolveResourceRoot(), relativePath);
 }
 
 export function findSubGameplayResource(identifier: string): SubGameplayResourceManifestEntry | null {
