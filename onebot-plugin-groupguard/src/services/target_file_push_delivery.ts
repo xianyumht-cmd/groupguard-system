@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
-import dns from 'node:dns/promises';
 import fs from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
+import { fetch as undiciFetch, type Dispatcher } from 'undici';
 import type { HostGroupFileEntry, HostProfile } from '../hosts/host_profile';
+import { prepareTargetFileDownloadHop } from './target_file_push_download_security';
 
 export function safeTargetFileName(value: unknown): string {
   let name = path.basename(String(value ?? '').trim().replace(/\\/g, '/'));
@@ -15,6 +15,15 @@ export function safeTargetFileName(value: unknown): string {
     name = `${base}${ext}`;
   }
   return name;
+}
+
+async function closeDownloadDispatcher(dispatcher: Dispatcher | null): Promise<void> {
+  if (!dispatcher) return;
+  try {
+    await dispatcher.close();
+  } catch {
+    try { await dispatcher.destroy(); } catch { /* noop */ }
+  }
 }
 
 export async function downloadTargetFile(options: {
@@ -33,19 +42,26 @@ export async function downloadTargetFile(options: {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10 * 60 * 1000);
   let handle: fs.promises.FileHandle | null = null;
+  let activeDispatcher: Dispatcher | null = null;
+  let response: Awaited<ReturnType<typeof undiciFetch>> | null = null;
   try {
     let currentUrl = new URL(options.directUrl);
-    let response: Response | null = null;
     for (let redirects = 0; redirects <= 5; redirects += 1) {
-      await assertSafeDownloadUrl(currentUrl);
-      response = await fetch(currentUrl, {
+      const hop = await prepareTargetFileDownloadHop(currentUrl);
+      activeDispatcher = hop.dispatcher;
+      response = await undiciFetch(currentUrl, {
         method: 'GET', redirect: 'manual', signal: controller.signal,
         headers: { 'user-agent': 'GroupGuard-TargetFilePush/1.0', accept: '*/*' },
+        ...(activeDispatcher ? { dispatcher: activeDispatcher } : {}),
       });
       if (![301, 302, 303, 307, 308].includes(response.status)) break;
       const location = response.headers.get('location');
       if (!location) throw new Error('文件下载重定向缺少 Location');
       if (redirects === 5) throw new Error('文件下载重定向次数过多');
+      try { await response.body?.cancel(); } catch { /* noop */ }
+      response = null;
+      await closeDownloadDispatcher(activeDispatcher);
+      activeDispatcher = null;
       currentUrl = new URL(location, currentUrl);
     }
     if (!response) throw new Error('文件下载没有响应');
@@ -79,48 +95,10 @@ export async function downloadTargetFile(options: {
     return finalPath;
   } finally {
     clearTimeout(timer);
+    try { await response?.body?.cancel(); } catch { /* noop */ }
+    await closeDownloadDispatcher(activeDispatcher);
     try { await handle?.close(); } catch { /* noop */ }
     try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch { /* noop */ }
-  }
-}
-
-function isPrivateAddress(address: string): boolean {
-  if (net.isIPv4(address)) {
-    const [a, b] = address.split('.').map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254)
-      || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
-      || (a === 100 && b >= 64 && b <= 127) || a >= 224;
-  }
-  if (net.isIPv6(address)) {
-    const value = address.toLowerCase().split('%')[0];
-    if (value.startsWith('::ffff:')) {
-      const mapped = value.slice('::ffff:'.length);
-      if (net.isIPv4(mapped)) return isPrivateAddress(mapped);
-      const parts = mapped.split(':');
-      if (parts.length === 2 && parts.every(part => /^[0-9a-f]{1,4}$/.test(part))) {
-        const high = Number.parseInt(parts[0], 16);
-        const low = Number.parseInt(parts[1], 16);
-        return isPrivateAddress(`${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`);
-      }
-    }
-    return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd')
-      || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb')
-      || value.startsWith('ff');
-  }
-  return true;
-}
-
-async function assertSafeDownloadUrl(url: URL): Promise<void> {
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('target_file_push_invalid_download_protocol');
-  if (url.username || url.password) throw new Error('target_file_push_download_credentials_forbidden');
-  if (process.env.TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS === '1') return;
-  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
-    throw new Error('target_file_push_private_download_forbidden');
-  }
-  const addresses = net.isIP(hostname) ? [{ address: hostname }] : await dns.lookup(hostname, { all: true, verbatim: true });
-  if (!addresses.length || addresses.some(item => isPrivateAddress(item.address))) {
-    throw new Error('target_file_push_private_download_forbidden');
   }
 }
 
