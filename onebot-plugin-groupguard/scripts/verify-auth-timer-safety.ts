@@ -42,9 +42,10 @@ try {
 
   manager.init();
   assert.equal(scheduledDelay, 3_600_000, 'auth check interval must remain hourly');
-  assert.ok(scheduledCallback, 'auth init must schedule a license check callback');
+  const callback = scheduledCallback as (() => void) | null;
+  assert.ok(callback, 'auth init must schedule a license check callback');
 
-  scheduledCallback();
+  callback();
   await new Promise<void>((resolve) => setImmediate(resolve));
   await new Promise<void>((resolve) => setImmediate(resolve));
 

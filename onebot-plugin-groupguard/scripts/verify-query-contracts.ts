@@ -5,6 +5,22 @@ import { getQueryOverview, testQueryEndpoint } from '../src/standalone/admin/que
 import { deliverOneBotImageToGroup, fetchOneBotImageFile } from '../src/services/lol_image_delivery.ts';
 import { getBuildInfo } from '../src/build_info.ts';
 
+type QueryTestResult = Awaited<ReturnType<typeof testQueryEndpoint>>;
+
+function assertErrorResult(result: QueryTestResult, message: string): asserts result is QueryTestResult & { error: string } {
+  assert.ok('error' in result && typeof result.error === 'string', message);
+}
+
+function assertHttpResult(result: QueryTestResult, message: string): asserts result is QueryTestResult & {
+  error: string;
+  response: { ok: boolean; status: number };
+  finalReplyPreview: string;
+} {
+  assert.ok('error' in result && typeof result.error === 'string', `${message}: error`);
+  assert.ok('response' in result && result.response && typeof result.response === 'object' && 'status' in result.response, `${message}: response`);
+  assert.ok('finalReplyPreview' in result && typeof result.finalReplyPreview === 'string', `${message}: final reply`);
+}
+
 const originalConfig = configStateService.getConfig();
 const originalFetch = globalThis.fetch;
 
@@ -97,6 +113,7 @@ try {
   assert.equal(battleUrl.searchParams.get('output'), 'pretty');
   assert.equal(battleUrl.searchParams.has('qq'), false);
   assert.equal(success.ok, true);
+  assertHttpResult(success, 'battle success must include HTTP response');
   assert.equal(success.response.status, 200);
 
   let redirectFetchCount = 0;
@@ -115,6 +132,7 @@ try {
   });
   assert.equal(redirectFetchCount, 1, 'query tester must not follow redirect hops');
   assert.equal(redirectRejected.ok, false);
+  assertErrorResult(redirectRejected, 'redirect rejection must include an error');
   assert.equal(redirectRejected.error, 'upstream_http_302');
 
   let declaredBodyCancelled = false;
@@ -138,6 +156,7 @@ try {
     param: 'ZCG烧火棍丘丘人#73557'
   });
   assert.equal(declaredOversized.ok, false);
+  assertErrorResult(declaredOversized, 'declared oversized response must include an error');
   assert.match(declaredOversized.error, /^upstream_body_too_large_262145$/);
   assert.equal(declaredBodyCancelled, true, 'declared oversized query response must be cancelled before buffering');
 
@@ -159,6 +178,7 @@ try {
     param: 'ZCG烧火棍丘丘人#73557'
   });
   assert.equal(streamedOversized.ok, false);
+  assertErrorResult(streamedOversized, 'streamed oversized response must include an error');
   assert.match(streamedOversized.error, /^upstream_body_too_large_/);
   assert.equal(streamedBodyCancelled, true, 'streaming query response must be cancelled as soon as the byte limit is exceeded');
 
@@ -175,6 +195,7 @@ try {
     param: 'ZCG烧火棍丘丘人#73557'
   });
   assert.equal(rejected.ok, false);
+  assertHttpResult(rejected, 'HTTP rejection must include response details');
   assert.equal(rejected.error, 'upstream_http_422');
   assert.equal(rejected.response.ok, false);
   assert.equal(rejected.response.status, 422);
@@ -249,7 +270,9 @@ try {
       deliveredImageOptions = options;
     }
   });
-  assert.equal(deliveredImageOptions?.requireDelivery, true);
+  const capturedDeliveryOptions = deliveredImageOptions as Record<string, any> | null;
+  assert.ok(capturedDeliveryOptions, 'successful image delivery must capture send options');
+  assert.equal(capturedDeliveryOptions.requireDelivery, true);
   await assert.rejects(
     () => deliverOneBotImageToGroup('805402626', 'http://lol-api.test/image', {
       timeoutMs: 1000,

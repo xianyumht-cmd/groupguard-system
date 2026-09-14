@@ -103,14 +103,17 @@ const breakerHotspots = getCircuitBreakerHotspots().map((item) => ({
 })).filter((item) => item.activationCount > 0 || item.state !== 'closed');
 const breakerActivations = breakerHotspots.reduce((sum, item) => sum + (item.activationCount || 0), 0);
 const runtimeStatsNow = getDynamicCommandRuntimeStats();
+const failureReasonEntries = Object.entries(runtimeStatsNow.failureReasons as Record<string, number>)
+  .map(([reason, count]): [string, number] => [
+    reason,
+    count - ((beforeRuntimeStats.failureReasons as Record<string, number>)[reason] || 0)
+  ])
+  .filter(([, count]) => count > 0);
 const runtimeStats = {
   totalRetryAttempts: runtimeStatsNow.totalRetryAttempts - beforeRuntimeStats.totalRetryAttempts,
   totalRetryRecoveredSuccesses: runtimeStatsNow.totalRetryRecoveredSuccesses - beforeRuntimeStats.totalRetryRecoveredSuccesses,
   totalCacheHits: runtimeStatsNow.totalCacheHits - beforeRuntimeStats.totalCacheHits,
-  failureReasons: Object.fromEntries(Object.entries(runtimeStatsNow.failureReasons).map(([reason, count]) => [
-    reason,
-    count - ((beforeRuntimeStats.failureReasons as Record<string, number>)[reason] || 0)
-  ]).filter(([, count]) => count > 0))
+  failureReasons: Object.fromEntries(failureReasonEntries)
 };
 const trueSuccessRate = totalCount > 0 ? totalSuccess / totalCount : 0;
 const effectiveSuccessRate = TOTAL_REQUESTS > 0 ? sentMessages.length / TOTAL_REQUESTS : 0;
