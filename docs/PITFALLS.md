@@ -1,5 +1,24 @@
 # GroupGuard Pitfalls
 
+## An activation-code format is not proof of authorization
+
+Observed: 2026-09-14
+
+### Failure pattern
+
+The legacy group activation flow treated any string beginning with `PRO-30-` as a valid 30-day license and any string beginning with `PRO-PERM-` as a permanent license. There was no signature verification, server-side lookup, one-time redemption record, nonce, group binding, or other authority behind the suffix. Because the active legacy adapter still registered the auth handler in the unified dispatcher, this was reachable production logic rather than dead compatibility code. An already licensed group administrator could therefore fabricate a permanent-looking code and bypass future renewal.
+
+A related failure mode existed in duration parsing: permissive numeric conversion could turn malformed values into unintended authorization state, and WebUI fallback behavior could interpret invalid/non-positive values as permanent authorization.
+
+### Prevention
+
+- Treat a recognizable prefix, regex match, or checksum only as input format validation; it is never an authorization decision.
+- Paid activation must fail closed unless backed by a verifiable authority such as a signed claim plus replay protection or a server/database record that supports one-time consumption, expiry, revocation, and intended-group binding.
+- Until that authority exists, keep group activation disabled and use the authenticated owner/WebUI authorization paths.
+- Parse license durations strictly. Accept only explicitly defined values; reject malformed, negative, fractional, unsafe-integer, or ambiguous input instead of falling back to the highest-privilege/permanent state.
+- Keep authorization/security behavior in the normal CI path with negative tests for forged prefixes and malformed durations.
+- A timer or maintenance sweep that sends notifications must consume Promise rejections locally and isolate each destination so one transport failure cannot abort the rest of the sweep or hit a process-wide fatal unhandled-rejection policy.
+
 ## Rendering an inherited value does not authorize persisting it as a group override
 
 Observed: 2026-09-10
