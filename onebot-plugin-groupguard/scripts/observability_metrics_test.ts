@@ -13,7 +13,7 @@ import { registerLegacyRuntimePlugins } from '../src/dynamic-commands/legacy_run
 import { resetRuntimeObservabilityStore } from '../src/dynamic-commands/runtime_observability_store';
 import { setCommandPluginRuntimeConfig, setCommandPluginEnabled } from '../src/dynamic-commands/command_plugin_store';
 
-function assert(condition: unknown, message: string): void {
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
