@@ -52,6 +52,12 @@ for (const item of manifest.fixtures as Array<{ path: string; sha256: string }>)
   loaded.set(item.path, fixture);
 }
 
+function requireFixture(name: string): Record<string, any> {
+  const fixture = loaded.get(name);
+  assert.ok(fixture, `fixture missing: ${name}`);
+  return fixture;
+}
+
 const textEnvelope = parseGroupGuardQueryDelivery(loaded.get('delivery-success-text.json'));
 assert.equal(textEnvelope.ok, true);
 assert.equal(textEnvelope.feature, 'lolban');
@@ -86,15 +92,15 @@ assert.equal(errorEnvelope.retry.after_seconds, 30);
 const errorPlan = toOneBotDeliveryPlan(errorEnvelope);
 assert.equal(errorPlan.kind, 'segments');
 
-const unknownProtocol = structuredClone(loaded.get('delivery-success-text.json'));
+const unknownProtocol = structuredClone(requireFixture('delivery-success-text.json'));
 unknownProtocol.protocol = 'groupguard-query-delivery.v2';
 assert.throws(() => parseGroupGuardQueryDelivery(unknownProtocol), /delivery_protocol_unsupported/);
 
-const unknownField = structuredClone(loaded.get('delivery-success-text.json'));
+const unknownField = structuredClone(requireFixture('delivery-success-text.json'));
 unknownField.public_fallback_url = 'https://example.com';
 assert.throws(() => parseGroupGuardQueryDelivery(unknownField), /delivery_envelope_fields_changed/);
 
-const tamperedImage = structuredClone(loaded.get('delivery-success-image.json'));
+const tamperedImage = structuredClone(requireFixture('delivery-success-image.json'));
 tamperedImage.delivery.segments[0].sha256 = '0'.repeat(64);
 assert.throws(() => parseGroupGuardQueryDelivery(tamperedImage), /image_segment_sha256_mismatch/);
 
