@@ -6,6 +6,12 @@ import path from 'node:path';
 import { normalizePluginConfig } from '../src/config.ts';
 import { configStateService } from '../src/core/state-services/config_state_service.ts';
 import { groupguardRepository } from '../src/repositories/groupguard_repository.ts';
+import {
+  ADMIN_SESSION_MAX_AGE_SECONDS,
+  createAdminSessionToken,
+  isAdminSessionTokenValid,
+  LEGACY_COOKIE_MIGRATION_WINDOW_MS,
+} from '../src/standalone/admin/auth.ts';
 import { startSnowLumaAdminServer } from '../src/standalone/admin/server.ts';
 
 async function findAvailablePort(): Promise<number> {
@@ -34,6 +40,12 @@ async function fetchWithStartupRetry(url: string, init?: RequestInit): Promise<R
     }
   }
   throw lastError;
+}
+
+function sessionValueFromSetCookie(setCookie: string): string {
+  const cookie = String(setCookie || '').split(';')[0];
+  assert.match(cookie, /^GG_ADMIN_SESSION=/);
+  return decodeURIComponent(cookie.slice('GG_ADMIN_SESSION='.length));
 }
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-admin-health-'));
@@ -80,7 +92,7 @@ try {
   };
   const token = 'admin-health-regression-token';
   const port = await findAvailablePort();
-  runtime = startSnowLumaAdminServer({
+  const serverOptions = {
     ctx: {} as any,
     workDir: tempDir,
     dataDir: tempDir,
@@ -93,9 +105,22 @@ try {
     token,
     getOneBotStatus: () => ({ ...connection }),
     logger: { info: () => undefined, warn: () => undefined, error: () => undefined }
-  });
+  };
+  runtime = startSnowLumaAdminServer(serverOptions);
   const baseUrl = `http://127.0.0.1:${port}`;
   const authorizedHeaders = { 'x-groupguard-token': token };
+
+  assert.equal(ADMIN_SESSION_MAX_AGE_SECONDS, 8 * 60 * 60);
+  assert.equal(LEGACY_COOKIE_MIGRATION_WINDOW_MS, 15 * 60 * 1000);
+
+  const fixedNow = 1_700_000_000_000;
+  const shortSession = createAdminSessionToken(token, fixedNow, 1);
+  assert.equal(isAdminSessionTokenValid(shortSession, token, fixedNow + 999), true);
+  assert.equal(isAdminSessionTokenValid(shortSession, token, fixedNow + 1000), false);
+  assert.equal(isAdminSessionTokenValid(shortSession, `${token}-rotated`, fixedNow + 999), false);
+  const tamperedSession = `${shortSession.slice(0, -1)}${shortSession.endsWith('A') ? 'B' : 'A'}`;
+  assert.equal(isAdminSessionTokenValid(tamperedSession, token, fixedNow), false);
+  assert.equal(isAdminSessionTokenValid('not-a-session', token, fixedNow), false);
 
   const unauthorizedLive = await fetchWithStartupRetry(`${baseUrl}/api/livez`);
   assert.equal(unauthorizedLive.status, 401);
@@ -110,9 +135,33 @@ try {
   assert.match(sessionCookie, /GG_ADMIN_SESSION=/);
   assert.match(sessionCookie, /HttpOnly/i);
   assert.match(sessionCookie, /SameSite=Strict/i);
+  assert.match(sessionCookie, new RegExp(`Max-Age=${ADMIN_SESSION_MAX_AGE_SECONDS}`));
   const cookie = sessionCookie.split(';')[0];
+  const sessionValue = sessionValueFromSetCookie(sessionCookie);
+  assert.notEqual(sessionValue, token, 'browser session credential must not equal the master admin token');
+  assert.equal(sessionValue.includes(token), false, 'browser session credential must not embed the master admin token');
+  assert.match(sessionValue, /^v1\./);
+  assert.equal(isAdminSessionTokenValid(sessionValue, token), true);
+  assert.equal(isAdminSessionTokenValid(sessionValue, `${token}-rotated`), false, 'master-token rotation must invalidate existing sessions');
+
   const cookieLive = await fetch(`${baseUrl}/api/livez`, { headers: { cookie } });
   assert.equal(cookieLive.status, 200);
+
+  const legacyCookie = `GG_ADMIN_SESSION=${encodeURIComponent(token)}`;
+  const legacyCookieLive = await fetch(`${baseUrl}/api/livez`, { headers: { cookie: legacyCookie } });
+  assert.equal(legacyCookieLive.status, 200, 'legacy master-token cookie must migrate during the short upgrade window');
+  const migratedSetCookie = String(legacyCookieLive.headers.get('set-cookie') || '');
+  assert.match(migratedSetCookie, /GG_ADMIN_SESSION=/);
+  const migratedValue = sessionValueFromSetCookie(migratedSetCookie);
+  assert.notEqual(migratedValue, token);
+  assert.equal(migratedValue.includes(token), false);
+  assert.equal(isAdminSessionTokenValid(migratedValue, token), true);
+
+  await runtime.close();
+  runtime = null;
+  runtime = startSnowLumaAdminServer(serverOptions);
+  const cookieAfterRestart = await fetchWithStartupRetry(`${baseUrl}/api/livez`, { headers: { cookie } });
+  assert.equal(cookieAfterRestart.status, 200, 'signed browser session must survive a WebUI service restart with the same master token');
 
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
     const sameOriginCookieWrite = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
