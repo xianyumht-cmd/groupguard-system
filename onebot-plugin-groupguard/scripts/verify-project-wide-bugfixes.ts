@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { normalizePluginConfig } from '../src/config';
 import { selectGroupsForPersistence } from '../src/config_persistence_guard';
 import { authDomainService } from '../src/domain/auth/auth_domain_service';
 import { normalizeGroupFileMirrorConfig } from '../src/services/group_file_mirror_service';
 import { isIntranetHostname } from '../src/services/groupguard_query_delivery_client';
+import { resolveContainedSubGameplayResourcePath } from '../src/services/sub_gameplay_resources';
 import { resolveLicenseExpireTime } from '../src/standalone/admin/license_api';
 
 const invalid = normalizePluginConfig({ configVersion: 'bad', global: { auditRetentionMaxRows: 'bad' } } as any);
@@ -58,6 +60,29 @@ assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: -1 }, fix
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: 1.5 }, fixedNow));
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: 'abc' }, fixedNow));
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, expireTime: 0 }, fixedNow));
+
+const tempResourceFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-sub-resource-'));
+try {
+  const resourceRoot = path.join(tempResourceFixture, 'resources');
+  const nestedDir = path.join(resourceRoot, 'selected');
+  const safeFile = path.join(nestedDir, 'safe.txt');
+  const outsideFile = path.join(tempResourceFixture, 'outside-secret.txt');
+  const escapingLink = path.join(nestedDir, 'escape.txt');
+  fs.mkdirSync(nestedDir, { recursive: true });
+  fs.writeFileSync(safeFile, 'safe', 'utf8');
+  fs.writeFileSync(outsideFile, 'secret', 'utf8');
+  fs.symlinkSync(outsideFile, escapingLink, 'file');
+
+  assert.equal(
+    resolveContainedSubGameplayResourcePath(resourceRoot, 'selected/safe.txt'),
+    fs.realpathSync(safeFile)
+  );
+  assert.equal(resolveContainedSubGameplayResourcePath(resourceRoot, 'selected'), null, 'directories are not readable resources');
+  assert.equal(resolveContainedSubGameplayResourcePath(resourceRoot, '../outside-secret.txt'), null, 'parent traversal must be rejected');
+  assert.equal(resolveContainedSubGameplayResourcePath(resourceRoot, 'selected/escape.txt'), null, 'symlink escape must be rejected');
+} finally {
+  fs.rmSync(tempResourceFixture, { recursive: true, force: true });
+}
 
 const persistedGroups = {
   '10001': { useGlobal: false, qaList: [{ keyword: 'a', mode: 'exact', reply: 'b' }] },
