@@ -84,12 +84,21 @@ async function main() {
 
   const groupInviteOn = risk({
     enabled: true,
+    blockGroupInvite: true,
+    groupInviteDetectUrl: true,
+    groupInviteDetectCard: true,
+    groupInviteDetectForward: true,
     rules: {
       groupInvite: { enabled: true, action: 'recall', banMinutes: 10 }
     }
   });
-  assert.equal((await findContentRiskMatchForTest('加群 123456', [{ type: 'json', data: { data: JSON.stringify({ meta: { news: { tag: '群聊', jumpUrl: 'mqqapi://card/show_pslcard?src_type=internal&source=sharecard&version=1&uin=123456' } } }) } }], groupInviteOn))?.type, 'groupInvite', 'group invite card is detected');
+  assert.equal((await findContentRiskMatchForTest('invite https://qun.qq.com/cgi-bin/group_share', [], groupInviteOn))?.type, 'groupInvite', 'group invite url is detected');
+  assert.equal((await findContentRiskMatchForTest('', [{ type: 'json', data: { data: '{"meta":{"group_code":"123456","prompt":"QQ\\u7fa4"} }' } }], groupInviteOn))?.type, 'groupInvite', 'group invite card is detected');
+
+  console.log('content risk verification passed');
 }
 
-await main();
-console.log('content risk verification passed');
+main().catch(error => {
+  console.error(error);
+  process.exit(1);
+});
