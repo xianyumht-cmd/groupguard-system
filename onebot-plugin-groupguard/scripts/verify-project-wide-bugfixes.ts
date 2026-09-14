@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { authManager } from '../src/auth';
 import { normalizePluginConfig } from '../src/config';
 import { selectGroupsForPersistence } from '../src/config_persistence_guard';
 import { checkFeatureGate } from '../src/core/feature_gate';
 import { configStateService } from '../src/core/state-services/config_state_service';
 import { authDomainService } from '../src/domain/auth/auth_domain_service';
+import { normalizeCommandDefinition } from '../src/dynamic-commands/command_loader';
 import { normalizeGroupFileMirrorConfig } from '../src/services/group_file_mirror_service';
 import { isIntranetHostname } from '../src/services/groupguard_query_delivery_client';
 import { resolveContainedSubGameplayResourcePath } from '../src/services/sub_gameplay_resources';
@@ -87,6 +89,31 @@ assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: 1.5 }, fi
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, days: 'abc' }, fixedNow));
 assert.throws(() => resolveLicenseExpireTime({ permanent: false, expireTime: 0 }, fixedNow));
 
+const enterpriseCommand = normalizeCommandDefinition({
+  id: 'tier-regression',
+  enabled: true,
+  featureType: 'query',
+  featureKey: 'query.tier_regression',
+  scope: 'group',
+  requiresLicense: true,
+  minimumLicenseLevel: 'enterprise',
+  permission: 'all',
+  trigger: { type: 'exact', value: 'tier-regression' },
+  parameterSchema: { required: [], optional: [] },
+  provider: { type: 'intranet' },
+  response: { type: 'structured' },
+});
+assert.equal(enterpriseCommand?.minimumLicenseLevel, 'enterprise', 'dynamic command loader must preserve explicit enterprise minimum');
+const defaultPaidCommand = normalizeCommandDefinition({
+  id: 'tier-default-regression',
+  enabled: true,
+  trigger: { type: 'exact', value: 'tier-default-regression' },
+  parameterSchema: { required: [], optional: [] },
+  provider: { type: 'intranet' },
+  response: { type: 'structured' },
+});
+assert.equal(defaultPaidCommand?.minimumLicenseLevel, 'pro', 'dynamic commands must default to pro minimum');
+
 const gateGroupId = '987654321';
 const gateConfig = configStateService.getConfig();
 if (!gateConfig.licenses) gateConfig.licenses = {};
@@ -106,12 +133,16 @@ const gateInput = {
 try {
   gateConfig.licenses[gateGroupId] = { level: 'free', expireTime: 0 };
   configStateService.setConfig(gateConfig);
+  assert.equal(authManager.getGroupLicense(gateGroupId)?.level, 'free', 'free record must remain visible to status/admin code');
+  assert.equal(authManager.getPaidGroupLicense(gateGroupId), null, 'free record must not satisfy paid runtime authorization');
   const freeGate = await checkFeatureGate(gateInput);
   assert.equal(freeGate.allowed, false, 'free license must not unlock paid group features');
   assert.equal(freeGate.reason, 'license_level_insufficient');
 
   gateConfig.licenses[gateGroupId] = { level: 'pro', expireTime: 0 };
   configStateService.setConfig(gateConfig);
+  assert.equal(authManager.getPaidGroupLicense(gateGroupId)?.level, 'pro');
+  assert.equal(authManager.getPaidGroupLicense(gateGroupId, 'enterprise'), null, 'pro must not satisfy enterprise minimum');
   const proGate = await checkFeatureGate(gateInput);
   assert.equal(proGate.allowed, true, 'pro license must keep existing paid feature access');
 
@@ -121,6 +152,7 @@ try {
 
   gateConfig.licenses[gateGroupId] = { level: 'enterprise', expireTime: 0 };
   configStateService.setConfig(gateConfig);
+  assert.equal(authManager.getPaidGroupLicense(gateGroupId, 'enterprise')?.level, 'enterprise');
   const enterpriseGate = await checkFeatureGate({ ...gateInput, minimumLicenseLevel: 'enterprise' });
   assert.equal(enterpriseGate.allowed, true, 'enterprise license must pass an enterprise-only gate');
 } finally {
