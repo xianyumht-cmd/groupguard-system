@@ -35,6 +35,8 @@ jobs:
       - name: Audit production dependencies for high/critical vulnerabilities
         run: npm audit --omit=dev --audit-level=high
       - run: npm test
+      - name: Run semantic TypeScript lint
+        run: npx tsc -p tsconfig.lint.json --noEmit
       - name: Enforce Windows PowerShell 5.1-safe launcher encoding
         shell: bash
         run: |
