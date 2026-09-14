@@ -9,6 +9,8 @@ import { checkFeatureGate } from '../src/core/feature_gate';
 import { configStateService } from '../src/core/state-services/config_state_service';
 import { authDomainService } from '../src/domain/auth/auth_domain_service';
 import { normalizeCommandDefinition } from '../src/dynamic-commands/command_loader';
+import { getRegisteredCommandPluginDefinitions } from '../src/dynamic-commands/command_plugin_store';
+import { registerLegacyRuntimePlugins } from '../src/dynamic-commands/legacy_runtime_plugins';
 import { normalizeGroupFileMirrorConfig } from '../src/services/group_file_mirror_service';
 import { isIntranetHostname } from '../src/services/groupguard_query_delivery_client';
 import { resolveContainedSubGameplayResourcePath } from '../src/services/sub_gameplay_resources';
@@ -113,6 +115,26 @@ const defaultPaidCommand = normalizeCommandDefinition({
   response: { type: 'structured' },
 });
 assert.equal(defaultPaidCommand?.minimumLicenseLevel, 'pro', 'dynamic commands must default to pro minimum');
+
+registerLegacyRuntimePlugins();
+const legacyDefinitions = getRegisteredCommandPluginDefinitions();
+const legacyAuthDefinitions = legacyDefinitions.filter((definition) => definition.id.startsWith('legacy.auth.'));
+assert.ok(legacyAuthDefinitions.length > 0, 'legacy auth adapter must register auth commands');
+assert.equal(
+  legacyAuthDefinitions.every((definition) => definition.permission === 'admin'),
+  true,
+  'legacy owner/admin auth descriptors must reach FeatureGate as admin, not all'
+);
+for (const domain of ['moderation', 'risk', 'qa']) {
+  const definitions = legacyDefinitions.filter((definition) => definition.id.startsWith(`legacy.${domain}.`));
+  assert.ok(definitions.length > 0, `legacy ${domain} adapter must register commands`);
+  assert.equal(definitions.every((definition) => definition.permission === 'admin'), true, `legacy ${domain} permission must remain admin`);
+}
+for (const domain of ['interaction', 'system']) {
+  const definitions = legacyDefinitions.filter((definition) => definition.id.startsWith(`legacy.${domain}.`));
+  assert.ok(definitions.length > 0, `legacy ${domain} adapter must register commands`);
+  assert.equal(definitions.every((definition) => definition.permission === 'all'), true, `legacy ${domain} permission must remain all`);
+}
 
 const gateGroupId = '987654321';
 const gateConfig = configStateService.getConfig();
