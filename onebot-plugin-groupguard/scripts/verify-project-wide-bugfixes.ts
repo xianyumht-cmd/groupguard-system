@@ -8,6 +8,7 @@ import { authDomainService } from '../src/domain/auth/auth_domain_service';
 import { normalizeGroupFileMirrorConfig } from '../src/services/group_file_mirror_service';
 import { isIntranetHostname } from '../src/services/groupguard_query_delivery_client';
 import { resolveContainedSubGameplayResourcePath } from '../src/services/sub_gameplay_resources';
+import { normalizeTargetFilePushConfig } from '../src/services/target_file_push_config';
 import { resolveLicenseExpireTime } from '../src/standalone/admin/license_api';
 
 const invalid = normalizePluginConfig({ configVersion: 'bad', global: { auditRetentionMaxRows: 'bad' } } as any);
@@ -18,6 +19,29 @@ assert.equal(mirror.rules[0]?.enabled, false);
 assert.equal(isIntranetHostname('192.168.3.89'), true);
 assert.equal(isIntranetHostname('public-host'), false);
 assert.equal(isIntranetHostname('example.com'), false);
+
+for (const sourceUrl of [
+  'https://abc.lanzou.com/iTEST',
+  'https://wwbvf.lanzn.com/b016kzvvmd',
+  'https://wwop.lanzoul.com/iTEST',
+  'https://download.lanwp.com/iTEST',
+]) {
+  const normalized = normalizeTargetFilePushConfig({ sourceUrl });
+  assert.equal(normalized.sourceUrl, sourceUrl, `known Lanzou host must remain accepted: ${sourceUrl}`);
+}
+for (const sourceUrl of [
+  'https://lanzou.attacker.example/iTEST',
+  'https://evillanzn.com/iTEST',
+  'https://lanwp.com.attacker.example/iTEST',
+  'https://lanzou.com.evil.example/iTEST',
+  'ftp://abc.lanzou.com/iTEST',
+]) {
+  assert.throws(
+    () => normalizeTargetFilePushConfig({ sourceUrl }),
+    /蓝奏/,
+    `lookalike or non-http Lanzou URL must be rejected: ${sourceUrl}`
+  );
+}
 
 const validGrant = authDomainService.validateGrantRequest('123456789', '30');
 assert.equal(validGrant.ok, true);

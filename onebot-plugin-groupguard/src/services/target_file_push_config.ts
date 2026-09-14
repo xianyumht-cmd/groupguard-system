@@ -23,6 +23,28 @@ export const DEFAULT_TARGET_FILE_PUSH_CONFIG: TargetFilePushConfig = {
   targetFolderId: '/',
 };
 
+const LANZOU_ROOT_HOSTS = new Set([
+  'lanzou.com',
+  'lanzoub.com',
+  'lanzouf.com',
+  'lanzouh.com',
+  'lanzoui.com',
+  'lanzouj.com',
+  'lanzoul.com',
+  'lanzoum.com',
+  'lanzouo.com',
+  'lanzoup.com',
+  'lanzouq.com',
+  'lanzout.com',
+  'lanzouu.com',
+  'lanzouv.com',
+  'lanzouw.com',
+  'lanzoux.com',
+  'lanzouy.com',
+  'lanzn.com',
+  'lanwp.com',
+]);
+
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -46,10 +68,16 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function isHostOrSubdomain(host: string, root: string): boolean {
+  return host === root || host.endsWith(`.${root}`);
+}
+
 function isLanzouUrl(value: string): boolean {
   try {
-    const host = new URL(value).hostname.toLowerCase().replace(/\.$/, '');
-    return host.includes('lanzou') || host.endsWith('lanzn.com') || host.endsWith('lanwp.com');
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+    return [...LANZOU_ROOT_HOSTS].some((root) => isHostOrSubdomain(host, root));
   } catch {
     return false;
   }
