@@ -1,4 +1,5 @@
 import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
+import { normalizeOneBotEvent, oneBotIdToString } from '../protocol/onebot11/types';
 import { authManager } from '../auth';
 import { isQaOnlyBotRole, isQueryOnlyBotRole, shouldBlockByBotRole, type BotRoleIntent } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
@@ -22,15 +23,18 @@ function blockEventByRole(rawMessage: string, intent: BotRoleIntent): boolean {
 }
 
 export async function handlePluginEvent(ctx: GroupGuardRuntimeContext, event: unknown): Promise<void> {
-  const e = event as {
+  const normalized = normalizeOneBotEvent(event);
+  if (!normalized) return;
+  const e = normalized as {
     post_type?: string; request_type?: string; notice_type?: string; sub_type?: string;
     group_id?: number | string; user_id?: number | string; operator_id?: number | string;
     message_id?: number | string; card_new?: string; flag?: string; comment?: string;
   };
 
-  const groupId = String(e.group_id);
+  const groupId = oneBotIdToString(e.group_id);
+  if (!groupId) return;
   const license = authManager.getPaidGroupLicense(groupId);
-  if (!license && groupId !== 'undefined') return;
+  if (!license) return;
   const splitRole = isQueryOnlyBotRole() || isQaOnlyBotRole();
 
   if (e.post_type === 'request' && e.request_type === 'group' && e.sub_type === 'add') {
@@ -48,10 +52,10 @@ export async function handlePluginEvent(ctx: GroupGuardRuntimeContext, event: un
   }
 
   if (e.post_type === 'notice' && e.notice_type === 'group_increase') {
-    const groupId = String(e.group_id);
-    const userId = String(e.user_id);
+    const userId = oneBotIdToString(e.user_id);
+    if (!userId) return;
     if (splitRole && blockEventByRole(`group=${groupId} user=${userId}`, 'welcome_like')) return;
-    const operatorId = String(e.operator_id || '');
+    const operatorId = oneBotIdToString(e.operator_id);
     const settings = configStateService.resolveGroupSettings(groupId);
 
     if (operatorId && operatorId !== userId && operatorId !== identityStateService.getBotId()) {
@@ -136,25 +140,25 @@ export async function handlePluginEvent(ctx: GroupGuardRuntimeContext, event: un
   }
 
   if (e.post_type === 'notice' && e.notice_type === 'group_recall') {
-    const groupId = String(e.group_id);
-    const messageId = String(e.message_id);
-    const userId = String(e.user_id);
+    const messageId = oneBotIdToString(e.message_id);
+    const userId = oneBotIdToString(e.user_id);
+    if (!messageId || !userId) return;
     if (splitRole && blockEventByRole(`group=${groupId} message=${messageId}`, 'moderation_like')) return;
     await handleAntiRecall(groupId, messageId, userId);
     return;
   }
 
   if (e.post_type === 'notice' && e.notice_type === 'group_card') {
-    const groupId = String(e.group_id);
-    const userId = String(e.user_id);
+    const userId = oneBotIdToString(e.user_id);
+    if (!userId) return;
     if (splitRole && blockEventByRole(`group=${groupId} user=${userId}`, 'moderation_like')) return;
     await handleCardLockCheck(groupId, userId);
     return;
   }
 
   if (e.post_type === 'notice' && e.notice_type === 'group_decrease' && e.sub_type === 'leave') {
-    const groupId = String(e.group_id);
-    const userId = String(e.user_id);
+    const userId = oneBotIdToString(e.user_id);
+    if (!userId) return;
     if (splitRole && blockEventByRole(`group=${groupId} user=${userId}`, 'moderation_like')) return;
     const settings = configStateService.resolveGroupSettings(groupId);
     const config = configStateService.getConfig();

@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from 'fs';
+import path from 'path';
+import {
+  isOneBotMessageEvent,
+  normalizeOneBotEvent,
+  normalizeOneBotId,
+  oneBotIdToString,
+} from '../src/protocol/onebot11/types';
 
 const root = process.cwd();
 const activeRoots = [
@@ -76,6 +82,92 @@ assert.equal(typeof packageJson.scripts?.['build:onebot'], 'string');
 assert.equal(typeof packageJson.scripts?.['build:snowluma'], 'string');
 assert.equal(packageJson.scripts?.['build:napcat'], undefined);
 assert.equal(fs.existsSync(path.join(root, 'src/shims/napcat-types')), false);
+
+assert.equal(normalizeOneBotId(123456789), 123456789);
+assert.equal(normalizeOneBotId(' 123456789 '), '123456789');
+assert.equal(normalizeOneBotId({ value: '123' }), undefined);
+assert.equal(normalizeOneBotId([]), undefined);
+assert.equal(normalizeOneBotId(Number.NaN), undefined);
+assert.equal(oneBotIdToString({ value: '123' }), '');
+
+const validGroupMessage = normalizeOneBotEvent({
+  post_type: 'message',
+  message_type: 'group',
+  group_id: ' 10001 ',
+  user_id: 20002,
+  message_id: 30003,
+  raw_message: '测试',
+  sender: { user_id: 20002, role: 'admin', card: '管理员' },
+});
+assert.ok(validGroupMessage && isOneBotMessageEvent(validGroupMessage));
+assert.equal(validGroupMessage.group_id, '10001');
+assert.equal(validGroupMessage.user_id, 20002);
+assert.equal(validGroupMessage.sender?.role, 'admin');
+
+const unknownRoleMessage = normalizeOneBotEvent({
+  post_type: 'message',
+  message_type: 'group',
+  group_id: '10001',
+  user_id: '20002',
+  raw_message: '测试',
+  sender: { user_id: '20002', role: 'superadmin' },
+});
+assert.ok(unknownRoleMessage && isOneBotMessageEvent(unknownRoleMessage));
+assert.equal(unknownRoleMessage.sender?.role, undefined, 'non-OneBot role names must not enter normalized sender role');
+
+assert.equal(normalizeOneBotEvent({
+  post_type: 'message',
+  message_type: 'group',
+  user_id: '20002',
+  raw_message: 'missing group',
+}), null, 'group messages without group_id must fail closed');
+assert.equal(normalizeOneBotEvent({
+  post_type: 'message',
+  message_type: 'group',
+  group_id: '10001',
+  user_id: { spoofed: '20002' },
+  raw_message: 'object id',
+}), null, 'object-shaped user_id must not stringify into an identity');
+assert.ok(normalizeOneBotEvent({
+  post_type: 'message',
+  message_type: 'private',
+  user_id: '20002',
+  raw_message: 'private ok',
+}), 'private messages must not require group_id');
+
+assert.equal(normalizeOneBotEvent({
+  post_type: 'notice',
+  notice_type: 'group_decrease',
+  sub_type: 'leave',
+  user_id: '20002',
+}), null, 'group_decrease without group_id must not reach blacklist mutation');
+assert.equal(normalizeOneBotEvent({
+  post_type: 'notice',
+  notice_type: 'group_decrease',
+  sub_type: 'leave',
+  group_id: '10001',
+}), null, 'group_decrease without user_id must fail closed');
+assert.ok(normalizeOneBotEvent({
+  post_type: 'notice',
+  notice_type: 'group_decrease',
+  sub_type: 'leave',
+  group_id: '10001',
+  user_id: '20002',
+}), 'valid group_decrease must remain accepted');
+assert.equal(normalizeOneBotEvent({
+  post_type: 'notice',
+  notice_type: 'group_recall',
+  group_id: '10001',
+  user_id: '20002',
+}), null, 'group_recall without message_id must fail closed');
+assert.equal(normalizeOneBotEvent({
+  post_type: 'request',
+  request_type: 'group',
+  sub_type: 'add',
+  user_id: '20002',
+  flag: 'flag-1',
+}), null, 'group request without group_id must fail closed');
+assert.equal(normalizeOneBotEvent({ post_type: { forged: 'notice' } }), null, 'non-string post_type must fail closed');
 
 // The upstream LAPI query parameter `compat=napcat` is a remote wire-format
 // selector, not a runtime dependency. It remains unchanged until that service
