@@ -4,6 +4,13 @@ import { loggingStateService } from './core/state-services/logging_state_service
 import { send } from './dynamic-commands/response_capture_runtime';
 
 export type AuthLevel = 'free' | 'pro' | 'enterprise';
+export type PaidAuthLevel = Exclude<AuthLevel, 'free'>;
+
+const AUTH_LEVEL_RANK: Record<AuthLevel, number> = {
+  free: 0,
+  pro: 1,
+  enterprise: 2
+};
 
 function isValidLicense(license: GroupLicense | undefined): license is GroupLicense {
   if (!license || typeof license !== 'object') return false;
@@ -112,7 +119,7 @@ export class AuthManager {
   }
 
   /**
-   * 获取群授权信息
+   * 获取群授权信息。该方法保留 free 记录，供状态/管理界面展示。
    */
   public getGroupLicense(groupId: string): GroupLicense | null {
     const config = configStateService.getConfig();
@@ -131,6 +138,16 @@ export class AuthManager {
     }
 
     return license;
+  }
+
+  /**
+   * 获取满足付费等级的有效授权。运行时付费功能入口统一使用此方法，
+   * 避免 free 授权记录被误当成可执行高级功能的授权。
+   */
+  public getPaidGroupLicense(groupId: string, minimumLevel: PaidAuthLevel = 'pro'): GroupLicense | null {
+    const license = this.getGroupLicense(groupId);
+    if (!license) return null;
+    return AUTH_LEVEL_RANK[license.level] >= AUTH_LEVEL_RANK[minimumLevel] ? license : null;
   }
 
   /**
