@@ -110,8 +110,54 @@ try {
   assert.match(sessionCookie, /GG_ADMIN_SESSION=/);
   assert.match(sessionCookie, /HttpOnly/i);
   assert.match(sessionCookie, /SameSite=Strict/i);
-  const cookieLive = await fetch(`${baseUrl}/api/livez`, { headers: { cookie: sessionCookie.split(';')[0] } });
+  const cookie = sessionCookie.split(';')[0];
+  const cookieLive = await fetch(`${baseUrl}/api/livez`, { headers: { cookie } });
   assert.equal(cookieLive.status, 200);
+
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    const sameOriginCookieWrite = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
+      method,
+      headers: { cookie, origin: baseUrl }
+    });
+    assert.equal(sameOriginCookieWrite.status, 404, `${method} same-origin cookie write should reach routing`);
+
+    const reverseProxyHttpsOrigin = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
+      method,
+      headers: { cookie, origin: `https://127.0.0.1:${port}` }
+    });
+    assert.equal(reverseProxyHttpsOrigin.status, 404, `${method} same-host HTTPS origin should support reverse proxies`);
+
+    const crossOriginCookieWrite = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
+      method,
+      headers: { cookie, origin: 'https://attacker.example' }
+    });
+    assert.equal(crossOriginCookieWrite.status, 403, `${method} cross-origin cookie write must fail closed`);
+    assert.equal((await crossOriginCookieWrite.json()).error, 'csrf_origin_mismatch');
+
+    const missingOriginCookieWrite = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
+      method,
+      headers: { cookie }
+    });
+    assert.equal(missingOriginCookieWrite.status, 403, `${method} cookie write without Origin must fail closed`);
+  }
+
+  const nullOriginCookieWrite = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
+    method: 'POST',
+    headers: { cookie, origin: 'null' }
+  });
+  assert.equal(nullOriginCookieWrite.status, 403, 'opaque/null origins must fail closed for cookie writes');
+
+  const bearerWrite = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, origin: 'https://attacker.example' }
+  });
+  assert.equal(bearerWrite.status, 404, 'explicit Bearer clients must remain compatible without cookie CSRF checks');
+
+  const invalidBearerWithValidCookie = await fetch(`${baseUrl}/api/csrf-contract-not-found`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer wrong-token', cookie, origin: baseUrl }
+  });
+  assert.equal(invalidBearerWithValidCookie.status, 401, 'Bearer precedence must remain fail-closed instead of falling back to cookie');
 
   const live = await fetch(`${baseUrl}/api/livez`, { headers: authorizedHeaders });
   assert.equal(live.status, 200);
