@@ -2,7 +2,7 @@ import http, { type Server } from 'http';
 import fs from 'fs';
 import path from 'node:path';
 import { URL } from 'node:url';
-import { buildAdminSessionCookie, createToken, isTokenMatch, LEGACY_COOKIE_MIGRATION_WINDOW_MS, requireAuth } from './auth';
+import { buildAdminSessionCookie, createToken, isTokenMatch, LEGACY_COOKIE_MIGRATION_WINDOW_MS, migrateLegacyAdminSessionCookie, requireAuth } from './auth';
 import { HttpBodyTooLargeError, readBody, send, sendBuffer, sendJson } from './http';
 import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
@@ -145,9 +145,10 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         return;
       }
 
-      if (!requireAuth(req, res, url, token, {
-        allowLegacyCookieMigration: Date.now() <= legacyCookieMigrationDeadline,
-      })) return;
+      if (Date.now() <= legacyCookieMigrationDeadline) {
+        migrateLegacyAdminSessionCookie(req, res, token);
+      }
+      if (!requireAuth(req, res, url, token)) return;
 
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
         send(res, 200, applyWebUiTheme(renderMainPage()), 'text/html; charset=utf-8');
