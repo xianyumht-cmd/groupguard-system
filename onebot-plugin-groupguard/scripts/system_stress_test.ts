@@ -107,7 +107,7 @@ const runtimeStats = {
   totalRetryAttempts: runtimeStatsNow.totalRetryAttempts - beforeRuntimeStats.totalRetryAttempts,
   totalRetryRecoveredSuccesses: runtimeStatsNow.totalRetryRecoveredSuccesses - beforeRuntimeStats.totalRetryRecoveredSuccesses,
   totalCacheHits: runtimeStatsNow.totalCacheHits - beforeRuntimeStats.totalCacheHits,
-  failureReasons: Object.fromEntries(Object.entries(runtimeStatsNow.failureReasons).map(([reason, count]) => [
+  failureReasons: Object.fromEntries(Object.entries(runtimeStatsNow.failureReasons as Record<string, number>).map(([reason, count]) => [
     reason,
     count - ((beforeRuntimeStats.failureReasons as Record<string, number>)[reason] || 0)
   ]).filter(([, count]) => count > 0))
