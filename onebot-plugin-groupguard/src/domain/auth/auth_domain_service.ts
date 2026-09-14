@@ -50,7 +50,19 @@ export interface AuthDomainService {
 }
 
 function remainingDaysText(expireTime: number, now: number): string {
-  return expireTime === -1 ? '永久' : Math.ceil((expireTime - now) / 86400000) + '天';
+  if (expireTime <= 0) return '永久';
+  return `${Math.max(0, Math.ceil((expireTime - now) / 86400000))}天`;
+}
+
+function invalidGrantDuration(): AuthDomainResult<AuthGrantPlan> {
+  return {
+    ok: false,
+    response: {
+      scene: 'command_format_error',
+      message: '授权天数格式错误，只能填写正整数天数或“永久”。',
+      vars: { example: '授权 123456 30' }
+    }
+  };
 }
 
 class DefaultAuthDomainService implements AuthDomainService {
@@ -88,7 +100,17 @@ class DefaultAuthDomainService implements AuthDomainService {
         }
       };
     }
-    const days = durationToken === '永久' ? -1 : parseInt(durationToken);
+
+    const normalizedDuration = String(durationToken || '').trim();
+    let days: number;
+    if (normalizedDuration === '永久') {
+      days = -1;
+    } else {
+      if (!/^[1-9]\d*$/.test(normalizedDuration)) return invalidGrantDuration();
+      days = Number(normalizedDuration);
+      if (!Number.isSafeInteger(days) || days <= 0) return invalidGrantDuration();
+    }
+
     return {
       ok: true,
       data: {
@@ -97,8 +119,8 @@ class DefaultAuthDomainService implements AuthDomainService {
         level: days === -1 ? 'enterprise' : 'pro',
         response: {
           scene: 'action_success',
-          message: `已授权群 ${groupId} ${durationToken === '永久' ? '永久' : days + '天'}`,
-          vars: { target: groupId, days: durationToken === '永久' ? '永久' : days }
+          message: `已授权群 ${groupId} ${days === -1 ? '永久' : days + '天'}`,
+          vars: { target: groupId, days: days === -1 ? '永久' : days }
         }
       }
     };
@@ -140,37 +162,12 @@ class DefaultAuthDomainService implements AuthDomainService {
     };
   }
 
-  validateActivationKey(key: string): AuthDomainResult<AuthActivationPlan> {
-    if (key.startsWith('PRO-30-')) {
-      return {
-        ok: true,
-        data: {
-          days: 30,
-          response: {
-            scene: 'action_success',
-            message: '激活成功！已获得 30 天专业版授权。'
-          }
-        }
-      };
-    }
-    if (key.startsWith('PRO-PERM-')) {
-      return {
-        ok: true,
-        data: {
-          days: -1,
-          response: {
-            scene: 'action_success',
-            message: '激活成功！已获得 永久 专业版授权。'
-          }
-        }
-      };
-    }
+  validateActivationKey(_key: string): AuthDomainResult<AuthActivationPlan> {
     return {
       ok: false,
       response: {
-        scene: 'command_format_error',
-        message: '无效的激活码',
-        vars: { example: '激活 PRO-30-xxxx 或 激活 PRO-PERM-xxxx' }
+        scene: 'feature_disabled',
+        message: '群内激活码功能已停用，请联系机器人主人完成授权或续费。'
       }
     };
   }
