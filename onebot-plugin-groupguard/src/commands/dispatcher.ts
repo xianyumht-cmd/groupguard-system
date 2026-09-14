@@ -143,6 +143,7 @@ async function isCandidateAllowed(candidate: CommandCandidate, event: OneBotMess
     allowedGroups: command.allowedGroups || [],
     blockedGroups: command.blockedGroups || [],
     requiresLicense: command.requiresLicense !== false,
+    minimumLicenseLevel: command.minimumLicenseLevel,
     permission: command.permission || 'all',
     passiveReply: false,
     botSend: true,
