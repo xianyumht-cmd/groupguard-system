@@ -2,7 +2,7 @@ import http, { type Server } from 'http';
 import fs from 'fs';
 import path from 'node:path';
 import { URL } from 'node:url';
-import { createToken, isTokenMatch, requireAuth } from './auth';
+import { buildAdminSessionCookie, createToken, isTokenMatch, LEGACY_COOKIE_MIGRATION_WINDOW_MS, requireAuth } from './auth';
 import { HttpBodyTooLargeError, readBody, send, sendBuffer, sendJson } from './http';
 import { renderHomePage } from './static_page';
 import { renderQaPage } from './qa_page';
@@ -110,6 +110,7 @@ function renderMainPage(): string {
 export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): SnowLumaAdminServerRuntime {
   const logger = options.logger || console;
   const { host, port, token, tokenSource, tokenPath } = resolveServerConfig(options);
+  const legacyCookieMigrationDeadline = Date.now() + LEGACY_COOKIE_MIGRATION_WINDOW_MS;
 
   const server: Server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${host}:${port}`);
@@ -119,7 +120,7 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         url.searchParams.delete('token');
         res.writeHead(303, {
           location: `${url.pathname}${url.search}${url.hash}` || '/',
-          'set-cookie': `GG_ADMIN_SESSION=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800`,
+          'set-cookie': buildAdminSessionCookie(token),
           'cache-control': 'no-store',
           'referrer-policy': 'no-referrer',
         });
@@ -144,7 +145,9 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         return;
       }
 
-      if (!requireAuth(req, res, url, token)) return;
+      if (!requireAuth(req, res, url, token, {
+        allowLegacyCookieMigration: Date.now() <= legacyCookieMigrationDeadline,
+      })) return;
 
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
         send(res, 200, applyWebUiTheme(renderMainPage()), 'text/html; charset=utf-8');
@@ -175,8 +178,6 @@ export function startSnowLumaAdminServer(options: SnowLumaAdminServerOptions): S
         send(res, 200, applyWebUiTheme(renderTargetFilePushPage()), 'text/html; charset=utf-8');
         return;
       }
-
-      if (!requireAuth(req, res, url, token)) return;
 
       if (req.method === 'GET' && url.pathname === '/api/group-file-mirror') {
         sendJson(res, 200, getGroupFileMirrorOverview());
