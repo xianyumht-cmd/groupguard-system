@@ -1,5 +1,5 @@
 import type { GroupGuardRuntimeContext } from '../runtime/runtime_context';
-import type { OneBotMessageEvent } from '../protocol/onebot11/types';
+import { isOneBotMessageEvent, normalizeOneBotEvent, type OneBotMessageEvent } from '../protocol/onebot11/types';
 import { authManager } from '../auth';
 import { isQaOnlyBotRole, isQueryOnlyBotRole, shouldBlockByBotRole } from '../core/bot_role';
 import { authStateService } from '../core/state-services/auth_state_service';
@@ -16,8 +16,10 @@ import { handleVerifyAnswer } from '../verify';
 import { runWithForcedResponseScene } from '../dynamic-commands/response_capture_runtime';
 import { shouldBypassGroupFileMirrorGlobalRecall } from '../services/group_file_mirror_message_adapter';
 
-export async function handlePluginMessage(ctx: GroupGuardRuntimeContext, event: OneBotMessageEvent): Promise<void> {
-  if (event.post_type !== 'message' && event.post_type !== 'message_sent') return;
+export async function handlePluginMessage(ctx: GroupGuardRuntimeContext, inboundEvent: OneBotMessageEvent): Promise<void> {
+  const normalized = normalizeOneBotEvent(inboundEvent);
+  if (!normalized || !isOneBotMessageEvent(normalized)) return;
+  const event = normalized;
 
   const userId = String(event.user_id);
   const raw = event.raw_message || '';
