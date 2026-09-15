@@ -1,12 +1,45 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { applyWebUiTheme, GROUPGUARD_WEBUI_THEME_STORAGE_KEY } from '../src/standalone/admin/webui_theme.ts';
 import { normalizeQueryOverviewForWebUi, patchQueryPageHtml } from '../src/standalone/admin/query_webui_facade.ts';
+import { startSnowLumaAdminServer } from '../src/standalone/admin/server.ts';
 import { renderHomePage } from '../src/standalone/admin/static_page.ts';
 import { renderQaPage } from '../src/standalone/admin/qa_page.ts';
 import { renderQueryPage } from '../src/standalone/admin/query_page.ts';
 import { renderQunGuanjiaPage } from '../src/standalone/admin/qun_guanjia_page.ts';
 import { renderGroupFileMirrorPage } from '../src/standalone/admin/group_file_mirror_page.ts';
+
+async function findAvailablePort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = probe.address();
+  assert.ok(address && typeof address === 'object');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
+}
+
+async function fetchWithStartupRetry(url: string, init?: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
+}
 
 const patchedQueryPage = patchQueryPageHtml(renderQueryPage());
 const pages = [
@@ -99,20 +132,54 @@ assert.equal(overview.rows.find((row: any) => row.type === 'scammer').outputForm
 assert.equal(overview.rows.find((row: any) => row.type === 'peer').dataSource, 'local-api');
 assert.equal(overview.rows.find((row: any) => row.type === 'dynamic').outputFormat, 'text');
 
-const serverSource = await readFile(new URL('../src/standalone/admin/server.ts', import.meta.url), 'utf8');
-for (const renderer of ['renderMainPage()', 'renderQaPage()', 'renderQunGuanjiaPage()', 'renderGroupFileMirrorPage()']) {
-  assert.ok(serverSource.includes(`applyWebUiTheme(${renderer})`), `server must design ${renderer}`);
+// Behavior-level server wiring check. Equivalent refactors inside server.ts must
+// remain green as long as the authenticated routes actually serve the themed,
+// patched pages to clients.
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-webui-behavior-'));
+let runtime: ReturnType<typeof startSnowLumaAdminServer> | null = null;
+try {
+  const port = await findAvailablePort();
+  const token = 'webui-behavior-regression-token';
+  runtime = startSnowLumaAdminServer({
+    ctx: {} as any,
+    workDir: tempDir,
+    dataDir: tempDir,
+    configPath: path.join(tempDir, 'config.json'),
+    backupDir: path.join(tempDir, 'backups'),
+    dynamicCommandsConfigPath: path.join(tempDir, 'dynamic-commands.json'),
+    wsUrl: 'ws://127.0.0.1:3001',
+    host: '127.0.0.1',
+    port,
+    token,
+    logger: { info: () => undefined, warn: () => undefined, error: () => undefined }
+  });
+
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const headers = { 'x-groupguard-token': token };
+  const routeBodies = new Map<string, string>();
+  for (const route of ['/', '/qa.html', '/query.html', '/qun-guanjia.html', '/group-file-mirror.html', '/target-file-push.html']) {
+    const response = await fetchWithStartupRetry(`${baseUrl}${route}`, { headers });
+    assert.equal(response.status, 200, `${route} must be served successfully`);
+    const body = await response.text();
+    routeBodies.set(route, body);
+    assert.match(body, /id="groupguard-control-panel-style"/, `${route} must receive the unified control-panel theme`);
+    assert.match(body, /id="groupguard-config-maturity-style"/, `${route} must receive the config-maturity layer`);
+  }
+
+  const servedQueryPage = routeBodies.get('/query.html') || '';
+  assert.equal(servedQueryPage.includes('查隐藏'), false, 'retired hidden query must not leak through the served query page');
+  assert.equal(servedQueryPage.includes('lol_hidden'), false, 'retired hidden query profile must not leak through the served query page');
+  for (const mode of ['text', 'forward', 'image']) {
+    assert.ok(servedQueryPage.includes(mode), `served query page must expose ${mode} output mode`);
+  }
+} finally {
+  if (runtime) await runtime.close();
+  fs.rmSync(tempDir, { recursive: true, force: true });
 }
-assert.ok(serverSource.includes('applyWebUiTheme(patchQueryPageHtml(renderQueryPage()))'));
-assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(getQueryOverview())'));
-assert.ok(serverSource.includes('normalizeQueryOverviewForWebUi(patchQueryConfig('));
 
-const compatibilitySource = await readFile(new URL('../src/standalone/admin/webui_theme.ts', import.meta.url), 'utf8');
-assert.ok(compatibilitySource.includes("from './control_panel_design'"));
-assert.ok(compatibilitySource.includes("from './config_maturity_webui_patch'"));
-assert.ok(compatibilitySource.includes('applyControlPanelDesign(page)'));
-assert.ok(compatibilitySource.includes('applyConfigMaturityWebUiPatch(withTargetFilePush)'));
-
+// These remaining checks describe the group-API batch mutation wiring rather
+// than WebUI page composition. Keep them scoped for a later GG-AUD-004/005
+// decision instead of broadening this migration batch.
 const groupApiSource = await readFile(new URL('../src/standalone/admin/group_api.ts', import.meta.url), 'utf8');
 assert.ok(groupApiSource.includes("operation === 'set-path'"));
 assert.ok(groupApiSource.includes("operation === 'restore-path'"));
