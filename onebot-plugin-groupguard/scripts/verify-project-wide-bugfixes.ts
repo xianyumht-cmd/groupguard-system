@@ -14,6 +14,7 @@ import { normalizeGroupFileMirrorConfig } from '../src/services/group_file_mirro
 import { isIntranetHostname } from '../src/services/groupguard_query_delivery_client';
 import { resolveContainedSubGameplayResourcePath } from '../src/services/sub_gameplay_resources';
 import { normalizeTargetFilePushConfig } from '../src/services/target_file_push_config';
+import { pluginState } from '../src/state';
 import { resolveLicenseExpireTime } from '../src/standalone/admin/license_api';
 
 const invalid = normalizePluginConfig({ configVersion: 'bad', global: { auditRetentionMaxRows: 'bad' } } as any);
@@ -190,6 +191,62 @@ try {
   fs.rmSync(tempResourceFixture, { recursive: true, force: true });
 }
 
+const previousPluginConfig = pluginState.config;
+const previousActions = pluginState.actions;
+const sendCalls: Array<{ action: string; params: unknown }> = [];
+try {
+  pluginState.clearSelfRecallTimers();
+  pluginState.resumeSendQueue();
+  pluginState.config = {
+    ...previousPluginConfig,
+    global: {
+      ...previousPluginConfig.global,
+      replyProbability: 0,
+      botAntiRiskScenePolicies: {},
+      randomDelayMin: 0,
+      randomDelayMax: 0,
+      randomSuffix: false,
+      disableReplyTemplate: true,
+      globalMaxPerMinute: 1000,
+      rateLimitEnqueue: false,
+      autoRecallSelf: false,
+      selfRecall: {
+        ...(previousPluginConfig.global.selfRecall || {}),
+        enabled: false,
+      },
+    } as any,
+    groups: {},
+  };
+  pluginState.actions = {
+    call: async (action: string, params: unknown) => {
+      sendCalls.push({ action, params });
+      return {};
+    }
+  } as any;
+
+  await pluginState.sendGroupText('1357902468', 'ordinary group text', { applyTemplate: false, scene: 'raw_text' });
+  await pluginState.sendGroupMsg('1357902468', [{ type: 'text', data: { text: 'ordinary group segments' } }], { applyTemplate: false, scene: 'raw_text' });
+  await pluginState.sendPrivateMsg('2468013579', 'ordinary private text', { applyTemplate: false, scene: 'raw_text' });
+  assert.equal(sendCalls.length, 0, 'omitting force must leave ordinary sends subject to the configured probability gate');
+
+  await pluginState.sendPrivateMsg('2468013579', 'truthy non-boolean force', { force: 'yes', applyTemplate: false, scene: 'raw_text' } as any);
+  assert.equal(sendCalls.length, 0, 'only literal force=true may bypass the probability gate');
+
+  await pluginState.sendGroupText('1357902468', 'forced group text', { force: true, applyTemplate: false, scene: 'raw_text' });
+  await pluginState.sendGroupMsg('1357902468', [{ type: 'text', data: { text: 'forced group segments' } }], { force: true, applyTemplate: false, scene: 'raw_text' });
+  await pluginState.sendPrivateMsg('2468013579', 'forced private text', { force: true, applyTemplate: false, scene: 'raw_text' });
+  assert.deepEqual(
+    sendCalls.map(call => call.action),
+    ['send_group_msg', 'send_group_msg', 'send_private_msg'],
+    'explicit force=true must bypass the zero-probability gate for all three public send entry points'
+  );
+} finally {
+  pluginState.clearSelfRecallTimers();
+  pluginState.config = previousPluginConfig;
+  pluginState.actions = previousActions;
+  pluginState.resumeSendQueue();
+}
+
 const persistedGroups = {
   '10001': { useGlobal: false, qaList: [{ keyword: 'a', mode: 'exact', reply: 'b' }] },
   '10002': { useGlobal: false }
@@ -207,7 +264,6 @@ const state = fs.readFileSync(path.join(root, 'src/state.ts'), 'utf8');
 const common = fs.readFileSync(path.join(root, 'src/commands/common.ts'), 'utf8');
 const configApi = fs.readFileSync(path.join(root, 'src/standalone/admin/config_api.ts'), 'utf8');
 const groupApi = fs.readFileSync(path.join(root, 'src/standalone/admin/group_api.ts'), 'utf8');
-assert.ok(state.includes('const force = options?.force === true'));
 assert.ok(!state.includes("return '1.0.0'"));
 assert.ok(common.includes('allowEmptyRuntime: options.allowEmptyGroupPersistence === true'));
 assert.ok(common.includes('已阻止空分群配置覆盖 SQLite'));
