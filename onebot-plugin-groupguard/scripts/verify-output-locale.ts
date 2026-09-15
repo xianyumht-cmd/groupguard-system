@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DEFAULT_PLUGIN_CONFIG, normalizePluginConfig } from '../src/config';
+import { pluginStateContextAdapter } from '../src/core/state-infra/plugin_state_context_adapter';
 import { configStateService } from '../src/core/state-services/config_state_service';
 import { generateReply } from '../src/reply_generator';
 import { localizeOneBotSendParamsSafe, localizeOutputTextSafe } from '../src/services/output_locale_egress_guard';
@@ -11,10 +12,12 @@ import {
   normalizeOutputLocale,
   type OutputTranslationFn,
 } from '../src/services/output_locale_service';
+import { qunGuanjiaService, type QunGuanjiaRouteResult } from '../src/services/qun_guanjia_service';
 import {
   resolveOutputTranslationPolicy,
   secureOutputTranslator,
 } from '../src/services/output_translation_policy';
+import { pluginState } from '../src/state';
 import { OneBotActionCaller } from '../src/standalone/onebot_action_caller';
 import { applyOutputLocaleWebUiPatch } from '../src/standalone/admin/output_locale_webui_patch';
 
@@ -122,6 +125,78 @@ function verifyFleetRollbackContracts(): void {
     /cp \.\.\/scripts\/windows\/groupguard-remote-rollback\.sh "\$bundle\/groupguard-remote-rollback\.sh"/,
     'immutable artifact must package the audited rollback helper'
   );
+}
+
+async function verifyQunGuanjiaLocalizationBoundary(): Promise<void> {
+  const previousPluginConfig = pluginState.config;
+  const previousActions = pluginState.actions;
+  const originalRouteGroupMessage = qunGuanjiaService.routeGroupMessage;
+  const routedCalls: Array<{ params: any; scene: string }> = [];
+  const rawCalls: Array<{ action: string; params: unknown }> = [];
+  let routeResult: QunGuanjiaRouteResult = { handled: true, ok: true, fallback: false };
+  const sourceText = '完成后我会把链接发到这里';
+  const localizedText = '完成後我會把連結發到這裡';
+
+  try {
+    pluginState.config = {
+      ...previousPluginConfig,
+      global: {
+        ...previousPluginConfig.global,
+        outputLocale: 'zh-TW',
+        botSendWrapperEnabled: false,
+      } as any,
+      groups: {},
+    };
+    qunGuanjiaService.routeGroupMessage = async (params: any, scene: string) => {
+      routedCalls.push({ params, scene });
+      return routeResult;
+    };
+    pluginStateContextAdapter.setActions({
+      call: async (action: string, params: unknown) => {
+        rawCalls.push({ action, params });
+        return { status: 'ok', retcode: 0, data: { message_id: 10001 } };
+      }
+    } as any);
+
+    const wrappedActions = pluginState.actions as any;
+    const sendParams = {
+      group_id: 123456,
+      message: [{ type: 'text', data: { text: sourceText } }]
+    };
+
+    const routedResult = await wrappedActions.call('send_group_msg', sendParams);
+    assert.equal(routedCalls.length, 1, 'QunGuanjia route must receive one offered group message');
+    assert.equal(
+      routedCalls[0].params.message[0].data.text,
+      localizedText,
+      'QunGuanjia success route must receive the localized copy before bypassing OneBot egress'
+    );
+    assert.equal(rawCalls.length, 0, 'successful QunGuanjia routing must bypass the OneBot transport');
+    assert.equal(routedResult?.data?.channel, 'qun_guanjia');
+
+    routedCalls.length = 0;
+    rawCalls.length = 0;
+    routeResult = { handled: true, ok: false, fallback: true, error: 'synthetic_route_failure' };
+
+    await wrappedActions.call('send_group_msg', sendParams);
+    assert.equal(routedCalls.length, 1, 'fallback attempt must still offer one localized copy to QunGuanjia');
+    assert.equal(
+      routedCalls[0].params.message[0].data.text,
+      localizedText,
+      'QunGuanjia fallback attempt must receive localized text'
+    );
+    assert.equal(rawCalls.length, 1, 'fallback must continue to the underlying OneBot transport exactly once');
+    assert.equal(rawCalls[0].action, 'send_group_msg');
+    assert.equal(
+      (rawCalls[0].params as any).message[0].data.text,
+      sourceText,
+      'fallback must keep the original text for the final OneBot egress to localize exactly once'
+    );
+  } finally {
+    qunGuanjiaService.routeGroupMessage = originalRouteGroupMessage;
+    pluginState.config = previousPluginConfig;
+    pluginState.actions = previousActions;
+  }
 }
 
 async function main(): Promise<void> {
@@ -249,10 +324,7 @@ async function main(): Promise<void> {
   assert.match(patchedPage, /syncGenericField/);
   assert.match(patchedPage, /refreshBtn/);
 
-  const adapterSource = fs.readFileSync(new URL('../src/core/state-infra/plugin_state_context_adapter.ts', import.meta.url), 'utf8');
-  assert.match(adapterSource, /localizeOneBotSendParamsSafe/);
-  assert.match(adapterSource, /guanjiaParams/);
-  assert.match(adapterSource, /routeGroupMessage\(guanjiaParams/);
+  await verifyQunGuanjiaLocalizationBoundary();
 
   const previousConfig = configStateService.getConfig();
   const downstreamCalls: Array<{ action: string; params: any }> = [];
