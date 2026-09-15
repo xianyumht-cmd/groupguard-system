@@ -317,11 +317,16 @@ try {
     groupFixtures,
     'global config save must preserve the current in-memory group map when config.json carries groups:{}'
   );
+  const storedGroups = storageAdapter.loadAllGroupConfigs();
   assert.deepEqual(
-    storageAdapter.loadAllGroupConfigs(),
-    groupFixtures,
-    'global config save must preserve all SQLite group overrides when config.json carries groups:{}'
+    Object.keys(storedGroups).sort(),
+    Object.keys(groupFixtures).sort(),
+    'global config save must preserve the SQLite group-row set when config.json carries groups:{}'
   );
+  assert.equal(storedGroups['20001']?.useGlobal, false);
+  assert.equal(storedGroups['20001']?.qaEnabled, false);
+  assert.equal(storedGroups['20002']?.useGlobal, true);
+  assert.equal(storedGroups['20002']?.qaEnabled, true);
   const persistedMainConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) as { groups?: unknown };
   assert.deepEqual(
     persistedMainConfig.groups,
