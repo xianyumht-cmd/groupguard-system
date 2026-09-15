@@ -11,6 +11,7 @@ import {
 import { targetFilePushCallbackToken } from '../src/services/target_file_push_credentials.ts';
 import { downloadTargetFile, readTargetFileRetentionState } from '../src/services/target_file_push_delivery.ts';
 import { TargetFilePushService } from '../src/services/target_file_push_service.ts';
+import { startSnowLumaAdminServer } from '../src/standalone/admin/server.ts';
 import { renderTargetFilePushPage } from '../src/standalone/admin/target_file_push_page.ts';
 import { applyWebUiTheme } from '../src/standalone/admin/webui_theme.ts';
 
@@ -73,6 +74,34 @@ async function listen(body: Buffer): Promise<{ url: string; close: () => Promise
     url: `http://127.0.0.1:${address.port}/package.zip`,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
+}
+
+async function findAvailablePort(): Promise<number> {
+  const probe = http.createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = probe.address();
+  if (!address || typeof address === 'string') throw new Error('test_server_address_missing');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
+}
+
+async function fetchWithStartupRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
 }
 
 async function main(): Promise<void> {
@@ -332,17 +361,71 @@ async function main(): Promise<void> {
   assert.match(themedPage, /扩展模块 定向文件推送 蓝奏 群文件/);
   assert.match(themedPage, /\/target-file-push\.html/);
 
-  const adminServerSource = fs.readFileSync(path.resolve(process.cwd(), 'src/standalone/admin/server.ts'), 'utf-8');
-  const callbackRouteIndex = adminServerSource.indexOf("url.pathname === '/api/target-file-push/event'");
-  const firstGlobalAuthIndex = adminServerSource.indexOf('if (!requireAuth(req, res, url, token)) return;');
-  assert.ok(callbackRouteIndex >= 0, 'target file callback route must exist');
-  assert.ok(firstGlobalAuthIndex > callbackRouteIndex, 'dedicated callback-token route must run before WebUI global auth');
-  assert.match(adminServerSource, /x-target-file-token/);
+  const callbackServerDir = path.join(workDir, 'callback-route-case');
+  const callbackServerDataDir = path.join(callbackServerDir, 'data');
+  const callbackServerConfigPath = path.join(callbackServerDir, 'config.json');
+  fs.mkdirSync(callbackServerDataDir, { recursive: true });
+  fs.writeFileSync(callbackServerConfigPath, '{}\n', 'utf-8');
+  const callbackPort = await findAvailablePort();
+  const adminToken = 'target-file-push-admin-token';
+  const routeCallbackToken = targetFilePushCallbackToken(resolveTargetFilePushConfigDir(callbackServerConfigPath));
+  const silentLogger = {
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+    debug: () => undefined,
+  };
+  const callbackAdminRuntime = startSnowLumaAdminServer({
+    ctx: {
+      hostProfile: hostProfile(async () => { throw new Error('disabled callback must not upload'); }),
+      logger: silentLogger,
+    },
+    workDir: callbackServerDir,
+    dataDir: callbackServerDataDir,
+    configPath: callbackServerConfigPath,
+    backupDir: path.join(callbackServerDir, 'backups'),
+    dynamicCommandsConfigPath: path.join(callbackServerDir, 'dynamic-commands.json'),
+    wsUrl: 'ws://127.0.0.1:3001',
+    host: '127.0.0.1',
+    port: callbackPort,
+    token: adminToken,
+    getOneBotStatus: () => ({
+      status: 'disconnected',
+      connected: false,
+      started: true,
+      reconnectScheduled: false,
+      lastError: '',
+    }),
+    logger: silentLogger,
+  } as any);
+  const callbackBaseUrl = `http://127.0.0.1:${callbackPort}`;
+  const callbackBody = JSON.stringify({ schema: 'target-file-push.v1' });
 
-  const webUiThemeSource = fs.readFileSync(path.resolve(process.cwd(), 'src/standalone/admin/webui_theme.ts'), 'utf-8');
-  assert.match(webUiThemeSource, /groupguard-target-file-push-navigation-patch/);
-  assert.match(webUiThemeSource, /ggTargetFilePush/);
+  const dedicatedCallback = await fetchWithStartupRetry(`${callbackBaseUrl}/api/target-file-push/event`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-target-file-token': routeCallbackToken,
+    },
+    body: callbackBody,
+  });
+  assert.equal(dedicatedCallback.status, 400, 'valid callback token must reach the callback route without WebUI authentication');
+  const dedicatedCallbackBody = await dedicatedCallback.json() as Record<string, any>;
+  assert.equal(dedicatedCallbackBody.error, 'target_file_push_disabled', 'callback route must use target-file auth before business validation');
 
+  const adminTokenOnly = await fetch(`${callbackBaseUrl}/api/target-file-push/event`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-groupguard-token': adminToken,
+    },
+    body: callbackBody,
+  });
+  assert.equal(adminTokenOnly.status, 401, 'WebUI master token must not substitute for the dedicated callback token');
+  const adminTokenOnlyBody = await adminTokenOnly.json() as Record<string, any>;
+  assert.equal(adminTokenOnlyBody.error, 'target_file_push_callback_unauthorized');
+
+  await callbackAdminRuntime.close();
   await fileServer.close();
   fs.rmSync(workDir, { recursive: true, force: true });
   console.log('target file push verification passed');
