@@ -25,9 +25,6 @@ assert.ok(server.includes('/api/self-update/status'));
 assert.ok(updater.includes('xianyumht-cmd/groupguard-system'));
 assert.ok(updater.includes('groupguard-build.yml'));
 assert.ok(updater.includes('private_repository_update_token_required'));
-assert.ok(updater.includes('self_update_zip_path_escape'));
-assert.ok(updater.includes('self_update_manifest_file_hash_mismatch'));
-assert.ok(updater.includes('self_update_manifest_file_set_mismatch'));
 assert.ok(updater.includes('self_update_runtime_entry_outside_managed_dist'));
 assert.ok(updater.includes('managedRuntime: isManagedRuntimeEntry(workDir)'));
 assert.ok(updater.includes('.groupguard-update-stage-'));
@@ -38,14 +35,19 @@ assert.ok(service.includes('rollbackPendingSelfUpdate'));
 assert.ok(workflow.includes('groupguard-self-update-'));
 assert.ok(workflow.includes('groupguard-self-update.v1'));
 
-execFileSync(process.execPath, [
-  '--experimental-strip-types',
-  '--import',
-  './scripts/register-ts-loader.mjs',
+for (const script of [
   './scripts/verify-self-update-download-behavior.ts',
-], {
-  cwd: root,
-  stdio: 'inherit',
-});
+  './scripts/verify-self-update-archive-behavior.ts',
+]) {
+  execFileSync(process.execPath, [
+    '--experimental-strip-types',
+    '--import',
+    './scripts/register-ts-loader.mjs',
+    script,
+  ], {
+    cwd: root,
+    stdio: 'inherit',
+  });
+}
 
 console.log('verify-self-update-contract: ok');
