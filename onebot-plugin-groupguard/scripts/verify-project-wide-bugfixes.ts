@@ -17,6 +17,8 @@ import { isIntranetHostname } from '../src/services/groupguard_query_delivery_cl
 import { resolveContainedSubGameplayResourcePath } from '../src/services/sub_gameplay_resources';
 import { normalizeTargetFilePushConfig } from '../src/services/target_file_push_config';
 import { pluginState } from '../src/state';
+import { storageAdapter } from '../src/storage_adapter';
+import { saveRawConfig } from '../src/standalone/admin/config_api';
 import { resolveLicenseExpireTime } from '../src/standalone/admin/license_api';
 
 const invalid = normalizePluginConfig({ configVersion: 'bad', global: { auditRetentionMaxRows: 'bad' } } as any);
@@ -283,12 +285,64 @@ const explicitEmpty = selectGroupsForPersistence({}, persistedGroups, { allowEmp
 assert.equal(explicitEmpty.preservedPersistedGroups, false);
 assert.deepEqual(explicitEmpty.groups, {});
 
+const tempGlobalSaveFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-global-config-save-'));
+const previousGlobalSaveConfig = configStateService.getConfig();
+try {
+  const groupFixtures = {
+    '20001': { useGlobal: false, qaEnabled: false },
+    '20002': { useGlobal: true, qaEnabled: true },
+  } as any;
+  const workingConfig = JSON.parse(JSON.stringify(previousGlobalSaveConfig));
+  workingConfig.groups = groupFixtures;
+  configStateService.setConfig(workingConfig);
+
+  storageAdapter.init(tempGlobalSaveFixture);
+  storageAdapter.replaceAllGroupConfigs(groupFixtures, () => undefined);
+
+  const configPath = path.join(tempGlobalSaveFixture, 'config.json');
+  const rawGlobalSave = JSON.parse(JSON.stringify(workingConfig));
+  rawGlobalSave.groups = {};
+  fs.writeFileSync(configPath, JSON.stringify(rawGlobalSave, null, 2), 'utf8');
+
+  saveRawConfig({
+    ctx: { configPath },
+    workDir: tempGlobalSaveFixture,
+    dataDir: tempGlobalSaveFixture,
+    configPath,
+    backupDir: path.join(tempGlobalSaveFixture, 'backups'),
+  } as any, rawGlobalSave);
+
+  assert.deepEqual(
+    configStateService.getGroups(),
+    groupFixtures,
+    'global config save must preserve the current in-memory group map when config.json carries groups:{}'
+  );
+  const storedGroups = storageAdapter.loadAllGroupConfigs();
+  assert.deepEqual(
+    Object.keys(storedGroups).sort(),
+    Object.keys(groupFixtures).sort(),
+    'global config save must preserve the SQLite group-row set when config.json carries groups:{}'
+  );
+  assert.equal(storedGroups['20001']?.useGlobal, false);
+  assert.equal(storedGroups['20001']?.qaEnabled, false);
+  assert.equal(storedGroups['20002']?.useGlobal, true);
+  assert.equal(storedGroups['20002']?.qaEnabled, true);
+  const persistedMainConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) as { groups?: unknown };
+  assert.deepEqual(
+    persistedMainConfig.groups,
+    {},
+    'config.json must remain free of per-group rows after a global config save'
+  );
+} finally {
+  storageAdapter.close();
+  configStateService.setConfig(previousGlobalSaveConfig);
+  fs.rmSync(tempGlobalSaveFixture, { recursive: true, force: true });
+}
+
 const common = fs.readFileSync(path.join(root, 'src/commands/common.ts'), 'utf8');
-const configApi = fs.readFileSync(path.join(root, 'src/standalone/admin/config_api.ts'), 'utf8');
 const groupApi = fs.readFileSync(path.join(root, 'src/standalone/admin/group_api.ts'), 'utf8');
 assert.ok(common.includes('allowEmptyRuntime: options.allowEmptyGroupPersistence === true'));
 assert.ok(common.includes('已阻止空分群配置覆盖 SQLite'));
-assert.ok(configApi.includes('normalized.groups = previous.groups || {}'));
 assert.ok(groupApi.includes('storageAdapter.deleteGroupConfig(id)'));
 assert.ok(groupApi.includes('allowEmptyGroupPersistence: explicitlyBecameEmpty'));
 console.log('project-wide bugfix regression passed');
