@@ -7,7 +7,7 @@ Updated: 2026-09-15
 - Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical development branch: `main`.
 - Runtime/code baseline accepted by this audit: `450c1d452856837c7f4f64cbc9081d00d52938eb` (merge of PR #81).
-- Immediately before this documentation update, `main` was `206dd7cd0235f03c91b55e7b31d766bacb70999a`, an automated `plugin.json` metadata-only child of `450c1d45...`. A later documentation-only commit may advance `main` again without changing the accepted runtime code. Always re-fetch current `main` in a new session.
+- At the start of the current GG-AUD-004/005 round, `main` was `0fc827e097a117c793f29288b23a6e6b554bcf42`, the documentation-only merge of PR #82. Always re-fetch current `main` in a new session because later audit merges or automated metadata commits may advance it without changing the live production runtime.
 - Latest verified `main` workflows for runtime commit `450c1d45...` all succeeded:
   - GroupGuard CI #899;
   - GroupGuard Build #903;
@@ -28,7 +28,7 @@ Updated: 2026-09-15
 
 - The operator last explicitly confirmed the live runtime at `9318d86415cbb726b022511d11d6a598b4237216` after a successful WebUI one-click update.
 - No later audit round deployed, restarted, or otherwise mutated the production ARM runtime.
-- Therefore **do not claim that production is running `450c1d45...`, `206dd7cd...`, or any intermediate audit commit**.
+- Therefore **do not claim that production is running `450c1d45...`, `0fc827e...`, or any intermediate audit commit**.
 - The audit strategy is intentionally to accumulate reviewed fixes and perform one later WebUI one-click upgrade, not one production update per PR.
 - Production/runtime state remains separate from GitHub `main`, the Windows checkout `D:\project2\groupguard-system`, and Actions artifacts.
 
@@ -68,7 +68,8 @@ All items above were merged only after PR validation and then re-verified on the
 | --- | --- | --- |
 | GG-AUD-002 | Repository had no dedicated lint gate. Added a no-dependency semantic TypeScript control-flow gate using `tsconfig.lint.json` with `noImplicitReturns` + `noFallthroughCasesInSwitch`. This is a stable first-stage gate, **not** a claim of full typescript-eslint coverage. | #76 / `26e1b47711a441c9dd3aea2e2bb18c764ce8fd74` |
 | GG-AUD-003 | `scripts/**/*.ts` were outside TypeScript checking. Added separate Node-script and Playwright browser-test typecheck profiles, each executed in the dependency environment where it is valid. | #77 / `291fa681275c7a94986a4e50880a522d3e602a7c` |
-| GG-AUD-004/005 hotspot | Target-file callback test used source-order/string matching and had previously produced false-positive CI failures after safe auth refactors. Replaced that hotspot with real HTTP behavior: callback token works without WebUI master token; WebUI master token cannot substitute for callback token. Overall GG-AUD-004/005 remain open for other brittle source-shape tests. | #78 / `1c5a39237562d2b9f6dd7b57e5ee8a1eccfb9c12` |
+| GG-AUD-004/005 target-file hotspot | Target-file callback test used source-order/string matching and had previously produced false-positive CI failures after safe auth refactors. Replaced that hotspot with real HTTP behavior: callback token works without WebUI master token; WebUI master token cannot substitute for callback token. | #78 / `1c5a39237562d2b9f6dd7b57e5ee8a1eccfb9c12` |
+| GG-AUD-004/005 WebUI hotspot | `verify-webui-ios-glass.ts` required exact `server.ts`/theme call-expression strings, so semantics-preserving rewrites could fail despite identical client-visible HTML. PR #83 replaces that WebUI server/theme source-shape cluster with authenticated temporary-port HTTP behavior over the actual admin routes. Production code is unchanged; the separate group-API source checks remain scoped for later classification. Initial PR validation passed GroupGuard CI #901 and GroupGuard Build #905 before this state-document update. | #83 / test-only; runtime baseline unchanged |
 | GG-AUD-011 | Self-update security contract had important source-string tests. Download token-boundary, hostile ZIP/manifest, managed-runtime, completion and rollback paths are now behavior-tested through public runtime APIs. Static checks remain only where they describe real build/UI/process wiring contracts. GG-AUD-011 is closed. | #79 `44221560a65514bf51f4b97c0306ca8a260ec57e`; #80 `f2eccb4f3fa6053fab2fd12941778d22d5388bbc`; #81 `450c1d452856837c7f4f64cbc9081d00d52938eb` |
 
 ### GG-AUD-011 behavior coverage now proves
@@ -84,6 +85,12 @@ All items above were merged only after PR validation and then re-verified on the
 - Pending rollback restores the previous `dist`, removes the failed candidate, and records `rolled_back`.
 - Rollback paths outside the app-owned prefix are rejected without mutation.
 - Exit code `75` remains the explicit worker/supervisor self-update restart contract.
+
+### GG-AUD-004/005 source-text inventory classification
+
+- Behavior-critical and clearly brittle next candidate: `scripts/verify-four-query-three-mode.ts` still infers query preference behavior from whether runtime source literally contains `preferred: 'text'`; equivalent refactors can change that text without changing the request payload or resolved output mode.
+- Still requiring a bounded decision: the remaining `group_api.ts` exact-source checks in `verify-webui-ios-glass.ts`, the unrelated source tail in `verify-project-wide-bugfixes.ts`, and output-locale adapter call-shape checks.
+- Likely legitimate static contracts unless contrary evidence appears: retired hidden/video marker sweeps, client-boundary bans on direct `fetch`/business URLs, and deployment/workflow packaging or rollback wiring checks. Do not mechanically convert or delete these merely because they inspect source text.
 
 ## Failed/abandoned approaches and why
 
@@ -118,7 +125,7 @@ These are evidence from this campaign and should not be repeated without a new r
 
 The following original findings remain open or require fresh re-verification before closure:
 
-- **GG-AUD-004 / GG-AUD-005** — behavior tests are still mixed with source-string/grep/implementation-shape tests elsewhere. Target-file callback and self-update security hotspots are fixed; continue one coherent hotspot at a time. Do not blindly delete all static tests because some correctly encode release/static contracts.
+- **GG-AUD-004 / GG-AUD-005** — target-file callback, self-update security, and WebUI server/theme hotspots have behavior coverage, but other source-shape debt remains. The clearest next behavior-critical item is the `preferred: 'text'` literal check in `verify-four-query-three-mode.ts`; group-API/source-tail checks still need classification. Keep legitimate architecture/release static contracts.
 - **GG-AUD-006** — very large serial test suite / verifier concentration; assess runtime and maintenance cost before splitting.
 - **GG-AUD-007** — substantial `any` usage; quantify and prioritize by trust boundary rather than broad mechanical replacement.
 - **GG-AUD-008** — large monolithic modules; identify one ownership boundary at a time, not a repository-wide rewrite.
@@ -140,6 +147,6 @@ Independent operational/product issues that existed before this campaign (for ex
 1. Read `AGENTS.md`, `docs/AI_CONTEXT.md` when present, this `PROJECT_STATE.md`, `docs/PITFALLS.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, and `docs/AI_WORKSTYLE.md` when present.
 2. Fetch latest `main` and distinguish its HEAD from the latest runtime/self-update artifact commit. Do not assume the SHA in this document is still HEAD.
 3. Confirm no production update/restart has happened since the operator-confirmed `9318d864...` runtime before making any live-state claim.
-4. Continue with **one medium unresolved issue only**. Best immediate candidate is the remaining GG-AUD-004/005 source-shape-test debt: inventory current source-text tests, select one behavior-critical coherent cluster, prove whether it is brittle, migrate only that cluster to behavior tests, then PR/CI/merge/main-artifact verification.
-5. If GG-AUD-004/005 inventory shows only legitimate static contract tests remain, close/reclassify with evidence instead of forcing changes; then move to the next smallest real debt such as GG-AUD-012 or a bounded GG-AUD-030 cleanup.
+4. Continue with **one medium unresolved issue only**. Best immediate candidate is the remaining GG-AUD-004/005 query-mode source-shape debt in `scripts/verify-four-query-three-mode.ts`: prove the literal `preferred: 'text'` check is replaceable by request/output behavior coverage, migrate only that coherent cluster, then PR/CI/merge/main-artifact verification.
+5. After that migration, reclassify the remaining source-text checks. If only legitimate static architecture/release contracts remain, close/reclassify GG-AUD-004/005 with evidence instead of forcing more changes; otherwise select one bounded residual hotspot.
 6. Keep production unchanged until the operator explicitly decides the audit batch is ready for the single WebUI one-click upgrade.
