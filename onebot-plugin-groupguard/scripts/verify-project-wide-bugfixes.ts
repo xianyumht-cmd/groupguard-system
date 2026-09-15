@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import viteConfig from '../vite.config';
 import { authManager } from '../src/auth';
+import { getBuildInfo } from '../src/build_info';
 import { normalizePluginConfig } from '../src/config';
 import { selectGroupsForPersistence } from '../src/config_persistence_guard';
 import { checkFeatureGate } from '../src/core/feature_gate';
@@ -247,6 +249,29 @@ try {
   pluginState.resumeSendQueue();
 }
 
+const root = path.resolve(import.meta.dirname, '..');
+const packageMetadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { version?: unknown };
+const expectedRuntimeVersion = String(packageMetadata.version ?? '').trim();
+assert.match(expectedRuntimeVersion, /^\d+\.\d+\.\d+(?:[-+].+)?$/, 'package.json must expose a concrete semantic runtime version');
+
+const sourceBuildInfo = getBuildInfo();
+assert.equal(pluginState.version, sourceBuildInfo.version, 'PluginState must consume the canonical build-info version');
+if (!process.env.GROUPGUARD_VERSION) {
+  assert.equal(sourceBuildInfo.version, expectedRuntimeVersion, 'source runtime build info must default to package.json version');
+}
+
+const snowlumaBuildConfig = await viteConfig({
+  command: 'build',
+  mode: 'snowluma',
+  isSsrBuild: false,
+  isPreview: false,
+});
+const embeddedBuildInfoText = snowlumaBuildConfig.define?.__GROUPGUARD_BUILD_INFO__;
+assert.equal(typeof embeddedBuildInfoText, 'string', 'SnowLuma Vite build must embed GroupGuard build metadata');
+const embeddedBuildInfo = JSON.parse(String(embeddedBuildInfoText)) as { version?: unknown; artifact?: unknown };
+assert.equal(embeddedBuildInfo.version, expectedRuntimeVersion, 'SnowLuma embedded runtime version must match package.json');
+assert.equal(embeddedBuildInfo.artifact, 'snowluma-service.mjs', 'SnowLuma build metadata must identify the runtime artifact');
+
 const persistedGroups = {
   '10001': { useGlobal: false, qaList: [{ keyword: 'a', mode: 'exact', reply: 'b' }] },
   '10002': { useGlobal: false }
@@ -259,12 +284,9 @@ const explicitEmpty = selectGroupsForPersistence({}, persistedGroups, { allowEmp
 assert.equal(explicitEmpty.preservedPersistedGroups, false);
 assert.deepEqual(explicitEmpty.groups, {});
 
-const root = path.resolve(import.meta.dirname, '..');
-const state = fs.readFileSync(path.join(root, 'src/state.ts'), 'utf8');
 const common = fs.readFileSync(path.join(root, 'src/commands/common.ts'), 'utf8');
 const configApi = fs.readFileSync(path.join(root, 'src/standalone/admin/config_api.ts'), 'utf8');
 const groupApi = fs.readFileSync(path.join(root, 'src/standalone/admin/group_api.ts'), 'utf8');
-assert.ok(!state.includes("return '1.0.0'"));
 assert.ok(common.includes('allowEmptyRuntime: options.allowEmptyGroupPersistence === true'));
 assert.ok(common.includes('已阻止空分群配置覆盖 SQLite'));
 assert.ok(configApi.includes('normalized.groups = previous.groups || {}'));
