@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_PLUGIN_CONFIG } from '../src/config.ts';
+import type { GroupSettingsOverride } from '../src/config_effective.ts';
 import { configStateService } from '../src/core/state-services/config_state_service.ts';
 import { contextStateService } from '../src/core/state-services/context_state_service.ts';
 import { storageAdapter } from '../src/storage_adapter.ts';
@@ -183,7 +184,7 @@ try {
     wrapInCodeBlock: false,
   };
   testConfig.global.qaEnabled = true;
-  testConfig.groups = {
+  const groupFixtures = {
     // Active sparse overlay.
     '10001': {
       useGlobal: false,
@@ -205,7 +206,10 @@ try {
     '10007': { useGlobal: false, qaEnabled: true },
     // No dormant values to reactivate when whole-group inheritance is disabled.
     '10008': { useGlobal: true },
-  };
+  } satisfies Record<string, GroupSettingsOverride>;
+  // Persistent group rows are intentionally sparse overrides even though the
+  // legacy PluginConfig.groups surface is still typed as full settings.
+  testConfig.groups = groupFixtures as typeof testConfig.groups;
 
   contextStateService.setConfigDir(tempDir);
   contextStateService.setConfigPath(configPath);
