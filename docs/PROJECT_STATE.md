@@ -1,128 +1,145 @@
 # GroupGuard Project State
 
-Updated: 2026-09-14
+Updated: 2026-09-15
 
-## Authorization security release ready for WebUI self-update — 2026-09-14
+## Current canonical state
 
-- PR #64 (`fix: harden authorization before WebUI self-update`) is merged into `main` at `9318d86415cbb726b022511d11d6a598b4237216`.
-- The unsafe legacy group activation path no longer treats `PRO-30-*` or `PRO-PERM-*` prefixes as valid paid activation codes. Group activation is fail-closed until a verifiable activation mechanism exists; authorization/renewal remains available through the robot-owner flow and authenticated WebUI.
-- Owner-granted durations now accept only a positive integer number of days or `永久`. WebUI license writes reject malformed/negative/non-integer durations rather than converting invalid input into a permanent authorization. Stored `expireTime=0` is rendered consistently as permanent.
-- The hourly `AuthManager` sweep consumes its timer Promise rejection locally and isolates each group-notification send failure, so one OneBot send rejection does not abort the remaining license sweep or reach the worker-level fatal `unhandledRejection` handler.
-- Authorization security behavior is covered by the existing `verify:project-wide-bugfixes` gate inside normal `npm test`.
-- PR validation passed `GroupGuard CI`, `GroupGuard Build`, and `WebUI Browser Acceptance`.
-- The accepted `main` push `GroupGuard Build` run `34851006479` completed successfully and produced `groupguard-self-update-9318d86415cbb726b022511d11d6a598b4237216` (artifact id `10351326649`, digest `sha256:2e1cd58e743e8dec80d8772123d02dcb3a2c75522f13f38cf36f25ace6506bf3`, retained through 2026-10-14).
-- The same `main` commit passed `GroupGuard CI` run `34851006474`, including `npm test`, production dependency audit, deployment safety checks, SnowLuma build, and cross-repository mock contracts.
-- Automated plugin metadata then advanced `main` to `25ab5e0a33d8eb9d4eb84bb9b9843df674b126f8` with `chore: auto-update plugin.json [skip ci]`. This does not invalidate the updater candidate: the WebUI updater selects successful `main` `GroupGuard Build` runs with an exact matching `groupguard-self-update-<run-head-sha>` artifact, so `9318d864...` remains the newest verified self-update candidate for this release.
-- No ARM runtime was changed or restarted by this repository task. The operator may use the already accepted WebUI **系统更新 → 检查更新 → 一键更新** flow on a self-update-capable runtime whose private-repository update token is configured.
-
-## Accepted per-group controls + WebUI self-update — 2026-09-11
-
-- PR #59 (per-group self-recall) is merged into `main`.
-- PR #60 (selected-group LOL patch notices + SnowLuma WebUI self-update) is merged into `main`.
-- PR #61 fixes the production `self_update_artifact_http_415` failure and is merged into `main`; accepted updater implementation commit is `38fa481e1c1dec41f5fa3c05f94bb9a08711c5d1`.
-- LOL patch `@全体` recipients are explicit `lolPatchNotifyGroupIds` intersected with currently valid authorized groups; missing/empty means no destinations.
-- Per-group self-recall is independently configurable and preserves sparse inheritance semantics instead of materializing inherited values as new group overrides.
-- SnowLuma admin WebUI exposes authenticated update status/token/check/apply controls under **系统更新**. Update source is fixed to the private canonical repository and successful `main` `GroupGuard Build` artifacts named `groupguard-self-update-<commit>`.
-- Private-repository updater credentials are accepted from `GROUPGUARD_UPDATE_GITHUB_TOKEN` or the private data file `self-update/github-actions-token.txt`; they are not written back to `config.json` or exposed by the status UI.
-- Candidate validation covers managed runtime entry, archive path/type/size limits, exact `dist` file-set manifest, per-file SHA-256/size, build-info commit, supervised exact-commit startup, automatic rollback, and updater-owned temporary-directory cleanup.
-- GitHub Actions artifact download follows the verified two-step protocol: authenticated REST request with `Accept: application/vnd.github+json` and `redirect: manual`, require HTTP 302 + HTTPS `Location`, then download the signed URL without forwarding the repository token.
-- A live protocol test against a real private `main` artifact passed before PR #61 merge.
-- Operator-provided ARM Docker acceptance evidence confirms one live SnowLuma deployment completed a real WebUI one-click update to `38fa481e1c1dec41f5fa3c05f94bb9a08711c5d1` with `受管运行入口=是`, `complete / complete`, `100%`, and “新版本已启动并通过提交校验”。No manual container restart was used after pressing the update button.
-- This acceptance proves the end-to-end path for that live deployment: private-repo authentication → artifact discovery/download → ZIP/manifest/hash validation → `dist` switch → supervisor restart → exact commit ready check. It does **not** by itself assert that every historical ARM host has been upgraded to the same commit.
-
-The earlier “candidate / production unchanged” notes for this feature are superseded by this accepted state.
-
-## Reliability hardening candidate — 2026-09-05
-
-- Development candidate: `codex/reliability-hardening`, based on freshly fetched `origin/main@ec633573c0dc1056e8d861429312983ed9f107e7`.
-- Scope: repair the verified P1 reliability findings and related P2 safety issues from the 2026-09-05 audit: ordered/bounded OneBot intake, verification prompt ordering, bounded caches/queues/media work, durable target-file ordering, action-result correctness, graceful shutdown, storage retention/integrity, dynamic-command validation, WebUI authentication hardening, SSRF protection, explicit translation consent, and Windows EOL normalization.
-- Local validation: full `npm test`, `npm run build:all`, and production dependency audit pass. This is development evidence only; CI/PR review and production runtime validation remain separate.
-- Production remains unchanged. No ARM deployment or restart is authorized by this development task.
-
-## Canonical repository
-
+- Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical development branch: `main`.
-- PR `#50 fix: make battle image delivery the feature default` is merged.
-- The accepted battle-query implementation commit is `23ed0084eb2214e591a0108b5b82d33fb10b00ba`.
-- The later `main` commit `1c36c9e8fb9f86577f1c6cf5e3396041e73b4664` is the automated `plugin.json` refresh whose parent is `23ed0084...`; therefore current `main` contains the accepted battle fix.
-- Issue `#51` tracks the production-state handoff and rebuildable-download follow-up.
+- Runtime/code baseline accepted by this audit: `450c1d452856837c7f4f64cbc9081d00d52938eb` (merge of PR #81).
+- Immediately before this documentation update, `main` was `206dd7cd0235f03c91b55e7b31d766bacb70999a`, an automated `plugin.json` metadata-only child of `450c1d45...`. A later documentation-only commit may advance `main` again without changing the accepted runtime code. Always re-fetch current `main` in a new session.
+- Latest verified `main` workflows for runtime commit `450c1d45...` all succeeded:
+  - GroupGuard CI #899;
+  - GroupGuard Build #903;
+  - Build SnowLuma Service #128;
+  - Build & Release Plugins #193.
+- Latest verified WebUI self-update artifact:
+  - `groupguard-self-update-450c1d452856837c7f4f64cbc9081d00d52938eb`;
+  - artifact id `10389353831`;
+  - SHA-256 `db51b08e88fbd992dec144ed2340c29b5276d018eb9c463a532a7fda80454da9`;
+  - expires 2026-10-15.
+- Matching deployment bundle:
+  - `groupguard-deployment-bundle-450c1d452856837c7f4f64cbc9081d00d52938eb`;
+  - artifact id `10389453389`;
+  - SHA-256 `f0861749019ab5db244688c2e0e0075715575c82992ddd318ebb89ab6977eef2`.
+- Matching build log artifact id `10389562944`, SHA-256 `c4f1fbf0339ecdc400edad9d7b1aca33785294952564cddf56df31fd0cfa0eee`.
 
-## Accepted production state — 2026-08-28
+### Production/runtime evidence boundary
 
-Operator-reported production state after PR #50:
+- The operator last explicitly confirmed the live runtime at `9318d86415cbb726b022511d11d6a598b4237216` after a successful WebUI one-click update.
+- No later audit round deployed, restarted, or otherwise mutated the production ARM runtime.
+- Therefore **do not claim that production is running `450c1d45...`, `206dd7cd...`, or any intermediate audit commit**.
+- The audit strategy is intentionally to accumulate reviewed fixes and perform one later WebUI one-click upgrade, not one production update per PR.
+- Production/runtime state remains separate from GitHub `main`, the Windows checkout `D:\project2\groupguard-system`, and Actions artifacts.
 
-- the SnowLuma/GroupGuard `dist` built from `23ed0084eb2214e591a0108b5b82d33fb10b00ba` was manually replaced on both `192.168.3.89` and `192.168.3.121`;
-- `192.168.3.121` was functionally tested with `查战绩` after replacement and returned the expected image result;
-- `192.168.3.89` was replaced with the same accepted `dist`, but no new business-level query probe for 89 was captured in this task;
-- runtime `config.json`, SQLite/data, logs, credentials, and secrets were not part of the code replacement.
+### Repository hygiene snapshot
 
-The accepted production behavior for `查战绩` is:
+- A 2026-09-15 branch inventory returned 33 remote branches including `main`; many already-merged audit/feature branches remain. Branch cleanup is not complete. Do not delete branches without verifying that their unique history is already reachable from `main` or safely archived.
+- PR #56 (`perf: trace queued query delivery stages`) is still open and is independent of this security/code-quality audit. Do not merge, close, or fold it into an audit task without fresh review.
 
-1. active explicit group `lolQueryOutputFormat` override;
-2. `queryCommandProfiles.lol_battle.outputFormat`;
-3. built-in battle default `image`.
+## 2026-09-14 to 2026-09-15 audit campaign
 
-A stored row with `useGlobal=true` does not reactivate dormant group output values. WebUI and runtime now use the same battle precedence semantics.
+The campaign started from a repository-wide review using current code as the source of truth and adapting ideas from high-signal public agent/review projects (TDD/YAGNI/systematic debugging, explicit reviewer/security roles, repository-local skills/instructions). External patterns are guidance only; repository code, tests, CI, and runtime evidence decide findings.
 
-## Production topology evidence
+Working rule for this campaign: one medium issue end-to-end per user `继续` round (or two tightly related small items), including current-main inspection, fix/test when warranted, PR, CI/Build, merge, main verification, and artifact verification. Do not start a second unrelated issue in the same round. Production stays unchanged until the final batched update.
 
-Verified/observed topology is host-specific and must not be assumed identical:
+## Completed security/reliability findings
 
-### 192.168.3.89
+| ID | Final result | PR / accepted runtime commit |
+| --- | --- | --- |
+| GG-AUD-019 P0 | Prefix-only `PRO-30-*` / `PRO-PERM-*` activation was not authorization. Legacy group activation now fails closed; owner/WebUI authorization remains. | #64 / `9318d86415cbb726b022511d11d6a598b4237216` |
+| GG-AUD-026 P2 | Loose duration parsing could turn malformed values into unintended/permanent authorization. Positive integer days or explicit permanent semantics are now required. | #64 / `9318d864...` |
+| GG-AUD-001 | `AuthManager` timer/send rejection could reach fatal process-level `unhandledRejection`. Production fix was already in #64; PR #75 added behavior-level regression coverage for the real timer callback and cleanup. | #64 + #75 / `e59d6fbeac03fb2f67e20e2beb1dd5e9ee4aa1b7` test baseline |
+| GG-AUD-021 P1 | `/api/query/test` authenticated SSRF/unbounded response read. Arbitrary custom URL/headers and one-shot URL overrides are rejected; configured targets only, manual redirects, bounded streaming body. | #66 / `d229730139b3ae3f3372b90a5ffeeddb9fb35850` |
+| GG-AUD-022 P1 hardening | Target-file DNS validation had lookup/fetch TOCTOU. Each redirect hop is resolved, validated and socket-pinned; redirects re-pin. | #67 / `cf8cd85484304cf971360ebd8b7a114a480319a9` |
+| GG-AUD-023 P2 | Cookie-authenticated mutating WebUI requests lacked explicit Origin/CSRF enforcement. Same-host Origin is required for unsafe cookie-auth methods; explicit token clients remain supported. | #68 / `6b960a3c6c72236ca1a4e742de9f2b27992c55ad` |
+| GG-AUD-024 P2 | SUB resource path validation was lexical only and allowed symlink escape. Realpath containment + regular-file requirement added. | #69 / `a57dae9b3a1130e6b798531dc06bcc4bd361fe8c` |
+| GG-AUD-029 P2 | Lanzou validation used substring matching. Replaced with explicit supported roots plus exact/subdomain boundary and HTTP(S) requirement. | #70 / `1c622c573e1782baa93a36799f25ed37a4e1ffa6` |
+| GG-AUD-025 P1 | A valid stored `free` license satisfied paid group runtime gates. Canonical paid-license check now requires at least Pro; explicit Enterprise minimum is supported. | #71 / `9bc936b19ab86e2bc14c148505a47de6916528a2` |
+| GG-AUD-028 P2 | Browser cookie stored the full WebUI master token. Browser now receives an opaque HMAC-signed 8-hour session; Bearer/X-token master auth remains; 15-minute legacy-cookie migration supports first upgrade. | #72 / `a315aa87fc54cf244b5c6bf09b3e652e569eb155` |
+| GG-AUD-020 | Legacy auth descriptor `owner/admin` was downgraded to FeatureGate `all`. Side-effect-free mapper now converts it to `admin`; inner authorization checks remain defense in depth. | #73 / `338ef647d12fd650da4f8f58d29c0c8663a5ff20` |
+| GG-AUD-027 | Initial hypothesis that forged `sender.role` could directly elevate sensitive commands was disproved: FeatureGate uses live `get_group_member_info`. The real flaw was malformed group identity: missing `group_id` became literal `"undefined"` and could skip a license guard. OneBot IDs/event shapes and both runtime pipelines now fail closed. | #74 / `123c289304a3daa60b2f25333fbc8bdb45ac0d47` |
 
-- container: `groupguard-snowluma`;
-- historical verified application root: `/mnt/sda1/groupguard/app`;
-- historical verified backup root: `/mnt/sda1/groupguard/backups`.
+All items above were merged only after PR validation and then re-verified on their corresponding `main` push. Do not reopen one solely from the original audit note; first inspect current `main` and this tracker.
 
-### 192.168.3.121
+## Completed code-quality/test-infrastructure work
 
-Read-only runtime diagnostics on 2026-08-28 observed:
+| ID | Final result | PR / accepted runtime commit |
+| --- | --- | --- |
+| GG-AUD-002 | Repository had no dedicated lint gate. Added a no-dependency semantic TypeScript control-flow gate using `tsconfig.lint.json` with `noImplicitReturns` + `noFallthroughCasesInSwitch`. This is a stable first-stage gate, **not** a claim of full typescript-eslint coverage. | #76 / `26e1b47711a441c9dd3aea2e2bb18c764ce8fd74` |
+| GG-AUD-003 | `scripts/**/*.ts` were outside TypeScript checking. Added separate Node-script and Playwright browser-test typecheck profiles, each executed in the dependency environment where it is valid. | #77 / `291fa681275c7a94986a4e50880a522d3e602a7c` |
+| GG-AUD-004/005 hotspot | Target-file callback test used source-order/string matching and had previously produced false-positive CI failures after safe auth refactors. Replaced that hotspot with real HTTP behavior: callback token works without WebUI master token; WebUI master token cannot substitute for callback token. Overall GG-AUD-004/005 remain open for other brittle source-shape tests. | #78 / `1c5a39237562d2b9f6dd7b57e5ee8a1eccfb9c12` |
+| GG-AUD-011 | Self-update security contract had important source-string tests. Download token-boundary, hostile ZIP/manifest, managed-runtime, completion and rollback paths are now behavior-tested through public runtime APIs. Static checks remain only where they describe real build/UI/process wiring contracts. GG-AUD-011 is closed. | #79 `44221560a65514bf51f4b97c0306ca8a260ec57e`; #80 `f2eccb4f3fa6053fab2fd12941778d22d5388bbc`; #81 `450c1d452856837c7f4f64cbc9081d00d52938eb` |
 
-- container: `groupguard-snowluma`;
-- container workdir: `/app`;
-- host bind mount: `/mnt/groupguard-data/groupguard/app -> /app`;
-- query/WebUI listener: port `6108`.
+### GG-AUD-011 behavior coverage now proves
 
-The old requested path `/mnt/sda1/groupguard/app` is not a valid assumption for 121. Deployment helpers must continue resolving each host from live container mounts and existing `config/`, `data/`, and `dist/` layout before mutation.
+- GitHub repository token is sent to GitHub API/artifact REST hops but not to the signed HTTPS download URL.
+- Non-HTTPS artifact redirects are rejected before the second-hop request.
+- ZIP traversal entries, forged manifest SHA-256, and extra unlisted `dist` files are rejected before active `dist` switching.
+- Failed archive/manifest validation preserves active `dist`, cleans staging, and creates no rollback directory.
+- An unmanaged runtime entry is rejected before GitHub fetch, staging, rollback creation, or `dist` mutation.
+- The exact managed `dist/snowluma-service.mjs` entry is recognized.
+- Supervisor completion rejects a wrong worker commit and preserves rollback state.
+- Correct worker commit marks the update complete and cleans only the updater-owned rollback path.
+- Pending rollback restores the previous `dist`, removes the failed candidate, and records `rolled_back`.
+- Rollback paths outside the app-owned prefix are rejected without mutation.
+- Exit code `75` remains the explicit worker/supervisor self-update restart contract.
 
-## Downloadable deployment artifacts
+## Failed/abandoned approaches and why
 
-The accepted merge commit `23ed0084...` has successful `main` push builds:
+These are evidence from this campaign and should not be repeated without a new reason.
 
-- `Build SnowLuma Service` run `33133786561` produced `groupguard-snowluma-service`;
-- `GroupGuard Build` run `33133786572` produced `groupguard-deployment-bundle-23ed0084eb2214e591a0108b5b82d33fb10b00ba`;
-- the immutable deployment bundle artifact id is `9671262220` with digest `sha256:9583d103d6783a0bc321d8bf83768380006f34b1c0fb3f31cc042650d5870e6e`;
-- that Actions artifact is currently retained until `2026-11-26T01:44:40Z`.
+1. **Importing the full legacy runtime adapter into a Node 22 strip-only regression test.** PR #73 initially did this and failed before the test could run because a transitive TypeScript class used parameter-property syntax (`constructor(private readonly ...)`), which Node strip-only cannot transform (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`). The fix was to isolate the security decision in a side-effect-free lightweight module consumed by both production and the test.
+2. **Enabling `noUnusedLocals` / `noUnusedParameters` as part of the first lint gate.** The first #76 run surfaced 31 real TS6133/TS6196 diagnostics across historical production code. Turning that gate on immediately would have forced a broad unrelated cleanup. The rules were removed from the initial enforced baseline without suppressions; the debt is tracked as GG-AUD-030.
+3. **One `scripts/**/*.ts` typecheck profile for every script.** Three Playwright specs depend on `@playwright/test`, which is intentionally installed only in Browser Acceptance. They must be checked there, not in normal `npm ci`. #77 split Node scripts and browser specs into two profiles.
+4. **Treating test assertions as proof of TypeScript narrowing.** Around 40 strict errors in test/verifier scripts were fixed with real guards/assertions and typed tuples, not broad `as any` or `@ts-ignore`.
+5. **Constructing `Response(Buffer)` in the archive behavior test.** Runtime behavior passed, but DOM/Node `BodyInit` typings rejected `Buffer`. Copy ZIP bytes to an explicit `ArrayBuffer` instead.
+6. **Assuming `sender.role` was the real GG-AUD-027 authorization vulnerability.** Current sensitive FeatureGate paths do not trust it; they perform live OneBot role lookup. The concrete fail-open was malformed/missing group identity in the event pipeline. Preserve that distinction.
+7. **Using source-code string/order checks to prove security behavior.** This caused real false-positive CI friction, including the WebUI session refactor. Prefer executing the public behavior boundary. Keep static assertions only for genuinely static release/wiring contracts.
+8. **Reopening already fixed findings from stale notes.** GG-AUD-025 and GG-AUD-029 were accidentally revisited after their fixes had already landed. Always fetch latest `main`, read this tracker, then re-verify the exact callsite before creating a branch.
+9. **Writing files to a guessed/nonexistent GitHub branch.** Several tool calls targeting a literal `nonexistent` branch returned 404 and made no repository mutation. Use the branch API first and verify the returned ref before file writes.
+10. **Treating automated plugin metadata HEAD as the runtime release.** Plugin workflow commonly appends `chore: auto-update plugin.json [skip ci]`. The accepted runtime/self-update version is the parent commit that actually has a successful `main` GroupGuard Build artifact.
 
-For current self-update capable builds, `GroupGuard Build` also produces `groupguard-self-update-<commit>` artifacts consumed by the WebUI updater. The updater only considers successful `main` push builds and validates the exact target commit before switching runtime code.
+## Routes that must not be repeated
 
-The preferred production handoff is the `GroupGuard Build` artifact produced from an accepted `main` commit, not a PR-head artifact.
+- Do not answer repository/product behavior from assumptions; inspect current code and CI evidence first.
+- Do not reopen GG-AUD-019 through GG-AUD-029, GG-AUD-001/002/003, or GG-AUD-011 without current-main evidence that the fix regressed.
+- Do not use inbound OneBot `sender.role` as a sensitive authorization fact.
+- Do not treat recognizable activation-code prefixes, license existence alone, substring hostname matches, lexical path checks, or preflight DNS results without socket pinning as authorization/security proof.
+- Do not weaken or delete a security regression merely because a safe refactor changed source shape; migrate it to behavior coverage when possible.
+- Do not mass-refactor the whole OneBot protocol layer, StorageAdapter, or large runtime monolith while closing one narrow audit item.
+- Do not enable all unused/strict lint debt in one PR and then silence it with ignores; clean it in a bounded follow-up.
+- Do not merge the unrelated open PR #56 into this audit campaign without fresh scope review.
+- Do not deploy/restart production after each merged audit PR. Keep accumulating fixes for one later WebUI one-click upgrade.
+- Do not tell the operator that a newer `main`/artifact commit is live until runtime evidence confirms it.
+- Do not create dated `GPT_NEXT_TASK_HANDOFF_*`, `final-notes`, `v2`, or other parallel handoff documents. Maintain canonical files.
 
-To avoid losing the ability to produce a current deployment bundle after stored Actions artifacts expire, `GroupGuard Build` supports manual `workflow_dispatch`. An operator can open GitHub Actions, run `GroupGuard Build` on `main`, and receive a fresh `groupguard-deployment-bundle-<current-main-commit>` without changing production first.
+## Remaining audit backlog
 
-## Deployment safety invariant
+The following original findings remain open or require fresh re-verification before closure:
 
-The immutable bundle is code-only and contains the prebuilt SnowLuma `dist`, exact commit/build manifest, archive SHA-256, one-click Windows launcher, topology resolver, deploy helper, and rollback helper.
+- **GG-AUD-004 / GG-AUD-005** — behavior tests are still mixed with source-string/grep/implementation-shape tests elsewhere. Target-file callback and self-update security hotspots are fixed; continue one coherent hotspot at a time. Do not blindly delete all static tests because some correctly encode release/static contracts.
+- **GG-AUD-006** — very large serial test suite / verifier concentration; assess runtime and maintenance cost before splitting.
+- **GG-AUD-007** — substantial `any` usage; quantify and prioritize by trust boundary rather than broad mechanical replacement.
+- **GG-AUD-008** — large monolithic modules; identify one ownership boundary at a time, not a repository-wide rewrite.
+- **GG-AUD-009** — `infra` / `infrastructure` duplication; map actual imports/ownership before consolidation.
+- **GG-AUD-010** — repository-level code-quality guidance was originally weak. `AGENTS.md` is now strong on workflow/evidence, but re-check whether source-level coding rules still need a bounded addition before treating this closed.
+- **GG-AUD-012** — import-side-effect monkey patching; re-inspect current callsites and decide whether it is still active production debt.
+- **GG-AUD-013** — `StorageAdapter` monolith; re-measure current file/responsibilities before splitting.
+- **GG-AUD-014** — stale schema/types; identify concrete drift before editing.
+- **GG-AUD-015** — Node 22/24 behavior drift; current CI/runtime assumptions need explicit matrix review.
+- **GG-AUD-016** — memory smoke test is not a required release gate; verify present workflow before changing.
+- **GG-AUD-017** — duplicated WebUI tests; consolidate only where behavior coverage remains equivalent.
+- **GG-AUD-018** — architecture lint scope is too local; map important cross-module boundaries first.
+- **GG-AUD-030 P3 / code quality** — first lint attempt found 31 unused symbols/parameters/types in production `src`. This is real cleanup debt and intentionally not hidden by ignores.
 
-Before either host changes code, the bundle must resolve and verify both host topologies. The fleet invariant remains:
+Independent operational/product issues that existed before this campaign (for example intermittent OneBot `send_group_msg` result `120`, query-delivery observability PR #56, legacy/historical per-group config cleanup) are **not automatically part of the next audit round**. Scope them separately.
 
-> both hosts finish on the accepted new commit, or every host already completed by that release attempt is rolled back to its recorded pre-deployment code.
+## Next operation for a new ChatGPT/Codex session
 
-The WebUI self-updater has a separate single-runtime invariant: it may only replace the managed application `dist`; it keeps the previous `dist` as a rollback candidate, starts the new worker through the supervisor, and accepts the switch only after an exact target-commit ready signal. Runtime configuration/data/logs/secrets remain outside the replacement set.
-
-Never create a guessed application directory merely to make deployment proceed. Runtime configuration/data/logs/secrets stay outside the replacement set.
-
-## Next engineering priorities
-
-The battle output-precedence defect is closed at code level and has passed 121 production acceptance. The per-group self-recall, selected-group LOL patch notification routing, and WebUI self-update work are also closed at code level, with one live ARM Docker self-update acceptance recorded above. The 2026-09-14 authorization security release is merged and has a verified `main` self-update artifact; production remains unchanged until an operator applies it.
-
-Remaining independent findings are separate tasks, especially:
-
-- authenticated query-console SSRF hardening and response-byte limits;
-- explicit WebUI Origin/CSRF defense for cookie-authenticated mutation routes;
-- target-file DNS rebinding/connection pinning hardening;
-- intermittent OneBot `send_group_msg` rejection with result `120`;
-- dynamic-command validation failures for legacy/identifier mappings;
-- historical per-group configuration snapshots that may need controlled compaction rather than blind overwrite.
-
-Do not conflate those items with the now-fixed battle image-preference, self-update implementation, or authorization activation bypass.
+1. Read `AGENTS.md`, `docs/AI_CONTEXT.md` when present, this `PROJECT_STATE.md`, `docs/PITFALLS.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, and `docs/AI_WORKSTYLE.md` when present.
+2. Fetch latest `main` and distinguish its HEAD from the latest runtime/self-update artifact commit. Do not assume the SHA in this document is still HEAD.
+3. Confirm no production update/restart has happened since the operator-confirmed `9318d864...` runtime before making any live-state claim.
+4. Continue with **one medium unresolved issue only**. Best immediate candidate is the remaining GG-AUD-004/005 source-shape-test debt: inventory current source-text tests, select one behavior-critical coherent cluster, prove whether it is brittle, migrate only that cluster to behavior tests, then PR/CI/merge/main-artifact verification.
+5. If GG-AUD-004/005 inventory shows only legitimate static contract tests remain, close/reclassify with evidence instead of forcing changes; then move to the next smallest real debt such as GG-AUD-012 or a bounded GG-AUD-030 cleanup.
+6. Keep production unchanged until the operator explicitly decides the audit batch is ready for the single WebUI one-click upgrade.
