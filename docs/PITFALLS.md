@@ -1,23 +1,116 @@
 # GroupGuard Pitfalls
 
+Updated: 2026-09-15
+
+This file records recurring failure patterns and the prevention rule, not chat-by-chat history. Current task state belongs in `PROJECT_STATE.md`.
+
+## Runtime/security behavior is not proved by source-string shape
+
+Observed: 2026-09-15
+
+### Failure pattern
+
+Several verifiers read implementation files as text and required exact strings, source order, or call shape. This produced false-positive CI failures when behavior remained correct, including WebUI authentication/session refactors. It also gave weak security evidence for self-update behavior: the presence of `redirect: 'manual'`, an error string, stage/rollback path text, or an auth call did not prove the unsafe case was actually rejected.
+
+### Prevention
+
+- For runtime/security behavior, prefer execution through a real public boundary: HTTP server, service API, dispatcher, updater entry point, or runtime callback.
+- Preserve the intended negative contract: unauthorized callback rejected, repository token not forwarded, hostile ZIP rejected, active `dist` unchanged, rollback restored, etc.
+- Keep static assertions only when the contract is genuinely static, such as workflow artifact naming/schema, UI route presence, or explicit worker/supervisor process wiring.
+- Never delete a security regression merely because a safe refactor changes source shape; migrate the test to behavior coverage when practical.
+
+## Re-verify current main before reopening an audit finding
+
+Observed: 2026-09-15
+
+### Failure pattern
+
+A stale audit list caused already-fixed GG-AUD-025 and GG-AUD-029 to be revisited after their fixes had landed. Old notes are useful leads, not proof of current state.
+
+### Prevention
+
+- Fetch current `main` before opening a branch.
+- Read `PROJECT_STATE.md` and the exact current callsite/test.
+- Distinguish original finding, accepted fix, later metadata-only commits, and live production state.
+- If the current implementation already closes the finding, record closure evidence instead of creating another fix.
+
+## Node strip-only TypeScript cannot load every production dependency graph
+
+Observed: 2026-09-15
+
+### Failure pattern
+
+PR #73 initially imported the full legacy runtime adapter from a Node 22 `--experimental-strip-types` verifier. A transitive infrastructure class used TypeScript parameter-property syntax (`constructor(private readonly ...)`), causing `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` before the security test could run.
+
+### Prevention
+
+- Keep focused security decisions in side-effect-free/lightweight modules when they need direct Node verifier coverage.
+- Use the repository's registered TypeScript loader where appropriate.
+- Do not pull the full runtime dependency graph into a tiny verifier solely to test one mapping/decision.
+- A test-load failure is not evidence that production behavior is wrong; separate harness incompatibility from the behavior under test.
+
+## CI typechecks must run in the dependency environment they model
+
+Observed: 2026-09-15
+
+### Failure pattern
+
+A single `scripts/**/*.ts` typecheck profile would include Playwright specs even though `@playwright/test` is intentionally installed only inside Browser Acceptance. That creates artificial type failures in normal `npm ci`.
+
+A related test-only mismatch occurred when `Response(Buffer)` worked conceptually at runtime but the DOM/Node `BodyInit` typings rejected `Buffer`.
+
+### Prevention
+
+- Typecheck ordinary Node scripts under the normal project dependency set.
+- Typecheck Playwright specs after the Browser Acceptance workflow installs its pinned Playwright version.
+- Prefer real compatible data shapes (for example an explicit `ArrayBuffer`) instead of broad type casts or `@ts-ignore`.
+- Fix verifier narrowing with real guards/assertions and typed tuples, not blanket `as any`.
+
+## Main HEAD, runtime artifact commit, and live production are different states
+
+Observed: 2026-09-15
+
+### Failure pattern
+
+The plugin release workflow commonly appends `chore: auto-update plugin.json [skip ci]` after an accepted runtime merge. That metadata-only child becomes `main` HEAD but is not the commit named by the already-produced self-update artifact. Separately, neither Git state proves what the ARM runtime is actually running.
+
+### Prevention
+
+- Record the accepted runtime/build commit separately from current `main` HEAD.
+- For WebUI update, use the exact successful `main` GroupGuard Build artifact `groupguard-self-update-<runtime-commit>`.
+- Treat production version as unknown unless runtime/operator evidence confirms it.
+- Never tell the operator a newer commit is live merely because it merged or built successfully.
+
 ## An activation-code format is not proof of authorization
 
 Observed: 2026-09-14
 
 ### Failure pattern
 
-The legacy group activation flow treated any string beginning with `PRO-30-` as a valid 30-day license and any string beginning with `PRO-PERM-` as a permanent license. There was no signature verification, server-side lookup, one-time redemption record, nonce, group binding, or other authority behind the suffix. Because the active legacy adapter still registered the auth handler in the unified dispatcher, this was reachable production logic rather than dead compatibility code. An already licensed group administrator could therefore fabricate a permanent-looking code and bypass future renewal.
-
-A related failure mode existed in duration parsing: permissive numeric conversion could turn malformed values into unintended authorization state, and WebUI fallback behavior could interpret invalid/non-positive values as permanent authorization.
+The legacy group activation flow treated strings beginning with `PRO-30-` or `PRO-PERM-` as paid authority. A recognizable prefix/regex had no signature, server record, replay protection, group binding, expiry authority, or revocation semantics. Loose duration conversion could also turn malformed values into unintended/permanent authorization.
 
 ### Prevention
 
-- Treat a recognizable prefix, regex match, or checksum only as input format validation; it is never an authorization decision.
-- Paid activation must fail closed unless backed by a verifiable authority such as a signed claim plus replay protection or a server/database record that supports one-time consumption, expiry, revocation, and intended-group binding.
-- Until that authority exists, keep group activation disabled and use the authenticated owner/WebUI authorization paths.
-- Parse license durations strictly. Accept only explicitly defined values; reject malformed, negative, fractional, unsafe-integer, or ambiguous input instead of falling back to the highest-privilege/permanent state.
-- Keep authorization/security behavior in the normal CI path with negative tests for forged prefixes and malformed durations.
-- A timer or maintenance sweep that sends notifications must consume Promise rejections locally and isolate each destination so one transport failure cannot abort the rest of the sweep or hit a process-wide fatal unhandled-rejection policy.
+- Format validation is not an authorization decision.
+- Paid activation must fail closed unless backed by verifiable authority.
+- Until then, use authenticated owner/WebUI authorization paths.
+- Parse durations strictly; reject malformed/negative/fractional/unsafe values instead of falling back to permanent state.
+- Timer/maintenance sweeps must consume Promise rejections locally and isolate each destination.
+
+## Inbound protocol fields are not automatically authorization facts
+
+Observed: 2026-09-15
+
+### Failure pattern
+
+The initial GG-AUD-027 hypothesis focused on forged OneBot `sender.role`, but sensitive FeatureGate paths already perform live `get_group_member_info` lookup. The real fail-open was malformed identity: missing `group_id` became the literal string `"undefined"` and skipped a paid-license guard in the event pipeline.
+
+### Prevention
+
+- Validate OneBot IDs and event shapes at the protocol boundary and again at sensitive runtime entry points when direct host integrations can bypass the outer normalizer.
+- Treat `sender.role` as protocol metadata, not sensitive authorization proof.
+- Sensitive admin decisions should use live OneBot role lookup and fail closed on lookup failure.
+- Do not stringify malformed objects/arrays/NaN into identities.
 
 ## Rendering an inherited value does not authorize persisting it as a group override
 
@@ -25,15 +118,15 @@ Observed: 2026-09-10
 
 ### Failure pattern
 
-A broad group WebUI rendered the effective `selfRecall` policy and then saved every displayed mode/delay field. That converted inherited values into explicit group ownership, prevented later global changes from propagating, and could discard an unrendered nested field such as `probability`. A collapsed layout also hid the section header in group mode, leaving the remaining controls clipped and impossible to expand.
+A group WebUI rendered effective inherited settings and then saved every displayed value, converting inherited values into explicit group ownership. A similar runtime precedence bug used merged/effective group settings to decide whether a group explicitly owned a battle-output override, so inherited values masked the command profile.
 
 ### Prevention
 
-- Treat effective values as preview data, not proof of ownership.
-- Preserve previously explicit nested fields, compact newly introduced fields against global, and retain unknown existing nested keys.
-- Do not materialize legacy aliases merely because compatibility controls are displayed.
-- When scope filtering hides siblings inside a collapsible section, keep its header/control reachable or force the scoped section open and restore the previous collapsed state afterward.
-- Add the focused WebUI contract to the normal `npm test` path so these rules cannot silently regress.
+- Effective values are preview data, not ownership proof.
+- Use raw group settings when deciding whether a path is explicitly overridden.
+- `useGlobal=true` makes stored historical group values dormant.
+- Preserve unknown/explicit nested fields and compact newly introduced fields against the global baseline.
+- Keep WebUI preview precedence aligned with runtime resolution.
 
 ## Durable work must be finalized before generic queue early exits
 
@@ -41,33 +134,13 @@ Observed: 2026-09-10
 
 ### Failure pattern
 
-A disabled persisted self-recall task was checked only after deduplication and rate limiting. When an earlier generic queue branch returned, the SQLite row could remain scheduled, so recovery repeatedly re-enqueued work that should have been terminally skipped.
+A disabled persisted self-recall task could hit dedup/rate-limit early exits before its durable state was finalized, leaving a SQLite row repeatedly due for recovery.
 
 ### Prevention
 
-- Evaluate terminal business-state conditions before generic dedup/rate-limit exits when those exits do not themselves finalize durable state.
-- Ensure dedup/rate-limit outcomes for durable tasks update their persistent row.
-- Admission failures before worker execution must also update durable state: transient queue pressure gets a delayed retry, while terminal admission rejection must not remain immediately due forever.
-- Keep a final configuration check immediately before the external side effect to cover changes that occur while queued.
-
-
-## Effective config cannot prove that a group field was explicitly overridden
-
-Observed: 2026-08-28
-
-### Failure pattern
-
-A preference resolver used `resolveGroupSettings(groupId)` to decide whether a group had set `lolQueryOutputFormat`. That API returns the fully merged effective settings, so an inherited global value looked exactly like an explicit group override. The resolver therefore returned the inherited `forward` value before it ever evaluated the battle command profile, masking the intended feature preference.
-
-A `useGlobal=true` row can also retain dormant historical values. Reading the merged/effective object when deciding precedence can accidentally treat those dormant values as active intent.
-
-### Prevention
-
-- Use raw `getGroupSettings(groupId)` data when the question is whether a group explicitly owns an override path.
-- Treat `useGlobal=true` as whole-group inheritance; stored values in that row are dormant until the mode changes.
-- Use effective settings only after override ownership/precedence has already been resolved.
-- Add regression cases for explicit group override, `useGlobal=true` with a stale stored value, command-profile override, and no-override defaults.
-- Keep WebUI effective-value previews aligned with the runtime resolver instead of deriving precedence independently from merged settings.
+- Evaluate terminal business-state conditions before generic queue exits when those exits do not finalize durable state.
+- Persist dedup/rate-limit/admission outcomes for durable tasks.
+- Keep a final config check immediately before the external side effect.
 
 ## Host-profile unit tests can hide a disabled production capability
 
@@ -75,23 +148,13 @@ Observed: 2026-08-09
 
 ### Failure pattern
 
-A service-level regression can pass while production is unable to perform the same operation when the test substitutes a fake `HostProfile` implementation.
-
-The target-file retention test supplied a fake `deleteGroupFile()` that returned confirmed success. Production instead constructed `new SnowLumaProfile(actions)` where group-file deletion was deliberately fail-closed and returned `snowluma_group_file_delete_contract_not_verified` without sending `delete_group_file`.
-
-### Detection signals
-
-- service/state-machine tests pass but runtime `pendingCleanup` grows;
-- the same `lastError` repeats with increasing attempt counts;
-- host-profile tests assert that a capability is unsupported/indeterminate while another feature assumes it works;
-- no raw action invocation appears for the expected host operation.
+A service-level test used a fake `HostProfile` that reported group-file deletion success, while the production SnowLuma profile deliberately failed closed because the delete contract was unverified.
 
 ### Prevention
 
-- Any feature depending on a host-specific extension must include at least one regression through the actual production `HostProfile`, not only a fake service port.
-- Lock the expected action name and exact parameters in the integration test.
-- Verify the contract against the exact production host version when possible; do not infer SnowLuma semantics from NapCat.
-- Keep unknown/unverified host behavior fail-closed, but do not let a feature claim support for an operation whose production profile still fails closed.
+- Features depending on host extensions need at least one regression through the actual production `HostProfile`.
+- Lock expected action name/parameters and verify the exact host contract where possible.
+- Do not infer SnowLuma semantics from NapCat or a fake port.
 
 ## Unreferenced failed temp files are not retry state
 
@@ -99,14 +162,13 @@ Observed: 2026-08-09
 
 ### Failure pattern
 
-`TargetFilePushService` intentionally preserves the current failed download so the same event can retry it. When a different event replaces `state.current`, the old local file is no longer referenced by any retryable state. Retaining that orphan for a fixed age window only consumes storage; it does not improve recovery.
+Target-file download failures were preserved even after a newer event replaced the current retryable state. Once no durable state references the old file, it is only an orphan consuming disk.
 
 ### Prevention
 
-- Preserve only the file referenced by the current retryable state.
-- On a fresh service bind, remove files in the dedicated target-file temp directory that are not referenced by `current.localPath`.
-- When a different event supersedes a failed current event, remove the old failed temp file after persisting the new state.
-- Restrict cleanup to paths strictly inside the dedicated temp directory.
+- Preserve only files referenced by current retryable state.
+- Remove unreferenced files from the dedicated temp directory at bind/startup and when superseded.
+- Restrict cleanup to updater/service-owned directories.
 
 ## Historical group-file IDs are not the source of truth
 
@@ -114,17 +176,13 @@ Observed: 2026-08-09
 
 ### Failure pattern
 
-A retention queue built only from previously observed upload `file_id` values can drift from the real QQ group directory. Users can manually delete files, uploads can occur while cleanup is failing, and old queue entries can remain after the corresponding QQ files no longer exist. Repeatedly retrying those historical IDs does not prove that the group directory has reached the desired state.
-
-In production, `pendingCleanup` grew while the QQ group still contained multiple files. Manual cleanup then made the local queue even less representative of the actual directory.
+A cleanup queue built from historical upload IDs drifted from the real QQ group directory after manual deletes, failed cleanups, or out-of-band uploads.
 
 ### Prevention
 
-- For an exclusive managed QQ group-file directory, treat a complete server-side directory listing as authoritative.
-- After a replacement upload succeeds, re-read the actual directory, keep the authoritative new `file_id`, delete every other real file, then re-list to verify convergence.
-- Derive any pending-cleanup display/state from the latest real directory observation instead of indefinitely appending historical IDs.
-- Never delete the previous valid file before the replacement upload has succeeded and its returned `file_id` has been persisted.
-- When manual reconciliation has no valid recorded latest file, adopt a deterministically selected real file before deleting anything; for the target-file push root this is the newest item by SnowLuma `upload_time`.
+- For an exclusively managed directory, treat a complete server-side listing as authoritative.
+- Upload replacement first, persist the new authoritative ID, then clean other real files and re-list to verify convergence.
+- Derive pending cleanup state from current observation rather than indefinitely appending historical IDs.
 
 ## Hidden destructive behavior in WebUI causes product-model confusion
 
@@ -132,13 +190,12 @@ Observed: 2026-08-09
 
 ### Failure pattern
 
-The target-file WebUI described the last step only as deleting the local temporary download. The group-file retention behavior existed only in backend state-machine code, so the visible product model did not tell the operator that the QQ group directory was intended to be managed or cleaned.
+Backend group-file retention/cleanup was destructive but the UI described only local temporary-file deletion, hiding external ownership semantics from the operator.
 
 ### Prevention
 
-- If a feature owns an external resource destructively, state that ownership explicitly in the UI.
-- Show the ordering invariant in the visible workflow: upload replacement first, then clean old group files, then verify, then delete local temp.
-- Expose reconciliation status, current kept file, observed managed-file count, and remaining cleanup count so production behavior can be verified without inspecting JSON state files.
+- State destructive external-resource ownership explicitly in the UI.
+- Expose ordering and reconciliation state so behavior can be verified without reading backend state files.
 
 ## A successful local action request is not a successful business action
 
@@ -146,14 +203,13 @@ Observed: 2026-09-05
 
 ### Failure pattern
 
-Callers displayed success or deducted points after enqueueing an action even when the host returned a failed action result. Shutdown also cleared pending queues before their results settled.
+Callers displayed success or deducted points after enqueueing an action even when the host returned a failed result; shutdown could clear queues before final results settled.
 
 ### Prevention
 
-- Treat the final `GuardResult.ok` as the business commit boundary.
-- Apply irreversible local effects such as point deductions only after the remote action succeeds.
-- Stop accepting work before shutdown, drain bounded queues while their transport is still available, then close transports and persistence.
-- Test failure, timeout, overload and shutdown paths; a resolved Promise alone is not evidence of success.
+- Treat final `GuardResult.ok` as the business commit boundary.
+- Apply irreversible effects only after remote success.
+- Stop accepting work, drain bounded queues while transport is alive, then close transport/persistence.
 
 ## Callback identity does not establish source ordering
 
@@ -161,15 +217,14 @@ Observed: 2026-09-05
 
 ### Failure pattern
 
-Unique event IDs prevented exact duplicate processing but allowed an older callback arriving late to replace a newer target file.
+Unique event IDs prevented exact duplicate target-file events but allowed an older callback arriving late to replace a newer file.
 
 ### Prevention
 
-- Require a positive monotonic source revision in every callback.
-- Serialize target mutations per destination and persist the last accepted revision.
-- Acknowledge stale revisions without downloading, uploading or deleting files.
-- Validate every download URL and redirect hop against private/link-local destinations.
-
+- Require a positive monotonic source revision.
+- Serialize mutations per destination and persist last accepted revision.
+- Acknowledge stale revisions without side effects.
+- Validate and pin every download URL/redirect hop against private/special networks.
 
 ## Self-update must not trust process working directory or a partial artifact manifest
 
@@ -177,12 +232,13 @@ Observed: 2026-09-11
 
 ### Failure pattern
 
-A writable working directory is not sufficient proof that it is the application root currently executing GroupGuard. Replacing `<cwd>/dist` from an unexpected launch topology could modify the wrong directory. Likewise, verifying hashes only for files listed in a manifest does not reject an extra unlisted file included in the archive. Failed verification can also accumulate staging directories if cleanup exists only after a successful switch.
+A writable cwd did not prove it was the running application root. A manifest that listed only some files could leave extra payload files unverified. Failed verification could also leave stage directories behind.
 
 ### Prevention
 
-- Require `process.argv[1]` to resolve exactly to `<workDir>/dist/snowluma-service.mjs` before any update mutation.
-- Require the manifest file set and the extracted regular-file set under `dist` to be identical, then verify size and SHA-256 for every file.
+- Require `process.argv[1]` to resolve exactly to `<workDir>/dist/snowluma-service.mjs` before update mutation.
+- Require manifest and extracted `dist` regular-file sets to match exactly, then verify size and SHA-256 for every file.
+- Reject traversal/symlinks/unsafe archive entries and enforce size limits.
 - Remove guarded updater-owned staging directories on every failure path.
-- Keep the rollback directory only until the new worker reports the exact target commit; then remove it so repeated updates do not consume unbounded storage.
-- Do not perform a write/delete probe on every WebUI status poll; reserve that mutation for an explicit update attempt.
+- Keep rollback only until the new worker reports the exact target commit, then clean it through an owned-path guard.
+- Verify token forwarding, archive validation, managed entry, completion and rollback with behavior tests, not only source strings.
