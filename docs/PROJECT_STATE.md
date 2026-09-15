@@ -6,29 +6,29 @@ Updated: 2026-09-15
 
 - Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical development branch: `main`.
-- Runtime/code baseline accepted by this audit: `450c1d452856837c7f4f64cbc9081d00d52938eb` (merge of PR #81).
-- At the start of the current GG-AUD-004/005 round, `main` was `0fc827e097a117c793f29288b23a6e6b554bcf42`, the documentation-only merge of PR #82. Always re-fetch current `main` in a new session because later audit merges or automated metadata commits may advance it without changing the live production runtime.
-- Latest verified `main` workflows for runtime commit `450c1d45...` all succeeded:
-  - GroupGuard CI #899;
-  - GroupGuard Build #903;
-  - Build SnowLuma Service #128;
-  - Build & Release Plugins #193.
+- Latest verified main build/artifact baseline accepted by this audit: `19ba1e73b886797814d7a2fa98a03de75f636eba` (merge of PR #83). PR #83 changed tests/docs only; production runtime behavior remained unchanged from the prior accepted runtime code.
+- At the start of the current GG-AUD-004/005 round, `main` was `ff215b7abbae8ee99a69ad64cdd96243da329c05`, an automated `plugin.json` metadata-only child of `19ba1e73...`. Always re-fetch current `main` in a new session because later audit merges or automated metadata commits may advance it without changing the live production runtime.
+- Latest verified `main` workflows for artifact commit `19ba1e73...` all succeeded:
+  - GroupGuard CI #903;
+  - GroupGuard Build #907;
+  - Build SnowLuma Service #129;
+  - Build & Release Plugins #194.
 - Latest verified WebUI self-update artifact:
-  - `groupguard-self-update-450c1d452856837c7f4f64cbc9081d00d52938eb`;
-  - artifact id `10389353831`;
-  - SHA-256 `db51b08e88fbd992dec144ed2340c29b5276d018eb9c463a532a7fda80454da9`;
+  - `groupguard-self-update-19ba1e73b886797814d7a2fa98a03de75f636eba`;
+  - artifact id `10390472386`;
+  - SHA-256 `7a5743d56f93bd55e8cdcced19d77e1ed019785e12dcd273a463ec230f77d8fe`;
   - expires 2026-10-15.
 - Matching deployment bundle:
-  - `groupguard-deployment-bundle-450c1d452856837c7f4f64cbc9081d00d52938eb`;
-  - artifact id `10389453389`;
-  - SHA-256 `f0861749019ab5db244688c2e0e0075715575c82992ddd318ebb89ab6977eef2`.
-- Matching build log artifact id `10389562944`, SHA-256 `c4f1fbf0339ecdc400edad9d7b1aca33785294952564cddf56df31fd0cfa0eee`.
+  - `groupguard-deployment-bundle-19ba1e73b886797814d7a2fa98a03de75f636eba`;
+  - artifact id `10390258133`;
+  - SHA-256 `edeb1e566758f3d2f9d2ea75424a875158adbef87a17742ce04671484de55fb1`.
+- Matching build log artifact id `10390043524`, SHA-256 `2cc20c181c0eefe5191ebdfc7e67e669338b5599d2d6fbc05c352416071da7b6`.
 
 ### Production/runtime evidence boundary
 
 - The operator last explicitly confirmed the live runtime at `9318d86415cbb726b022511d11d6a598b4237216` after a successful WebUI one-click update.
 - No later audit round deployed, restarted, or otherwise mutated the production ARM runtime.
-- Therefore **do not claim that production is running `450c1d45...`, `0fc827e...`, or any intermediate audit commit**.
+- Therefore **do not claim that production is running `19ba1e73...`, `ff215b7...`, or any later audit commit**.
 - The audit strategy is intentionally to accumulate reviewed fixes and perform one later WebUI one-click upgrade, not one production update per PR.
 - Production/runtime state remains separate from GitHub `main`, the Windows checkout `D:\project2\groupguard-system`, and Actions artifacts.
 
@@ -69,7 +69,8 @@ All items above were merged only after PR validation and then re-verified on the
 | GG-AUD-002 | Repository had no dedicated lint gate. Added a no-dependency semantic TypeScript control-flow gate using `tsconfig.lint.json` with `noImplicitReturns` + `noFallthroughCasesInSwitch`. This is a stable first-stage gate, **not** a claim of full typescript-eslint coverage. | #76 / `26e1b47711a441c9dd3aea2e2bb18c764ce8fd74` |
 | GG-AUD-003 | `scripts/**/*.ts` were outside TypeScript checking. Added separate Node-script and Playwright browser-test typecheck profiles, each executed in the dependency environment where it is valid. | #77 / `291fa681275c7a94986a4e50880a522d3e602a7c` |
 | GG-AUD-004/005 target-file hotspot | Target-file callback test used source-order/string matching and had previously produced false-positive CI failures after safe auth refactors. Replaced that hotspot with real HTTP behavior: callback token works without WebUI master token; WebUI master token cannot substitute for callback token. | #78 / `1c5a39237562d2b9f6dd7b57e5ee8a1eccfb9c12` |
-| GG-AUD-004/005 WebUI hotspot | `verify-webui-ios-glass.ts` required exact `server.ts`/theme call-expression strings, so semantics-preserving rewrites could fail despite identical client-visible HTML. PR #83 replaces that WebUI server/theme source-shape cluster with authenticated temporary-port HTTP behavior over the actual admin routes. Production code is unchanged; the separate group-API source checks remain scoped for later classification. Initial PR validation passed GroupGuard CI #901 and GroupGuard Build #905 before this state-document update. | #83 / test-only; runtime baseline unchanged |
+| GG-AUD-004/005 WebUI hotspot | `verify-webui-ios-glass.ts` required exact `server.ts`/theme call-expression strings, so semantics-preserving rewrites could fail despite identical client-visible HTML. PR #83 replaced that WebUI server/theme source-shape cluster with authenticated temporary-port HTTP behavior over the actual admin routes. Production code remained unchanged. | #83 / test-only; latest verified main artifact `19ba1e73...` |
+| GG-AUD-004/005 four-query mode hotspot | `verify-four-query-three-mode.ts` inferred runtime behavior from the exact source literal `preferred: 'text'`, conflating three-mode scammer/peer query behavior with report submission's intentional text preference. PR #84 executes the real lolban/scammer/peer/dynamic entry points with the existing injectable delivery client and asserts the actual request payload honors `text`, `forward`, and `image`. Production code is unchanged. Initial PR validation passed GroupGuard CI #905 and GroupGuard Build #909. | #84 / test-only; runtime baseline unchanged |
 | GG-AUD-011 | Self-update security contract had important source-string tests. Download token-boundary, hostile ZIP/manifest, managed-runtime, completion and rollback paths are now behavior-tested through public runtime APIs. Static checks remain only where they describe real build/UI/process wiring contracts. GG-AUD-011 is closed. | #79 `44221560a65514bf51f4b97c0306ca8a260ec57e`; #80 `f2eccb4f3fa6053fab2fd12941778d22d5388bbc`; #81 `450c1d452856837c7f4f64cbc9081d00d52938eb` |
 
 ### GG-AUD-011 behavior coverage now proves
@@ -88,8 +89,9 @@ All items above were merged only after PR validation and then re-verified on the
 
 ### GG-AUD-004/005 source-text inventory classification
 
-- Behavior-critical and clearly brittle next candidate: `scripts/verify-four-query-three-mode.ts` still infers query preference behavior from whether runtime source literally contains `preferred: 'text'`; equivalent refactors can change that text without changing the request payload or resolved output mode.
-- Still requiring a bounded decision: the remaining `group_api.ts` exact-source checks in `verify-webui-ios-glass.ts`, the unrelated source tail in `verify-project-wide-bugfixes.ts`, and output-locale adapter call-shape checks.
+- Migrated behavior-critical hotspots: target-file callback authorization, self-update security, WebUI page/theme serving, and four-query three-mode delivery preference.
+- Clearest remaining behavior-critical coherent cluster: the `group_api.ts` checks at the end of `verify-webui-ios-glass.ts` assert exact implementation markers for `set-path`, `restore-path`, `set-inheritance`, restore markers, inherited-value compaction, dormant-group skipping, and fully-inherited detection. These are externally observable group-config mutation semantics and should be evaluated for API-level behavior coverage rather than source shape.
+- Still mixed and requiring later bounded decisions: the unrelated source tail in `verify-project-wide-bugfixes.ts` and the output-locale adapter call-shape checks. Do not batch these together merely because both inspect source.
 - Likely legitimate static contracts unless contrary evidence appears: retired hidden/video marker sweeps, client-boundary bans on direct `fetch`/business URLs, and deployment/workflow packaging or rollback wiring checks. Do not mechanically convert or delete these merely because they inspect source text.
 
 ## Failed/abandoned approaches and why
@@ -125,7 +127,7 @@ These are evidence from this campaign and should not be repeated without a new r
 
 The following original findings remain open or require fresh re-verification before closure:
 
-- **GG-AUD-004 / GG-AUD-005** — target-file callback, self-update security, and WebUI server/theme hotspots have behavior coverage, but other source-shape debt remains. The clearest next behavior-critical item is the `preferred: 'text'` literal check in `verify-four-query-three-mode.ts`; group-API/source-tail checks still need classification. Keep legitimate architecture/release static contracts.
+- **GG-AUD-004 / GG-AUD-005** — target-file callback, self-update security, WebUI server/theme, and four-query output-mode hotspots now have behavior coverage. The clearest remaining behavior-critical cluster is the `group_api.ts` batch group-config mutation source-shape checks retained in `verify-webui-ios-glass.ts`; mixed source tails remain for later classification. Keep legitimate architecture/release static contracts.
 - **GG-AUD-006** — very large serial test suite / verifier concentration; assess runtime and maintenance cost before splitting.
 - **GG-AUD-007** — substantial `any` usage; quantify and prioritize by trust boundary rather than broad mechanical replacement.
 - **GG-AUD-008** — large monolithic modules; identify one ownership boundary at a time, not a repository-wide rewrite.
@@ -147,6 +149,6 @@ Independent operational/product issues that existed before this campaign (for ex
 1. Read `AGENTS.md`, `docs/AI_CONTEXT.md` when present, this `PROJECT_STATE.md`, `docs/PITFALLS.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, and `docs/AI_WORKSTYLE.md` when present.
 2. Fetch latest `main` and distinguish its HEAD from the latest runtime/self-update artifact commit. Do not assume the SHA in this document is still HEAD.
 3. Confirm no production update/restart has happened since the operator-confirmed `9318d864...` runtime before making any live-state claim.
-4. Continue with **one medium unresolved issue only**. Best immediate candidate is the remaining GG-AUD-004/005 query-mode source-shape debt in `scripts/verify-four-query-three-mode.ts`: prove the literal `preferred: 'text'` check is replaceable by request/output behavior coverage, migrate only that coherent cluster, then PR/CI/merge/main-artifact verification.
-5. After that migration, reclassify the remaining source-text checks. If only legitimate static architecture/release contracts remain, close/reclassify GG-AUD-004/005 with evidence instead of forcing more changes; otherwise select one bounded residual hotspot.
+4. Continue with **one medium unresolved issue only**. Best immediate candidate is the remaining GG-AUD-004/005 group-config mutation source-shape cluster at the end of `scripts/verify-webui-ios-glass.ts`: inspect the `group_api.ts` public/admin API boundary, prove which `set-path`, `restore-path`, `set-inheritance`, inheritance-compaction, dormant-group, and fully-inherited semantics are externally observable, then migrate only that coherent cluster to behavior tests if feasible.
+5. After that migration/classification, reassess the mixed `verify-project-wide-bugfixes.ts` source tail and output-locale adapter checks one coherent hotspot at a time. If only legitimate static architecture/release contracts remain, close/reclassify GG-AUD-004/005 with evidence instead of forcing more changes.
 6. Keep production unchanged until the operator explicitly decides the audit batch is ready for the single WebUI one-click upgrade.
