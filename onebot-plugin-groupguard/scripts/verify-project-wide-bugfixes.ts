@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import viteConfig from '../vite.config';
+import { loadConfigFromFile } from 'vite';
 import { authManager } from '../src/auth';
 import { getBuildInfo } from '../src/build_info';
 import { normalizePluginConfig } from '../src/config';
@@ -260,13 +260,12 @@ if (!process.env.GROUPGUARD_VERSION) {
   assert.equal(sourceBuildInfo.version, expectedRuntimeVersion, 'source runtime build info must default to package.json version');
 }
 
-const snowlumaBuildConfig = await viteConfig({
-  command: 'build',
-  mode: 'snowluma',
-  isSsrBuild: false,
-  isPreview: false,
-});
-const embeddedBuildInfoText = snowlumaBuildConfig.define?.__GROUPGUARD_BUILD_INFO__;
+const loadedSnowlumaConfig = await loadConfigFromFile(
+  { command: 'build', mode: 'snowluma', isSsrBuild: false, isPreview: false },
+  path.join(root, 'vite.config.ts')
+);
+assert.ok(loadedSnowlumaConfig, 'Vite must load the SnowLuma build configuration');
+const embeddedBuildInfoText = loadedSnowlumaConfig.config.define?.__GROUPGUARD_BUILD_INFO__;
 assert.equal(typeof embeddedBuildInfoText, 'string', 'SnowLuma Vite build must embed GroupGuard build metadata');
 const embeddedBuildInfo = JSON.parse(String(embeddedBuildInfoText)) as { version?: unknown; artifact?: unknown };
 assert.equal(embeddedBuildInfo.version, expectedRuntimeVersion, 'SnowLuma embedded runtime version must match package.json');
