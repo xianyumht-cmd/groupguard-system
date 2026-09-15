@@ -6,29 +6,29 @@ Updated: 2026-09-15
 
 - Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical development branch: `main`.
-- Latest verified main build/artifact baseline accepted by this audit: `fd1b959b867be3e0876987e6c09784dba2286baf` (merge of PR #84). PR #84 changed tests/docs only; production runtime behavior remained unchanged from the prior accepted runtime code.
-- At the start of the current GG-AUD-004/005 round, `main` was `cc1300f632d0e9a3715839f5cb9e73252d91b6c3`, an automated `plugin.json` metadata-only child of `fd1b959...`. Always re-fetch current `main` in a new session because later audit merges or automated metadata commits may advance it without changing the live production runtime.
-- Latest verified `main` workflows for artifact commit `fd1b959...` all succeeded:
-  - GroupGuard CI #907;
-  - GroupGuard Build #911;
-  - Build SnowLuma Service #130;
-  - Build & Release Plugins #195.
+- Latest verified main build/artifact baseline accepted by this audit: `5f823ff18073d7a81f0e1abbe370a7b5f9e751f5` (merge of PR #85). PR #85 changed tests/docs only; production runtime behavior remained unchanged from the prior accepted runtime code.
+- At the start of the current GG-AUD-004/005 round, `main` was `c330e6565105ebdc4771a75eaec7e523adc9fe15`, an automated `plugin.json` metadata-only child of `5f823ff...`. Always re-fetch current `main` in a new session because later audit merges or automated metadata commits may advance it without changing the live production runtime.
+- Latest verified `main` workflows for artifact commit `5f823ff...` all succeeded:
+  - GroupGuard CI #915;
+  - GroupGuard Build #919;
+  - Build SnowLuma Service #131;
+  - Build & Release Plugins #196.
 - Latest verified WebUI self-update artifact:
-  - `groupguard-self-update-fd1b959b867be3e0876987e6c09784dba2286baf`;
-  - artifact id `10391920135`;
-  - SHA-256 `17bc9c1da5a86a33b62ce5da438cc5f6ee206118ecea815a03fdbda479f2d2c9`;
+  - `groupguard-self-update-5f823ff18073d7a81f0e1abbe370a7b5f9e751f5`;
+  - artifact id `10392486379`;
+  - SHA-256 `bf7b6822e435c10d9ab5ced746e23156e43eba95fe9811c3e555d953f5edefb8`;
   - expires 2026-10-15.
 - Matching deployment bundle:
-  - `groupguard-deployment-bundle-fd1b959b867be3e0876987e6c09784dba2286baf`;
-  - artifact id `10391575731`;
-  - SHA-256 `9329e1674cb55ee603352e9b40b20d67dc5556a431a36b281594b831ced91843`.
-- Matching build log artifact id `10391231829`, SHA-256 `ce19d7c4731c52e5c9baf884e9f06c8a6656eb057bd505995db1919a541a277e`.
+  - `groupguard-deployment-bundle-5f823ff18073d7a81f0e1abbe370a7b5f9e751f5`;
+  - artifact id `10391904905`;
+  - SHA-256 `1a70f337dd4b133d44dcf5a99f4e76c8d5a6fda58fbba61e84a3c409ffb0076d`.
+- Matching build log artifact id `10392496510`, SHA-256 `3a17061fd4bbb546ebb8cc15d45f96cd1efbedafa806bf627e400b6549889d1b`.
 
 ### Production/runtime evidence boundary
 
 - The operator last explicitly confirmed the live runtime at `9318d86415cbb726b022511d11d6a598b4237216` after a successful WebUI one-click update.
 - No later audit round deployed, restarted, or otherwise mutated the production ARM runtime.
-- Therefore **do not claim that production is running `fd1b959...`, `cc1300f...`, or any later audit commit**.
+- Therefore **do not claim that production is running `5f823ff...`, `c330e656...`, or any later audit commit**.
 - The audit strategy is intentionally to accumulate reviewed fixes and perform one later WebUI one-click upgrade, not one production update per PR.
 - Production/runtime state remains separate from GitHub `main`, the Windows checkout `D:\project2\groupguard-system`, and Actions artifacts.
 
@@ -70,8 +70,9 @@ All items above were merged only after PR validation and then re-verified on the
 | GG-AUD-003 | `scripts/**/*.ts` were outside TypeScript checking. Added separate Node-script and Playwright browser-test typecheck profiles, each executed in the dependency environment where it is valid. | #77 / `291fa681275c7a94986a4e50880a522d3e602a7c` |
 | GG-AUD-004/005 target-file hotspot | Target-file callback test used source-order/string matching and had previously produced false-positive CI failures after safe auth refactors. Replaced that hotspot with real HTTP behavior: callback token works without WebUI master token; WebUI master token cannot substitute for callback token. | #78 / `1c5a39237562d2b9f6dd7b57e5ee8a1eccfb9c12` |
 | GG-AUD-004/005 WebUI hotspot | `verify-webui-ios-glass.ts` required exact `server.ts`/theme call-expression strings, so semantics-preserving rewrites could fail despite identical client-visible HTML. PR #83 replaced that WebUI server/theme source-shape cluster with authenticated temporary-port HTTP behavior over the actual admin routes. Production code remained unchanged. | #83 / test-only |
-| GG-AUD-004/005 four-query mode hotspot | `verify-four-query-three-mode.ts` inferred runtime behavior from the exact source literal `preferred: 'text'`, conflating three-mode scammer/peer query behavior with report submission's intentional text preference. PR #84 executes the real lolban/scammer/peer/dynamic entry points with the existing injectable delivery client and asserts the actual request payload honors `text`, `forward`, and `image`. Production code is unchanged. Main-push CI/Build/packaging were verified on `fd1b959...`. | #84 / test-only; latest verified main artifact `fd1b959...` |
-| GG-AUD-004/005 group-config mutation hotspot | The remaining `group_api.ts` checks in `verify-webui-ios-glass.ts` asserted exact source markers for batch set/restore/inheritance, inherited-value compaction, dormant-row skipping, and fully-inherited detection. PR #85 replaces that cluster with authenticated temporary-port Admin API behavior against isolated temporary SQLite: `set-path`, `restore-path`, legacy `__restorePath`, new-value compaction, existing explicit ownership, dormant override protection, inheritance enable/disable, and no-row/historical/explicit-inheritance reporting are observed through HTTP and persistence. Production code is unchanged. Code-only final head `5e1bed740c7d11832884ef7305bd95bdf2d678b9` passed GroupGuard CI #913 and GroupGuard Build #917 before this state update. | #85 / test-only; awaiting final docs-head/main verification |
+| GG-AUD-004/005 four-query mode hotspot | `verify-four-query-three-mode.ts` inferred runtime behavior from the exact source literal `preferred: 'text'`, conflating three-mode scammer/peer query behavior with report submission's intentional text preference. PR #84 executes the real lolban/scammer/peer/dynamic entry points with the existing injectable delivery client and asserts the actual request payload honors `text`, `forward`, and `image`. Production code is unchanged. Main-push CI/Build/packaging were verified on `fd1b959...`. | #84 / test-only |
+| GG-AUD-004/005 group-config mutation hotspot | The remaining `group_api.ts` checks in `verify-webui-ios-glass.ts` asserted exact source markers for batch set/restore/inheritance, inherited-value compaction, dormant-row skipping, and fully-inherited detection. PR #85 replaces that cluster with authenticated temporary-port Admin API behavior against isolated temporary SQLite: `set-path`, `restore-path`, legacy `__restorePath`, new-value compaction, existing explicit ownership, dormant override protection, inheritance enable/disable, and no-row/historical/explicit-inheritance reporting are observed through HTTP and persistence. Production code is unchanged. Main-push CI/Build/packaging were verified on `5f823ff...`. | #85 / test-only; latest verified main artifact `5f823ff...` |
+| GG-AUD-004/005 output-locale adapter hotspot | `verify-output-locale.ts` previously read `plugin_state_context_adapter.ts` and asserted exact call-shape names. PR #86 executes the real `PluginStateContextAdapter`: a successful Q群管家 route receives a localized Traditional-Chinese copy and bypasses raw OneBot delivery; a fallback attempt still receives the localized Q群管家 copy while the underlying OneBot path receives the untouched original text for final egress localization exactly once. Production code is unchanged. Code-only head `c64d2e5b1e09b87667437eb5956d9747ffcbca47` passed GroupGuard CI #917 and GroupGuard Build #921 before this state update. | #86 / test-only; awaiting final docs-head/main verification |
 | GG-AUD-011 | Self-update security contract had important source-string tests. Download token-boundary, hostile ZIP/manifest, managed-runtime, completion and rollback paths are now behavior-tested through public runtime APIs. Static checks remain only where they describe real build/UI/process wiring contracts. GG-AUD-011 is closed. | #79 `44221560a65514bf51f4b97c0306ca8a260ec57e`; #80 `f2eccb4f3fa6053fab2fd12941778d22d5388bbc`; #81 `450c1d452856837c7f4f64cbc9081d00d52938eb` |
 
 ### GG-AUD-011 behavior coverage now proves
@@ -90,18 +91,18 @@ All items above were merged only after PR validation and then re-verified on the
 
 ### GG-AUD-004/005 source-text inventory classification
 
-- Migrated behavior-critical hotspots: target-file callback authorization, self-update security, WebUI page/theme serving, four-query three-mode delivery preference, and Admin group-config mutation/inheritance semantics.
-- Clearest remaining coherent behavior-critical candidate: `verify-output-locale.ts` still reads `plugin_state_context_adapter.ts` and requires exact call-shape markers (`localizeOneBotSendParamsSafe`, `guanjiaParams`, and `routeGroupMessage(guanjiaParams...)`). The file already behavior-tests outbound `OneBotActionCaller` localization, but that does not by itself prove the state-context adapter localizes parameters before QunGuanjia routing. Evaluate that adapter boundary as one small cluster next; keep the same file's PowerShell/workflow rollback assertions static because those are release-wiring contracts.
-- `verify-project-wide-bugfixes.ts` still has a heterogeneous source-text tail spanning state force semantics, version fallback, empty group persistence, config API preservation, and group-row deletion. Do not migrate it wholesale; classify and select one coherent behavior boundary only after the output-locale adapter decision.
+- Migrated behavior-critical hotspots: target-file callback authorization, self-update security, WebUI page/theme serving, four-query three-mode delivery preference, Admin group-config mutation/inheritance semantics, and output-locale Q群管家 adapter routing.
+- `verify-output-locale.ts` still contains PowerShell/workflow rollback source assertions. Those remain intentional static release-wiring contracts and should not be mechanically converted merely because they inspect source text.
+- The clearest remaining mixed area is `verify-project-wide-bugfixes.ts`, whose source-text tail spans state force semantics, version fallback, empty group persistence, config API preservation, and group-row deletion. Do not migrate it wholesale; inspect current callsites and select exactly one coherent behavior boundary per round.
 - Likely legitimate static contracts unless contrary evidence appears: retired hidden/video marker sweeps, client-boundary bans on direct `fetch`/business URLs, and deployment/workflow packaging or rollback wiring checks. Do not mechanically convert or delete these merely because they inspect source text.
 
 ## Failed/abandoned approaches and why
 
 These are evidence from this campaign and should not be repeated without a new reason.
 
-1. **Importing the full legacy runtime adapter into a Node 22 strip-only regression test.** PR #73 initially did this and failed before the test could run because a transitive TypeScript class used parameter-property syntax (`constructor(private readonly ...)`), which Node strip-only cannot transform (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`). The fix was to isolate the security decision in a side-effect-free lightweight module consumed by both production and the test.
+1. **Importing the full legacy runtime adapter into a Node 22 strip-only regression test.** PR #73 initially did this and failed before the test could run because a transitive TypeScript class used parameter-property syntax (`constructor(private readonly ...)`), which Node strip-only cannot transform (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`). The fix was to isolate the security decision in a side-effect-free lightweight module consumed by both production and the test. The later output-locale verifier is different: it runs with the repository's registered TS loader and successfully executes `PluginStateContextAdapter` under that supported harness.
 2. **Enabling `noUnusedLocals` / `noUnusedParameters` as part of the first lint gate.** The first #76 run surfaced 31 real TS6133/TS6196 diagnostics across historical production code. Turning that gate on immediately would have forced a broad unrelated cleanup. The rules were removed from the initial enforced baseline without suppressions; the debt is tracked as GG-AUD-030.
-3. **One `scripts/**/*.ts` typecheck profile for every script.** Three Playwright specs depend on `@playwright/test`, which is intentionally installed only in Browser Acceptance. They must be checked there, not in normal `npm ci`. #77 split Node scripts and browser specs into two profiles.
+3. **One `scripts/**/*.ts` typecheck profile for every script.** Three Playwright specs depend on `@playwright/test`, which is intentionally installed only inside Browser Acceptance. They must be checked there, not in normal `npm ci`. #77 split Node scripts and browser specs into two profiles.
 4. **Treating test assertions as proof of TypeScript narrowing.** Around 40 strict errors in test/verifier scripts were fixed with real guards/assertions and typed tuples, not broad `as any` or `@ts-ignore`.
 5. **Constructing `Response(Buffer)` in the archive behavior test.** Runtime behavior passed, but DOM/Node `BodyInit` typings rejected `Buffer`. Copy ZIP bytes to an explicit `ArrayBuffer` instead.
 6. **Assuming `sender.role` was the real GG-AUD-027 authorization vulnerability.** Current sensitive FeatureGate paths do not trust it; they perform live OneBot role lookup. The concrete fail-open was malformed/missing group identity in the event pipeline. Preserve that distinction.
@@ -129,7 +130,7 @@ These are evidence from this campaign and should not be repeated without a new r
 
 The following original findings remain open or require fresh re-verification before closure:
 
-- **GG-AUD-004 / GG-AUD-005** — target-file callback, self-update security, WebUI server/theme, four-query output-mode, and group-config mutation hotspots now have behavior coverage. Remaining mixed source-text debt is narrower: first evaluate the output-locale state-context adapter call-shape cluster; afterward classify one coherent concern from the heterogeneous `verify-project-wide-bugfixes.ts` tail. Keep legitimate architecture/release static contracts.
+- **GG-AUD-004 / GG-AUD-005** — target-file callback, self-update security, WebUI server/theme, four-query output-mode, group-config mutation, and output-locale adapter hotspots now have behavior coverage. Remaining source-text debt is concentrated in the heterogeneous `verify-project-wide-bugfixes.ts` tail plus legitimate static architecture/release contracts. Inspect and migrate/classify one coherent concern at a time; if only legitimate static contracts remain, close/reclassify GG-AUD-004/005 with evidence instead of forcing more changes.
 - **GG-AUD-006** — very large serial test suite / verifier concentration; assess runtime and maintenance cost before splitting.
 - **GG-AUD-007** — substantial `any` usage; quantify and prioritize by trust boundary rather than broad mechanical replacement.
 - **GG-AUD-008** — large monolithic modules; identify one ownership boundary at a time, not a repository-wide rewrite.
@@ -151,6 +152,6 @@ Independent operational/product issues that existed before this campaign (for ex
 1. Read `AGENTS.md`, `docs/AI_CONTEXT.md` when present, this `PROJECT_STATE.md`, `docs/PITFALLS.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, and `docs/AI_WORKSTYLE.md` when present.
 2. Fetch latest `main` and distinguish its HEAD from the latest runtime/self-update artifact commit. Do not assume the SHA in this document is still HEAD.
 3. Confirm no production update/restart has happened since the operator-confirmed `9318d864...` runtime before making any live-state claim.
-4. Continue with **one medium unresolved issue only**. Best immediate candidate is the remaining output-locale adapter source-shape cluster in `scripts/verify-output-locale.ts`: inspect `plugin_state_context_adapter.ts`, prove whether localization-before-QunGuanjia routing is behavior-observable through a stable boundary, and migrate only those three adapter call-shape assertions if feasible. Do not touch the same verifier's PowerShell/workflow rollback source checks; those are static release-wiring contracts.
-5. After that migration/classification, reassess one coherent concern from the heterogeneous `verify-project-wide-bugfixes.ts` source tail. If only legitimate static architecture/release contracts remain, close/reclassify GG-AUD-004/005 with evidence instead of forcing more changes.
+4. Continue with **one medium unresolved issue only**. Inspect the heterogeneous source-text tail in `scripts/verify-project-wide-bugfixes.ts`, read the current production callsites, and select exactly one coherent behavior boundary to migrate or classify. Do not batch state force semantics, version fallback, empty-group persistence, config API preservation, and group-row deletion merely because they share one verifier.
+5. Keep intentional static architecture/release assertions static unless fresh evidence shows the contract is actually runtime behavior better tested through a public boundary. If the remaining GG-AUD-004/005 source checks are all legitimate static contracts after bounded review, close/reclassify the finding with evidence instead of forcing code changes.
 6. Keep production unchanged until the operator explicitly decides the audit batch is ready for the single WebUI one-click upgrade.
