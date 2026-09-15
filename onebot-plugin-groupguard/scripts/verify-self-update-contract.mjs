@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 
 const root = path.resolve(import.meta.dirname, '..');
 const notifier = fs.readFileSync(path.join(root, 'src/services/lol_patch_notifier.ts'), 'utf8');
@@ -29,21 +30,22 @@ assert.ok(updater.includes('self_update_manifest_file_hash_mismatch'));
 assert.ok(updater.includes('self_update_manifest_file_set_mismatch'));
 assert.ok(updater.includes('self_update_runtime_entry_outside_managed_dist'));
 assert.ok(updater.includes('managedRuntime: isManagedRuntimeEntry(workDir)'));
-const downloadStart = updater.indexOf('async function downloadArtifact');
-const downloadEnd = updater.indexOf('function findEndOfCentralDirectory', downloadStart);
-assert.ok(downloadStart >= 0 && downloadEnd > downloadStart);
-const downloadSection = updater.slice(downloadStart, downloadEnd);
-assert.ok(downloadSection.includes("redirect: 'manual'"));
-assert.ok(downloadSection.includes("accept: 'application/vnd.github+json'"));
-assert.ok(!downloadSection.includes("accept: 'application/octet-stream'"));
-assert.ok(downloadSection.includes("headers.get('location')"));
-assert.ok(downloadSection.includes("downloadUrl.protocol !== 'https:'"));
-assert.equal((downloadSection.match(/authorization:/g) || []).length, 1);
-assert.ok(updater.includes(".groupguard-update-stage-"));
-assert.ok(updater.includes(".groupguard-update-rollback-"));
+assert.ok(updater.includes('.groupguard-update-stage-'));
+assert.ok(updater.includes('.groupguard-update-rollback-'));
 assert.ok(updater.includes('SELF_UPDATE_RESTART_EXIT_CODE = 75'));
 assert.ok(service.includes('GROUPGUARD_SERVICE_WORKER'));
 assert.ok(service.includes('rollbackPendingSelfUpdate'));
 assert.ok(workflow.includes('groupguard-self-update-'));
 assert.ok(workflow.includes('groupguard-self-update.v1'));
+
+execFileSync(process.execPath, [
+  '--experimental-strip-types',
+  '--import',
+  './scripts/register-ts-loader.mjs',
+  './scripts/verify-self-update-download-behavior.ts',
+], {
+  cwd: root,
+  stdio: 'inherit',
+});
+
 console.log('verify-self-update-contract: ok');
