@@ -185,31 +185,25 @@ try {
   };
   testConfig.global.qaEnabled = true;
   const groupFixtures = {
-    // Active sparse overlay.
     '10001': {
       useGlobal: false,
       qaLinkDelivery: { enabled: true, noticeText: 'active local notice' },
     },
-    // Whole-group inheritance with dormant historical values.
     '10002': {
       useGlobal: true,
       qaLinkDelivery: { enabled: true, noticeText: 'dormant local notice' },
     },
-    // Explicit inheritance row without dormant values: safe for set-path, but
-    // must not become a meaningless {useGlobal:false}-only row by itself.
     '10003': { useGlobal: true },
-    // Historical row that predates useGlobal remains an active overlay.
     '10004': {
       qaLinkDelivery: { enabled: true, noticeText: 'legacy local notice' },
     },
-    // Existing equal-to-global ownership must survive broad-form compaction.
     '10007': { useGlobal: false, qaEnabled: true },
-    // No dormant values to reactivate when whole-group inheritance is disabled.
     '10008': { useGlobal: true },
   } satisfies Record<string, GroupSettingsOverride>;
-  // Persistent group rows are intentionally sparse overrides even though the
-  // legacy PluginConfig.groups surface is still typed as full settings.
-  testConfig.groups = groupFixtures as typeof testConfig.groups;
+  // SQLite intentionally stores sparse group overrides. PluginConfig.groups is
+  // a historical full-settings type, so this single boundary cast makes that
+  // mismatch explicit while `satisfies` still validates every sparse fixture.
+  testConfig.groups = groupFixtures as unknown as typeof testConfig.groups;
 
   contextStateService.setConfigDir(tempDir);
   contextStateService.setConfigPath(configPath);
@@ -253,9 +247,6 @@ try {
     assert.ok(servedQueryPage.includes(mode), `served query page must expose ${mode} output mode`);
   }
 
-  // set-path is a deliberate group override even when the selected value equals
-  // the global value. Dormant historical rows must be skipped rather than
-  // silently reactivated or erased.
   const setPath = await adminJson(baseUrl, token, '/api/groups/batch', 'POST', {
     patch: {
       __operation: 'set-path',
@@ -293,9 +284,6 @@ try {
   assert.equal(persisted['10002']?.qaLinkDelivery?.enabled, true);
   assert.equal(persisted['10005']?.qaLinkDelivery?.enabled, false);
 
-  // restore-path removes only the selected ownership path. It is safe for a
-  // dormant row, preserves unrelated dormant values, and deletes an otherwise
-  // empty active overlay instead of persisting a false-only shell.
   const restorePath = await adminJson(baseUrl, token, '/api/groups/batch', 'POST', {
     patch: {
       __operation: 'restore-path',
@@ -325,8 +313,6 @@ try {
   assert.equal(persisted['10002']?.qaLinkDelivery?.noticeText, 'dormant local notice');
   assert.equal(persisted['10005'], undefined);
 
-  // The legacy single-group __restorePath HTTP contract must also remove only
-  // that field while retaining a historical no-useGlobal overlay.
   const legacyRestore = await adminJson(baseUrl, token, '/api/groups/10004', 'POST', {
     patch: { __restorePath: 'qaLinkDelivery.enabled' },
   });
@@ -335,8 +321,6 @@ try {
   assert.equal(legacyRestore.group.qaLinkDelivery.noticeText, 'legacy local notice');
   assert.equal(legacyRestore.sources['qaLinkDelivery.enabled'], 'global');
 
-  // Broad-form patching compacts only newly introduced values that merely copy
-  // the global baseline. Existing explicit equal-to-global ownership remains.
   const compactedNew = await adminJson(baseUrl, token, '/api/groups/10006', 'POST', {
     patch: { qaEnabled: true },
   });
@@ -351,9 +335,6 @@ try {
   assert.equal(preservedExplicitEqual.group.qaEnabled, true);
   assert.equal(preservedExplicitEqual.sources.qaEnabled, 'group');
 
-  // Whole-group inheritance preserves dormant values. Disabling it later may
-  // reactivate real dormant data, but must not manufacture a {useGlobal:false}
-  // row for a group that has nothing to reactivate.
   const enableInheritance = await adminJson(baseUrl, token, '/api/groups/batch', 'POST', {
     patch: {
       __operation: 'set-inheritance',
@@ -383,8 +364,6 @@ try {
   assert.equal(emptyInheritedStillEmpty.useGlobal, true);
   assert.deepEqual(emptyInheritedStillEmpty.group, { useGlobal: true });
 
-  // Public API inheritance reporting distinguishes no row, explicit whole-group
-  // inheritance, and a historical row with no useGlobal marker.
   const noRow = await adminJson(baseUrl, token, '/api/groups/10009');
   assert.equal(noRow.configured, false);
   assert.equal(noRow.useGlobal, true);
