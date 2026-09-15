@@ -82,6 +82,12 @@ function buildStoredZip(entries: Array<{ name: string; content: Buffer }>): Buff
   return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
+function toArrayBuffer(value: Buffer): ArrayBuffer {
+  const out = new ArrayBuffer(value.length);
+  new Uint8Array(out).set(value);
+  return out;
+}
+
 async function waitForFailedUpdate(expectedError: string): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     const status = await selfUpdateService.getStatus(false);
@@ -143,7 +149,7 @@ async function verifyArchiveRejection(input: {
     }
     if (url === SIGNED_URL) {
       assert.equal(headers.get('authorization'), null);
-      return new Response(input.archive, {
+      return new Response(toArrayBuffer(input.archive), {
         status: 200,
         headers: { 'content-length': String(input.archive.length) },
       });
