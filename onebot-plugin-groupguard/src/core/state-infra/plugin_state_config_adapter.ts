@@ -1,4 +1,4 @@
-import type { GroupGuardSettings, PluginConfig } from '../../types';
+import type { GroupGuardSettings, GroupSettingsOverride, PluginConfig } from '../../types';
 import { resolveEffectiveGroupSettings } from '../../config_effective';
 import { pluginState } from '../../state';
 
@@ -41,15 +41,15 @@ export class PluginStateConfigAdapter {
     pluginState.config.global = settings;
   }
 
-  getGroups(): Record<string, GroupGuardSettings> {
+  getGroups(): Record<string, GroupSettingsOverride> {
     return pluginState.config.groups;
   }
 
-  getGroupSettings(groupId: string): GroupGuardSettings | undefined {
+  getGroupSettings(groupId: string): GroupSettingsOverride | undefined {
     return pluginState.config.groups[groupId];
   }
 
-  setGroupSettings(groupId: string, settings: GroupGuardSettings): void {
+  setGroupSettings(groupId: string, settings: GroupSettingsOverride): void {
     pluginState.config.groups[groupId] = settings;
   }
 
