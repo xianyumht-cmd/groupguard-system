@@ -1,16 +1,9 @@
 import { normalizeGroupSettings } from './config';
-import type { GroupGuardSettings } from './types';
+import type { GroupGuardSettings, GroupSettingsOverride } from './types';
+export type { GroupSettingsOverride } from './types';
 
 export type ConfigValueSource = 'global' | 'group';
 export type ConfigSourceMap = Record<string, ConfigValueSource>;
-
-export type DeepPartial<T> = T extends Array<infer U>
-  ? Array<DeepPartial<U>>
-  : T extends object
-    ? { [K in keyof T]?: DeepPartial<T[K]> }
-    : T;
-
-export type GroupSettingsOverride = DeepPartial<GroupGuardSettings> & { useGlobal?: boolean };
 
 const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
 
