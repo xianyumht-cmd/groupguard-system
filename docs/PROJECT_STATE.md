@@ -2,135 +2,106 @@
 
 Updated: 2026-09-17
 
-## Current canonical state
+## Phase status
 
-- Canonical repository: `xianyumht-cmd/groupguard-system`.
-- Canonical branch: `main`.
-- Latest accepted runtime/artifact commit: `ca40e3159b374589bdf3403b2030bd773b1ce5d2` (merge of PR #93 / GG-AUD-006).
-- Exact-main verification for `ca40e315...` succeeded:
-  - GroupGuard CI #974, run `35138970422`;
-  - GroupGuard Build #978, run `35138970437`;
-  - Build SnowLuma Service #138, run `35138970413`;
-  - Build & Release Plugins #203, run `35138970283`.
-- Accepted GroupGuard Build #978 artifacts:
-  - self-update artifact id `10464074840`, size `1,408,821` bytes, SHA-256 `81b464c2c756e1c2ef718f09ae2a56b5f4a1982696aa7a0c520e6659a0bb363b`, expires `2026-10-16T19:12:26Z`;
-  - deployment bundle id `10464860135`, size `1,316,472` bytes, SHA-256 `873f6a7e06d19dbd99ee8caa29f3c25edf5ee82f3c8d9f95e2371b43c666a9ff`, expires `2026-12-15T19:10:44Z`;
-  - build log id `10464439529`, size `2,528` bytes, SHA-256 `a60d472eeea7e8af284a7495026afa1ad04f301e04598bbf5d18e764a9441d87`, expires `2026-12-15T19:10:44Z`.
-- Plugin release #203 created metadata-only child `e21535728a9a3e8a47020a6af9f06d7efd0b3c41`, whose parent is exactly `ca40e315...`; it changes only `plugin.json.updateTime` from `2026-09-16T14:27:55Z` to `2026-09-16T19:11:53Z`.
-- Repository `main` may therefore be ahead of the accepted runtime/artifact commit by metadata-only or documentation-only commits. Always re-fetch `main` and classify the delta before treating a newer SHA as runtime code.
+The 2026-09 GroupGuard security/reliability audit and hardening campaign is **complete**.
 
-## Production/runtime evidence boundary
+Current audit disposition:
 
-- Last operator-confirmed live ARM runtime: `9318d86415cbb726b022511d11d6a598b4237216`.
-- No audit round after that confirmation has deployed, restarted, or otherwise mutated production.
-- Repository `main`, accepted build/artifact commit, Windows checkout, and live ARM runtime are separate evidence states.
-- Audit fixes have accumulated in Git; production remains unchanged until the operator explicitly authorizes a later batched WebUI one-click upgrade.
+- must-fix active: **0**;
+- worth-doing active: **0**;
+- deferred maintenance: **4**;
+- closed/completed/reclassified audit categories: **8**;
+- source-shape behavior classes remaining in the project-wide verifier: **0**.
+
+Do not automatically reopen completed findings from old chat notes. Start future work from fresh `main` evidence and one explicit scope.
+
+## Canonical repository state
+
+- Repository: `xianyumht-cmd/groupguard-system`.
+- Branch: `main`.
+- Current phase-closeout base before this docs PR: `f2efceb2ba5ae2a9f0f48ac87c2b7bc49f4e9a18` (docs-only audit closeout).
+- Latest accepted runtime/artifact commit: `ca40e3159b374589bdf3403b2030bd773b1ce5d2` (PR #93 / GG-AUD-006).
+- Plugin release #203 created metadata-only child `e21535728a9a3e8a47020a6af9f06d7efd0b3c41`; it changes only `plugin.json.updateTime`.
+
+Exact-main verification for `ca40e315...` succeeded:
+
+- GroupGuard CI #974 — run `35138970422`;
+- GroupGuard Build #978 — run `35138970437`;
+- Build SnowLuma Service #138 — run `35138970413`;
+- Build & Release Plugins #203 — run `35138970283`.
+
+Accepted Build #978 artifacts:
+
+- self-update artifact `10464074840`, size `1,408,821` bytes, SHA-256 `81b464c2c756e1c2ef718f09ae2a56b5f4a1982696aa7a0c520e6659a0bb363b`, expires `2026-10-16T19:12:26Z`;
+- deployment bundle `10464860135`, size `1,316,472` bytes, SHA-256 `873f6a7e06d19dbd99ee8caa29f3c25edf5ee82f3c8d9f95e2371b43c666a9ff`, expires `2026-12-15T19:10:44Z`;
+- build log `10464439529`, size `2,528` bytes, SHA-256 `a60d472eeea7e8af284a7495026afa1ad04f301e04598bbf5d18e764a9441d87`, expires `2026-12-15T19:10:44Z`.
+
+Repository `main`, accepted runtime artifact, Windows checkout and each ARM runtime are separate evidence states.
+
+## Production rollout evidence
+
+The operator explicitly authorized a production WebUI self-update after the audit campaign.
+
+For the first host in the rollout sequence (89), operator-provided WebUI evidence showed:
+
+- self-update state `complete / complete`;
+- progress `100%`;
+- message indicating the new version started and passed commit verification;
+- writable application directory and managed runtime entry reported true.
+
+The same captured page still displayed the pre-update `currentCommit` value while also reporting the newer successful candidate. That is internally inconsistent/stale presentation, so the exact post-refresh running commit has **not** been recorded as independently confirmed in canonical evidence yet. Do not replace this with an inferred value merely because the updater state said complete.
+
+The second host (121) was discussed as the next rollout target, but no post-update exact-build/health evidence has been captured here yet.
+
+A GitHub Actions PAT used by WebUI self-update was printed into the conversation during operator troubleshooting. Its value is intentionally not recorded here. Treat that credential as exposed and rotate/revoke it before relying on it for continued production operations.
+
+Until fresh WebUI `/api/build-info`/health or equivalent operator evidence confirms each host, production runtime identity remains host-specific and not fully closed by repository evidence alone.
+
+## Completed campaign highlights
+
+Security/reliability work completed during the campaign includes:
+
+- prefix-only activation authority disabled and malformed authorization durations fail closed (#64 / GG-AUD-019 + GG-AUD-026);
+- authorization timer/send rejection handling hardened (#64 + #75 / GG-AUD-001);
+- authenticated query-test SSRF and unbounded response constrained (#66 / GG-AUD-021);
+- DNS TOCTOU hardened with per-hop validation/socket pinning (#67 / GG-AUD-022);
+- unsafe cookie-auth mutations protected by same-host Origin checks (#68 / GG-AUD-023);
+- SUB resource realpath/regular-file containment (#69 / GG-AUD-024);
+- Lanzou domain boundary validation (#70 / GG-AUD-029);
+- paid-license gating fixed (#71 / GG-AUD-025);
+- opaque signed WebUI browser session introduced (#72 / GG-AUD-028);
+- legacy authorization descriptor mapping fixed (#73 / GG-AUD-020);
+- malformed/missing group identity now fails closed (#74 / GG-AUD-027);
+- behavior coverage replaced the remaining source-shape runtime assertions;
+- stored per-group config is typed as sparse overrides while effective settings remain complete (#91 / GG-AUD-014);
+- first group system-write mutation no longer freezes unrelated inherited global values (#91);
+- Node 22 primary CI and Node 24 formal build evidence were reconciled without forcing unnecessary code changes (#92 / GG-AUD-015);
+- aggregate verifier/build chains were centralized into a serial fail-fast suite runner without changing verifier order or release behavior (#93 / GG-AUD-006).
+
+## Deferred maintenance — not current blockers
+
+Do not start these automatically:
+
+- **GG-AUD-007** — tighten `any` only at specific external/trust boundaries; no repo-wide purge.
+- **GG-AUD-013** — `StorageAdapter` remains a multi-domain monolith; decomposition requires a dedicated architecture plan and behavior coverage.
+- **GG-AUD-018** — additional architecture-lint coverage is preventive governance work, not a current defect.
+- **GG-AUD-030 P3** — unused symbols/parameters/types are bounded cleanup, not release-blocking work.
 
 ## Repository hygiene
 
-- PR #56 (`perf: trace queued query delivery stages`) remains open and independent. Do not merge, close, or fold it into this audit without fresh scope review.
-- PR #45 (`docs: record runtime recovery and config migration`) remains open and is unrelated historical documentation work.
-- Do not claim temporary-branch cleanup unless the branch is actually deleted after fresh safety checks.
-
-## Audit campaign status — complete
-
-Visible substantive audit execution has reached **1 → 0**.
-
-### Source-shape cleanup — complete
-
-GG-AUD-004/005 is complete. `scripts/verify-project-wide-bugfixes.ts` has **0 remaining source-shape behavior classes**. Runtime/security behavior should remain verified through execution boundaries rather than implementation-string assertions unless the contract is genuinely static.
-
-### GG-AUD-014 stale configuration types — complete via PR #91
-
-Stored per-group configuration is modeled as sparse `GroupSettingsOverride`; effective runtime settings remain complete `GroupGuardSettings` produced by the canonical resolver. PR #91 also fixed first-write behavior so a new group mutation no longer freezes unrelated global values into the stored row.
-
-### GG-AUD-015 Node 22/24 behavior drift — closed via PR #92
-
-No code change was required. Current repository verification already exercises the primary path on Node 22 and the formal release/build path on Node 24. Reopen only if supported Node policy changes, a Node-major-specific failure appears, or a release path stops exercising one of the majors.
-
-### GG-AUD-006 serial verifier concentration — complete via PR #93
-
-PR #93 replaced four duplicated aggregate `&&` command chains with a single declarative verifier-suite manifest plus a synchronous fail-fast runner:
-
-- `npm test` keeps the same 34 verifier steps and order;
-- `build:onebot` and `build:snowluma` share one release verifier sequence and retain distinct Vite modes;
-- `build:debug` keeps its historical smaller sequence;
-- every step still calls the existing `npm run <script>` command; no verifier implementation was removed, parallelized, or reordered;
-- `build:all` still builds OneBot first and SnowLuma second;
-- the runner validates missing/duplicate/recursive steps before execution and reports exact `step/total` progress and the first failing script.
-
-The first PR head exposed one stale wiring self-check in `verify:per-group-self-recall`: it inspected the literal `package.json.test` command string. That check was moved to the canonical suite manifest, preserving the contract while removing command-string coupling.
-
-Final evidence:
-
-- PR final-head CI #973 and Build #977 succeeded after the canonical docs update.
-- Exact-main CI #974 succeeded, including `npm test`, semantic TypeScript lint, scripts typecheck, deployment safety checks, SnowLuma build, and cross-repository mock contracts.
-- Exact-main Build #978 succeeded, including the real Node-24 `npm run build`, OneBot and SnowLuma release suites, Windows PowerShell 5.1 preflight, immutable deployment candidate, self-update artifact, deployment bundle, and build-log uploads.
-- Exact-main SnowLuma #138 and Plugins #203 also succeeded.
-- Production was not deployed or restarted.
-
-GG-AUD-006 is fully closed.
-
-## Completed security/reliability findings
-
-- GG-AUD-019 P0 + GG-AUD-026 P2 — prefix-only activation authority disabled; malformed duration handling fails closed (#64).
-- GG-AUD-001 — auth timer/send rejection behavior covered (#64 + #75).
-- GG-AUD-021 P1 — authenticated query-test SSRF/unbounded response constrained (#66).
-- GG-AUD-022 P1 — DNS TOCTOU hardened with per-hop validation/socket pinning (#67).
-- GG-AUD-023 P2 — unsafe cookie-auth mutations require same-host Origin (#68).
-- GG-AUD-024 P2 — SUB resource containment uses realpath + regular-file checks (#69).
-- GG-AUD-029 P2 — Lanzou domain validation uses exact/subdomain boundaries (#70).
-- GG-AUD-025 P1 — stored free license no longer satisfies paid runtime gates (#71).
-- GG-AUD-028 P2 — browser uses opaque signed WebUI session instead of storing master token (#72).
-- GG-AUD-020 — legacy `owner/admin` maps to `admin`, not public access (#73).
-- GG-AUD-027 — malformed/missing group identity fails closed (#74).
-
-Do not reopen completed findings from stale notes without current-main evidence of regression.
-
-## Broader audit backlog disposition
-
-The current audit has **0 must-fix / 0 worth-doing active categories**.
-
-### Deferred maintenance debt
-
-- **GG-AUD-007** — substantial `any` usage. Tighten only specific external/trust boundaries; do not perform a repo-wide mechanical purge.
-- **GG-AUD-013** — `StorageAdapter` remains a multi-domain monolith. High regression surface; split only with a dedicated architecture plan and behavior coverage.
-- **GG-AUD-018** — architecture lint exists for system-write and risk-policy boundaries. Additional coverage is preventive governance work, not a current defect.
-- **GG-AUD-030 P3** — unused symbols/parameters/types can accumulate because unused checks are not global gates. Treat as bounded cleanup, not release-blocking work.
-
-### Closed, completed, or reclassified from current-main evidence
-
-- **GG-AUD-006** — aggregate verifier/build command concentration centralized through PR #93.
-- **GG-AUD-008** — generic monolithic-module finding duplicates concrete GG-AUD-013 and is too broad to remain independently actionable.
-- **GG-AUD-009** — `infra` and `infrastructure` currently own different responsibilities; no current duplicate implementation defect was found.
-- **GG-AUD-010** — source-level coding guidance gap is closed by current `AGENTS.md`, TypeScript checks, and repository rules.
-- **GG-AUD-012** — no current evidence of the old import-side-effect monkey-patching pattern.
-- **GG-AUD-015** — Node 22 and Node 24 are already exercised by successful primary CI/build lanes.
-- **GG-AUD-016** — the old memory-smoke release-gate premise is not present in the current package/workflow state.
-- **GG-AUD-017** — HTTP/SQLite WebUI verification and Playwright browser acceptance cover different evidence layers rather than being simple duplicates.
-
-Current triage totals: **0 must-fix / 0 worth-doing / 4 deferred / 8 closed, completed, or reclassified**.
-
-## Reusable audit rules
-
-- Runtime/security behavior is not proved by source strings. Prefer real execution boundaries and preserve negative contracts.
-- Aggregate test membership belongs in the canonical suite definition, not in assertions that grep one `package.json` command-string representation.
-- Keep aggregate verifier execution serial and fail-fast unless a separate task proves that parallelization is safe.
-- Re-fetch current `main`, package metadata, workflows, and exact successful runs before reopening an old CI/runtime-version finding.
-- SQLite persistence may normalize sparse legacy shapes; protect ownership/value semantics rather than undocumented exact shapes.
-- Stored group overlays and effective runtime group settings are different types and ownership states.
-- `main` metadata/documentation HEAD, accepted runtime artifact commit, and live production are distinct.
-- Do not mass-refactor unrelated architecture while closing one bounded audit item.
-
-Detailed recurring failure patterns belong in `docs/PITFALLS.md`.
+- PR #56 (`perf: trace queued query delivery stages`) remains an independent performance-observability change. Do not merge, close or fold it into unrelated maintenance without fresh scope review.
+- Historical PR #45 is being retired by this phase-closeout task only after its still-useful runtime/container/migration lessons are absorbed into canonical knowledge; do not merge its 2026-08 `PROJECT_STATE` snapshot onto modern `main`.
+- Temporary merged task branches may still exist remotely when the available connector cannot safely delete refs. Never claim deletion without performing it.
 
 ## Next operation
 
-The current audit campaign is complete. Do not automatically start GG-AUD-007/013/018/030; they are deferred maintenance debt, not audit blockers.
+This engineering phase is closed.
 
-Future work should begin only from a freshly re-fetched `main` and one explicit scope. The two obvious next classes are:
+The next task should be one of these explicit scopes only:
 
-1. an operator-authorized production upgrade using an accepted immutable artifact, with preflight/backup/exact-build verification and rollback boundaries; or
-2. a separately scoped maintenance task selected from the deferred backlog.
+1. **production acceptance closeout** — rotate the exposed GitHub PAT, refresh/verify exact running commit + health on 89, complete and verify 121 if still pending, and record both host identities; or
+2. **PR #56 review** — freshly rebase/reconcile its old observability branch against current `main`, then decide whether that performance instrumentation is still wanted; or
+3. **new product/maintenance work** — start from current `main` and one bounded requirement.
 
-PR #56 remains independent from both. Production stays untouched until explicitly authorized.
+Do not resume broad audit mode unless new current-main evidence justifies it.
