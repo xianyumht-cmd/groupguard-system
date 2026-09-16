@@ -6,18 +6,32 @@ Updated: 2026-09-16
 
 - Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical branch: `main`.
-- Before PR #91, GitHub `main` HEAD was `48502903d38ada97323c147972ea5ad22a3d2373`.
-- `48502903...` is a metadata-only `chore: auto-update plugin.json [skip ci]` child of accepted runtime/artifact commit `0d79a4801e8e7c128d60181f9b82aff72458f3d8` (merge of PR #90). Its only source-tree change is `plugin.json.updateTime`, from `2026-09-15T13:55:40Z` to `2026-09-16T10:39:24Z`.
-- PR #90 exact main verification for `0d79a480...` succeeded:
+- Latest accepted runtime/artifact commit: `0d074d71cb9a88c7499edde64ab4a4b8498070b9` (merge of PR #91 / GG-AUD-014).
+- PR #91 exact main verification for `0d074d71...` succeeded:
+  - GroupGuard CI #964, run `35108575483`;
+  - GroupGuard Build #968, run `35108575392`;
+  - Build SnowLuma Service #137, run `35108575476`;
+  - Build & Release Plugins #202, run `35108575486`.
+- PR #91 accepted artifacts from GroupGuard Build #968:
+  - self-update artifact id `10451616228`, SHA-256 `89a0c8d00361d0fc0279bc0c565a3c2cc29403394a5e478e7ba0fd39a5a2bac8`;
+  - deployment bundle id `10451616232`, SHA-256 `5b9bb9db56418e45ff912b12dbc2ada0a96e326041977204954c6abf0c339afa`;
+  - build log id `10451062764`, SHA-256 `8fb7e5a57a083a826064e75ff2b47b7aa8158255fe93e4878855cc696cdf4905`.
+- Build & Release Plugins #202 then created metadata-only child `ef040ab40d7f40fa21c1bc0a8a8a626857bbb4a4` with parent exactly `0d074d71...`; its only source-tree change is `plugin.json.updateTime`, from `2026-09-16T10:39:24Z` to `2026-09-16T14:27:55Z`.
+- This document-only closeout commit may advance `main` beyond that metadata child without changing runtime code or accepted artifacts. Always re-fetch `main` in a new session.
+
+### Previous accepted build: PR #90
+
+- PR #90 runtime/artifact commit: `0d79a4801e8e7c128d60181f9b82aff72458f3d8`.
+- Exact main workflows succeeded:
   - GroupGuard CI #939, run `35086058504`;
   - GroupGuard Build #943, run `35086058590`;
   - Build SnowLuma Service #136, run `35086058528`;
   - Build & Release Plugins #201, run `35086059084`.
-- PR #90 accepted artifacts from GroupGuard Build #943:
+- Accepted artifacts:
   - self-update artifact id `10441948912`, SHA-256 `34e1868c7d8c424a66b3a228a5d20a5886a5f1118327410b57759007ba9774f7`;
   - deployment bundle id `10442302611`, SHA-256 `000a76102c0a915863d38763d31f508205b2ee3833c4b9904635dbea9cc658ca`;
   - build log id `10442471175`, SHA-256 `f969a8a2294de3e861399fe66ef73c2c8e82c276fbec698cc774c580b4222d7b`.
-- Always re-fetch `main` in a new session because later merges and plugin metadata automation may advance it.
+- Metadata child `48502903d38ada97323c147972ea5ad22a3d2373` changed only `plugin.json.updateTime`.
 
 ## Production/runtime evidence boundary
 
@@ -52,33 +66,37 @@ Behavior migrations completed:
 
 Current remaining count for the `scripts/verify-project-wide-bugfixes.ts` source-shape cleanup: **0 behavior classes**.
 
-PR #90 replaces the final four implementation-string assertions with one isolated temporary SQLite/config behavior fixture. It proves:
+PR #90 replaced the final four implementation-string assertions with one isolated temporary SQLite/config behavior fixture. It proves:
 
 - an ordinary save with an unexpectedly empty runtime group map preserves the last SQLite-owned group row and emits the operator-visible persistence warning;
 - restoring the final explicit group override is recognized as intentional and persists an empty runtime/SQLite group set;
 - explicit `deleteGroupConfig()` removes the final runtime and SQLite row;
 - production implementation code is unchanged.
 
-PR #90 is fully closed on `main`: merge `0d79a4801e8e7c128d60181f9b82aff72458f3d8`, all four exact push workflows succeeded, accepted artifacts are recorded above, and the later `48502903...` child is metadata-only.
+### GG-AUD-014 stale schema/types — complete via PR #91
 
-### GG-AUD-014 stale schema/types — PR #91 closure in progress
+Finding: stored per-group configuration rows are sparse overrides, but several TypeScript boundaries still modeled them as complete `GroupGuardSettings` snapshots. That stale model hid real ownership mistakes and encouraged reverse casts.
 
-Current finding: stored per-group configuration rows are sparse overrides, but several TypeScript boundaries still modeled them as complete `GroupGuardSettings` snapshots. That stale model hid real ownership mistakes and encouraged reverse casts.
-
-PR #91 aligns the type model with the already-established runtime/storage contract:
+PR #91 aligned the type model with the established runtime/storage contract:
 
 - `PluginConfig.groups` is a map of sparse `GroupSettingsOverride` values;
-- config state service, adapter, gateway, persistence guard, and system-write port expose stored group rows as sparse overrides;
-- effective runtime settings remain complete `GroupGuardSettings` and are produced by the canonical `resolveEffectiveGroupSettings()` resolver;
-- legacy `PluginState.getGroupSettings()` now uses the same deep resolver instead of a shallow object spread;
-- SQLite group persistence is typed to accept sparse rows without pretending they are complete runtime settings;
-- config-inheritance verification typechecks sparse nested group literals directly, without `as GroupGuardSettings` reverse casts.
+- config state service, adapter, gateway, persistence guard, system-write port, and SQLite persistence expose stored group rows as sparse overrides;
+- effective runtime settings remain complete `GroupGuardSettings` values and are produced by canonical `resolveEffectiveGroupSettings()`;
+- legacy `PluginState.getGroupSettings()` now uses the same deep resolver instead of shallow-spreading global and group objects;
+- config-inheritance verification typechecks sparse nested group literals directly, without reverse `as GroupGuardSettings` casts;
+- sparse scheduled-task overlays are validated before being exposed as complete `ScheduledTask[]` values.
 
-The audit also exposed one real behavior bug in the system-write adapter: the first mutation of a never-configured group cloned the entire effective global snapshot into a new group row, freezing fields that should continue to inherit later global changes. PR #91 now creates only `{ useGlobal: false }` plus the field actually written. The behavior verifier proves a first welcome-message mutation leaves unrelated settings inherited from global.
+The audit also exposed and fixed one real behavior bug in the system-write adapter: the first mutation of a never-configured group cloned the entire effective global snapshot into a new group row, freezing fields that should continue to inherit later global changes. The adapter now creates only `{ useGlobal: false }` plus fields actually written. Behavior verification proves a first welcome-message mutation leaves unrelated settings inherited from global.
 
-Latest code/test head before this documentation update: `d081ccf67e25471c3d3fc601e4177736ec33009d`. On that head, TypeScript typecheck, full `npm test`, semantic TypeScript lint, scripts typecheck, deployment safety checks, and Windows PowerShell 5.1 preflight reached success; final CI/Build tail and the documentation head still require exact verification before merge.
+Verification history:
 
-Once PR #91 is fully merged and exact-main verified, GG-AUD-014 is closed and the broader backlog falls from 13 to **12 categories to triage**.
+- code head `d081ccf67e25471c3d3fc601e4177736ec33009d`: GroupGuard CI #962 and Build #966 succeeded;
+- final PR head `28ad1a6bfc77dd915d7d2c324791a14f4fb6d038`: GroupGuard CI #963 and Build #967 succeeded;
+- merge commit `0d074d71cb9a88c7499edde64ab4a4b8498070b9`: exact main CI #964, Build #968, SnowLuma #137, and Plugins #202 all succeeded;
+- accepted artifact IDs/digests are recorded at the top of this document;
+- production was not deployed, restarted, or otherwise mutated.
+
+GG-AUD-014 is closed. The broader backlog is now **12 categories to triage**.
 
 ## Completed security/reliability findings
 
@@ -104,14 +122,14 @@ Do not reopen completed findings from stale notes without current-main evidence 
 - Node/TS loader incompatibility is not product failure; test through the supported loader/build path. If a touched runtime module must be imported by strip-types verifiers, avoid TypeScript syntax that Node strip-only mode cannot erase, such as constructor parameter properties.
 - SQLite persistence may normalize sparse legacy shapes; behavior tests should protect ownership/value semantics rather than forbid documented normalization unless exact shape is itself the contract.
 - Stored group overlays and effective runtime group settings are different types and ownership states. Do not cast a sparse row into complete `GroupGuardSettings`; resolve it at the runtime boundary.
-- `main` metadata HEAD, accepted runtime artifact commit, and live production are distinct.
+- `main` metadata/documentation HEAD, accepted runtime artifact commit, and live production are distinct.
 - Do not mass-refactor unrelated architecture while closing one bounded audit item.
 
 Detailed recurring failure patterns belong in `docs/PITFALLS.md`.
 
 ## Broader audit backlog — next phase
 
-After PR #91 closes GG-AUD-014, the campaign has **12 backlog categories to triage**, not 12 guaranteed code changes:
+The campaign now has **12 backlog categories to triage**, not 12 guaranteed code changes:
 
 - GG-AUD-006 — very large serial test/verifier concentration;
 - GG-AUD-007 — substantial `any` usage;
@@ -130,6 +148,7 @@ These should be mapped before editing. Some may be high-value fixes, some bounde
 
 ## Next operation
 
-1. Finish PR #91 final documentation-head CI/Build, merge with exact expected head SHA, then verify exact main CI/Build/SnowLuma/Plugins runs and artifact IDs/digests.
-2. Production remains untouched unless explicitly authorized.
-3. After #91 is fully closed, continue one bounded high-value category per user `继续` round, always showing the remaining-category count.
+1. Re-fetch current `main` and canonical docs.
+2. Triage the 12 remaining backlog categories against current-main evidence before selecting the next bounded task; do not assume every category still needs a code change.
+3. Continue one bounded high-value category per user `继续` round, always showing the remaining-category count.
+4. Production remains untouched unless explicitly authorized.
