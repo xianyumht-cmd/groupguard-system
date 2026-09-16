@@ -1,5 +1,5 @@
 import type { DomainResponseNotice } from '../../../../domain/shared/response_notice';
-import type { ScheduledTask, GroupGuardSettings } from '../../../../types';
+import type { ScheduledTask, GroupSettingsOverride } from '../../../../types';
 import type { SystemWriteScene } from './types';
 
 export interface SystemWriteRuntimeContext {
@@ -14,7 +14,7 @@ export interface ISystemWriteConfigPort {
   setJoinPrivateEnabled(groupId: string, enabled: boolean): void;
   setJoinPrivateMessage(groupId: string, message: string): void;
   removeGroupConfig(groupId: string): void;
-  getGroupSettings(groupId: string): GroupGuardSettings | undefined;
+  getGroupSettings(groupId: string): GroupSettingsOverride | undefined;
   saveConfig(): void | Promise<void>;
 }
 
