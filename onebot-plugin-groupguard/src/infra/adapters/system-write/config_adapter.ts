@@ -1,12 +1,12 @@
 import { saveConfig } from '../../../commands/common';
 import { configStateService } from '../../../core/state-services/config_state_service';
 import type { ISystemWriteConfigPort, SystemWriteRuntimeContext } from '../../../app/use-cases/system/write/ports';
-import type { ScheduledTask, GroupGuardSettings } from '../../../types';
+import type { ScheduledTask, GroupSettingsOverride } from '../../../types';
 
-function ensureGroupSettings(groupId: string): GroupGuardSettings {
+function ensureGroupSettings(groupId: string): GroupSettingsOverride {
   const config = configStateService.getConfig();
   if (!config.groups[groupId]) {
-    config.groups[groupId] = { ...configStateService.resolveGroupSettings(groupId) };
+    config.groups[groupId] = { useGlobal: false };
   }
   return config.groups[groupId];
 }
@@ -44,7 +44,7 @@ export class ConfigAdapter implements ISystemWriteConfigPort {
     configStateService.deleteGroupSettings(groupId);
   }
 
-  getGroupSettings(groupId: string): GroupGuardSettings | undefined {
+  getGroupSettings(groupId: string): GroupSettingsOverride | undefined {
     return configStateService.getGroupSettings(groupId);
   }
 
