@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { verifierSuites } from './verifier-suites.mjs';
 
 // This focused contract is intentionally wired into npm test so group inheritance,
 // durable queue finalization, and legacy WebUI scope behavior cannot regress silently.
@@ -8,7 +9,6 @@ const root = path.resolve(import.meta.dirname, '..');
 const html = fs.readFileSync(path.join(root, 'webui/config.html'), 'utf8');
 const queue = fs.readFileSync(path.join(root, 'src/services/action_queue_service.ts'), 'utf8');
 const guard = fs.readFileSync(path.join(root, 'src/services/action_guard_service.ts'), 'utf8');
-const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 assert.match(html, /selfRecall:\s*\{ \.\.\.\(g\.selfRecall \|\| \{\}\), \.\.\.\(gs\.selfRecall \|\| \{\}\) \}/, 'group editor must nested-merge selfRecall');
 assert.match(html, /sr\.enabled !== undefined \? sr\.enabled === true : g\.autoRecallSelf === true/, 'structured enabled=false must win over legacy enabled=true');
@@ -27,6 +27,6 @@ assert.match(queue, /self_recall_enqueue_result_write_failed/, 'self-recall admi
 assert.match(queue, /task\.type === 'self_recall'[\s\S]*resolveSelfRecallTask\(task\.payload\.taskId, 'exception'/, 'self-recall worker exceptions must update durable state');
 assert.match(queue, /skip_self_recall_disabled/, 'disabled queued recall must terminate without delete');
 assert.match(guard, /skip_self_recall_disabled/, 'GuardResult must type the terminal skip code');
-assert.ok(pkg.scripts.test.includes('verify:per-group-self-recall'), 'focused contract must run under npm test');
+assert.ok(verifierSuites.test.includes('verify:per-group-self-recall'), 'focused contract must run under npm test');
 
 console.log('per-group self-recall contract: PASS');
