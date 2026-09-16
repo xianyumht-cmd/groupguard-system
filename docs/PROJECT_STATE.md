@@ -6,34 +6,35 @@ Updated: 2026-09-17
 
 - Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical branch: `main`.
-- Latest accepted runtime/artifact commit before PR #93: `0d074d71cb9a88c7499edde64ab4a4b8498070b9` (merge of PR #91 / GG-AUD-014).
-- Exact-main verification for `0d074d71...` succeeded:
-  - GroupGuard CI #964, run `35108575483`;
-  - GroupGuard Build #968, run `35108575392`;
-  - Build SnowLuma Service #137, run `35108575476`;
-  - Build & Release Plugins #202, run `35108575486`.
-- Accepted GroupGuard Build #968 artifacts:
-  - self-update artifact id `10451616228`, SHA-256 `89a0c8d00361d0fc0279bc0c565a3c2cc29403394a5e478e7ba0fd39a5a2bac8`;
-  - deployment bundle id `10451616232`, SHA-256 `5b9bb9db56418e45ff912b12dbc2ada0a96e326041977204954c6abf0c339afa`;
-  - build log id `10451062764`, SHA-256 `8fb7e5a57a083a826064e75ff2b47b7aa8158255fe93e4878855cc696cdf4905`.
-- Plugin release #202 created metadata-only child `ef040ab40d7f40fa21c1bc0a8a8a626857bbb4a4`.
-- PR #92 then closed GG-AUD-015 by evidence only; docs-only merge commit `03fe487635f9c7dab1223fe7e2e96c7665d360c4` changed no runtime code or artifact baseline.
-- PR #93 is the current GG-AUD-006 task. Its final accepted runtime/artifact commit must be recorded here only after merge and exact-main verification.
+- Latest accepted runtime/artifact commit: `ca40e3159b374589bdf3403b2030bd773b1ce5d2` (merge of PR #93 / GG-AUD-006).
+- Exact-main verification for `ca40e315...` succeeded:
+  - GroupGuard CI #974, run `35138970422`;
+  - GroupGuard Build #978, run `35138970437`;
+  - Build SnowLuma Service #138, run `35138970413`;
+  - Build & Release Plugins #203, run `35138970283`.
+- Accepted GroupGuard Build #978 artifacts:
+  - self-update artifact id `10464074840`, size `1,408,821` bytes, SHA-256 `81b464c2c756e1c2ef718f09ae2a56b5f4a1982696aa7a0c520e6659a0bb363b`, expires `2026-10-16T19:12:26Z`;
+  - deployment bundle id `10464860135`, size `1,316,472` bytes, SHA-256 `873f6a7e06d19dbd99ee8caa29f3c25edf5ee82f3c8d9f95e2371b43c666a9ff`, expires `2026-12-15T19:10:44Z`;
+  - build log id `10464439529`, size `2,528` bytes, SHA-256 `a60d472eeea7e8af284a7495026afa1ad04f301e04598bbf5d18e764a9441d87`, expires `2026-12-15T19:10:44Z`.
+- Plugin release #203 created metadata-only child `e21535728a9a3e8a47020a6af9f06d7efd0b3c41`, whose parent is exactly `ca40e315...`; it changes only `plugin.json.updateTime` from `2026-09-16T14:27:55Z` to `2026-09-16T19:11:53Z`.
+- Repository `main` may therefore be ahead of the accepted runtime/artifact commit by metadata-only or documentation-only commits. Always re-fetch `main` and classify the delta before treating a newer SHA as runtime code.
 
 ## Production/runtime evidence boundary
 
 - Last operator-confirmed live ARM runtime: `9318d86415cbb726b022511d11d6a598b4237216`.
 - No audit round after that confirmation has deployed, restarted, or otherwise mutated production.
 - Repository `main`, accepted build/artifact commit, Windows checkout, and live ARM runtime are separate evidence states.
-- Audit fixes accumulate in Git first; production remains unchanged until the operator explicitly authorizes the later batched WebUI one-click upgrade.
+- Audit fixes have accumulated in Git; production remains unchanged until the operator explicitly authorizes a later batched WebUI one-click upgrade.
 
 ## Repository hygiene
 
-- PR #56 (`perf: trace queued query delivery stages`) remains open and independent. Do not merge, close, or fold it into the audit without fresh scope review.
-- PR #45 is still open and is unrelated historical documentation work.
+- PR #56 (`perf: trace queued query delivery stages`) remains open and independent. Do not merge, close, or fold it into this audit without fresh scope review.
+- PR #45 (`docs: record runtime recovery and config migration`) remains open and is unrelated historical documentation work.
 - Do not claim temporary-branch cleanup unless the branch is actually deleted after fresh safety checks.
 
-## Audit progress
+## Audit campaign status — complete
+
+Visible substantive audit execution has reached **1 → 0**.
 
 ### Source-shape cleanup — complete
 
@@ -47,25 +48,28 @@ Stored per-group configuration is modeled as sparse `GroupSettingsOverride`; eff
 
 No code change was required. Current repository verification already exercises the primary path on Node 22 and the formal release/build path on Node 24. Reopen only if supported Node policy changes, a Node-major-specific failure appears, or a release path stops exercising one of the majors.
 
-### GG-AUD-006 serial verifier concentration — implementation complete in PR #93
+### GG-AUD-006 serial verifier concentration — complete via PR #93
 
-PR #93 replaces four duplicated aggregate `&&` command chains with a single declarative verifier-suite manifest plus a synchronous fail-fast runner:
+PR #93 replaced four duplicated aggregate `&&` command chains with a single declarative verifier-suite manifest plus a synchronous fail-fast runner:
 
 - `npm test` keeps the same 34 verifier steps and order;
-- `build:onebot` and `build:snowluma` share one release verifier sequence and retain their distinct Vite modes;
+- `build:onebot` and `build:snowluma` share one release verifier sequence and retain distinct Vite modes;
 - `build:debug` keeps its historical smaller sequence;
-- every step still calls the existing `npm run <script>` command; no verifier implementation is removed, parallelized, or reordered;
+- every step still calls the existing `npm run <script>` command; no verifier implementation was removed, parallelized, or reordered;
 - `build:all` still builds OneBot first and SnowLuma second;
 - the runner validates missing/duplicate/recursive steps before execution and reports exact `step/total` progress and the first failing script.
 
-The first PR head exposed one stale wiring self-check in `verify:per-group-self-recall`: it inspected the literal `package.json.test` command string. That check now reads the canonical suite manifest, so it still proves the focused contract participates in `npm test` without coupling itself to one command-string representation.
+The first PR head exposed one stale wiring self-check in `verify:per-group-self-recall`: it inspected the literal `package.json.test` command string. That check was moved to the canonical suite manifest, preserving the contract while removing command-string coupling.
 
-Verified code head `7d18a6ec4b932676da9073fc0bb55c77ff5cbe45`:
+Final evidence:
 
-- GroupGuard CI #972, run `35138034050`, Node 22: succeeded; suite output reached `test passed (34/34)`, then semantic lint, scripts typecheck, deployment safety checks, `build:snowluma` `22/22`, and cross-repository mock contracts all passed.
-- GroupGuard Build #976, run `35138033706`, Node 24: succeeded; real `npm run build` ran `build:onebot` `22/22` followed by `build:snowluma` `22/22`; immutable deployment candidate, self-update artifact construction, uploads, and Windows PowerShell 5.1 preflight succeeded.
+- PR final-head CI #973 and Build #977 succeeded after the canonical docs update.
+- Exact-main CI #974 succeeded, including `npm test`, semantic TypeScript lint, scripts typecheck, deployment safety checks, SnowLuma build, and cross-repository mock contracts.
+- Exact-main Build #978 succeeded, including the real Node-24 `npm run build`, OneBot and SnowLuma release suites, Windows PowerShell 5.1 preflight, immutable deployment candidate, self-update artifact, deployment bundle, and build-log uploads.
+- Exact-main SnowLuma #138 and Plugins #203 also succeeded.
+- Production was not deployed or restarted.
 
-GG-AUD-006 has no remaining implementation work. PR #93 still requires final-head verification after this canonical documentation update, merge, and exact-main post-merge verification before it is fully closed.
+GG-AUD-006 is fully closed.
 
 ## Completed security/reliability findings
 
@@ -85,7 +89,7 @@ Do not reopen completed findings from stale notes without current-main evidence 
 
 ## Broader audit backlog disposition
 
-After GG-AUD-006, the current audit has **0 must-fix / 0 worth-doing active categories**.
+The current audit has **0 must-fix / 0 worth-doing active categories**.
 
 ### Deferred maintenance debt
 
@@ -122,9 +126,11 @@ Detailed recurring failure patterns belong in `docs/PITFALLS.md`.
 
 ## Next operation
 
-Visible substantive audit execution has reached **1 → 0**.
+The current audit campaign is complete. Do not automatically start GG-AUD-007/013/018/030; they are deferred maintenance debt, not audit blockers.
 
-1. Complete PR #93 final-head CI/Build, merge, exact-main four-workflow verification, and artifact evidence recording.
-2. Then perform one final read-only current-main campaign closeout: re-read canonical docs, inspect open PRs and current backlog evidence, and declare this audit campaign complete if no new current-main defect appears.
-3. Do **not** automatically start GG-AUD-007/013/018/030; they are deferred maintenance debt, not current audit blockers.
-4. Production remains untouched unless explicitly authorized.
+Future work should begin only from a freshly re-fetched `main` and one explicit scope. The two obvious next classes are:
+
+1. an operator-authorized production upgrade using an accepted immutable artifact, with preflight/backup/exact-build verification and rollback boundaries; or
+2. a separately scoped maintenance task selected from the deferred backlog.
+
+PR #56 remains independent from both. Production stays untouched until explicitly authorized.
