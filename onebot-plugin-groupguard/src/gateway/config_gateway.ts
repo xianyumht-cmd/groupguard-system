@@ -1,4 +1,4 @@
-import type { GroupGuardSettings, PluginConfig } from '../types';
+import type { GroupGuardSettings, GroupSettingsOverride, PluginConfig } from '../types';
 import { configStateService } from '../core/state-services/config_state_service';
 
 export class ConfigGateway {
@@ -18,15 +18,15 @@ export class ConfigGateway {
     configStateService.setGlobalSettings(settings);
   }
 
-  getGroups(): Record<string, GroupGuardSettings> {
+  getGroups(): Record<string, GroupSettingsOverride> {
     return configStateService.getGroups();
   }
 
-  getGroupSettings(groupId: string): GroupGuardSettings | undefined {
+  getGroupSettings(groupId: string): GroupSettingsOverride | undefined {
     return configStateService.getGroupSettings(groupId);
   }
 
-  setGroupSettings(groupId: string, settings: GroupGuardSettings): void {
+  setGroupSettings(groupId: string, settings: GroupSettingsOverride): void {
     configStateService.setGroupSettings(groupId, settings);
   }
 
