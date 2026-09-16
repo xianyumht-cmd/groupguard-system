@@ -1,22 +1,22 @@
 # GroupGuard Project State
 
-Updated: 2026-09-15
+Updated: 2026-09-16
 
 ## Current canonical state
 
 - Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical branch: `main`.
-- At the start of PR #89, GitHub `main` HEAD was `e9130bb66f0ccdbb9a250572685238f1062339ed`.
-- `e9130bb6...` is a metadata-only `chore: auto-update plugin.json [skip ci]` child of accepted runtime/artifact commit `47484fe30e3a7dd8aef1966d42543c55157baed8` (merge of PR #88). Its only source-tree change is `plugin.json.updateTime`.
-- PR #88 main verification for `47484fe3...` succeeded:
-  - GroupGuard CI #929;
-  - GroupGuard Build #933;
-  - Build SnowLuma Service #134;
-  - Build & Release Plugins #199.
-- PR #88 accepted artifacts from GroupGuard Build #933:
-  - self-update artifact id `10397854054`, SHA-256 `097bf71374abeb12871fcea907305d2947a7e13579858b3d99e68acb188315ad`;
-  - deployment bundle id `10398502173`, SHA-256 `e2437957839131327442d6ffff49fadb4d3e49572a9fef0fca8975c3ac1d48b5`;
-  - build log id `10397644861`, SHA-256 `c5543c2d76aff1bbf66ca8176580d021214295e7fb92dab49799cb7a1cf4380a`.
+- At the start of PR #90, GitHub `main` HEAD was `cecd9a7816a293f07e4bca4a55dae85d320d0b66`.
+- `cecd9a78...` is a metadata-only `chore: auto-update plugin.json [skip ci]` child of accepted runtime/artifact commit `7cccbf9612b4dd0dd3f62854fe944eee014e14b7` (merge of PR #89). Its only source-tree change is `plugin.json.updateTime`.
+- PR #89 main verification for `7cccbf96...` succeeded:
+  - GroupGuard CI #935;
+  - GroupGuard Build #939;
+  - Build SnowLuma Service #135;
+  - Build & Release Plugins #200.
+- PR #89 accepted artifacts from GroupGuard Build #939:
+  - self-update artifact id `10400361465`, SHA-256 `b746ea833451c2528e336335cf062a5cd4de524da388d3b916d005b61fde3d72`;
+  - deployment bundle id `10400361470`, SHA-256 `ca203b0afd68ac51d7e376876d0422207c2f4c9262a2f7390f882f15644c15d9`;
+  - build log id `10400162566`, SHA-256 `2945882db2cf87037a9f1184ae8c986fe35ec4981e369a221978a7ae8f2f7bfd`.
 - Always re-fetch `main` in a new session because later merges and plugin metadata automation may advance it.
 
 ## Production/runtime evidence boundary
@@ -29,15 +29,15 @@ Updated: 2026-09-15
 ## Repository hygiene
 
 - PR #56 (`perf: trace queued query delivery stages`) remains open and independent. Do not merge, close, or fold it into the audit without fresh scope review.
-- Several already-merged historical task branches may still exist remotely. Do not delete unique history without proving it is safely reachable/archived.
+- Several already-merged historical task branches may still exist remotely. Do not claim branch cleanup unless the branch is actually deleted after fresh safety checks.
 
 ## Audit progress and remaining-count view
 
 The user wants progress expressed as a visible remaining count, not only as process steps.
 
-### Current GG-AUD-004/005 source-shape cleanup
+### GG-AUD-004/005 source-shape cleanup — complete
 
-Completed behavior migrations:
+Behavior migrations completed:
 
 1. target-file callback authorization — PR #78;
 2. self-update security behavior — PRs #79–#81;
@@ -47,30 +47,19 @@ Completed behavior migrations:
 6. output-locale Q群管家 adapter routing — PR #86;
 7. explicit force-send semantics — PR #87;
 8. runtime version/build metadata — PR #88;
-9. global config save preserving SQLite-owned group settings — PR #89 in progress.
+9. global config save preserving SQLite-owned group settings — PR #89;
+10. final empty-runtime guard / intentional-empty persistence / explicit final-row deletion behavior — PR #90.
 
-PR #89 scope:
+Current remaining count for the `scripts/verify-project-wide-bugfixes.ts` source-shape cleanup: **0 behavior classes**.
 
-- replaces the `config_api.ts` source-string assertion with real `saveRawConfig()` execution against isolated temporary SQLite/config state;
-- requires a raw global save containing `groups: {}` to preserve the in-memory group map and SQLite group-row set/semantics while keeping `config.json.groups` empty;
+PR #90 replaces the final four implementation-string assertions with one isolated temporary SQLite/config behavior fixture. It proves:
+
+- an ordinary save with an unexpectedly empty runtime group map preserves the last SQLite-owned group row and emits the operator-visible persistence warning;
+- restoring the final explicit group override is recognized as intentional and persists an empty runtime/SQLite group set;
+- explicit `deleteGroupConfig()` removes the final runtime and SQLite row;
 - production implementation code is unchanged.
 
-PR #89 validation so far:
-
-- initial head `39e2b88d6af265205e61bd46ba8ac8bf12ff0634` failed GroupGuard CI #931 only because the test incorrectly required sparse SQLite rows to round-trip byte-for-byte; SQLite correctly normalizes missing `qaList` to `[]`;
-- corrected head `00b0cdc8dca7b913b980eed7c260e1a04fe10135` compares the durable semantics instead of forbidding normal persistence normalization;
-- corrected head passed GroupGuard CI #933 and GroupGuard Build #937, including full `npm test`, semantic lint, scripts typecheck, deployment safety checks, SnowLuma build, Windows PowerShell 5.1 preflight, and artifact creation.
-
-### Remaining count after PR #89
-
-For the current `scripts/verify-project-wide-bugfixes.ts` source-shape tail, exactly **2 behavior classes remain**:
-
-1. **empty-runtime persistence guard/warning integration** — current source assertions check `allowEmptyRuntime: options.allowEmptyGroupPersistence === true` and the warning text `已阻止空分群配置覆盖 SQLite`;
-2. **explicit group-row deletion / intentional empty persistence** — current source assertions check `storageAdapter.deleteGroupConfig(id)` and `allowEmptyGroupPersistence: explicitlyBecameEmpty`.
-
-These two concerns are closely related but must first be mapped to existing PR #85 behavior coverage. If they can be proved through one stable persistence boundary without duplicate coverage, one later round may close both; otherwise expect two bounded rounds. Do not manufacture duplicate tests just to reduce the count.
-
-After these reach zero, GG-AUD-004/005 source-shape cleanup is complete. The broader audit campaign still has separate backlog items below; that is a new phase, not hidden work inside this source-shape cleanup.
+PR #90 code head `e9162c6e94e871fe16020371ba6f0b15f0f86eee` passed GroupGuard CI #937 and GroupGuard Build #941, including full `npm test`, semantic lint, scripts typecheck, deployment safety checks, SnowLuma build, Windows PowerShell 5.1 preflight, and artifact creation. Final docs-head/main verification is still required before the PR is considered fully closed.
 
 ## Completed security/reliability findings
 
@@ -86,7 +75,7 @@ After these reach zero, GG-AUD-004/005 source-shape cleanup is complete. The bro
 - GG-AUD-020 — legacy `owner/admin` maps to `admin`, not public access (#73).
 - GG-AUD-027 — malformed/missing group identity fails closed (#74).
 
-Do not reopen these from stale notes without current-main evidence of regression.
+Do not reopen completed findings from stale notes without current-main evidence of regression.
 
 ## Reusable audit rules
 
@@ -100,30 +89,29 @@ Do not reopen these from stale notes without current-main evidence of regression
 
 Detailed recurring failure patterns belong in `docs/PITFALLS.md`.
 
-## Broader audit backlog after GG-AUD-004/005
+## Broader audit backlog — next phase
 
-- GG-AUD-006 — very large serial test/verifier concentration; assess cost before splitting.
-- GG-AUD-007 — substantial `any` usage; quantify and prioritize by trust boundary.
-- GG-AUD-008 — monolithic modules; identify one ownership boundary at a time.
-- GG-AUD-009 — `infra` / `infrastructure` duplication; map ownership/imports first.
-- GG-AUD-010 — re-check whether bounded source-level coding guidance is still missing.
-- GG-AUD-012 — import-side-effect monkey patching; re-inspect current callsites.
-- GG-AUD-013 — StorageAdapter monolith; re-measure responsibilities before splitting.
-- GG-AUD-014 — stale schema/types; identify concrete drift before editing.
-- GG-AUD-015 — Node 22/24 behavior drift; review CI/runtime matrix.
-- GG-AUD-016 — memory smoke test is not a required release gate; verify workflow before changing.
-- GG-AUD-017 — duplicated WebUI tests; consolidate only with equivalent coverage.
-- GG-AUD-018 — architecture lint scope is too local; map important boundaries first.
-- GG-AUD-030 P3 — unused production symbols/parameters/types remain cleanup debt; do not hide them with ignores.
+The completed source-shape cleanup is no longer the active tail. The broader campaign still has **13 backlog categories to triage**, not 13 guaranteed code changes:
 
-Independent operational/product issues such as OneBot result `120` and PR #56 are not automatically part of this campaign.
+- GG-AUD-006 — very large serial test/verifier concentration;
+- GG-AUD-007 — substantial `any` usage;
+- GG-AUD-008 — monolithic modules;
+- GG-AUD-009 — `infra` / `infrastructure` duplication;
+- GG-AUD-010 — source-level coding guidance gap, if still present;
+- GG-AUD-012 — import-side-effect monkey patching;
+- GG-AUD-013 — StorageAdapter monolith;
+- GG-AUD-014 — stale schema/types;
+- GG-AUD-015 — Node 22/24 behavior drift;
+- GG-AUD-016 — memory smoke test release-gate status;
+- GG-AUD-017 — duplicated WebUI tests;
+- GG-AUD-018 — architecture lint scope;
+- GG-AUD-030 P3 — unused production symbols/parameters/types.
+
+These should be mapped before editing. Some may be high-value fixes, some bounded cleanup, and some may be reclassified/closed after current-main inspection. Independent operational/product issues such as OneBot result `120` and PR #56 are not automatically part of this campaign.
 
 ## Next operation
 
-1. Re-read canonical docs and re-fetch `main`.
-2. Distinguish current metadata HEAD, accepted artifact commit, and live production.
-3. Confirm no same-task active PR/branch; PR #56 stays independent.
-4. Inspect the two remaining persistence source-shape classes against current `saveConfigStrict`, `group_api.ts`, StorageAdapter behavior, and PR #85 coverage.
-5. Prefer one stable behavior boundary if it can cover the shared persistence contract without duplicating tests; otherwise close one class only.
-6. PR -> final-head CI/Build -> merge with expected head SHA -> exact main CI/Build/SnowLuma/Plugins verification -> artifact IDs/digests -> metadata-child classification.
-7. Production remains untouched unless explicitly authorized.
+1. Finish PR #90 final-head CI/Build, merge with exact expected head SHA, verify exact main CI/Build/SnowLuma/Plugins runs, artifact IDs/digests, and metadata-only child.
+2. Production remains untouched unless explicitly authorized.
+3. After #90 is fully closed, do **not** blindly open another code PR. First build a current-main backlog map for the 13 remaining categories: `must fix / worth fixing / defer / close or reclassify`, with concrete code evidence and an approximate remaining-round count.
+4. Then continue one bounded high-value issue per user `继续` round.
