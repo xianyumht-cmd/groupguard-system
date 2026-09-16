@@ -20,7 +20,11 @@ function isScheduledTask(task: NonNullable<GroupSettingsOverride['scheduledTasks
 }
 
 export class ConfigAdapter implements ISystemWriteConfigPort {
-  constructor(private readonly ctx: SystemWriteRuntimeContext) {}
+  private readonly ctx: SystemWriteRuntimeContext;
+
+  constructor(ctx: SystemWriteRuntimeContext) {
+    this.ctx = ctx;
+  }
 
   getStoredScheduledTasks(groupId: string): ScheduledTask[] | undefined {
     const tasks = configStateService.getGroupSettings(groupId)?.scheduledTasks;
