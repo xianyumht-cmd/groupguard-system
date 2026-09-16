@@ -10,6 +10,7 @@ import {
   setGroupOverridePath,
 } from '../src/config_effective';
 import { configStateService } from '../src/core/state-services/config_state_service';
+import { ConfigAdapter as SystemWriteConfigAdapter } from '../src/infra/adapters/system-write/config_adapter';
 import { pluginState } from '../src/state';
 import type { GroupGuardSettings, PluginConfig } from '../src/types';
 
@@ -143,15 +144,15 @@ assert.equal(dormantAfterRestore.qaLinkDelivery?.noticeText, 'dormant local valu
 assert.equal(dormantAfterRestore.qaLinkDelivery?.enabled, undefined);
 assert.throws(() => setGroupOverridePath({}, 'constructor.prototype.polluted', true), /invalid_group_config_path/);
 
-// The adapter installs the resolver onto PluginState so internal send/risk paths
-// and state-service consumers cannot diverge.
+// PluginConfig.groups is a sparse-overlay map. These literals must typecheck
+// without pretending they are complete GroupGuardSettings snapshots.
 const originalConfig = pluginState.config;
 try {
   const runtimeConfig = clone(originalConfig) as PluginConfig;
   runtimeConfig.global = changedGlobal;
   runtimeConfig.groups = {
-    '123456': { useGlobal: false, qaLinkDelivery: { enabled: true } } as GroupGuardSettings,
-    '654321': legacyWithoutUseGlobal as GroupGuardSettings,
+    '123456': { useGlobal: false, qaLinkDelivery: { enabled: true } },
+    '654321': legacyWithoutUseGlobal,
   };
   configStateService.setConfig(runtimeConfig);
   const fromService = configStateService.resolveGroupSettings('123456');
@@ -164,6 +165,19 @@ try {
   assert.equal(legacyFromService.qaLinkDelivery?.enabled, true);
   assert.equal(legacyFromState.qaLinkDelivery?.enabled, true);
   assert.equal(legacyFromState.qaLinkDelivery?.noticeText, 'changed globally');
+
+  // A first system-write mutation must create only the fields it actually owns.
+  // Copying the current effective config here would freeze future global changes
+  // into a new group row and silently break inheritance.
+  const systemWrite = new SystemWriteConfigAdapter({ configPath: '/unused-in-this-test' });
+  systemWrite.setWelcomeMessage('777777', 'local welcome');
+  assert.deepEqual(runtimeConfig.groups['777777'], {
+    useGlobal: false,
+    welcomeMessage: 'local welcome',
+  });
+  const afterSystemWrite = configStateService.resolveGroupSettings('777777');
+  assert.equal(afterSystemWrite.welcomeMessage, 'local welcome');
+  assert.equal(afterSystemWrite.qaLinkDelivery?.noticeText, 'changed globally');
 } finally {
   configStateService.setConfig(originalConfig);
 }

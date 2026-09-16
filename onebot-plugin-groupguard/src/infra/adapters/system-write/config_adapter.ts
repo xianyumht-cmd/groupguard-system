@@ -1,21 +1,35 @@
 import { saveConfig } from '../../../commands/common';
 import { configStateService } from '../../../core/state-services/config_state_service';
 import type { ISystemWriteConfigPort, SystemWriteRuntimeContext } from '../../../app/use-cases/system/write/ports';
-import type { ScheduledTask, GroupGuardSettings } from '../../../types';
+import type { ScheduledTask, GroupSettingsOverride } from '../../../types';
 
-function ensureGroupSettings(groupId: string): GroupGuardSettings {
+function ensureGroupSettings(groupId: string): GroupSettingsOverride {
   const config = configStateService.getConfig();
   if (!config.groups[groupId]) {
-    config.groups[groupId] = { ...configStateService.resolveGroupSettings(groupId) };
+    config.groups[groupId] = { useGlobal: false };
   }
   return config.groups[groupId];
 }
 
+function isScheduledTask(task: NonNullable<GroupSettingsOverride['scheduledTasks']>[number]): task is ScheduledTask {
+  return typeof task?.id === 'string'
+    && typeof task.cron === 'string'
+    && (task.type === 'text' || task.type === 'image')
+    && typeof task.content === 'string'
+    && (task.lastRun === undefined || typeof task.lastRun === 'number');
+}
+
 export class ConfigAdapter implements ISystemWriteConfigPort {
-  constructor(private readonly ctx: SystemWriteRuntimeContext) {}
+  private readonly ctx: SystemWriteRuntimeContext;
+
+  constructor(ctx: SystemWriteRuntimeContext) {
+    this.ctx = ctx;
+  }
 
   getStoredScheduledTasks(groupId: string): ScheduledTask[] | undefined {
-    return configStateService.getGroupSettings(groupId)?.scheduledTasks;
+    const tasks = configStateService.getGroupSettings(groupId)?.scheduledTasks;
+    if (!tasks) return undefined;
+    return tasks.every(isScheduledTask) ? tasks : undefined;
   }
 
   appendScheduledTask(groupId: string, task: ScheduledTask): void {
@@ -44,7 +58,7 @@ export class ConfigAdapter implements ISystemWriteConfigPort {
     configStateService.deleteGroupSettings(groupId);
   }
 
-  getGroupSettings(groupId: string): GroupGuardSettings | undefined {
+  getGroupSettings(groupId: string): GroupSettingsOverride | undefined {
     return configStateService.getGroupSettings(groupId);
   }
 

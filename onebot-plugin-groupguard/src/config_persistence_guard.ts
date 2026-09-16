@@ -1,6 +1,6 @@
-import type { GroupGuardSettings } from './types';
+import type { GroupSettingsOverride } from './types';
 
-export type GroupConfigMap = Record<string, GroupGuardSettings>;
+export type GroupConfigMap = Record<string, GroupSettingsOverride>;
 
 export interface GroupPersistenceSelection {
   groups: GroupConfigMap;
