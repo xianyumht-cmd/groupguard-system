@@ -5,10 +5,12 @@ import path from 'node:path';
 import { loadConfigFromFile } from 'vite';
 import { authManager } from '../src/auth';
 import { getBuildInfo } from '../src/build_info';
+import { saveConfigStrict } from '../src/commands/common';
 import { normalizePluginConfig } from '../src/config';
 import { selectGroupsForPersistence } from '../src/config_persistence_guard';
 import { checkFeatureGate } from '../src/core/feature_gate';
 import { configStateService } from '../src/core/state-services/config_state_service';
+import { loggingStateService } from '../src/core/state-services/logging_state_service';
 import { authDomainService } from '../src/domain/auth/auth_domain_service';
 import { normalizeCommandDefinition } from '../src/dynamic-commands/command_loader';
 import { toFeaturePermission } from '../src/dynamic-commands/legacy_permission';
@@ -19,6 +21,7 @@ import { normalizeTargetFilePushConfig } from '../src/services/target_file_push_
 import { pluginState } from '../src/state';
 import { storageAdapter } from '../src/storage_adapter';
 import { saveRawConfig } from '../src/standalone/admin/config_api';
+import { deleteGroupConfig, restoreGroupConfigPath } from '../src/standalone/admin/group_api';
 import { resolveLicenseExpireTime } from '../src/standalone/admin/license_api';
 
 const invalid = normalizePluginConfig({ configVersion: 'bad', global: { auditRetentionMaxRows: 'bad' } } as any);
@@ -339,10 +342,76 @@ try {
   fs.rmSync(tempGlobalSaveFixture, { recursive: true, force: true });
 }
 
-const common = fs.readFileSync(path.join(root, 'src/commands/common.ts'), 'utf8');
-const groupApi = fs.readFileSync(path.join(root, 'src/standalone/admin/group_api.ts'), 'utf8');
-assert.ok(common.includes('allowEmptyRuntime: options.allowEmptyGroupPersistence === true'));
-assert.ok(common.includes('已阻止空分群配置覆盖 SQLite'));
-assert.ok(groupApi.includes('storageAdapter.deleteGroupConfig(id)'));
-assert.ok(groupApi.includes('allowEmptyGroupPersistence: explicitlyBecameEmpty'));
+const tempEmptyPersistenceFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'groupguard-empty-persistence-'));
+const previousEmptyPersistenceConfig = configStateService.getConfig();
+const previousWarn = loggingStateService.warn;
+const persistenceWarnings: string[] = [];
+try {
+  const configPath = path.join(tempEmptyPersistenceFixture, 'config.json');
+  const adminOptions = {
+    ctx: { configPath },
+    workDir: tempEmptyPersistenceFixture,
+    dataDir: tempEmptyPersistenceFixture,
+    configPath,
+    backupDir: path.join(tempEmptyPersistenceFixture, 'backups'),
+  } as any;
+  const guardedGroupId = '30001';
+  const guardedGroup = {
+    useGlobal: false,
+    qaList: [{ keyword: 'only', mode: 'exact', reply: 'kept' }],
+  } as any;
+  const emptyRuntimeConfig = JSON.parse(JSON.stringify(previousEmptyPersistenceConfig));
+  emptyRuntimeConfig.groups = {};
+  configStateService.setConfig(emptyRuntimeConfig);
+  storageAdapter.init(tempEmptyPersistenceFixture);
+  storageAdapter.replaceAllGroupConfigs({ [guardedGroupId]: guardedGroup }, () => undefined);
+  fs.writeFileSync(configPath, JSON.stringify({ ...emptyRuntimeConfig, groups: {} }, null, 2), 'utf8');
+  loggingStateService.warn = (message: string) => { persistenceWarnings.push(String(message)); };
+
+  saveConfigStrict(adminOptions.ctx);
+
+  const guardedStored = storageAdapter.loadAllGroupConfigs();
+  assert.deepEqual(
+    Object.keys(guardedStored),
+    [guardedGroupId],
+    'ordinary config save must not erase the last SQLite group row when runtime groups is unexpectedly empty'
+  );
+  assert.equal(guardedStored[guardedGroupId]?.qaList?.[0]?.keyword, 'only');
+  assert.equal(configStateService.getGroups()[guardedGroupId]?.qaList?.[0]?.reply, 'kept');
+  assert.ok(
+    persistenceWarnings.some(message => message.includes('已阻止空分群配置覆盖 SQLite')),
+    'guarded empty-runtime save must emit the operator-visible persistence warning'
+  );
+
+  persistenceWarnings.length = 0;
+  const restoredLastOverride = restoreGroupConfigPath(adminOptions, guardedGroupId, 'qaList');
+  assert.equal(restoredLastOverride.configured, false, 'restoring the final override must remove the group row');
+  assert.deepEqual(configStateService.getGroups(), {}, 'explicit final-override restore must leave runtime groups empty');
+  assert.deepEqual(storageAdapter.loadAllGroupConfigs(), {}, 'explicit final-override restore must persist an empty SQLite group set');
+  assert.equal(
+    persistenceWarnings.some(message => message.includes('已阻止空分群配置覆盖 SQLite')),
+    false,
+    'intentional final-override removal must not be mistaken for an accidental empty-runtime save'
+  );
+
+  const deleteGroupId = '30002';
+  const deleteGroupSettings = {
+    useGlobal: false,
+    qaList: [{ keyword: 'delete', mode: 'exact', reply: 'me' }],
+  } as any;
+  configStateService.setGroupSettings(deleteGroupId, deleteGroupSettings);
+  storageAdapter.saveGroupConfig(deleteGroupId, deleteGroupSettings);
+  assert.ok(storageAdapter.loadAllGroupConfigs()[deleteGroupId], 'explicit-delete fixture must exist before deletion');
+
+  const deletedGroup = deleteGroupConfig(adminOptions, deleteGroupId);
+  assert.equal(deletedGroup.configured, false, 'explicit group deletion must report the row as removed');
+  assert.deepEqual(configStateService.getGroups(), {}, 'explicit group deletion must remove the runtime row');
+  assert.deepEqual(storageAdapter.loadAllGroupConfigs(), {}, 'explicit group deletion must remove the final SQLite row');
+} finally {
+  loggingStateService.warn = previousWarn;
+  storageAdapter.close();
+  configStateService.setConfig(previousEmptyPersistenceConfig);
+  fs.rmSync(tempEmptyPersistenceFixture, { recursive: true, force: true });
+}
+
 console.log('project-wide bugfix regression passed');
