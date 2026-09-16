@@ -20,8 +20,9 @@ Do not automatically reopen completed findings from old chat notes. Start future
 
 - Repository: `xianyumht-cmd/groupguard-system`.
 - Branch: `main`.
-- Current phase-closeout base before this docs PR: `f2efceb2ba5ae2a9f0f48ac87c2b7bc49f4e9a18` (docs-only audit closeout).
-- Latest accepted runtime/artifact commit: `ca40e3159b374589bdf3403b2030bd773b1ce5d2` (PR #93 / GG-AUD-006).
+- Phase-closeout PR #94 merged as `8e8cc4703265734505af93e694e2768c78484782` and added the canonical `docs/AI_CONTEXT.md` plus this compressed current-state record.
+- No GitHub Actions runs were triggered for exact docs-only merge `8e8cc470...`.
+- Latest accepted runtime/artifact commit remains `ca40e3159b374589bdf3403b2030bd773b1ce5d2` (PR #93 / GG-AUD-006).
 - Plugin release #203 created metadata-only child `e21535728a9a3e8a47020a6af9f06d7efd0b3c41`; it changes only `plugin.json.updateTime`.
 
 Exact-main verification for `ca40e315...` succeeded:
@@ -90,8 +91,8 @@ Do not start these automatically:
 
 ## Repository hygiene
 
-- PR #56 (`perf: trace queued query delivery stages`) remains an independent performance-observability change. Do not merge, close or fold it into unrelated maintenance without fresh scope review.
-- Historical PR #45 is being retired by this phase-closeout task only after its still-useful runtime/container/migration lessons are absorbed into canonical knowledge; do not merge its 2026-08 `PROJECT_STATE` snapshot onto modern `main`.
+- PR #56 (`perf: trace queued query delivery stages`) is the only open PR at this phase closeout and remains an independent performance-observability change. Do not merge, close or fold it into unrelated maintenance without fresh scope review.
+- Historical PR #45 (`docs: record runtime recovery and config migration`) was closed unmerged on 2026-09-17 after its still-useful runtime/container/migration lessons were absorbed into canonical knowledge. Its old 2026-08 `PROJECT_STATE` snapshot must not be merged onto modern `main`.
 - Temporary merged task branches may still exist remotely when the available connector cannot safely delete refs. Never claim deletion without performing it.
 
 ## Next operation
