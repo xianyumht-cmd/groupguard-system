@@ -1,37 +1,23 @@
 # GroupGuard Project State
 
-Updated: 2026-09-16
+Updated: 2026-09-17
 
 ## Current canonical state
 
 - Canonical repository: `xianyumht-cmd/groupguard-system`.
 - Canonical branch: `main`.
 - Latest accepted runtime/artifact commit: `0d074d71cb9a88c7499edde64ab4a4b8498070b9` (merge of PR #91 / GG-AUD-014).
-- PR #91 exact main verification for `0d074d71...` succeeded:
+- Exact-main verification for `0d074d71...` succeeded:
   - GroupGuard CI #964, run `35108575483`;
   - GroupGuard Build #968, run `35108575392`;
   - Build SnowLuma Service #137, run `35108575476`;
   - Build & Release Plugins #202, run `35108575486`.
-- PR #91 accepted artifacts from GroupGuard Build #968:
+- Accepted GroupGuard Build #968 artifacts:
   - self-update artifact id `10451616228`, SHA-256 `89a0c8d00361d0fc0279bc0c565a3c2cc29403394a5e478e7ba0fd39a5a2bac8`;
   - deployment bundle id `10451616232`, SHA-256 `5b9bb9db56418e45ff912b12dbc2ada0a96e326041977204954c6abf0c339afa`;
   - build log id `10451062764`, SHA-256 `8fb7e5a57a083a826064e75ff2b47b7aa8158255fe93e4878855cc696cdf4905`.
-- Build & Release Plugins #202 then created metadata-only child `ef040ab40d7f40fa21c1bc0a8a8a626857bbb4a4` with parent exactly `0d074d71...`; its only source-tree change is `plugin.json.updateTime`, from `2026-09-16T10:39:24Z` to `2026-09-16T14:27:55Z`.
-- This document-only closeout commit may advance `main` beyond that metadata child without changing runtime code or accepted artifacts. Always re-fetch `main` in a new session.
-
-### Previous accepted build: PR #90
-
-- PR #90 runtime/artifact commit: `0d79a4801e8e7c128d60181f9b82aff72458f3d8`.
-- Exact main workflows succeeded:
-  - GroupGuard CI #939, run `35086058504`;
-  - GroupGuard Build #943, run `35086058590`;
-  - Build SnowLuma Service #136, run `35086058528`;
-  - Build & Release Plugins #201, run `35086059084`.
-- Accepted artifacts:
-  - self-update artifact id `10441948912`, SHA-256 `34e1868c7d8c424a66b3a228a5d20a5886a5f1118327410b57759007ba9774f7`;
-  - deployment bundle id `10442302611`, SHA-256 `000a76102c0a915863d38763d31f508205b2ee3833c4b9904635dbea9cc658ca`;
-  - build log id `10442471175`, SHA-256 `f969a8a2294de3e861399fe66ef73c2c8e82c276fbec698cc774c580b4222d7b`.
-- Metadata child `48502903d38ada97323c147972ea5ad22a3d2373` changed only `plugin.json.updateTime`.
+- Plugin release #202 created metadata-only child `ef040ab40d7f40fa21c1bc0a8a8a626857bbb4a4`, changing only `plugin.json.updateTime`.
+- A later docs-only closeout commit `76819c5239e2421f441843c44d86ebcfae92d6a8` advanced `main` without changing runtime code or accepted artifacts. Always re-fetch `main` in a new session.
 
 ## Production/runtime evidence boundary
 
@@ -43,60 +29,36 @@ Updated: 2026-09-16
 ## Repository hygiene
 
 - PR #56 (`perf: trace queued query delivery stages`) remains open and independent. Do not merge, close, or fold it into the audit without fresh scope review.
-- Several already-merged historical task branches may still exist remotely. Do not claim branch cleanup unless the branch is actually deleted after fresh safety checks.
+- PR #45 is also still open and is unrelated historical documentation work.
+- Do not claim temporary-branch cleanup unless the branch is actually deleted after fresh safety checks.
 
-## Audit progress and remaining-count view
+## Audit progress
 
 The user wants progress expressed as a visible remaining count, not only as process steps.
 
-### GG-AUD-004/005 source-shape cleanup — complete
+### Source-shape cleanup — complete
 
-Behavior migrations completed:
+GG-AUD-004/005 is complete. `scripts/verify-project-wide-bugfixes.ts` has **0 remaining source-shape behavior classes**. Runtime/security behavior should remain verified through real execution boundaries rather than implementation-string assertions unless the contract is genuinely static.
 
-1. target-file callback authorization — PR #78;
-2. self-update security behavior — PRs #79–#81;
-3. WebUI page/theme serving — PR #83;
-4. four-query delivery preference — PR #84;
-5. Admin group-config mutation/inheritance — PR #85;
-6. output-locale Q群管家 adapter routing — PR #86;
-7. explicit force-send semantics — PR #87;
-8. runtime version/build metadata — PR #88;
-9. global config save preserving SQLite-owned group settings — PR #89;
-10. final empty-runtime guard / intentional-empty persistence / explicit final-row deletion behavior — PR #90.
+### GG-AUD-014 stale configuration types — complete via PR #91
 
-Current remaining count for the `scripts/verify-project-wide-bugfixes.ts` source-shape cleanup: **0 behavior classes**.
+Stored per-group configuration is modeled as sparse `GroupSettingsOverride`; effective runtime settings remain complete `GroupGuardSettings` produced by the canonical resolver. PR #91 also fixed first-write behavior so a new group mutation no longer freezes unrelated global values into the stored row.
 
-PR #90 replaced the final four implementation-string assertions with one isolated temporary SQLite/config behavior fixture. It proves:
+Accepted runtime/artifact commit: `0d074d71cb9a88c7499edde64ab4a4b8498070b9`. Production was not deployed or restarted.
 
-- an ordinary save with an unexpectedly empty runtime group map preserves the last SQLite-owned group row and emits the operator-visible persistence warning;
-- restoring the final explicit group override is recognized as intentional and persists an empty runtime/SQLite group set;
-- explicit `deleteGroupConfig()` removes the final runtime and SQLite row;
-- production implementation code is unchanged.
+### GG-AUD-015 Node 22/24 behavior drift — closed from current-main evidence
 
-### GG-AUD-014 stale schema/types — complete via PR #91
+No code change is required.
 
-Finding: stored per-group configuration rows are sparse overrides, but several TypeScript boundaries still modeled them as complete `GroupGuardSettings` snapshots. That stale model hid real ownership mistakes and encouraged reverse casts.
+Current evidence:
 
-PR #91 aligned the type model with the established runtime/storage contract:
+- `onebot-plugin-groupguard/package.json` does **not** declare an `engines` field, so there is no current package-level promise that was being verified only on one Node major.
+- `.github/workflows/groupguard-ci.yml` runs the full primary verification path on Node 22: `npm ci`, production dependency audit, `npm test`, semantic TypeScript lint, scripts typecheck, deployment safety checks, `npm run build:snowluma`, and contract verification.
+- `.github/workflows/groupguard-build.yml` independently runs the formal release/build path on Node 24, including `npm ci`, real `npm run build`, `npm run build:snowluma`, deployment-bundle creation, WebUI self-update artifact construction, and Windows PowerShell 5.1 preflight.
+- `.github/workflows/build-snowluma-service.yml` and browser acceptance remain on Node 22, which is compatible with the primary runtime lane rather than evidence of an untested Node 24 release path.
+- On accepted runtime commit `0d074d71...`, Node-22 GroupGuard CI #964 (`35108575483`) and Node-24 GroupGuard Build #968 (`35108575392`) both completed successfully. SnowLuma #137 also succeeded on Node 22.
 
-- `PluginConfig.groups` is a map of sparse `GroupSettingsOverride` values;
-- config state service, adapter, gateway, persistence guard, system-write port, and SQLite persistence expose stored group rows as sparse overrides;
-- effective runtime settings remain complete `GroupGuardSettings` values and are produced by canonical `resolveEffectiveGroupSettings()`;
-- legacy `PluginState.getGroupSettings()` now uses the same deep resolver instead of shallow-spreading global and group objects;
-- config-inheritance verification typechecks sparse nested group literals directly, without reverse `as GroupGuardSettings` casts;
-- sparse scheduled-task overlays are validated before being exposed as complete `ScheduledTask[]` values.
-
-The audit also exposed and fixed one real behavior bug in the system-write adapter: the first mutation of a never-configured group cloned the entire effective global snapshot into a new group row, freezing fields that should continue to inherit later global changes. The adapter now creates only `{ useGlobal: false }` plus fields actually written. Behavior verification proves a first welcome-message mutation leaves unrelated settings inherited from global.
-
-Verification history:
-
-- code head `d081ccf67e25471c3d3fc601e4177736ec33009d`: GroupGuard CI #962 and Build #966 succeeded;
-- final PR head `28ad1a6bfc77dd915d7d2c324791a14f4fb6d038`: GroupGuard CI #963 and Build #967 succeeded;
-- merge commit `0d074d71cb9a88c7499edde64ab4a4b8498070b9`: exact main CI #964, Build #968, SnowLuma #137, and Plugins #202 all succeeded;
-- accepted artifact IDs/digests are recorded at the top of this document;
-- production was not deployed, restarted, or otherwise mutated.
-
-GG-AUD-014 is closed. The broader backlog is now **12 categories to triage**.
+Therefore the old GG-AUD-015 hypothesis is not a current actionable defect. Do not add an extra compatibility matrix merely to duplicate already-successful expensive verification. Reopen only if supported Node policy changes, a Node-major-specific failure appears, or a release path stops exercising one of the majors.
 
 ## Completed security/reliability findings
 
@@ -114,41 +76,49 @@ GG-AUD-014 is closed. The broader backlog is now **12 categories to triage**.
 
 Do not reopen completed findings from stale notes without current-main evidence of regression.
 
+## Remaining broader audit backlog
+
+The 12-category current-main triage is now resolved as follows:
+
+### Worth one bounded execution round
+
+- **GG-AUD-006** — very large serial test/verifier concentration. Current `npm test` and build scripts repeat long `&&` chains. This is primarily maintainability/diagnostic debt, not a runtime correctness bug. Any change must preserve current ordering, fail-fast behavior, and verifier coverage.
+
+### Deferred maintenance debt
+
+- **GG-AUD-007** — substantial `any` usage. Tighten only specific external/trust boundaries; do not perform a repo-wide mechanical purge.
+- **GG-AUD-013** — `StorageAdapter` remains a multi-domain monolith. High regression surface; split only with a dedicated architecture plan and behavior coverage.
+- **GG-AUD-018** — architecture lint exists for system-write and risk-policy boundaries. Additional coverage is preventive governance work, not a current defect.
+- **GG-AUD-030 P3** — unused symbols/parameters/types can accumulate because unused checks are not global gates. Treat as bounded cleanup, not release-blocking work.
+
+### Closed/reclassified from current-main evidence
+
+- **GG-AUD-008** — generic monolithic-module finding duplicates concrete GG-AUD-013 and is too broad to remain independently actionable.
+- **GG-AUD-009** — `infra` and `infrastructure` currently own different responsibilities; no current duplicate implementation defect was found.
+- **GG-AUD-010** — source-level coding guidance gap is closed by current `AGENTS.md`, TypeScript checks, and repository rules.
+- **GG-AUD-012** — no current evidence of the old import-side-effect monkey-patching pattern.
+- **GG-AUD-015** — Node 22 and Node 24 are already exercised by successful primary CI/build lanes; closed above.
+- **GG-AUD-016** — the old memory-smoke release-gate premise is not present in the current package/workflow state.
+- **GG-AUD-017** — HTTP/SQLite WebUI verification and Playwright browser acceptance cover different evidence layers rather than being simple duplicates.
+
+Current triage totals: **0 must-fix / 1 worth-doing / 4 deferred / 7 closed or reclassified**.
+
 ## Reusable audit rules
 
 - Runtime/security behavior is not proved by source strings. Prefer real execution boundaries and preserve negative contracts.
+- Re-fetch current `main`, package metadata, all relevant workflows, and exact successful runs before reopening an old CI/runtime-version finding; one workflow alone is not repository-wide compatibility evidence.
 - Keep genuinely static build/release wiring checks static.
-- Re-fetch current `main` before reopening old findings.
-- Node/TS loader incompatibility is not product failure; test through the supported loader/build path. If a touched runtime module must be imported by strip-types verifiers, avoid TypeScript syntax that Node strip-only mode cannot erase, such as constructor parameter properties.
-- SQLite persistence may normalize sparse legacy shapes; behavior tests should protect ownership/value semantics rather than forbid documented normalization unless exact shape is itself the contract.
-- Stored group overlays and effective runtime group settings are different types and ownership states. Do not cast a sparse row into complete `GroupGuardSettings`; resolve it at the runtime boundary.
+- SQLite persistence may normalize sparse legacy shapes; protect ownership/value semantics rather than undocumented exact shapes.
+- Stored group overlays and effective runtime group settings are different types and ownership states.
 - `main` metadata/documentation HEAD, accepted runtime artifact commit, and live production are distinct.
 - Do not mass-refactor unrelated architecture while closing one bounded audit item.
 
 Detailed recurring failure patterns belong in `docs/PITFALLS.md`.
 
-## Broader audit backlog — next phase
-
-The campaign now has **12 backlog categories to triage**, not 12 guaranteed code changes:
-
-- GG-AUD-006 — very large serial test/verifier concentration;
-- GG-AUD-007 — substantial `any` usage;
-- GG-AUD-008 — monolithic modules;
-- GG-AUD-009 — `infra` / `infrastructure` duplication;
-- GG-AUD-010 — source-level coding guidance gap, if still present;
-- GG-AUD-012 — import-side-effect monkey patching;
-- GG-AUD-013 — StorageAdapter monolith;
-- GG-AUD-015 — Node 22/24 behavior drift;
-- GG-AUD-016 — memory smoke test release-gate status;
-- GG-AUD-017 — duplicated WebUI tests;
-- GG-AUD-018 — architecture lint scope;
-- GG-AUD-030 P3 — unused production symbols/parameters/types.
-
-These should be mapped before editing. Some may be high-value fixes, some bounded cleanup, and some may be reclassified/closed after current-main inspection. Independent operational/product issues such as OneBot result `120` and PR #56 are not automatically part of this campaign.
-
 ## Next operation
 
-1. Re-fetch current `main` and canonical docs.
-2. Triage the 12 remaining backlog categories against current-main evidence before selecting the next bounded task; do not assume every category still needs a code change.
-3. Continue one bounded high-value category per user `继续` round, always showing the remaining-category count.
-4. Production remains untouched unless explicitly authorized.
+Visible audit-closeout progression after closing GG-AUD-015: **2 → 1 → 0**.
+
+1. Next bounded execution round: **GG-AUD-006**, current-main test/verifier concentration. First determine whether a manifest/runner can reduce duplication without changing verifier semantics or materially increasing CI time.
+2. Final round: re-fetch current `main`, verify canonical docs and open PRs, record the deferred/closed backlog disposition, and declare the current audit campaign complete if no new current-main defect appears.
+3. Production remains untouched unless explicitly authorized.
