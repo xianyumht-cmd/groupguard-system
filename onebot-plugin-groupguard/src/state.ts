@@ -3,6 +3,7 @@ import type { RuntimeLogger } from './runtime/runtime_context';
 import type { OneBotActionClient } from './protocol/onebot11/action_client';
 import type { PluginConfig, VerifySession, GroupGuardSettings, ActivityRecord, SigninData, InviteData, BotSendEventRecord } from './types';
 import { DEFAULT_PLUGIN_CONFIG } from './config';
+import { resolveEffectiveGroupSettings } from './config_effective';
 import { getBuildInfo } from './build_info';
 import type { ReplyPersona } from './types';
 import { generateReply, isReplyTemplateSceneAllowed } from './reply_generator';
@@ -167,11 +168,7 @@ class PluginState {
   }
 
   getGroupSettings (groupId: string): GroupGuardSettings {
-    if (this.config.groups[groupId]) {
-      if (this.config.groups[groupId].useGlobal) return this.config.global;
-      return { ...this.config.global, ...this.config.groups[groupId] };
-    }
-    return this.config.global;
+    return resolveEffectiveGroupSettings(this.config.global, this.config.groups[groupId]);
   }
 
   isWhitelisted (userId: string): boolean {
