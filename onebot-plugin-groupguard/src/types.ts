@@ -156,6 +156,14 @@ export interface SubGameplaySettings {
   commandAliases?: Record<string, string[]>;
 }
 
+export type DeepPartial<T> = T extends Array<infer U>
+  ? Array<DeepPartial<U>>
+  : T extends object
+    ? { [K in keyof T]?: DeepPartial<T[K]> }
+    : T;
+
+export type GroupSettingsOverride = DeepPartial<GroupGuardSettings> & { useGlobal?: boolean };
+
 export interface PluginConfig {
   configVersion?: number;
   licenseKey?: string;
@@ -163,7 +171,7 @@ export interface PluginConfig {
   ownerQQs: string;
   licenses: Record<string, GroupLicense>;
   global: GroupGuardSettings;
-  groups: Record<string, GroupGuardSettings>;
+  groups: Record<string, GroupSettingsOverride>;
   antiRecallGroups: string[];
   globalAntiRecall: boolean;
   globalEmojiReact: boolean;
