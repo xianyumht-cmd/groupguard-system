@@ -4,6 +4,24 @@ Updated: 2026-09-15
 
 This file records recurring failure patterns and the prevention rule, not chat-by-chat history. Current task state belongs in `PROJECT_STATE.md`.
 
+## Do not hide upstream status behind an output-translation catch-all
+
+Observed: 2026-10-19
+
+### Failure pattern
+
+The English localization catch path replaced every non-fast-path Chinese message with one generic English translation-unavailable notice. This could mask a concrete query timeout, authentication error, or a successful yet untranslated response. The production configuration intentionally disables translation without an explicit endpoint, making the ambiguity repeatable.
+
+### Prevention
+
+- Keep business error classification independent from the translator's failure code.
+- Never infer a business failure from translation failure alone; for unknown texts, state that the query outcome is unknown.
+- Match only short, clearly error-shaped source texts; avoid categorizing arbitrary Q&A or user content with broad keyword matches.
+- Never include raw provider errors, query content, CQ codes, URLs, secrets or stored Q&A in fallback messages or logs.
+- Test failed translation, provider recovery, forward-node text, ordinary content and protected media separately.
+- Do not silently bypass the approved translation-provider privacy boundary.
+
+
 ## Runtime/security behavior is not proved by source-string shape
 
 Observed: 2026-09-15
