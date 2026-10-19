@@ -208,6 +208,10 @@ async function verifyDifferentiatedTranslationFailures(): Promise<void> {
     throw new Error('translation_endpoint_disabled');
   };
   const cases: Array<[string, string, string]> = [
+    ['内网查询服务暂时不可用，请稍后再试。', 'QUERY_BACKEND_UNAVAILABLE', 'internal query service'],
+    ['未配置 LOL API Base，请联系机器人主人完成内网服务地址配置。', 'QUERY_CONFIG_MISSING', 'not configured'],
+    ['请输入：查合集 亚索', 'QUERY_INPUT_REQUIRED', 'query argument'],
+    ['查合集仅支持群聊使用。', 'QUERY_GROUP_ONLY', 'in a group'],
     ['查询请求超时，请稍后再试', 'QUERY_TIMEOUT', 'timed out'],
     ['接口连接失败，请稍后再试', 'QUERY_NETWORK_ERROR', 'connect'],
     ['服务器繁忙，请稍后再试', 'QUERY_UPSTREAM_UNAVAILABLE', 'unavailable'],
