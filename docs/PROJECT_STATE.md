@@ -1,6 +1,10 @@
 # GroupGuard Project State
 
-Updated: 2026-09-17
+Updated: 2026-10-19
+
+## Current translation-fallback change (2026-10-19)
+
+PR #96 records the English output-translation failure differentiation: privacy-safe, code-only fallback diagnostics; conservative business failure categories independent of translator failure; and output-locale regression coverage. The same PR advances the directly used undici dependency to 7.29.1 to clear the newly failing production dependency audit. The change does not modify lolapisevers, its upstream sources, or any ARM runtime. GitHub build/merge status and live production identity require separate verification; never infer an ARM deployment from this repository record.
 
 ## Phase status
 
