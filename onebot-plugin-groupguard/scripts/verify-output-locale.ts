@@ -20,6 +20,10 @@ import {
 import { pluginState } from '../src/state';
 import { OneBotActionCaller } from '../src/standalone/onebot_action_caller';
 import { applyOutputLocaleWebUiPatch } from '../src/standalone/admin/output_locale_webui_patch';
+import {
+  classifyBusinessFailure,
+  classifyTranslationFailure,
+} from '../src/services/output_translation_fallback';
 
 async function verifyTranslationPrivacyPolicy(): Promise<void> {
   assert.deepEqual(
@@ -199,6 +203,83 @@ async function verifyQunGuanjiaLocalizationBoundary(): Promise<void> {
   }
 }
 
+async function verifyDifferentiatedTranslationFailures(): Promise<void> {
+  const disabled: OutputTranslationFn = async () => {
+    throw new Error('translation_endpoint_disabled');
+  };
+  const cases: Array<[string, string, string]> = [
+    ['查询请求超时，请稍后再试', 'QUERY_TIMEOUT', 'timed out'],
+    ['接口连接失败，请稍后再试', 'QUERY_NETWORK_ERROR', 'connect'],
+    ['服务器繁忙，请稍后再试', 'QUERY_UPSTREAM_UNAVAILABLE', 'unavailable'],
+    ['查询登录态失效，请重新登录', 'QUERY_AUTH_EXPIRED', 'session'],
+    ['请求触发限流，请稍后再试', 'QUERY_RATE_LIMITED', 'rate-limited'],
+    ['查询未找到玩家', 'QUERY_NOT_FOUND', 'No matching'],
+    ['查询数据格式错误', 'QUERY_BAD_RESPONSE', 'invalid'],
+    ['查封号查询失败', 'QUERY_FAILED', 'could not be completed'],
+  ];
+  for (const [original, code, text] of cases) {
+    const output = await localizeOutputText(original, 'en', disabled);
+    assert.ok(output.includes(code), `missing ${code} for ${original}`);
+    assert.ok(output.includes('TRANSLATION_DISABLED'), 'must distinguish translator failure from business failure');
+    assert.ok(output.toLowerCase().includes(text.toLowerCase()));
+    assert.ok(!output.includes(original), 'English-only mode must not leak original text');
+    assert.ok(!output.includes('Translation is temporarily unavailable.'));
+  }
+
+  assert.equal(classifyBusinessFailure('请不要在群里说服务器繁忙'), null, 'ordinary Q&A must not be interpreted as upstream error');
+  assert.equal(classifyBusinessFailure('查询成功，已找到玩家及其战绩'), null, 'successful business text is not an error');
+  assert.equal(classifyBusinessFailure('查询接口偶发超时\n这一段是自定义问答，不代表本次请求失败'), null, 'multiline Q&A must not be categorized as failed request');
+  assert.equal(classifyTranslationFailure(new Error('HTTP 401')), 'TRANSLATION_AUTH_FAILED');
+  assert.equal(classifyTranslationFailure(new Error('HTTP 429')), 'TRANSLATION_RATE_LIMITED');
+  assert.equal(classifyTranslationFailure(new Error('AbortError')), 'TRANSLATION_TIMEOUT');
+  assert.equal(classifyTranslationFailure(new Error('empty_translation')), 'TRANSLATION_BAD_RESPONSE');
+  assert.equal(classifyTranslationFailure(new Error('connection refused')), 'TRANSLATION_PROVIDER_UNAVAILABLE');
+
+  const success = await localizeOutputText('查询成功，玩家已找到，排位数据正在展示', 'en', disabled);
+  assert.match(success, /the query may have succeeded/i, 'translation failure must not imply a successful query failed');
+  assert.ok(!success.includes('QUERY_FAILED'));
+  const unknown = await localizeOutputText('群里今天活动安排如下', 'en', disabled);
+  assert.match(unknown, /original reply could not be translated/i);
+  assert.ok(!unknown.includes('群里'));
+
+  const sensitive = await localizeOutputText(
+    '查询请求超时，地址：https://example.invalid/secret?token=private',
+    'en', disabled
+  );
+  assert.ok(sensitive.includes('QUERY_TIMEOUT'));
+  assert.ok(!sensitive.includes('private'));
+  assert.ok(!sensitive.includes('example.invalid'));
+
+  const forwarded = await localizeOneBotSendParamsSafe('send_group_forward_msg', {
+    messages: [{
+      type: 'node',
+      data: {
+        nickname: 'Operator',
+        content: [
+          { type: 'text', data: { text: '接口连接失败' } },
+          { type: 'image', data: { file: 'https://example.com/private-image.jpg' } },
+        ]
+      }
+    }]
+  }, 'en', disabled) as any;
+  assert.ok(forwarded.messages[0].data.content[0].data.text.includes('QUERY_NETWORK_ERROR'));
+  assert.equal(forwarded.messages[0].data.content[1].data.file, 'https://example.com/private-image.jpg');
+
+  let attempts = 0;
+  let repaired = false;
+  const recoveringTranslator: OutputTranslationFn = async () => {
+    attempts += 1;
+    if (!repaired) throw new Error('HTTP 503');
+    return 'The reply is available again.';
+  };
+  const retryText = '查询完成并生成最新统计';
+  assert.match(await localizeOutputText(retryText, 'en', recoveringTranslator), /TRANSLATION_PROVIDER_UNAVAILABLE/);
+  repaired = true;
+  assert.equal(await localizeOutputText(retryText, 'en', recoveringTranslator), 'The reply is available again.');
+  assert.equal(await localizeOutputText(retryText, 'en', recoveringTranslator), 'The reply is available again.');
+  assert.equal(attempts, 2, 'failed translation cannot poison successful-translation cache');
+}
+
 async function main(): Promise<void> {
   clearOutputLocaleCacheForTest();
   assert.equal(normalizeOutputLocale(undefined), 'zh-CN');
@@ -229,6 +310,7 @@ async function main(): Promise<void> {
     'Click this link to purchase: https://example.com/order?a=1'
   );
 
+  await verifyDifferentiatedTranslationFailures();
   await verifyTranslationPrivacyPolicy();
   verifyFleetRollbackContracts();
 
