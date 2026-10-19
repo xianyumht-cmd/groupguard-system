@@ -4,7 +4,7 @@ Updated: 2026-10-19
 
 ## Current translation-fallback change (2026-10-19)
 
-A narrowly scoped English output-translation fault-differentiation change is in progress on `fix/translation-error-fallback-20261019`. This branch does not modify lolapisevers, its sources, or the ARM runtime. Implemented: privacy-safe code-only translation fallback, conservative business-category notices, and output-locale regression coverage. PR / CI / merge / production identity must be verified separately; do not treat this branch as deployed.
+PR #96 records the English output-translation failure differentiation: privacy-safe, code-only fallback diagnostics; conservative business failure categories independent of translator failure; and output-locale regression coverage. The same PR advances the directly used undici dependency to 7.29.1 to clear the newly failing production dependency audit. The change does not modify lolapisevers, its upstream sources, or any ARM runtime. GitHub build/merge status and live production identity require separate verification; never infer an ARM deployment from this repository record.
 
 ## Phase status
 
