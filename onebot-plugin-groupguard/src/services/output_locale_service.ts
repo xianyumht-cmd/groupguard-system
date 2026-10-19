@@ -1,3 +1,5 @@
+import { englishTranslationFailureNotice, recordTranslationFailure } from './output_translation_fallback';
+
 export type OutputLocale = 'zh-CN' | 'zh-TW' | 'en';
 
 export type OutputTranslationFn = (text: string, locale: Exclude<OutputLocale, 'zh-CN'>) => Promise<string>;
@@ -265,12 +267,13 @@ export async function localizeOutputText(
       translationCache.set(cacheKey, restored);
       trimCache();
       return restored;
-    } catch {
+    } catch (error) {
       if (locale === 'zh-TW') return localTraditionalFallback(text);
-      // English mode is deliberately fail-closed: never leak Simplified Chinese when
-      // the operator selected full English output. Common system messages use the
-      // local fast path above, while an unseen custom Q&A can retry on the next hit.
-      return 'Translation is temporarily unavailable. Please try again shortly.';
+      // Preserve a recognizable business failure code without exposing arbitrary
+      // original text or sending it to an unapproved translation provider.
+      // An untranslated successful result must not be mislabeled a query failure.
+      recordTranslationFailure(error);
+      return englishTranslationFailureNotice(text, error);
     } finally {
       inflightTranslations.delete(cacheKey);
     }
