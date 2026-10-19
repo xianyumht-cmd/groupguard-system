@@ -1,6 +1,10 @@
 # GroupGuard Project State
 
-Updated: 2026-09-17
+Updated: 2026-10-19
+
+## Current translation-fallback change (2026-10-19)
+
+A narrowly scoped English output-translation fault-differentiation change is in progress on `fix/translation-error-fallback-20261019`. This branch does not modify lolapisevers, its sources, or the ARM runtime. Implemented: privacy-safe code-only translation fallback, conservative business-category notices, and output-locale regression coverage. PR / CI / merge / production identity must be verified separately; do not treat this branch as deployed.
 
 ## Phase status
 
