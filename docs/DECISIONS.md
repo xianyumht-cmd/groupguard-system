@@ -1,5 +1,26 @@
 # GroupGuard Decisions
 
+## 2026-10-19 — Preserve error identity when output translation is unavailable
+
+### Decision
+
+For English output, failed network translation must not collapse unrelated business results and failures into one generic translation error. The OneBot egress keeps fail-closed language/privacy behavior: it does not send arbitrary untranslated Chinese or automatically enable public translation. Recognizable short, error-shaped source notices receive stable English business categories (timeout, network, authentication, rate limit, invalid response, not found, upstream unavailable, generic query failure) together with an independent translation failure code. Unknown or potentially successful messages receive an explicit *translation unavailable; query outcome unknown* notice rather than being presented as a failed query.
+
+Translation failures emit throttled, code-only server warnings without original message text, provider URL, credentials, or full raw exceptions. Failed translation output is not cached; a recovered configured translator can succeed on the next attempt.
+
+### Reason
+
+The previous single catch-all English message hid whether an upstream query actually failed, succeeded with an untranslated response, or was blocked solely by the explicitly disabled translator. That made unrelated faults indistinguishable to the operator.
+
+### Consequences
+
+- Local translation/error fallback remains available without new outbound providers or server configuration changes.
+- A query with a recognizable source error is surfaced as a distinct business error category plus the translation state.
+- Arbitrary successful text still requires an approved translation provider for a full English result.
+- Classification is conservative and is not a substitute for structured source error codes at query-delivery boundaries.
+- ARM production activation requires a separate authorized deployment and runtime verification.
+
+
 ## 2026-09-10 — Self-recall uses sparse per-group overrides with execution-time revalidation
 
 ### Decision
