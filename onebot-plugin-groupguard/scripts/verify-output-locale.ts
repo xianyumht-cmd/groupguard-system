@@ -229,6 +229,22 @@ async function verifyDifferentiatedTranslationFailures(): Promise<void> {
   assert.equal(classifyBusinessFailure('请不要在群里说服务器繁忙'), null, 'ordinary Q&A must not be interpreted as upstream error');
   assert.equal(classifyBusinessFailure('查询成功，已找到玩家及其战绩'), null, 'successful business text is not an error');
   assert.equal(classifyBusinessFailure('查询接口偶发超时\n这一段是自定义问答，不代表本次请求失败'), null, 'multiline Q&A must not be categorized as failed request');
+  const previousEndpoint = process.env.GROUPGUARD_TRANSLATE_ENDPOINT;
+  const previousFetch = globalThis.fetch;
+  try {
+    process.env.GROUPGUARD_TRANSLATE_ENDPOINT = 'off';
+    (globalThis as any).fetch = async () => {
+      throw new Error('disabled translation must not call a public provider');
+    };
+    const productionEgress = await localizeOutputTextSafe('查询请求超时', 'en');
+    assert.ok(productionEgress.includes('QUERY_TIMEOUT'));
+    assert.ok(productionEgress.includes('TRANSLATION_DISABLED'));
+  } finally {
+    if (previousEndpoint === undefined) delete process.env.GROUPGUARD_TRANSLATE_ENDPOINT;
+    else process.env.GROUPGUARD_TRANSLATE_ENDPOINT = previousEndpoint;
+    (globalThis as any).fetch = previousFetch;
+  }
+
   assert.equal(classifyTranslationFailure(new Error('HTTP 401')), 'TRANSLATION_AUTH_FAILED');
   assert.equal(classifyTranslationFailure(new Error('HTTP 429')), 'TRANSLATION_RATE_LIMITED');
   assert.equal(classifyTranslationFailure(new Error('AbortError')), 'TRANSLATION_TIMEOUT');
