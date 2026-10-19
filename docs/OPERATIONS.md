@@ -190,7 +190,9 @@ GROUPGUARD_TRANSLATE_API_KEY
 GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK
 ```
 
-Network translation is disabled when `GROUPGUARD_TRANSLATE_ENDPOINT` is unset or `off`. Configure an endpoint only after approving the privacy boundary. Public fallback is disabled unless `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK` is explicitly enabled. Do not enable `TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS` in production; it exists only for isolated local contract tests.
+Network translation is disabled when `GROUPGUARD_TRANSLATE_ENDPOINT` is unset or `off`. Configure an endpoint only after approving the privacy boundary.When English translation is unavailable, user-visible query errors now include a business category plus a separate translation-failure code where a recognizable short error notice exists. Unrecognized text instead reports that English translation failed and the query outcome is unknown. Logs include throttled `output_translation_fallback code=...` warnings; they intentionally omit the message body and provider details. No external provider is activated by this fallback. Test both recognizable failures and successful custom responses before rolling out the change.
+
+ Public fallback is disabled unless `GROUPGUARD_TRANSLATE_ALLOW_PUBLIC_FALLBACK` is explicitly enabled. Do not enable `TARGET_FILE_PUSH_ALLOW_PRIVATE_DOWNLOADS` in production; it exists only for isolated local contract tests.
 
 The target-file callback contract requires a positive monotonic `source_revision`. The producer must reuse the same revision when retrying the same source version and increase it only for a newer source version.
 
