@@ -23,6 +23,26 @@ interface BusinessFailure {
 // Only short, clearly error-shaped texts are eligible for business classification.
 const BUSINESS_FAILURES: ReadonlyArray<{ code: string; notice: string; pattern: RegExp }> = [
   {
+    code: 'QUERY_BACKEND_UNAVAILABLE',
+    notice: 'The internal query service is temporarily unavailable.',
+    pattern: /^内网查询服务暂时不可用[，,。\s]|^内网查询服务暂时不可用$/i
+  },
+  {
+    code: 'QUERY_CONFIG_MISSING',
+    notice: 'The internal query service address is not configured.',
+    pattern: /^未配置\s+LOL\s+API\s+Base\b/i
+  },
+  {
+    code: 'QUERY_INPUT_REQUIRED',
+    notice: 'This command requires a valid query argument.',
+    pattern: /^(?:请输入[：:]\s*(?:查合集|海符榜)|请指定要查询的QQ号)/i
+  },
+  {
+    code: 'QUERY_GROUP_ONLY',
+    notice: 'This command can only be used in a group.',
+    pattern: /^(?:查合集|海符榜|查封号)仅支持群聊使用/i
+  },
+  {
     code: 'QUERY_AUTH_EXPIRED',
     notice: 'The data provider session has expired or authentication failed.',
     pattern: /^(?:(?:查询|战绩|隐藏|封号|接口|上游|SO1|服务).{0,45})?(?:登录(?:态)?(?:失效|过期)|未登录|鉴权失败|认证失败|授权(?:失效|过期)|(?:SO1_AUTH_EXPIRED|AUTH_EXPIRED|SESSION_EXPIRED|UNAUTHORIZED))/i
