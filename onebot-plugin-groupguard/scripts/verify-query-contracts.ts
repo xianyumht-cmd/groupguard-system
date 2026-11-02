@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { normalizePluginConfig } from '../src/config.ts';
 import { configStateService } from '../src/core/state-services/config_state_service.ts';
 import { getQueryOverview, testQueryEndpoint } from '../src/standalone/admin/query_api.ts';
+import { resolveBattlePreferredOutput } from '../src/dynamic-commands/intranet_battle_runtime_plugin.ts';
+import { resolveUnifiedQueryPreferredOutput } from '../src/dynamic-commands/intranet_query_runtime_plugin.ts';
+import { normalizeQueryOverviewForWebUi } from '../src/standalone/admin/query_webui_facade.ts';
 import { deliverOneBotImageToGroup, fetchOneBotImageFile } from '../src/services/lol_image_delivery.ts';
 import { getBuildInfo } from '../src/build_info.ts';
 
@@ -295,6 +298,42 @@ try {
   const overview = getQueryOverview();
   assert.equal(overview.rows.find((row: any) => row.type === 'lol_ban')?.dataSource, 'local-api');
   assert.equal(overview.rows.find((row: any) => row.type === 'lol_aram_augments')?.trigger, '海符榜');
+
+  // Issue #98 follow-up: the public overview API must report the same
+  // output defaults as actual delivery and the WebUI, not obsolete text
+  // defaults for ban/scammer/peer or a global forward default for battle.
+  for (const globalOutput of ['text', 'forward', 'image'] as const) {
+    const config = structuredClone(originalConfig) as any;
+    config.global = { ...(config.global || {}), lolQueryOutputFormat: globalOutput };
+    config.groups = {};
+    config.queryCommandProfiles = {};
+    configStateService.setConfig(config);
+
+    const rawOverview = getQueryOverview();
+    const webUiOverview = normalizeQueryOverviewForWebUi(rawOverview);
+    const battleRow = rawOverview.rows.find((row: any) => row.type === 'lol_battle');
+    assert.equal(battleRow?.defaultOutputFormat, 'image');
+    assert.equal(battleRow?.outputFormat, resolveBattlePreferredOutput('10001'));
+    assert.equal(webUiOverview.rows.find((row: any) => row.type === 'lol_battle')?.outputFormat, battleRow?.outputFormat);
+
+    for (const type of ['lol_ban', 'scammer', 'peer']) {
+      const row = rawOverview.rows.find((item: any) => item.type === type);
+      assert.equal(row?.defaultOutputFormat, globalOutput, `${type} default must follow global output`);
+      assert.equal(row?.outputFormat, resolveUnifiedQueryPreferredOutput('10001', [type]));
+      assert.equal(webUiOverview.rows.find((item: any) => item.type === type)?.outputFormat, row?.outputFormat);
+    }
+
+    config.queryCommandProfiles = {
+      lol_battle: { outputFormat: 'forward' },
+      scammer: { outputFormat: 'image' }
+    };
+    configStateService.setConfig(config);
+    const profileOverview = getQueryOverview();
+    assert.equal(profileOverview.rows.find((row: any) => row.type === 'lol_battle')?.outputFormat,
+      resolveBattlePreferredOutput('10001'));
+    assert.equal(profileOverview.rows.find((row: any) => row.type === 'scammer')?.outputFormat,
+      resolveUnifiedQueryPreferredOutput('10001', ['scammer']));
+  }
 
   configStateService.setConfig(normalizePluginConfig({} as any));
   const unconfigured = getQueryOverview();
