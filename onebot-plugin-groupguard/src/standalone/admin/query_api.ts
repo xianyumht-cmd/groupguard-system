@@ -61,8 +61,11 @@ function getProfile(config: any, type: QueryType): QueryCommandProfile {
 }
 
 function defaultOutputFor(config: any, global: any, type: QueryType): string {
-  if (type === 'lol_shard' || type === 'lol_aram_augments') return 'image';
-  if (type === 'lol_ban' || type === 'scammer' || type === 'peer' || type === 'ele_build') return 'text';
+  // The raw /api/query/overview contract must agree with the runtime and
+  // WebUI: battle defaults to image, while the other intranet queries follow
+  // the configured global output unless their profile overrides it.
+  if (type === 'lol_battle' || type === 'lol_shard' || type === 'lol_aram_augments') return 'image';
+  if (type === 'ele_build') return 'text';
   return global.lolQueryOutputFormat || 'forward';
 }
 
